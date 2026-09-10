@@ -17,7 +17,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.16
 	go.dtapp.net/library/contrib/http_log v1.0.13
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.41.0
 	google.golang.org/genai v1.71.0
 	modernc.org/sqlite v1.57.0
