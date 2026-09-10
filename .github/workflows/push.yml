@@ -1,0 +1,180 @@
+# 推送工作流
+# https://github.com/actions/runner-images
+# https://github.com/actions/checkout
+# https://github.com/actions/cache
+# https://github.com/actions/setup-go
+# https://github.com/actions/setup-node
+# https://github.com/pnpm/action-setup
+name: PushRequest
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+# 同一分支的多次 push 取消旧的运行，避免排队浪费。
+concurrency:
+  group: push-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+
+      - name: 安装 Node.js
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: 'frontend/package.json'
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: 'frontend/.nvmrc'
+
+      # 缓存 apt 已下载的 .deb 包，避免每次 apt-get install 重新从源拉取
+      # libgtk-4-dev / libwebkitgtk-6.0-dev 等大依赖（ubuntu runner 有效）。
+      - name: 缓存 apt 包
+        if: ${{ runner.os == 'Linux' }}
+        uses: actions/cache@v6
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            apt-${{ runner.os }}-
+
+      # 安装系统依赖（Linux）：wails3 CLI 及后续 go build/test 需要 GTK4 / WebKit2GTK-6.0
+      # 开发库（提供 gtk4.pc / webkitgtk-6.0.pc），否则 make tool-deps 的 `go install wails3`
+      # 与 make check 的 `go test` 会因 pkg-config 找不到头文件而失败。与 release.yml 一致。
+      - name: 安装系统依赖
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev jq
+
+      # 缓存 Go module 下载（GOMODCACHE），让 go mod download / go install
+      # 命中已下载模块，避免重复从 proxy 拉取。
+      - name: 缓存 Go module
+        uses: actions/cache@v6
+        with:
+          path: ${{ format('{0}/go/pkg/mod', env.HOME) }}
+          key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-mod-
+
+      # 缓存 Go 编译缓存（~/.cache/go-build），避免每次全量重编。
+      - name: 缓存 Go build 缓存
+        uses: actions/cache@v6
+        with:
+          path: ${{ format('{0}/.cache/go-build', env.HOME) }}
+          key: ${{ runner.os }}-go-build-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-build-
+
+      # 动态获取 pnpm 实际 store 目录（受 PNPM_HOME / 配置影响，写死路径可能 Miss），
+      # 写入 $GITHUB_ENV 供下方缓存步骤引用。
+      - name: 获取 pnpm store 目录
+        id: pnpm-store
+        shell: bash
+        run: echo "PNPM_STORE_DIR=$(pnpm config get store-dir)" >> "$GITHUB_ENV"
+
+      # 自定义缓存 pnpm store，按 lockfile hash 命中，pnpm install 命中后跳过从 registry 下载。
+      - name: 缓存 pnpm store
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.PNPM_STORE_DIR }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      # 统一计算 Go 工具链目录并写入 $GITHUB_ENV，供后续步骤引用。
+      - name: 设置 Go 工具链目录
+        shell: bash
+        run: |
+          echo "GO_PATH_DIR=$HOME/go" >> "$GITHUB_ENV"
+          echo "GO_BIN_DIR=$HOME/go/bin" >> "$GITHUB_ENV"
+
+      # 缓存 Go bin 目录（含 wails3 / sqlc / ent / golangci-lint / govulncheck 等
+      # go install 工具），key 含 go.mod 哈希，依赖版本变化时自动失效重装。
+      - name: 缓存 Go bin 目录
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.GO_BIN_DIR }}
+          key: gobin-${{ runner.os }}-${{ hashFiles('go.mod') }}
+          restore-keys: |
+            gobin-${{ runner.os }}-
+
+      # 把 GOBIN 加入 PATH，否则后续 wails3 / sqlc / golangci-lint / govulncheck 会 command not found。
+      - name: 将 GOBIN 加入 PATH
+        run: echo "${{ env.GO_BIN_DIR }}" >> "$GITHUB_PATH"
+
+      - name: 安装必要的工具
+        env:
+          GOPATH: ${{ env.GO_PATH_DIR }}
+          GOBIN: ${{ env.GO_BIN_DIR }}
+        run: make tool-deps
+
+      - name: 安装所有依赖
+        run: make deps
+
+        
+      - name: 生成 Wails TypeScript 绑定
+        env:
+          GOPATH: ${{ env.GO_PATH_DIR }}
+          GOBIN: ${{ env.GO_BIN_DIR }}
+        run: make bindings
+
+      - name: 生成图标资源
+        env:
+          GOPATH: ${{ env.GO_PATH_DIR }}
+          GOBIN: ${{ env.GO_BIN_DIR }}
+        run: make icons
+
+      - name: 同步版本号/应用名到构建资源
+        env:
+          GOPATH: ${{ env.GO_PATH_DIR }}
+          GOBIN: ${{ env.GO_BIN_DIR }}
+        run: make build-assets
+
+      - name: 生成 sqlc 代码
+        env:
+          GOPATH: ${{ env.GO_PATH_DIR }}
+          GOBIN: ${{ env.GO_BIN_DIR }}
+        run: make sqlc
+
+      - name: 合并所有 i18n 拆分文件到主文件
+        env:
+          GOPATH: ${{ env.GO_PATH_DIR }}
+          GOBIN: ${{ env.GO_BIN_DIR }}
+        run: make i18n
+
+      # main.go 用 `//go:embed all:frontend/dist` 嵌入前端构建产物；该目录被 .gitignore 忽略、
+      # 不进仓库，且检查类 CI 不执行 pnpm build，因此全新检出时不存在，会导致 go fix / go build /
+      # golangci-lint / go test 编译 main 包时因找不到嵌入目录而报
+      # `pattern all:frontend/dist: no matching files found`。这里创建占位目录（含一个文件让
+      # embed 的 all: 模式能匹配），仅用于让编译通过，不构建真实前端。
+      - name: 创建 frontend/dist 占位（供 //go:embed 解析）
+        run: mkdir -p frontend/dist && touch frontend/dist/index.html
+
+      - name: 格式化和修复（Go + Vue + TypeScript）
+        env:
+          GOPATH: ${{ env.GO_PATH_DIR }}
+          GOBIN: ${{ env.GO_BIN_DIR }}
+        run: make format
+
+      - name: 检查和测试（Go + Vue + TypeScript）
+        env:
+          GOPATH: ${{ env.GO_PATH_DIR }}
+          GOBIN: ${{ env.GO_BIN_DIR }}
+        run: make check

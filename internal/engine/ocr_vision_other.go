@@ -10,9 +10,7 @@ import (
 
 // VisionOCR 非 macOS 平台的占位类型。系统 OCR（Vision.framework）仅 macOS 可用，
 // 其它平台应使用 tesseract（NewTesseractOCR，需本机 tesseract 依赖）。
-type VisionOCR struct {
-	name string
-}
+type VisionOCR struct{}
 
 // NewVisionOCR 构造系统 OCR 引擎。仅 darwin 平台有真实实现（需传入 cfg 读取 OCR 参数），
 // 此占位供 engine_wrapper.go 在 Windows/Linux 下编译通过（签名与 darwin 版保持一致），
