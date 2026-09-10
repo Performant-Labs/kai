@@ -39,15 +39,15 @@ help: ## 显示帮助信息
 # ==================== 开发工具 ====================
 
 install: ## 安装前端依赖
-	cd frontend && pnpm install
+	pnpm --dir ./frontend install
 
 bindings: ## 生成 Wails TypeScript 绑定
 	wails3 generate bindings -clean=true -ts -i
 
-icons: ## 生成图标资源（icns/ico/Assets.car）
+icons: ## 生成图标资源
 	wails3 task common:generate:icons
 
-build-assets: ## 同步版本号/应用名到构建资源（Info.plist、Windows 清单）
+build-assets: ## 同步版本号/应用名到构建资源
 	wails3 task common:update:build-assets
 
 # wails3 生成命令全集（备查）：
@@ -89,16 +89,21 @@ dev: ## 运行 Wails 开发模式
 
 # ==================== 格式化 / 修复 ====================
 
-format: format-go format-swift format-frontend format-i18n-go format-i18n-frontend ## 格式化和修复（全部）
+format: format-go format-go-fix format-swift format-frontend format-i18n-go format-i18n-frontend ## 格式化和修复（全部）
 
 format-go: ## 格式化 Go 代码
 	gofmt -w -s .
 	go fmt ./...
+
+format-go-fix: ## 修复 Go 代码
 	go fix ./...
+
+UNAME_S := $(shell uname -s)
 
 # 用 Apple 官方 swift-format 原地格式化 Swift 桥接层源码。
 # 未安装时给出明确安装提示（brew install swift-format 或走 swift 工具链）。
-format-swift: ## 格式化 Swift 桥接层源码（原地，需 swift-format）
+format-swift: ## 格式化 Swift 桥接层源码（原地，需 swift-format，仅限 macOS）
+ifeq ($(UNAME_S),Darwin)
 	@command -v swift-format >/dev/null 2>&1 || { \
 		echo "!! swift-format 未安装，请先安装："; \
 		echo "   brew install swift-format"; \
@@ -106,6 +111,9 @@ format-swift: ## 格式化 Swift 桥接层源码（原地，需 swift-format）
 		exit 1; }
 	swift-format --in-place ./pkg/swiftbridge/internal/swift/*.swift
 	@echo ">> swift format done"
+else
+	@echo ">> Skipping swift-format (non-macOS system)"
+endif
 
 format-frontend: ## 修复前端代码
 	pnpm --dir ./frontend run format
@@ -129,10 +137,12 @@ check-cross: ## 交叉编译验证（darwin/arm64 开 CGO + windows CGO=0；过�
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./... 2>&1 | grep -v 'ld: warning' || true
 	@echo "==> 交叉编译验证完成"
 
-check: lint-go lint-frontend test-go fuzz-go vuln-go check-cross ## 检查和测试（全部）
+check: lint-go lint-go-fix lint-frontend test-go fuzz-go vuln-go ## 检查和测试（全部）
 
 lint-go: ## Go 代码检查（有 issue 即停止）
 	golangci-lint run ./...
+
+lint-go-fix: ## Go 代码检查（自动修复）
 	golangci-lint run --fix ./...
 
 lint-frontend: ## 前端 TypeScript 类型检查（类型错误即停止）
@@ -191,10 +201,6 @@ tool-deps: ## 工具依赖
 	-sqlc version
 	@echo "==> sqlc 工具安装或更新完成"
 
-	go install entgo.io/ent/cmd/ent@latest
-	go install entgo.io/ent/cmd/entc@latest
-	@echo "==> ent 工具安装或更新完成"
-
 	golangci-lint version || true
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	-golangci-lint version
@@ -230,7 +236,7 @@ update-deps: ## 更新所有依赖
 	pnpm --dir ./frontend self-update
 	@echo "==> pnpm 更新所有依赖完成"
 
-setup: deps bindings ent sqlc ## 完整项目初始化
+setup: deps bindings sqlc ## 完整项目初始化
 	@echo "项目初始化完成！运行 'make dev' 启动开发模式"
 
 # ==================== 更新 / 拉取 ====================

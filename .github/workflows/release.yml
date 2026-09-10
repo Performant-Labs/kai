@@ -617,8 +617,16 @@ jobs:
           fi
 
           # 生成下载表格
-          echo "## 下载" > release_body.md
-          echo "" >> release_body.md
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            echo "## ⚠️ 预发布版本" > release_body.md
+            echo "" >> release_body.md
+            echo "> 这是预发布版本，可能包含未充分测试的功能。" >> release_body.md
+            echo "> 如需稳定版本，请使用 [正式发布](https://github.com/${REPO}/releases)。" >> release_body.md
+            echo "" >> release_body.md
+          else
+            echo "## 下载" > release_body.md
+            echo "" >> release_body.md
+          fi
           echo "| 平台 | 架构 | 文件 | 大小 | 说明 |" >> release_body.md
           echo "|------|------|------|------|------|" >> release_body.md
 
