@@ -15,7 +15,7 @@ require (
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
 	github.com/openai/openai-go/v3 v3.56.0
 	github.com/spf13/viper v1.21.0
-	github.com/wailsapp/wails/v3 v3.0.0-beta.17
+	github.com/wailsapp/wails/v3 v3.0.0-beta.20
 	go.dtapp.net/library/contrib/http_log v1.0.13
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.41.0
@@ -49,7 +49,6 @@ require (
 	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
-	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/jezek/xgb v1.3.1 // indirect
 	github.com/jezek/xgbutil v0.0.0-20260124183602-9fd151d6a51a // indirect
 	github.com/lufia/plan9stats v0.0.0-20260802145828-341c2f0c90b5 // indirect
