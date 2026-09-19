@@ -6,16 +6,16 @@ ignore ./frontend
 
 require (
 	github.com/aiwaki/makc v0.2.0
-	github.com/anthropics/anthropic-sdk-go v1.72.0
+	github.com/anthropics/anthropic-sdk-go v1.74.0
 	github.com/ebitengine/purego v0.11.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-ole/go-ole v1.3.0
 	github.com/go-vgo/robotgo v1.0.2
 	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
-	github.com/openai/openai-go/v3 v3.61.0
+	github.com/openai/openai-go/v3 v3.63.1
 	github.com/spf13/viper v1.21.0
-	github.com/wailsapp/wails/v3 v3.0.0-beta.22
+	github.com/wailsapp/wails/v3 v3.0.0-beta.23
 	go.dtapp.net/library/contrib/http_log v1.0.13
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
@@ -25,8 +25,8 @@ require (
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.23.2 // indirect
-	cloud.google.com/go/compute/metadata v0.9.0 // indirect
+	cloud.google.com/go/auth v0.23.3 // indirect
+	cloud.google.com/go/compute/metadata v0.9.1 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -35,7 +35,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20260526185140-fb298caac7ca // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/gen2brain/shm v0.2.2 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -43,7 +43,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/s2a-go v0.1.9 // indirect
+	github.com/google/s2a-go v0.1.10 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.22 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.1 // indirect
@@ -58,7 +58,7 @@ require (
 	github.com/otiai10/gosseract/v2 v2.4.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
-	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
+	github.com/power-devops/perfstat v0.0.0-20260916203055-22a1a467d9f0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.8 // indirect
@@ -94,10 +94,10 @@ require (
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	google.golang.org/api v0.298.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260911204522-f61a6ca850bd // indirect
-	google.golang.org/grpc v1.83.2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260918162117-cecb64721679 // indirect
+	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.75.7 // indirect
+	modernc.org/libc v1.77.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )

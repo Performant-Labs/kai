@@ -231,9 +231,9 @@ update-deps: ## 更新所有依赖
 	@echo "==> Go 更新所有依赖完成"
 
 	pnpm --version
+	pnpm --dir ./frontend self-update
 # 	pnpm --dir ./frontend update
 	pnpm --dir ./frontend update --latest
-	pnpm --dir ./frontend self-update
 	@echo "==> pnpm 更新所有依赖完成"
 
 setup: deps bindings sqlc ## 完整项目初始化
