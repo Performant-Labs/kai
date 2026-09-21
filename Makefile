@@ -22,6 +22,10 @@ GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
 GITHUB_TOKEN ?=
 # CNB API Token
 CNB_TOKEN   ?=
+# PostHog Project ID
+POSTHOG_PROJECT_ID   ?=
+# PostHog Project token
+POSTHOG_TOKEN   ?=
 # 开发标记，true 为开发态，false 为正式构建
 DEV         ?= false
 
@@ -85,11 +89,11 @@ swift-build: ## 手动编译 Swift 桥接动态库（libkai_bridge.dylib，含�
 code-generate: sqlc i18n swift-build ##  代码生成 sqlc i18n swift
 
 dev: ## 运行 Wails 开发模式
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) DEV=$(DEV) wails3 dev -port $(PORT)
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 dev -port $(PORT)
 
 # ==================== 格式化 / 修复 ====================
 
-format: format-go format-go-fix format-swift format-frontend format-i18n-go format-i18n-frontend ## 格式化和修复（全部）
+format: format-go format-go-fix format-swift format-frontend format-i18n-go format-i18n-frontend format-json format-yaml format-markdown format-shell ## 格式化和修复（全部）
 
 format-go: ## 格式化 Go 代码
 	gofmt -w -s .
@@ -123,6 +127,60 @@ format-i18n-go: ## 格式化 Go 后端 i18n JSON 文件
 
 format-i18n-frontend: ## 格式化前端 i18n JSON 文件
 # 	pnpm --dir ./frontend exec prettier --write "$(CURDIR)/internal/i18n/*.json"
+
+# 格式化 JSON 文件
+.PHONY: format-json
+format-json:
+	@echo "[Format] 格式化 JSON 文件..."
+	@command -v jq >/dev/null 2>&1 && { \
+		echo "[Format] 使用 jq 格式化 JSON..."; \
+		for f in frontend/tsconfig.json $(shell find internal/i18n/locales -type f -name '*.json'); do \
+			[ -f "$$f" ] && jq . "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+		done; \
+		echo "[Format] JSON 格式化完成（jq）。" ; \
+	} || echo "⚠️  jq 未安装，跳过 JSON 格式化。"
+
+# 格式化 YAML 文件（.yaml/.yml）
+.PHONY: format-yaml
+format-yaml:
+	@echo "[Format] 格式化配置文件 (YAML)…"
+	@npx --yes prettier@latest \
+		--write \
+		--tab-width 2 \
+		--single-quote true \
+		--trailing-comma all \
+		--print-width 120 \
+		".cnb/**/*.{yaml,yml}" \
+		".cnb.yml" \
+		".github/**/*.{yaml,yml}" \
+		".golangci.yml" \
+		|| echo "⚠️  prettier 格式化失败，请确认 npx 可用"
+	@echo "[Format] YAML 格式化完成。"
+
+# 格式化 Markdown 文件（.md）
+.PHONY: format-markdown
+format-markdown:
+	@echo "[Format] 格式化文档 (Markdown)…"
+	@npx --yes prettier@latest \
+		--write \
+		--tab-width 2 \
+		--print-width 120 \
+		--prose-wrap preserve \
+		"**/*.md" \
+		|| echo "⚠️  prettier 格式化失败，请确认 npx 可用"
+	@echo "[Format] Markdown 格式化完成。"
+
+# 格式化 Shell 脚本（.sh）
+.PHONY: format-shell
+format-shell:
+	@echo "[Format] 格式化脚本 (Shell)…"
+	@command -v shfmt >/dev/null 2>&1 && { \
+		shfmt -w -i 2 -ci -bn -s -ln bash scripts/ pkg/swiftbridge/scripts/ ; \
+		echo "[Format] Shell 格式化完成（shfmt）。" ; \
+	} || { \
+		echo "⚠️  shfmt 未安装，跳过 Shell 格式化。"; \
+		echo "   提示: 可通过运行 'go install mvdan.cc/sh/v3/cmd/shfmt@latest' 安装"; \
+	}
 
 # ==================== 检查 / 测试 ====================
 
@@ -162,25 +220,25 @@ vuln-go: ## Go 依赖漏洞检查（发现漏洞即停止）
 # ==================== 构建打包 ====================
 
 darwin-build: ## [macOS] 编译正式二进制 -> bin/Kai（不打包成 .app）
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) DEV=$(DEV) wails3 task darwin:build
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task darwin:build
 
 darwin-package: ## [macOS] 正式打包 -> bin/Kai.app（打包成 .app）
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) DEV=$(DEV) wails3 task darwin:package
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task darwin:package
 
 darwin-package-dmg: ## [macOS] 打包并生成 bin/Kai.dmg 安装包
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) DEV=$(DEV) wails3 task darwin:package:dmg
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task darwin:package:dmg
 
 windows-build: ## [Windows] 编译正式二进制 -> bin/Kai.exe（不打包）
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) DEV=$(DEV) wails3 task windows:build
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task windows:build
 
 windows-package: ## [Windows] 正式打包 -> bin/Kai.exe + 安装包（nsis/msix）
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) DEV=$(DEV) wails3 task windows:package
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task windows:package
 
 linux-build: ## [Linux] 编译正式二进制（本地联调用）
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) DEV=$(DEV) wails3 task linux:build
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task linux:build
 
 linux-package: ## [Linux] 正式打包 -> bin/Kai（本地联调用）
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) DEV=$(DEV) wails3 task linux:package
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task linux:package
 
 # ==================== 其他 ====================
 

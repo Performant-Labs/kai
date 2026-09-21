@@ -15,6 +15,8 @@ import "path/filepath"
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.Dev=false
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.GithubToken=xxx
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.CnbToken=xxx
+//	-X cnb.cool/dtapp/kai/internal/buildinfo.PosthogToken=phc_xxx
+//	-X cnb.cool/dtapp/kai/internal/buildinfo.PosthogProjectID=12345
 var (
 	Version   = "dev"
 	BuildTime = "unknown"
@@ -25,6 +27,11 @@ var (
 	CnbToken    = ""
 	// GitCommit 构建时注入的提交哈希（CI 通过 -ldflags 注入，本地为空）。
 	GitCommit = ""
+	// PosthogToken PostHog 项目公开 Token（客户端侧可接受暴露，用作 SDK 上报鉴权）。
+	// 本地 dev 未注入则为空；analytics 包会据此 + 非 dev 构建 + 用户开关共同决定是否上报。
+	PosthogToken = ""
+	// PosthogProjectID PostHog 项目 ID（仅作元数据/分组标识，不参与 SDK 鉴权；可为空）。
+	PosthogProjectID = ""
 )
 
 // IsDev 是否为开发模式

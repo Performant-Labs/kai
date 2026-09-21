@@ -262,7 +262,9 @@ tasks:
     cmds:
       - '{{if eq .OBFUSCATED "true"}}garble {{.GARBLE_ARGS}} build{{else}}go build{{end}} {{.BUILD_FLAGS}} -o "{{.BIN_DIR}}/{{.APP_NAME}}-server{{exeExt}}"'
     vars:
-      BUILD_FLAGS: '-tags server{{if eq .DEV "true"}}{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -buildvcs=false -gcflags=all="-l"{{else}},production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s"{{end}}'
+      POSTHOG_TOKEN: '{{.POSTHOG_TOKEN}}'
+      POSTHOG_PROJECT_ID: '{{.POSTHOG_PROJECT_ID}}'
+      BUILD_FLAGS: '-tags server{{if eq .DEV "true"}}{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -buildvcs=false -gcflags=all="-l"{{else}},production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s{{if .POSTHOG_TOKEN}} -X cnb.cool/dtapp/kai/internal/buildinfo.PosthogToken={{.POSTHOG_TOKEN}}{{end}}{{if .POSTHOG_PROJECT_ID}} -X cnb.cool/dtapp/kai/internal/buildinfo.PosthogProjectID={{.POSTHOG_PROJECT_ID}}{{end}}"{{end}}'
 
   run:server:
     summary: Builds and runs a development server (DEV=true)

@@ -5,6 +5,7 @@
   import { userLang } from '../stores/ui';
   import { rootStyle } from '../stores/theme';
   import { rootStyleToStyle } from '../utils/style';
+  import { track } from '../utils/analytics';
   import { Lang, type LangCode } from '../constants/lang';
   import GeneralTab from './settings/GeneralTab.svelte';
   import EnginesTab from './settings/EnginesTab.svelte';
@@ -53,6 +54,7 @@
 
   onMount(() => {
     curLang = get(userLang);
+    track('settings_opened', { tab });
     return userLang.subscribe((l) => (curLang = l));
   });
 </script>

@@ -8,11 +8,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
+	"cnb.cool/dtapp/kai/internal/analytics"
 	"cnb.cool/dtapp/kai/internal/configstore"
 	"cnb.cool/dtapp/kai/internal/engine"
 	"cnb.cool/dtapp/kai/internal/events"
@@ -20,6 +20,7 @@ import (
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
 	"cnb.cool/dtapp/kai/internal/settings"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // Service 翻译 / OCR 编排领域服务。
@@ -183,6 +184,7 @@ func (s *Service) translateWithEngine(reg engine.Translator, engineName string, 
 func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMultiResult, error) {
 	all := s.registry.AllEngines()
 	started := 0
+	engines := make([]string, 0, len(all))
 	for _, meta := range all {
 		// 仅并行已开启的「翻译」引擎，跳过 OCR 引擎。
 		if meta.Kind != engine.KindTranslator {
@@ -192,12 +194,14 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 		if !ok {
 			continue
 		}
+		engines = append(engines, meta.Name)
 		started++
 		// 每个引擎独立 goroutine，互不阻塞；完成后通过应用级事件推给前端。
 		go func(reg engine.Translator, name string) {
 			res, err := s.translateWithEngine(reg, name, req)
 			if err != nil {
 				slog.Error(i18n.T("log.translate_multi_engine_failed"), slog.String("engine", name), slog.Any("error", err))
+				analytics.Error("translate_failed", map[string]any{"engine": name})
 				return
 			}
 			s.saveHistory(res)
@@ -205,6 +209,15 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 				s.app.Event.Emit(events.EventTranslateResult, *res)
 			}
 		}(reg, meta.Name)
+	}
+	if started > 0 {
+		analytics.Track(analytics.EventTranslateInput, map[string]any{
+			"engine":     strings.Join(engines, ","),
+			"src_lang":   string(req.From),
+			"dst_lang":   string(req.To),
+			"len_bucket": analytics.LenBucket(len(req.Text)),
+			"trigger":    "manual",
+		})
 	}
 	return &model.TranslateMultiResult{Count: started}, nil
 }
@@ -281,6 +294,7 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	ocrRes, err := s.TriggerOcr(ocrName, img)
 	if err != nil {
 		slog.Error(i18n.T("log.screenshot_ocr_failed"), slog.String("ocr_engine", ocrName), slog.Any("error", err))
+		analytics.Error("ocr_failed", map[string]any{"ocr_provider": ocrName})
 		// OCR 失败（含超时）必须把错误投递前端，否则页面会一直停在"正在识别文字…"转圈。
 		if s.app != nil {
 			s.app.Event.Emit(events.EventScreenshotOCR, model.ScreenshotResult{
@@ -329,7 +343,26 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 		To:           to,
 	}
 	slog.Debug(i18n.T("log.screenshot_assemble_done"), slog.Int("image_len", len(result.Image)), slog.Int("text_len", len(result.Text)), slog.Int("translations", len(result.Translations)))
+	analytics.Track(analytics.EventTranslateScreenshot, map[string]any{
+		"engine":       strings.Join(s.enabledTranslatorNames(), ","),
+		"ocr_provider": ocrName,
+		"ocr_retried":  false,
+	})
 	return &result, nil
+}
+
+// enabledTranslatorNames 返回当前已启用且可取的翻译引擎名（供匿名统计上报）。
+func (s *Service) enabledTranslatorNames() []string {
+	names := make([]string, 0)
+	for _, meta := range s.registry.AllEngines() {
+		if meta.Kind != engine.KindTranslator {
+			continue
+		}
+		if _, ok := s.registry.GetTranslator(meta.Name); ok {
+			names = append(names, meta.Name)
+		}
+	}
+	return names
 }
 
 // ScreenshotRetranslate 改语言后重新翻译：复用指定 session 最近一次截图 OCR 的原文与截图，

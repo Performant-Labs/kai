@@ -26,7 +26,7 @@ case "${KAI_BRIDGE_TARGET:-__auto__}" in
     case "${GOARCH:-$(go env GOARCH 2>/dev/null)}" in
       amd64) BRIDGE_ARCH="x86_64" ;;
       arm64) BRIDGE_ARCH="arm64" ;;
-      *)     BRIDGE_ARCH="arm64" ;;
+      *) BRIDGE_ARCH="arm64" ;;
     esac
     TARGET="${BRIDGE_ARCH}-apple-macosx${SDK_MIN}"
     ;;
@@ -54,22 +54,22 @@ echo ">> building ${A_OUT} + ${DYLIB_OUT} for $TARGET"
 # 又链接动态库 .dylib（swiftc -emit-library + -undefined dynamic_lookup，
 # framework 符号在运行时由宿主进程 Kai.app 提供）。
 swiftc -c -parse-as-library $(ls *.swift | grep -v '\.bak$') \
-    -target "$TARGET" \
-    -O
+  -target "$TARGET" \
+  -O
 
 ar rcs "$A_OUT" *.o
 
 swiftc -emit-library \
-    -target "$TARGET" \
-    -Xlinker -undefined -Xlinker dynamic_lookup \
-    -o "${DYLIB_OUT}" \
-    *.o \
-    -framework Translation \
-    -framework ApplicationServices \
-    -framework AppKit \
-    -framework Vision \
-    -framework CoreGraphics \
-    -framework Foundation
+  -target "$TARGET" \
+  -Xlinker -undefined -Xlinker dynamic_lookup \
+  -o "${DYLIB_OUT}" \
+  *.o \
+  -framework Translation \
+  -framework ApplicationServices \
+  -framework AppKit \
+  -framework Vision \
+  -framework CoreGraphics \
+  -framework Foundation
 
 # 同步 .a 与 dylib 到 pkg/swiftbridge（纯 Go 动态加载器目录），避免「重编后 app 仍是旧代码」的疑虑：
 # 改 Swift 后只需重编本脚本，pkg/swiftbridge 即持有最新 .a / dylib，运行时 Dlopen 加载即为最新。
