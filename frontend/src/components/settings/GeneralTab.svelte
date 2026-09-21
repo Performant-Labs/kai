@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { t, locale, resolveLang } from '../../i18n';
   import { userLang } from '../../stores/ui';
   import { themeMode, setTheme } from '../../stores/theme';
@@ -8,14 +9,27 @@
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
   import { Lang, type LangCode } from '../../constants/lang';
   import { THEME, type ThemeMode } from '../../constants/theme';
+  import { track } from '../../utils/analytics';
 
   let { curLang = $bindable<LangCode>(Lang.ZHCN) }: { curLang: LangCode } = $props();
+
+  // 匿名统计开关：初始值从配置读取，变更经 SaveConfig 落盘（Go 侧 analytics 据此决定是否上报）。
+  let analyticsEnabled = $state(false);
 
   const themeOptions = $derived.by<{ mode: ThemeMode; label: string }[]>(() => [
     { mode: THEME.Auto, label: t('settings.themeAuto') },
     { mode: THEME.Light, label: t('settings.themeLight') },
     { mode: THEME.Dark, label: t('settings.themeDark') },
   ]);
+
+  onMount(async () => {
+    try {
+      const cfg = await GetConfig();
+      if (cfg) analyticsEnabled = cfg.analytics_enabled ?? false;
+    } catch {
+      /* 忽略读取失败，回退默认关 */
+    }
+  });
 
   async function changeLang(l: LangCode) {
     curLang = l; // 下拉高亮保留原始 mode（auto/zh-CN/en-US）
@@ -31,6 +45,18 @@
 
   async function changeTheme(m: ThemeMode) {
     await setTheme(m);
+  }
+
+  async function toggleAnalytics(e: Event) {
+    const enabled = (e.target as HTMLInputElement).checked;
+    analyticsEnabled = enabled;
+    try {
+      const cfg = (await GetConfig()) ?? ({} as any);
+      await SaveConfig({ ...cfg, analytics_enabled: enabled });
+      track('feature_toggled', { feature: 'anonymous_analytics', enabled });
+    } catch (err) {
+      console.error(t('log.generalSaveAnalyticsFailed'), err);
+    }
   }
 </script>
 
@@ -69,4 +95,13 @@
       </button>
     {/each}
   </div>
+</div>
+
+<div class="u-card u-card--panel p-5">
+  <div class="mb-1 text-sm font-medium">{t('settings.analytics')}</div>
+  <p class="u-muted mb-3 text-xs">{t('settings.analyticsHint')}</p>
+  <label class="u-switch" aria-label={t('settings.analytics')}>
+    <input type="checkbox" checked={analyticsEnabled} onchange={toggleAnalytics} />
+    <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
+  </label>
 </div>
