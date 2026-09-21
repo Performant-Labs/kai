@@ -121,5 +121,16 @@
   "log.screenshot_prebuild_after_show": "[截图窗口预建] Show 后 可见={{.Visible}} 聚焦={{.Focused}}",
   "log.screenshot_prebuild_after_hide": "[截图窗口预建] Hide 后 可见={{.Visible}} 聚焦={{.Focused}}",
   "log.swiftbridge_unavailable": "[动态桥接] Swift 桥接不可用（动态库未加载），功能降级",
-  "log.swiftbridge_loaded": "[动态桥接] Swift 桥接已加载"
+  "log.swiftbridge_loaded": "[动态桥接] Swift 桥接已加载",
+  "log.analytics_init_client_failed": "初始化 PostHog 客户端失败",
+  "log.analytics_state": "匿名使用统计状态",
+  "log.analytics_reason_no_token": "未配置上报 token（本地/dev 构建）",
+  "log.analytics_reason_no_device": "设备 ID 不可用",
+  "log.analytics_reason_dev": "dev 构建（未开启调试上报）",
+  "log.analytics_reason_user_off": "用户已关闭",
+  "log.analytics_reason_on": "已开启",
+  "log.analytics_track_failed": "上报事件失败",
+  "log.analytics_identify_failed": "上报身份属性失败",
+  "log.analytics_write_device_id_failed": "写入设备 ID 失败",
+  "log.analytics_device_id_failed": "获取机器 ID 失败，已关闭匿名统计上报"
 }

@@ -128,7 +128,6 @@ jobs:
       - name: 安装所有依赖
         run: make deps
 
-        
       - name: 生成 Wails TypeScript 绑定
         env:
           GOPATH: ${{ env.GO_PATH_DIR }}

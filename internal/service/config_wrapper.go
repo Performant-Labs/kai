@@ -92,6 +92,7 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	cur.ExecKeys = cfg.ExecKeys
 	cur.AutoClipboard = cfg.AutoClipboard
 	cur.CopyKeySnapshot = cfg.CopyKeySnapshot
+	cur.AnalyticsEnabled = cfg.AnalyticsEnabled
 	if err := w.settingsSvc.Save(); err != nil {
 		return err
 	}

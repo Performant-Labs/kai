@@ -11,11 +11,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/events"
-	"github.com/wailsapp/wails/v3/pkg/services/notifications"
-	"github.com/wailsapp/wails/v3/pkg/updater"
-
+	"cnb.cool/dtapp/kai/internal/analytics"
 	"cnb.cool/dtapp/kai/internal/buildinfo"
 	"cnb.cool/dtapp/kai/internal/configstore"
 	"cnb.cool/dtapp/kai/internal/engine"
@@ -35,6 +31,10 @@ import (
 	"cnb.cool/dtapp/kai/internal/webview"
 	"cnb.cool/dtapp/kai/pkg/swiftbridge"
 	kupdater "cnb.cool/dtapp/kai/pkg/wails-updater-providers"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
+	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
 //go:embed all:frontend/dist
@@ -142,6 +142,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载设置失败: %v", err)
 	}
+	// 初始化匿名统计（加载设备 ID；是否实际上报由开关 + 构建模式在 Track 时判定）。
+	analytics.Init(dataDir, settingsService)
 	logCfg := settingsService.Get().Log
 
 	// 更新器 Provider 句柄（初始化段赋值）；运行时语言/主题变更时通过
@@ -561,9 +563,25 @@ func main() {
 		}
 	}
 
-	// 应用退出：清理 httplog 资源（停止定时清理 + 关闭数据库）。
+	// 前端匿名统计事件上报：前端 UI 事件（设置页打开、开关切换）经此事件转交 Go 统一上报，
+	// 避免在前端 webview 里加载 posthog-js，前后端共用同一匿名设备 ID。
+	app.Event.On("kai:analytics:track", func(e *application.CustomEvent) {
+		m, ok := e.Data.(map[string]any)
+		if !ok {
+			return
+		}
+		ev, _ := m["event"].(string)
+		if ev == "" {
+			return
+		}
+		props, _ := m["props"].(map[string]any)
+		analytics.Track(ev, props)
+	})
+
+	// 应用退出：清理 httplog 资源（停止定时清理 + 关闭数据库），并冲刷统计上报。
 	app.OnShutdown(func() {
 		appSvc.ServiceShutdown()
+		analytics.Close()
 	})
 
 	// 系统主题变更（Wails3 官方 events.Common.ThemeChanged，跨平台由原生实现）。

@@ -46,6 +46,11 @@ type Settings struct {
 	Proxy ProxyConfig `json:"proxy" mapstructure:"proxy"`
 	// Updater 自动更新配置（仅用户可决策项，token/provider 由代码固定）。
 	Updater UpdaterConfig `json:"updater" mapstructure:"updater"`
+	// AnalyticsEnabled 匿名使用统计开关（默认关闭，opt-in）。开启后不初始化 PostHog client、不上报任何数据。
+	// 配置文件与前端 UI 共用此字段（Go 读 settings.json，前端经 GetConfig/SaveConfig 读写）。
+	AnalyticsEnabled bool `json:"analytics_enabled" mapstructure:"analytics_enabled"`
+	// AnalyticsInstalled 是否已发送过 app_installed（首装事件仅上报一次）。
+	AnalyticsInstalled bool `json:"analytics_installed" mapstructure:"analytics_installed"`
 	// DNSConfigs 自定义 DNS 解析配置列表。
 	DNSConfigs []DNSConfig `json:"dns_configs" mapstructure:"dns_configs"`
 	// Path 配置文件路径（不持久化到文件，json:"-"）。
@@ -184,6 +189,9 @@ func DefaultSettings() *Settings {
 		Log:     LogConfig{Level: "info", RetentionDays: 30, Compress: true},
 		Proxy:   ProxyConfig{Enabled: false, Protocol: "http", Port: 8080},
 		Updater: UpdaterConfig{Prerelease: true},
+		// 匿名统计默认关闭（隐私优先，opt-in）；用户可在设置页主动开启。
+		// dev 构建与未配置 key 时即便开启也不会实际上报。
+		AnalyticsEnabled: false,
 	}
 }
 
@@ -268,6 +276,7 @@ func (s *Service) setDefaults() {
 	s.v.SetDefault("log", def.Log)
 	s.v.SetDefault("proxy", def.Proxy)
 	s.v.SetDefault("updater", def.Updater)
+	s.v.SetDefault("analytics_enabled", def.AnalyticsEnabled)
 }
 
 // startWatching 监听配置文件变更（防抖 500ms）
@@ -340,6 +349,8 @@ func (s *Service) writeConfig() error {
 	w.Set("log", s.cfg.Log)
 	w.Set("proxy", s.cfg.Proxy)
 	w.Set("updater", s.cfg.Updater)
+	w.Set("analytics_enabled", s.cfg.AnalyticsEnabled)
+	w.Set("analytics_installed", s.cfg.AnalyticsInstalled)
 
 	return w.WriteConfigAs(s.filePath)
 }

@@ -226,6 +226,17 @@ export interface Settings {
     "updater": UpdaterConfig;
 
     /**
+     * AnalyticsEnabled 匿名使用统计开关（默认开启）。关闭后不初始化 PostHog client、不上报任何数据。
+     * 配置文件与前端 UI 共用此字段（Go 读 settings.json，前端经 GetConfig/SaveConfig 读写）。
+     */
+    "analytics_enabled": boolean;
+
+    /**
+     * AnalyticsInstalled 是否已发送过 app_installed（首装事件仅上报一次）。
+     */
+    "analytics_installed": boolean;
+
+    /**
      * DNSConfigs 自定义 DNS 解析配置列表。
      */
     "dns_configs": DNSConfig[] | null;

@@ -20,7 +20,7 @@ branch:
             description: 是否为预发布版本
             required: false
             type: switch
-            default: "false"
+            default: 'false'
       - name: 发布 Nightly
         description: 从 GitHub 下载 nightly 构建产物并发布到 CNB（预发布）
         event: web_trigger_nightly

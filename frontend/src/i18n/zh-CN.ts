@@ -73,6 +73,9 @@ export const zh = {
     themeAuto: '跟随系统',
     themeLight: '浅色',
     themeDark: '深色',
+    analytics: '匿名统计',
+    analyticsHint:
+      '发送匿名使用数据（翻译次数、功能使用等），帮助我们改进产品。数据不含任何个人信息，可随时关闭。',
     engines: '引擎',
     enginesTitle: '翻译引擎',
     engineList: '引擎列表',
@@ -313,6 +316,7 @@ export const zh = {
     engineLoadOptionalListFailed: '加载可选引擎列表失败',
     engineLoadAddFieldsFailed: '[引擎] 加载新增引擎字段失败',
     generalSaveLangFailed: '[通用] 保存语言设置失败',
+    generalSaveAnalyticsFailed: '[通用] 保存匿名统计开关失败',
     shortcutCheckAccessibilityFailed: '[快捷键] 检测辅助功能授权失败',
     shortcutOpenAccessibilityFailed: '[快捷键] 打开辅助功能设置失败',
     shortcutCheckScreenRecordingFailed: '[快捷键] 检测屏幕录制授权失败',

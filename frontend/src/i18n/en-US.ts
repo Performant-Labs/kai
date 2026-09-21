@@ -76,6 +76,9 @@ export const en: Dict = {
     themeAuto: 'System',
     themeLight: 'Light',
     themeDark: 'Dark',
+    analytics: 'Anonymous analytics',
+    analyticsHint:
+      'Send anonymous usage data (translation counts, feature usage, etc.) to help us improve. No personal data is collected, and you can disable it anytime.',
     engines: 'Engines',
     enginesTitle: 'Translation Engines',
     engineList: 'Engine list',
@@ -323,6 +326,7 @@ export const en: Dict = {
     engineLoadOptionalListFailed: 'Failed to load optional engine list',
     engineLoadAddFieldsFailed: '[engine] Failed to load add-engine fields',
     generalSaveLangFailed: '[general] Failed to save language settings',
+    generalSaveAnalyticsFailed: '[general] Failed to save anonymous analytics toggle',
     shortcutCheckAccessibilityFailed: '[shortcut] Failed to check Accessibility permission',
     shortcutOpenAccessibilityFailed: '[shortcut] Failed to open Accessibility settings',
     shortcutCheckScreenRecordingFailed: '[shortcut] Failed to check Screen Recording permission',

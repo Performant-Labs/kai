@@ -121,5 +121,16 @@
   "log.screenshot_prebuild_after_show": "[screenshot-prebuild] after Show  visible={{.Visible}} focused={{.Focused}}",
   "log.screenshot_prebuild_after_hide": "[screenshot-prebuild] after Hide  visible={{.Visible}} focused={{.Focused}}",
   "log.swiftbridge_unavailable": "[dynamic-bridge] Swift bridge unavailable (dylib not loaded), feature degraded",
-  "log.swiftbridge_loaded": "[dynamic-bridge] Swift bridge loaded"
+  "log.swiftbridge_loaded": "[dynamic-bridge] Swift bridge loaded",
+  "log.analytics_init_client_failed": "Failed to init PostHog client",
+  "log.analytics_state": "Anonymous analytics state",
+  "log.analytics_reason_no_token": "no report token configured (local/dev build)",
+  "log.analytics_reason_no_device": "device ID unavailable",
+  "log.analytics_reason_dev": "dev build (debug upload not enabled)",
+  "log.analytics_reason_user_off": "disabled by user",
+  "log.analytics_reason_on": "enabled",
+  "log.analytics_track_failed": "Failed to report event",
+  "log.analytics_identify_failed": "Failed to report identify",
+  "log.analytics_write_device_id_failed": "Failed to write device ID",
+  "log.analytics_device_id_failed": "Failed to get machine ID, anonymous analytics disabled"
 }

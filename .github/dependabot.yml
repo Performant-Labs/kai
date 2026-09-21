@@ -1,21 +1,20 @@
 version: 2
 
 updates:
-
   # Go 依赖
-  - package-ecosystem: "gomod"
-    directory: "/"
+  - package-ecosystem: 'gomod'
+    directory: '/'
     schedule:
-      interval: "daily"
+      interval: 'daily'
     labels:
-      - "dependencies"
-      - "go"
+      - 'dependencies'
+      - 'go'
 
   # 前端依赖
-  - package-ecosystem: "npm"
-    directory: "/frontend"
+  - package-ecosystem: 'npm'
+    directory: '/frontend'
     schedule:
-      interval: "daily"
+      interval: 'daily'
     labels:
-      - "dependencies"
-      - "frontend"
+      - 'dependencies'
+      - 'frontend'

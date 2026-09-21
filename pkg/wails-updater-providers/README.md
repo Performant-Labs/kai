@@ -110,9 +110,9 @@ kupdater.SetUpdaterLocaleTheme(app)
 BYO 模式下框架**不**在用户关闭窗口时 show/hide 我们的窗口，而是靠本包监听以下
 自定义事件自行处理显隐（见 `updater_window.go` 的 `registerCloseHandler`）：
 
-| 事件名 | 触发时机 | 库行为 |
-| --- | --- | --- |
-| `wails:updater:user:cancel` | 用户点「取消」 | 隐藏更新窗口 |
+| 事件名                      | 触发时机             | 库行为       |
+| --------------------------- | -------------------- | ------------ |
+| `wails:updater:user:cancel` | 用户点「取消」       | 隐藏更新窗口 |
 | `wails:updater:user:skip`   | 用户点「跳过此版本」 | 隐藏更新窗口 |
 | `wails:updater:user:remind` | 用户点「稍后提醒我」 | 隐藏更新窗口 |
 
@@ -122,13 +122,14 @@ BYO 模式下框架**不**在用户关闭窗口时 show/hide 我们的窗口，�
 > 注意：框架在 `WindowClosing` 时有一个内部监听器会**无条件销毁**窗口并从注册表
 > 移除（不读 `event.Cancelled`），因此 `Close()` 被实现为 no-op——窗口显隐完全由
 > 本包控制（显示走 `ShowUpdaterWindow`、隐藏走用户关闭事件或 `WindowClosing →
-> Hide`），避免「重开 session 误藏窗口」导致一闪而过。
-    // 监听更新就绪事件。
-    app.Event.On(updater.EventUpdateReady, func(e *application.CustomEvent) {
-        slog.Info("update ready")
-    })
-}
-```
+Hide`），避免「重开 session 误藏窗口」导致一闪而过。
+> // 监听更新就绪事件。
+> app.Event.On(updater.EventUpdateReady, func(e *application.CustomEvent) {
+> slog.Info("update ready")
+> })
+> }
+
+````
 
 ## Options 字段说明
 
@@ -172,7 +173,7 @@ BYO 模式下框架**不**在用户关闭窗口时 show/hide 我们的窗口，�
 
 ```go
 updOpts.AssetMatcher = kupdater.NewUpdaterAssetMatcher()
-```
+````
 
 ## 校验和
 
