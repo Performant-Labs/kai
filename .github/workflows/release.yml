@@ -87,6 +87,10 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
       CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+      # 匿名统计（PostHog）构建期注入：经 Task 的 {{.POSTHOG_TOKEN}} / {{.POSTHOG_PROJECT_ID}}
+      # 注入到 -ldflags。未配置对应 secret 时为空，生产包不注入 token（analytics 自动 no-op）。
+      POSTHOG_TOKEN: ${{ secrets.POSTHOG_TOKEN }}
+      POSTHOG_PROJECT_ID: ${{ secrets.POSTHOG_PROJECT_ID }}
       # NSIS 官方便携版版本号：引用 input，留空兜底默认 3.12；脚本只读此 env，单一真值来源。
       NSIS_VERSION: ${{ inputs.nsis_version || '3.12' }}
       # Windows Authenticode 签名所需的证书（未配置对应 secret 时签名步骤自动跳过）
@@ -358,7 +362,7 @@ jobs:
         run: |
           sed -i.bak -E "s/^([[:space:]]*)version:[[:space:]]*\"[^\"]*\"/\1version: \"${{ needs.prepare.outputs.version }}\"/" build/config.yml && rm -f build/config.yml.bak
           echo "✔ build/config.yml 版本号已同步为 ${{ needs.prepare.outputs.version }}"
-          
+
       # 生成图标资源（icns/ico/Assets.car）。所有平台均执行。
       - name: 生成图标资源
         shell: bash
@@ -387,7 +391,7 @@ jobs:
           if [ -n "$EXTRA_TAGS" ]; then
             EXTRA_ARGS="EXTRA_TAGS=$EXTRA_TAGS"
           fi
-          BUILD_ARGS="PRODUCTION=true BUILD_TIME=${{ needs.prepare.outputs.build_time }} VERSION=${{ inputs.version }} GIT_COMMIT=${{ needs.prepare.outputs.git_commit }} GITHUB_TOKEN=$UPDATER_TOKEN CNB_TOKEN=$CNB_TOKEN $CGO_FLAG $EXTRA_ARGS"
+          BUILD_ARGS="PRODUCTION=true BUILD_TIME=${{ needs.prepare.outputs.build_time }} VERSION=${{ inputs.version }} GIT_COMMIT=${{ needs.prepare.outputs.git_commit }} GITHUB_TOKEN=$UPDATER_TOKEN CNB_TOKEN=$CNB_TOKEN POSTHOG_TOKEN=$POSTHOG_TOKEN POSTHOG_PROJECT_ID=$POSTHOG_PROJECT_ID $CGO_FLAG $EXTRA_ARGS"
           echo "BUILD_ARGS=$BUILD_ARGS" >> "$GITHUB_ENV"
           echo "BUILD_ARGS=$BUILD_ARGS"
 

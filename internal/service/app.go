@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"log/slog"
+	"runtime"
 
-	"github.com/wailsapp/wails/v3/pkg/application"
-
+	"cnb.cool/dtapp/kai/internal/analytics"
+	"cnb.cool/dtapp/kai/internal/buildinfo"
 	"cnb.cool/dtapp/kai/internal/configstore"
 	"cnb.cool/dtapp/kai/internal/engine"
 	"cnb.cool/dtapp/kai/internal/events"
@@ -17,6 +18,7 @@ import (
 	"cnb.cool/dtapp/kai/internal/settings"
 	"cnb.cool/dtapp/kai/internal/translate"
 	"cnb.cool/dtapp/kai/internal/useragent"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // version 应用版本（由构建注入）
@@ -143,6 +145,19 @@ func (s *AppService) ServiceStartup(_ context.Context, _ application.ServiceOpti
 
 	// 初始化语言
 	i18n.SetLocale(s.settingsSvc.Get().Language)
+
+	// 启动即上报匿名使用统计（首启额外发 app_installed；设备级属性经 Identify 继承）。
+	// dev 构建 / 未配置 key / 用户关闭开关时，analytics 内部自动 no-op。
+	if s.settingsSvc != nil && s.settingsSvc.Get() != nil {
+		analytics.AppStarted(
+			buildinfo.Version,
+			runtime.GOOS,
+			"", // os_version：预留，按需补 darwin/win 版本读取
+			s.settingsSvc.Get().Language,
+			"release", // channel：当前统一为 release（prod）；后续如需区分分发渠道在此扩展
+			analytics.IsFirstLaunch(),
+		)
+	}
 
 	// 辅助功能授权提示（darwin 下若未授权，复制键/模拟按键不会生效）
 	if !s.isAccessibilityEnabled() {
