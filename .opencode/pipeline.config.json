@@ -1,0 +1,19 @@
+{
+  "project": "kai",
+  "description": "Menu-bar translation app (Wails: Go backend, Svelte UI, Swift system bridge).",
+  "test": { "unit": { "command": ["sh", "-c", "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... -count=1"], "timeoutMs": 900000 } },
+  "paths": {
+    "test": ["**/*_test.go", "**/testdata/**"],
+    "production": ["internal/**", "pkg/**", "main.go", "frontend/src/**", "**/*.swift"]
+  },
+  "toolchain": [
+    { "name": "go", "command": ["go", "version"], "versionRegex": "go(\\d+\\.\\d+(?:\\.\\d+)?)",
+      "pin": { "sources": [{ "file": "go.mod", "regex": "^go\\s+(\\d+(?:\\.\\d+){1,2})" }], "compare": "at-least" } },
+    { "name": "swiftc", "command": ["swiftc", "--version"], "versionRegex": "Swift version (\\d+\\.\\d+(?:\\.\\d+)?)", "hint": "install Xcode command line tools" }
+  ],
+  "hooks": { "required": false, "setupHint": "run the project's hook setup script" },
+  "secretScan": { "required": false, "command": ["gitleaks", "version"], "hint": "brew install gitleaks" },
+  "handoffs": { "dir": "docs/handoffs", "trackedProbe": "decisions.md" },
+  "worktree": { "dir": ".worktrees", "basePort": 9000, "linkDirs": [] },
+  "gateProvider": null
+}
