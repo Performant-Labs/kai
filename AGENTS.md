@@ -1,4 +1,4 @@
-# AGENTS.md — 0002-install-opencode-pipeline (OpenCode)
+# AGENTS.md — kai (OpenCode)
 
 Agent instructions for OpenCode in this repo. (Claude Code reads `CLAUDE.md` instead; this file
 is the OpenCode equivalent and is what the `/pipeline` command and the `pipeline_preflight`
@@ -39,7 +39,7 @@ the plugin wins.
 with **every** check result — do not run the checks yourself.
 
 - **Every check runs.** One failing row never aborts the rest; the payload lists all of them.
-- **Pre-flight never runs the product suite** (`go test ./... -count=1`) and never fires a commit hook.
+- **Pre-flight never runs the product suite** (`test.unit.command` in `.opencode/pipeline.config.json`) and never fires a commit hook.
   It checks wiring and reachability only. If the gate model is a self-hosted endpoint and it is
   down, pre-flight **fails closed** — there is no silent fallback to another provider.
 - A `PRE-FLIGHT: FAIL` payload is a **hard stop**: do not begin survey-brief until each failing
@@ -48,9 +48,9 @@ with **every** check result — do not run the checks yourself.
 ### Configuration
 
 Everything project-specific lives in `.opencode/pipeline.config.json` (test commands, toolchains,
-path globs, handoffs dir, worktree naming). Role models live in `opencode.json`
-(`agent.<role>.model`); they are reported verbatim by pre-flight and never reconciled against
-Claude's model tiers. The role agents in `.opencode/agents/` are **generated** — edit
+path globs, handoffs dir, worktree naming). Role models are **not** committed here: they come from
+the OpenCode configuration of the environment that runs the agents; pre-flight reports the resolved
+role→model mapping verbatim and never reconciles it against Claude's model tiers. The role agents in `.opencode/agents/` are **generated** — edit
 `docs/agent-overlays/<role>.md` and re-run `node ~/Projects/playbook/workflow/opencode/install.mjs
 --project . --sync-agents`, never the generated files.
 
@@ -71,5 +71,5 @@ never silently omitted.
 
 ## Verification
 
-The authoritative suite is `go test ./... -count=1`. It runs in the **t-red** and **t-green** phases (the
-plugin reads its exit code), never in pre-flight.
+The authoritative suite is `test.unit.command` in `.opencode/pipeline.config.json`. It runs in the
+**t-red** and **t-green** phases (the plugin reads its exit code), never in pre-flight.
