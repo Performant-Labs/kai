@@ -1,0 +1,67 @@
+# Kai's ci.yaml — root, opt-in for the Playbook's declarative CI (playbook#458).
+#
+# WHY KAI NEEDS A ci.yaml AT ALL
+# The Playbook's ci-reusable.yml runs a Node-only "ci" job (npm ci at the repo
+# root, then npm run typecheck / lint / test / build) whenever there is NO
+# ci.yaml at the root. Kai has no root package.json (it is a Go + Wails3 +
+# Svelte repo; the Node project lives in frontend/), so that job would fail on
+# `npm ci` before doing anything useful. A root ci.yaml switches the workflow
+# to its declarative path instead: the cross-cutting jobs (Pre-flight
+# (actionlint), Release conformance, Secret scan (gitleaks + op.env)) run
+# exactly as before, and the Node ci job is replaced by one job per ci.yaml
+# step below.
+#
+# What is expressible — and what is deliberately NOT in this file
+# The schema (playbook docs/planning/ci-yaml-schema/SPEC.md) supports only
+# `node` / `python` toolchains plus `steps:` shell commands. It has NO Go
+# toolchain (no golangci-lint / sqlc / wails3 / govulncheck) and NO Swift
+# toolchain. Kai's Go + Swift + GTK4/WebKitGTK build and test therefore CANNOT
+# be expressed here and are NOT attempted: they keep running through the
+# existing PushRequest workflow on GitHub-hosted ubuntu-latest, which installs
+# the toolchain with sudo apt-get. The self-hosted runner image (pl-runner)
+# currently lacks all of those tools — that gap is tracked in
+# Performant-Labs/playbook#767. When #767 lands, the Go/Swift checks can be
+# re-homed here (or in new ci.yaml jobs) and PushRequest retired; until then
+# this file covers only the Node side, which the pl-runner image already
+# carries (Node 26, npm).
+#
+# Why a `jobs:` group (not a flat top-level `steps:`)
+# Kai's frontend is installed with pnpm (packageManager pnpm@12.5.1 in
+# frontend/package.json; the repo ships pnpm-lock.yaml and NO
+# package-lock.json), so the reusable workflow's default `npm ci` install
+# cannot install the frontend at all. A custom install command is the one thing
+# the flat top-level `steps:` form cannot carry — `install` is a per-job field
+# in the schema (see ci-controller's schema.ts), so the `jobs:` groups form is
+# the smallest shape that lets this job say "use pnpm, not npm ci".
+#
+# What the job's steps DO, and why that is all
+#   install   pnpm install --frozen-lockfile in frontend/ (the only install
+#             that works for this lockfile).
+#   typecheck `pnpm tsc` in frontend/ — a full `tsc --noEmit` over the Svelte
+#             TypeScript sources. This is the frontend's own declared check
+#             (make lint-frontend runs exactly this) and is the strongest
+#             static check the frontend has.
+# Deliberately NOT included, because the tools are not in the pl-runner image
+# yet (playbook#767): `pnpm check` (svelte-check) needs the full frontend
+# toolchain, and everything Go/Swift. Re-add them per-step when #767 lands —
+# the schema's per-step jobs make that a one-line addition each.
+#
+# Every command is written as `cd frontend && ...` because the reusable
+# workflow's `ci-declarative` jobs run steps with a plain checkout and no
+# working-directory override — the explicit cd is what puts the command in
+# frontend/. (If a fleet change ever adds a `workdir:` field to the schema —
+# it is not in SPEC.md today — these could be shortened; until then the cd is
+# the only thing that works.)
+#
+# Node version: 26 (the pl-runner image's baked Node). Kai's
+# frontend/.nvmrc pins 25.9.0 for local dev — the frontend is plain
+# TypeScript/Svelte with no Node-version-sensitive runtime, so a
+# one-minor-version difference for typechecking in CI is immaterial, and
+# matching the image avoids depending on an unbaked Node 25.
+
+jobs:
+  frontend:
+    node: "26"
+    install: pnpm install --frozen-lockfile
+    steps:
+      - typecheck: cd frontend && pnpm tsc

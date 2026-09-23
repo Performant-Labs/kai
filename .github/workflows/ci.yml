@@ -1,0 +1,66 @@
+# Playbook shared CI (reusable) — issue #4.
+#
+# Caller for the Playbook's reusable CI workflow. Same caller shape as the
+# fleet (easy-login, missile-money, flotilla, ...): a thin workflow that only
+# owns the triggers and hands every job to the reusable workflow. All job logic
+# lives in Performant-Labs/playbook/.github/workflows/ci-reusable.yml.
+#
+# What this adds to a Kai PR, on top of the existing PushRequest workflow:
+#   - Pre-flight (actionlint)          — lints every workflow file in the repo
+#   - Release conformance               — no-op here (Kai has no root package.json)
+#   - Secret scan (gitleaks + op.env)  — CI-layer backstop against leaked secrets
+#   - frontend/<step> (from ci.yaml)   — Node typecheck of the Svelte frontend
+# The cross-cutting jobs run unconditionally; the declarative steps come from
+# the root ci.yaml (see its header comment for why Kai needs one at all).
+#
+# Runners: every job in the reusable workflow uses `runs-on: ${{ vars.CI_RUNNER }}`
+# with deliberately NO fallback. If this repo cannot see the org variable
+# CI_RUNNER, the jobs fail immediately with an empty runs-on (the design intent —
+# drift announces itself). That failure mode is a human decision (org variable /
+# repo-level override), not something to paper over with an `|| 'ubuntu-latest'`
+# fallback.
+#
+# What this does NOT cover: Kai's Go build + lint + test (golangci-lint, sqlc,
+# wails3, govulncheck) and the GTK4/WebKitGTK system libraries. The Playbook
+# schema (docs/planning/ci-yaml-schema/SPEC.md) supports only `node`/`python`
+# toolchains plus shell steps — there is no Go or Swift toolchain support, and
+# the `pl-runner` image currently lacks Go/pnpm/golangci-lint/sqlc/wails3 and the
+# GTK4/WebKitGTK-6.0 dev libraries (Performant-Labs/playbook#767, in progress).
+# Until #767 lands, Kai's real build/test check keeps running through the
+# existing PushRequest workflow on GitHub-hosted ubuntu-latest. Both workflows
+# run on every PR; this one adds the shared checks, PushRequest keeps building.
+name: CI
+
+on:
+  # master, not the `**` wildcard PushRequest uses: shared CI is meaningful on
+  # PRs (the pull_request trigger below) and on the default branch; running the
+  # full reusable workflow on every long-lived branch would just burn runners.
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+# The reusable workflow declares its own concurrency group
+# (github.workflow + github.repository + github.ref, cancel-in-progress), which
+# is unique per (repo, branch) and already cancels stale runs on a force-push,
+# so no caller-level group is needed.
+jobs:
+  ci:
+    uses: Performant-Labs/playbook/.github/workflows/ci-reusable.yml@main
+    with:
+      node-version: "26"
+      # Kai has no root package.json and no `npm run assets:build`; the
+      # frontend build is driven by the Go side (make bindings/icons/
+      # build-assets), which stays in PushRequest.
+      skip-assets-build: true
+      # The schema has no Go toolchain and no Postgres-backed tests in Kai;
+      # nothing here needs a database.
+      use-postgres: false
+      # Opt-in; reads a root package.json "version", which Kai does not have.
+      require-version-bump: false
+    # Hands the org secrets (GitHub Packages read token, etc.) to the reusable
+    # workflow's install steps; without this they arrive empty and any
+    # @performant-labs/* install fails closed.
+    secrets: inherit
