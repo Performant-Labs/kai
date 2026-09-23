@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "task": {
+      "*": "deny"
+    }
+  },
+  "command": {
+    "pipeline": {
+      "description": "Run the OpenCode coding-pipeline pre-flight (phase 1), then drive the phase order on pass.",
+      "agent": "orchestrator",
+      "template": "Invoke the `pipeline_preflight` tool with issueNumber \"$1\" (omit if no argument), rigor \"$2\" (default second-opinion), and uiSurface \"$3\" (\"true\" only for UI stories).\n\nThe tool returns a structured PRE-FLIGHT report: every pass/fail/N-A check, the configured agent→model mapping, and the human-owned responsibilities. Present the full report to the operator.\n\nIf the report is PRE-FLIGHT: FAIL — STOP. Do not begin survey-brief. List each FAIL row and the human action it requires, and wait for the operator to resolve or waive them.\n\nIf the report is PRE-FLIGHT: PASS — proceed to survey-brief (read AGENTS.md and the handoffs directory named in .opencode/pipeline.config.json), then drive the phases with pipeline_advance in the order the plugin reports (pipeline_status). Phases design and ui-walkthrough are skipped (declared, never silent) unless uiSurface is true. The review-rigor dial is $2. The plugin, not the model, owns phase order, RED/GREEN, rigor gates, and named stops."
+    }
+  }
+}
