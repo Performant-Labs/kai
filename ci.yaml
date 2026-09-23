@@ -25,19 +25,32 @@
 # this file covers only the Node side, which the pl-runner image already
 # carries (Node 26, npm).
 #
-# Why a `jobs:` group (not a flat top-level `steps:`)
+# Why a `jobs:` group (not a flat top-level `steps:`), and why pnpm via npx
 # Kai's frontend is installed with pnpm (packageManager pnpm@12.5.1 in
 # frontend/package.json; the repo ships pnpm-lock.yaml and NO
 # package-lock.json), so the reusable workflow's default `npm ci` install
-# cannot install the frontend at all. A custom install command is the one thing
-# the flat top-level `steps:` form cannot carry — `install` is a per-job field
-# in the schema (see ci-controller's schema.ts), so the `jobs:` groups form is
-# the smallest shape that lets this job say "use pnpm, not npm ci".
+# cannot install the frontend at all (a pnpm lockfile is not an npm
+# package-lock.json). Two constraints then shape this job:
+#   1. A custom install command is the one thing the flat top-level `steps:`
+#      form cannot carry — `install` is a per-job field in the schema — so the
+#      `jobs:` groups form is the smallest shape that lets this job say "use
+#      pnpm, not npm ci".
+#   2. The pl-runner image has NO pnpm binary (verified live in pl-runner
+#      1.69.0: node 26.7.0 and npm 11.19.0 are present, pnpm is not — the same
+#      gap as playbook#767). Calling `pnpm` directly would be `command not
+#      found`. So every pnpm invocation here goes through
+#      `npx --yes pnpm@12.5.1` — npx (bundled with the image's npm) fetches
+#      that exact pnpm version from the public npm registry on first use and
+#      runs it without a persistent install. 12.5.1 is read from
+#      frontend/package.json's packageManager field, so the pnpm the CI uses
+#      is the same major line the lockfile was written with. (Once playbook
+#      #767 bakes pnpm into the image, the `npx --yes pnpm@12.5.1` prefix can
+#      be dropped for a bare `pnpm`.)
 #
 # What the job's steps DO, and why that is all
 #   install   pnpm install --frozen-lockfile in frontend/ (the only install
-#             that works for this lockfile).
-#   typecheck `pnpm tsc` in frontend/ — a full `tsc --noEmit` over the Svelte
+#             that works for a pnpm lockfile).
+#   typecheck pnpm tsc in frontend/ — a full `tsc --noEmit` over the Svelte
 #             TypeScript sources. This is the frontend's own declared check
 #             (make lint-frontend runs exactly this) and is the strongest
 #             static check the frontend has.
@@ -62,6 +75,6 @@
 jobs:
   frontend:
     node: "26"
-    install: pnpm install --frozen-lockfile
+    install: cd frontend && npx --yes pnpm@12.5.1 install --frozen-lockfile
     steps:
-      - typecheck: cd frontend && pnpm tsc
+      - typecheck: cd frontend && npx --yes pnpm@12.5.1 tsc

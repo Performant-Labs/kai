@@ -13,12 +13,23 @@
 # The cross-cutting jobs run unconditionally; the declarative steps come from
 # the root ci.yaml (see its header comment for why Kai needs one at all).
 #
+# No top-level `permissions:` block — deliberately. The reusable workflow
+# declares its permissions PER JOB (its "Release conformance" job requests
+# `packages: read`, ci-reusable.yml around line 135), and a caller's top-level
+# `permissions:` is a CAP on what every called job may raise — so a caller that
+# sets `permissions: contents: read` starves that job of `packages: read` and
+# GitHub rejects the whole run as a workflow-file error with zero jobs. The
+# working fleet callers (easy-login, flotilla) therefore omit the block, and
+# this one does too. (Correction from PR review: an earlier draft of this file
+# set `permissions: contents: read` and misattributed the resulting zero-job
+# failure to an invisible CI_RUNNER; the org variable IS visible, and the
+# permissions block was the actual cause.)
+#
 # Runners: every job in the reusable workflow uses `runs-on: ${{ vars.CI_RUNNER }}`
-# with deliberately NO fallback. If this repo cannot see the org variable
-# CI_RUNNER, the jobs fail immediately with an empty runs-on (the design intent —
-# drift announces itself). That failure mode is a human decision (org variable /
-# repo-level override), not something to paper over with an `|| 'ubuntu-latest'`
-# fallback.
+# (the org variable, `self-hosted-linux`), with deliberately NO fallback. A
+# missing variable would yield an empty runs-on and the jobs would fail
+# immediately (the design intent — drift announces itself); that is a human
+# decision, not something to paper over with an `|| 'ubuntu-latest'` fallback.
 #
 # What this does NOT cover: Kai's Go build + lint + test (golangci-lint, sqlc,
 # wails3, govulncheck) and the GTK4/WebKitGTK system libraries. The Playbook
@@ -38,9 +49,6 @@ on:
   push:
     branches: [master]
   pull_request:
-
-permissions:
-  contents: read
 
 # The reusable workflow declares its own concurrency group
 # (github.workflow + github.repository + github.ref, cancel-in-progress), which
