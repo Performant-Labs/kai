@@ -22,7 +22,11 @@
     EngineFieldSchema,
     EngineConfig,
   } from '@bindings/cnb.cool/dtapp/kai/internal/engine/models.ts';
-  import { SystemLanguages } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
+  import {
+    SystemLanguages,
+    GetConfig,
+    SaveConfig,
+  } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
   import { Dialogs } from '@wailsio/runtime';
   import { emitEvent } from '../../runtime';
   import { EventEnginesChanged } from '../../utils/events';
@@ -46,6 +50,9 @@
     }
     return order.map((k) => map.get(k)!).filter((g) => g.items.length > 0);
   });
+  // 主（默认）翻译引擎标识：settings.default_engine。星标按钮据此高亮；
+  // 初始从 GetConfig() 读取，增删/启停引擎后由 loadPrimary() 重读。
+  let primaryEngine = $state<string>('');
   let selectedId = $state<number | null>(null);
   let schema = $state<EngineSchema | null>(null);
   let configValues = $state<Record<string, string>>({});
@@ -174,6 +181,7 @@
 
   onMount(() => {
     loadEngines();
+    loadPrimary();
   });
 
   async function loadOcrLangs() {
@@ -192,6 +200,45 @@
     } catch (e) {
       console.error(t('log.engineLoadListFailed'), e);
       engines = [];
+    }
+  }
+
+  // 从 settings 读取主引擎标识（星标高亮的依据）。增删/启停引擎后重读，
+  // 使「主引擎被禁用 → 星标不高亮」的降级即时反映到 UI（但不改写保存值）。
+  async function loadPrimary() {
+    try {
+      const cfg = await GetConfig();
+      primaryEngine = cfg?.default_engine ?? '';
+    } catch (e) {
+      console.error(t('log.setPrimaryFailed'), e);
+    }
+  }
+
+  // 设为主引擎：点星标 → SaveConfig 读改写（只改 default_engine，不清零其它字段）
+  // → 广播 EventEnginesChanged 让翻译窗口重新解析 → 本地星标状态即时更新。
+  // 已为主引擎时再点一次 = 取消（清空 default_engine）。
+  async function setPrimary(e: AllEngineItem) {
+    const wasPrimary = primaryEngine === e.value;
+    const next = wasPrimary ? '' : e.value;
+    try {
+      const cfg = (await GetConfig()) ?? ({} as any);
+      await SaveConfig({ ...cfg, default_engine: next });
+      primaryEngine = next;
+      emitEvent(EventEnginesChanged);
+      if (wasPrimary) {
+        await Dialogs.Info({
+          Title: t('settings.engineSavedTitle'),
+          Message: t('settings.enginePrimaryCleared'),
+        });
+      }
+    } catch (err) {
+      // 失败：回滚本地星标状态 + 报错（与 toggleEngine 的错误处理同形）。
+      console.error(t('log.setPrimaryFailed'), err);
+      primaryEngine = wasPrimary ? '' : primaryEngine;
+      await Dialogs.Error({
+        Title: t('settings.engineOpErrorTitle'),
+        Message: parseErr(err),
+      });
     }
   }
 
@@ -329,6 +376,9 @@
       await ToggleEngineEnabled(id, enabled);
       // 成功：重新拉取以与后端保持一致
       await loadEngines();
+      // 启停可能改变「主引擎是否仍可用」：重读主引擎标识，使被禁用的主引擎星标
+      // 即时降级（解析回退由后端/翻译窗口接管，这里只更新视觉，不改写保存值）。
+      await loadPrimary();
       // 广播引擎变更，通知翻译窗口等重新拉取引擎列表
       emitEvent(EventEnginesChanged);
     } catch (e) {
@@ -488,6 +538,21 @@
           <div class="u-label px-1 pb-0.5 text-[11px] opacity-70">{group.title}</div>
           {#each group.items as e (e.id)}
             <div class="u-list-item" class:is-active={selectedId === e.id}>
+              {#if e.kind === 'translate'}
+                <!-- 主引擎星标：点选设为主翻译引擎（立即落盘 + 广播），再点取消。
+                     仅翻译引擎渲染；禁用引擎的星标 disabled（不可设为主引擎）。
+                     高亮条件 = 已设为主引擎 且 当前启用（主引擎被禁用时星标自动降级）。 -->
+                <button
+                  class="u-icon-btn u-icon-btn--sm"
+                  class:u-icon-btn--active={primaryEngine === e.value && e.enabled}
+                  disabled={!e.enabled}
+                  aria-label={t('settings.engineSetPrimary')}
+                  title={t('settings.engineSetPrimary')}
+                  onclick={() => setPrimary(e)}
+                >
+                  ★
+                </button>
+              {/if}
               <button
                 class="flex-1 bg-transparent text-left text-sm font-medium"
                 onclick={() => selectEngine(e.id)}

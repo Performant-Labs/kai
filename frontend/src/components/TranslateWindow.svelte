@@ -65,12 +65,17 @@
   import { WindowTranslate } from '../constants/window';
   import type { TranslateResult } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
   import type {
+    AllEngineItem,
     EngineListItem,
     NamedItem,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/models.ts';
   import { TRANSLATE_LANG, ALL_TRANSLATE_LANGS, type TranslateLang } from '../constants/lang';
   import { TranslateMulti } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
-  import { GetEngines } from '@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts';
+  import {
+    GetEngines,
+    GetAllEngines,
+  } from '@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts';
+  import { resolvePrimaryEngine } from '../utils/resolvePrimaryEngine.ts';
   import {
     GetLanguages,
     GetConfig,
@@ -122,6 +127,23 @@
   const curLang = $derived(currentLang());
 
   const activeEngines = $derived(engines.filter((e) => e.kind === 'translate'));
+
+  // 上次使用的引擎（localStorage 持久化，见 persisted store 的 pinKey 同款机制）。
+  // 首屏主引擎解析的最优先来源；引擎切换（下一 issue 的结果区选择器）写入它。
+  const LAST_ENGINE_KEY = 'kai:translate:lastEngine';
+  const lastUsedStore = persisted<string>(LAST_ENGINE_KEY, '');
+  let lastUsedEngine = $derived($lastUsedStore);
+  // settings 的主引擎（default_engine）：解析链的中间层，onMount 时读取。
+  let defaultEngine = $state<string>('');
+  // GetAllEngines 形态的引擎列表（含 enabled/kind/supported）：主引擎解析的 enabled 判定
+  // 需要它（GetEngines 的 EngineListItem 没有 enabled 字段）。
+  let allEngines = $state<AllEngineItem[]>([]);
+  // 首屏应绑定的主翻译引擎：last-used ?? primary(default_engine) ?? first-enabled。
+  // 与后端 PrimaryTranslateEngine 同规则（前端镜像 resolvePrimaryEngine），引擎列表 /
+  // last-used / settings 任一变化即重算；本 issue 仅落地该状态，供后续结果区选择器消费。
+  const resolvedPrimary = $derived.by(() =>
+    resolvePrimaryEngine(LAST_ENGINE_KEY, defaultEngine, allEngines),
+  );
 
   // 目标语言选项：系统翻译等引擎不支持自动检测目标语言，目标语言下拉框必须排除 auto。
   const targetLanguages = $derived(languages.filter((l) => l.value !== TRANSLATE_LANG.Auto));
@@ -277,11 +299,15 @@
       // 必须先等引擎/语言/默认值加载完（影响结果区占位卡片数量），否则首屏测量时
       // activeEngines 为空会走 RESULT_MIN 算出一个过矮的窗口，之后不一定能纠正。
       await Promise.all([loadDefaults(), loadEngines(), loadLanguages()]);
-      // 载入「自动读取剪贴板翻译」开关（持久化在 settings.json），开启后由后端快捷键触发读剪贴板。
+      // 载入「自动读取剪贴板翻译」开关 + 主引擎（均持久化在 settings.json）。
+      // default_engine 是主引擎解析链的中间层（last-used ?? primary ?? first-enabled）。
       try {
         const cfg = await GetConfig();
         if (cfg?.auto_clipboard) {
           autoClipboard = true;
+        }
+        if (cfg?.default_engine) {
+          defaultEngine = cfg.default_engine;
         }
       } catch (e) {
         console.error(t('log.autoClipboardLoadFailed'), e);
@@ -335,13 +361,25 @@
   );
 
   async function loadEngines() {
+    // GetEngines：结果区渲染（无 enabled 字段，只区分 translate/ocr + supported）。
+    // GetAllEngines：主引擎解析的 enabled 判定（含 enabled/kind/supported）。
+    // 二者并行拉取，避免二次往返；任一失败各自回退，互不阻塞。
     try {
-      const list = await GetEngines();
+      const [list, all] = await Promise.all([GetEngines(), GetAllEngines()]);
       engines = list ?? [];
+      allEngines = all ?? [];
     } catch (e) {
       console.error(t('log.loadEngineListFailed'), e);
       engines = [];
+      allEngines = [];
     }
+  }
+
+  // 记录「上次使用的引擎」到 localStorage（last-used 是主引擎解析链的最优先来源）。
+  // 由下一 issue 的结果区引擎选择器调用：用户切到某引擎即 setLastUsedEngine(它)，
+  // 之后重开窗口首屏直接绑定它（若该引擎仍 enabled）。
+  function setLastUsedEngine(name: string) {
+    lastUsedStore.set(name);
   }
 
   async function loadLanguages() {

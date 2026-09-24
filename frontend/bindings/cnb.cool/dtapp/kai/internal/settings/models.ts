@@ -179,6 +179,12 @@ export interface Settings {
     "default_from": string;
 
     /**
+     * DefaultEngine 主（默认）翻译引擎标识（引擎 name，如 "google"；空串表示未设置）。
+     * 未设置 / 指向不存在或已禁用的引擎时，解析回退到第一个已启用的翻译引擎。
+     */
+    "default_engine": string;
+
+    /**
      * Hotkeys 注册类全局快捷键（用户按下即触发动作）。
      */
     "hotkeys": RegisteredHotkeyConfig;

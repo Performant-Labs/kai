@@ -87,6 +87,7 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	cur.Theme = cfg.Theme
 	cur.DefaultTo = cfg.DefaultTo
 	cur.DefaultFrom = cfg.DefaultFrom
+	cur.DefaultEngine = cfg.DefaultEngine
 	cur.Hotkeys = cfg.Hotkeys
 	cur.TTS = cfg.TTS
 	cur.ExecKeys = cfg.ExecKeys

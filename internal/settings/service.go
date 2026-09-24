@@ -26,6 +26,9 @@ type Settings struct {
 	DefaultTo string `json:"default_to" mapstructure:"default_to"`
 	// DefaultFrom 翻译默认源语言（auto 表示自动检测）。
 	DefaultFrom string `json:"default_from" mapstructure:"default_from"`
+	// DefaultEngine 主（默认）翻译引擎标识（引擎 name，如 "google"；空串表示未设置）。
+	// 未设置 / 指向不存在或已禁用的引擎时，解析回退到第一个已启用的翻译引擎。
+	DefaultEngine string `json:"default_engine" mapstructure:"default_engine"`
 	// Hotkeys 注册类全局快捷键（用户按下即触发动作）。
 	Hotkeys RegisteredHotkeyConfig `json:"hotkeys" mapstructure:"hotkeys"`
 	// ExecKeys 执行类快捷键（程序主动模拟按下，用于完成动作）。
@@ -269,6 +272,7 @@ func (s *Service) setDefaults() {
 	s.v.SetDefault("theme", def.Theme)
 	s.v.SetDefault("default_to", def.DefaultTo)
 	s.v.SetDefault("default_from", def.DefaultFrom)
+	s.v.SetDefault("default_engine", def.DefaultEngine)
 	s.v.SetDefault("hotkeys", def.Hotkeys)
 	s.v.SetDefault("execkeys", def.ExecKeys)
 	s.v.SetDefault("tts", def.TTS)
@@ -340,6 +344,7 @@ func (s *Service) writeConfig() error {
 	w.Set("theme", s.cfg.Theme)
 	w.Set("default_to", s.cfg.DefaultTo)
 	w.Set("default_from", s.cfg.DefaultFrom)
+	w.Set("default_engine", s.cfg.DefaultEngine)
 	w.Set("hotkeys", s.cfg.Hotkeys)
 	w.Set("execkeys", s.cfg.ExecKeys)
 	w.Set("auto_clipboard", s.cfg.AutoClipboard)

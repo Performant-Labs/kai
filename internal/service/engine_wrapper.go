@@ -176,6 +176,56 @@ func (w *EngineWrapper) GetEngines() []EngineListItem {
 	return items
 }
 
+// PrimaryTranslateEngine 返回翻译窗口首屏应绑定的「主翻译引擎」name，
+// 是主引擎解析规则的权威实现（后端唯一真相源；前端 resolvePrimaryEngine 为其镜像，
+// 由测试 (d) 的 divergence check 保证两侧一致）。
+// 解析顺序：settings.default_engine 有效（kind=translate、已启用、平台支持）-> 它；
+// 否则回退到第一个 enabled 的翻译引擎（configstore id 顺序，与 GetEngines 一致）；
+// 均无 -> ""。
+// 「非法 / 已禁用 / 未知」一律静默回退，不报错。
+// 注意：「已启用」取自 configstore 的 enabled 列（实时），而非 registry 注册状态——
+// 引擎被禁用后 registry 不会即时注销，GetEngines() 的 Supported 只表达平台支持，
+// 不能作为启用态依据；故此处直接查 configStore.LoadEngines。
+func (w *EngineWrapper) PrimaryTranslateEngine() string {
+	name := w.settingsProvider().DefaultEngine
+	metas := w.registry.AllEngines()
+	metaMap := make(map[string]engine.EngineMeta, len(metas))
+	for _, m := range metas {
+		metaMap[m.Name] = m
+	}
+	ctx := context.Background()
+	dbEngs, err := w.configStore.LoadEngines(ctx)
+	if err != nil {
+		log.Error(i18n.T("log.service_load_engine_list_fallback"), slog.Any("error", err))
+		return ""
+	}
+	for _, e := range dbEngs {
+		if e.Enabled == 0 {
+			continue
+		}
+		m, ok := metaMap[e.Engine]
+		if !ok || m.Kind != engine.KindTranslator || !m.Supported {
+			continue
+		}
+		if name != "" && e.Engine == name {
+			return e.Engine
+		}
+	}
+	for _, e := range dbEngs {
+		if e.Enabled == 0 {
+			continue
+		}
+		m, ok := metaMap[e.Engine]
+		if !ok {
+			continue
+		}
+		if m.Kind == engine.KindTranslator && m.Supported {
+			return e.Engine
+		}
+	}
+	return ""
+}
+
 // registryEngineListItems 按注册表原始顺序构造前端引擎条目（仅作失败兜底）。
 func registryEngineListItems(metas []engine.EngineMeta) []EngineListItem {
 	items := make([]EngineListItem, 0, len(metas))
