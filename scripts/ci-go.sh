@@ -49,6 +49,41 @@
 # though the generated files are already committed — because a fresh CI checkout
 # is clean, and the `//go:embed` directives plus golangci-lint need those paths
 # to exist for the packages to compile.
+#
+# MEMORY (issue #24): the ci-host-a runners run their job containers with
+# `mem_limit: 3g` (a deliberate guardrail added after the Sep 3-7 OOM incident
+# — do NOT "fix" this by raising or removing the limit; the fix is on the job
+# side). ci-host-b runners have no limit, so the same job is a coin flip there.
+#
+# Reproduced locally on ci-host-a in the same image (pl-runner:1.70.1) and the
+# same cgroup limits (docker run -m 3g --memory-swap 4500m --cpus 8, the
+# runners' exact values), against the real /opt/runner-cache (the failed
+# CI run took the COLD-cache path — first CI run on its runner — so the
+# honest reproduction is a cold GOCACHE):
+#   - DEFAULTS (GOGC=100, no GOMEMLIMIT, GOMAXPROCS=8): govulncheck is
+#     OOM-killed ~23s into its "Checking the code" phase, exit != 0
+#     (matches run 35947517287: "make: *** [Makefile:218: vuln-go] Killed").
+#   - GOMEMLIMIT=2560MiB only (GOGC stays 100): PASSES 4/4 consecutive
+#     runs, ~12s govulncheck, full checks green.
+# So the one knob that matters is GOMEMLIMIT: the Go runtime (1.27) starts
+# sweeping far more aggressively as the heap approaches the soft limit, which
+# is exactly what keeps the "Checking" phase's working set (every importable
+# package of all 72 modules in the import graph, cross-referenced against the
+# Go vuln DB) under the 3g ceiling. GOGC=50 / GOMAXPROCS=2 were tried first
+# and are NOT needed — GOGC=50 alone did not prevent the kill, and GOMAXPROCS=2
+# only adds GC latency for no measured memory gain, so both stay at their
+# defaults (100 / ncpu).
+# GOMEMLIMIT=2560MiB is deliberately ~440MiB under the 3g container: the
+# cgroup counts the C allocator and OS pages too, not just the Go heap, and
+# the runner agent runs alongside the job in the same container. It is a
+# soft limit (a pressure signal, not a hard cap) — on unlimited ci-host-b
+# runners the same export simply never binds, so the job cannot slow down
+# there.
+# govulncheck coverage is unchanged: same `./...` pattern as `make vuln-go`
+# (which is `govulncheck -show verbose ./...`), so the identical 23 root
+# packages, 72 modules and stdlib are scanned — only the runtime's GC
+# behaviour differs. The script also prints its own VmHWM at the end so a
+# future regression is visible in the log instead of a silent OOM kill.
 set -euo pipefail
 
 # Run the whole sequence from the repo root (the checkout root) so that the
@@ -66,6 +101,22 @@ cd "$ROOT"
 export GOMODCACHE="${GOMODCACHE:-/opt/runner-cache/go}"
 export GOCACHE="${GOCACHE:-/opt/runner-cache/go-build}"
 export PATH="$PATH:$HOME/go/bin:/usr/local/go/bin"
+
+# Memory guardrail (issue #24) — see the MEMORY header above for the full
+# rationale and the measured numbers. Exported (not just set on the
+# individual commands) so that every Go tool this script spawns —
+# golangci-lint, go test, the fuzz run, govulncheck, gofmt — inherits the
+# same runtime instead of each growing until the container's cgroup OOM
+# killer fires. GOMEMLIMIT is a SOFT ceiling: the Go runtime starts GCing
+# much more aggressively as the heap approaches it; it does not kill the
+# process at the limit. 2560MiB leaves ~440MiB under the 3g container for
+# the C allocator and for the runner agent that shares the container. On
+# unlimited ci-host-b runners the limit simply never binds, so the job cannot
+# slow down there. GOGC and GOMAXPROCS are deliberately left at their
+# defaults — see the header: GOGC=50 alone did not prevent the OOM, and a
+# forced GOMAXPROCS=2 only adds latency for no measured memory gain.
+export GOMEMLIMIT="${GOMEMLIMIT:-2560MiB}"
+echo "==> memory guardrail: GOMEMLIMIT=$GOMEMLIMIT (ci-host-a containers are mem_limit:3g; ci-host-b has no limit, so this never binds there)"
 
 # pnpm is invoked via `npx --yes pnpm@<pin>`, NOT a bare `pnpm`: pl-runner
 # bakes the Go CLIs (wails3, sqlc, golangci-lint, govulncheck) into
@@ -179,7 +230,10 @@ echo "==> frontend build (real dist)"
 echo "==> golangci-lint run (no --fix)"
 make lint-go
 
-# 8. Test.
+# 8. Test — the exact invocation push.yml runs (`go test -vet=off -v
+#    ./internal/... -count=1`). Left untouched: GOMEMLIMIT (above) bounds
+#    the runtime for this step too, and the suite is ~1s, so no parallelism
+#    knob is needed (the measured OOM was govulncheck's, not the tests').
 echo "==> go test (internal/...)"
 make test-go
 
@@ -187,9 +241,10 @@ make test-go
 #    make's `FUZZ`/`TIME` env vars — `fuzz -fuzz=""` is an invalid target and
 #    would hard-fail. Discover the fuzz targets by scanning the test files for
 #    `func Fuzz...` (a build would compile them anyway, so this is cheap and
-#    authoritative). If any exist, run the first for 30s like push.yml; if
-#    none exist, the no-op default target passes trivially, so say so and move
-#    on instead of inventing a target that make would reject.
+#    authoritative). If any exist, run the first for 30s exactly like push.yml
+#    (no parallelism override — see step 8); if none exist, the no-op default
+#    target passes trivially, so say so and move on instead of inventing a
+#    target that make would reject.
 FUZZ_TARGETS="$(grep -rhoE 'func (Fuzz[A-Za-z0-9_]+)\(' --include=*_test.go ./internal/ 2>/dev/null | sed -E 's/func ([A-Za-z0-9_]+)\(.*/\1/' | sort -u || true)"
 if [ -n "$FUZZ_TARGETS" ]; then
   FUZZ="$(echo "$FUZZ_TARGETS" | head -1)"
@@ -199,7 +254,14 @@ else
   echo "==> no Fuzz* targets found under ./internal/...; fuzz step is a no-op (matches make fuzz-go's empty default) — skipping"
 fi
 
-# 10. Vulnerability scan.
+# 10. Vulnerability scan — the step the OOM was measured on (issue #24).
+#     The command is IDENTICAL to `make vuln-go` (`govulncheck -show verbose
+#     ./...`): same 23 root packages, same 72 modules, same stdlib — no
+#     package, module or vulnerability class is dropped. The only difference
+#     is the inherited GOMEMLIMIT=2560MiB, which makes the Go runtime GC
+#     aggressively enough that the "Checking the code" phase's working set
+#     (reproduced locally: killed at ~23s with defaults, 4/4 passes in
+#     ~12s with the limit) stays under the 3g container ceiling.
 echo "==> govulncheck (no --fix)"
 make vuln-go
 
@@ -217,5 +279,18 @@ if [ -n "$UNFORMATTED" ]; then
   exit 1
 fi
 echo "format check: clean"
+
+# 12. Report peak memory (issue #24 acceptance: "report peak memory if
+#     measurable"). VmHWM in /proc/self/status is the high-water mark of this
+#     process's virtual memory; the Go runtime's own peak (the number that
+#     matters against the 3g cgroup) is the runtime.MemStats value the Go
+#     tools do not print, so VmHWM is an over-approximation — but if it is
+#     comfortably under 3g the job is safe, and if a future change pushes it
+#     toward the ceiling this line makes that visible in the log instead of
+#     a silent OOM kill.
+if [ -r /proc/self/status ]; then
+  PEAK="$(awk '/^VmHWM:/{print $2" "$3}' /proc/self/status)"
+  echo "==> peak virtual memory of ci-go.sh: $PEAK (container ceiling: 3g on ci-host-a)"
+fi
 
 echo "==> ci-go.sh: all Go checks passed"

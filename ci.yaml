@@ -85,8 +85,11 @@ jobs:
   # (mirrors push.yml, minus the deliberate omissions below):
   #   deps -> dist placeholder -> wails generate (bindings/icons/build-assets)
   #   -> sqlc -> i18n merge -> frontend build:dev -> golangci-lint (NO --fix)
-  #   -> go test -> 30s fuzz -> govulncheck -> format CHECK (gofmt -l).
-  # The full command sequence lives in scripts/ci-go.sh.
+  #   -> go test -> 30s fuzz -> govulncheck -> format CHECK (gofmt -l) ->
+  #   peak-memory report (VmHWM, issue #24).
+  # The full command sequence lives in scripts/ci-go.sh, which also installs
+  # the memory guardrail (GOMEMLIMIT=2560MiB) that keeps govulncheck under
+  # the 3g ci-host-a container limit (see MEMORY below).
   #
   # WHY ONE JOB WITH ONE STEP (the key design decision, and the trap #2 in the
   # issue): the Playbook's ci-declarative path turns EVERY ci.yaml step into its
@@ -164,6 +167,34 @@ jobs:
   # cap. The one-time fuzz is bounded to 30s (trap #3's "fit" requirement).
   # If the cached warm path ever exceeds 20 min, the remedy is a Playbook
   # change (a per-job timeout input) — out of scope here; we do NOT raise it.
+  #
+  # MEMORY (issue #24): the ci-host-a runners run their job containers with
+  # `mem_limit: 3g` — a deliberate guardrail added after the Sep 3-7 OOM
+  # incident (do NOT fix OOMs by raising or removing that limit; the fix is
+  # on the job side) — while ci-host-b runners have no limit, so this job is a
+  # coin flip between fleets (both share the `self-hosted-linux` label).
+  #
+  # Reproduced locally on ci-host-a in the same image (pl-runner:1.70.1) and
+  # the same cgroup limits (docker run -m 3g --memory-swap 4500m
+  # --cpus 8, the runners' exact values) against the real /opt/runner-cache:
+  # with default Go runtime settings, govulncheck is OOM-killed ~23s into
+  # its "Checking the code" phase (the failed CI run 35947517287 was
+  # killed ~6s in — it additionally took the cold-cache path). With
+  # GOMEMLIMIT=2560MiB the very same sequence passes 4/4 consecutive runs
+  # (~12s govulncheck). So the fix is ONE knob: scripts/ci-go.sh exports
+  # GOMEMLIMIT=2560MiB for the whole script, and every Go tool it spawns
+  # (golangci-lint, go test, the fuzz run, govulncheck, gofmt) inherits a
+  # runtime that starts GCing aggressively as the heap approaches
+  # 2560MiB — ~440MiB under the 3g ceiling, which the cgroup also spends
+  # on the C allocator and the runner agent sharing the container. GOGC=50
+  # and GOMAXPROCS=2 were tried and dropped: GOGC=50 alone did not prevent
+  # the kill, and GOMAXPROCS=2 only adds latency for no measured memory
+  # gain, so both stay at their defaults. GOMEMLIMIT is a SOFT limit: on
+  # unlimited ci-host-b runners it never binds, so the job cannot slow down
+  # there. govulncheck coverage is unchanged (same ./... pattern — 23 root
+  # packages, 72 modules, the stdlib — as make vuln-go). ci.yaml itself
+  # cannot set per-step env (the schema has no such key), which is why the
+  # guardrail lives in the script rather than here.
   go:
     node: "26"
     # Same pnpm invoker as the frontend job, as the job's own install hook.
