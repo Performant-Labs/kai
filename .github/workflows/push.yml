@@ -7,11 +7,12 @@
 # https://github.com/pnpm/action-setup
 name: PushRequest
 
+# Phase 2 of #20 (#23): automatic push/pull_request triggers are retired — the fleet CI
+# (ci.yml + ci.yaml) covers the same Linux checks, so this runs on workflow_dispatch only.
+# Kai-private only; never submitted upstream. The darwin/Swift build is not covered by this
+# workflow or the fleet CI and remains a Mac task.
 on:
-  push:
-    branches: ['**']
-  pull_request:
-    branches: ['**']
+  workflow_dispatch:
 
 permissions:
   contents: read
