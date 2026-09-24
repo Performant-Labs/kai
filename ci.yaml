@@ -11,19 +11,16 @@
 # exactly as before, and the Node ci job is replaced by one job per ci.yaml
 # step below.
 #
-# What is expressible — and what is deliberately NOT in this file
 # The schema (playbook docs/planning/ci-yaml-schema/SPEC.md) supports only
 # `node` / `python` toolchains plus `steps:` shell commands. It has NO Go
-# toolchain (no golangci-lint / sqlc / wails3 / govulncheck) and NO Swift
-# toolchain. Kai's Go + Swift + GTK4/WebKitGTK build and test therefore CANNOT
-# be expressed here and are NOT attempted: they keep running through the
-# existing PushRequest workflow on GitHub-hosted ubuntu-latest, which installs
-# the toolchain with sudo apt-get. The self-hosted runner image (pl-runner)
-# currently lacks all of those tools — that gap is tracked in
-# Performant-Labs/playbook#767. When #767 lands, the Go/Swift checks can be
-# re-homed here (or in new ci.yaml jobs) and PushRequest retired; until then
-# this file covers only the Node side, which the pl-runner image already
-# carries (Node 26, npm).
+# toolchain key and NO Swift toolchain — but the fleet image `pl-runner:1.70.1`
+# now BAKES Go 1.27.1, golangci-lint 2.13.2, sqlc 1.31.1, govulncheck 1.8.0,
+# wails3 3.0.0-beta.24, GTK4 4.14.5 and the WebKitGTK-6.0 dev libs (Playbook#767,
+# now merged into 1.70.1 and live on both fleets). So the Go checks ARE expressible
+# here, as a plain `steps:` shell job (no `node:`/`python:` key) that runs the
+# baked tools directly — see the `go` job below and `scripts/ci-go.sh`. (Swift
+# is still macOS-only: the bridge is not built on Linux, the Go stubs compile
+# instead, and the image has no Swift — so Swift checks remain out of scope.)
 #
 # Why a `jobs:` group (not a flat top-level `steps:`), and why pnpm via npx
 # Kai's frontend is installed with pnpm (packageManager pnpm@12.5.1 in
@@ -54,10 +51,11 @@
 #             TypeScript sources. This is the frontend's own declared check
 #             (make lint-frontend runs exactly this) and is the strongest
 #             static check the frontend has.
-# Deliberately NOT included, because the tools are not in the pl-runner image
-# yet (playbook#767): `pnpm check` (svelte-check) needs the full frontend
-# toolchain, and everything Go/Swift. Re-add them per-step when #767 lands —
-# the schema's per-step jobs make that a one-line addition each.
+# Deliberately NOT included: `pnpm check` (svelte-check) is not part of
+# push.yml's `make check`, so this frontend job stays exactly what push.yml's
+# frontend check does (tsc + build:dev). The Go/Swift checks now live in the
+# `go` job below (Swift itself is still out of scope — macOS-only, and the Go
+# stubs are what compile on Linux).
 #
 # Every command is written as `cd frontend && ...` because the reusable
 # workflow's `ci-declarative` jobs run steps with a plain checkout and no
@@ -78,3 +76,112 @@ jobs:
     install: cd frontend && npx --yes pnpm@12.5.1 install --frozen-lockfile
     steps:
       - typecheck: cd frontend && npx --yes pnpm@12.5.1 tsc
+
+  # GO CHECKS — Kai's Go build/lint/test on the fleet (issue #20)
+  #
+  # What runs: the Linux-relevant half of upstream PushRequest's `make check`,
+  # on the fleet image's baked tools (Go 1.27.1, golangci-lint 2.13.2, sqlc
+  # 1.31.1, govulncheck 1.8.0, wails3, GTK4/WebKitGTK dev libs), in this order
+  # (mirrors push.yml, minus the deliberate omissions below):
+  #   deps -> dist placeholder -> wails generate (bindings/icons/build-assets)
+  #   -> sqlc -> i18n merge -> frontend build:dev -> golangci-lint (NO --fix)
+  #   -> go test -> 30s fuzz -> govulncheck -> format CHECK (gofmt -l).
+  # The full command sequence lives in scripts/ci-go.sh.
+  #
+  # WHY ONE JOB WITH ONE STEP (the key design decision, and the trap #2 in the
+  # issue): the Playbook's ci-declarative path turns EVERY ci.yaml step into its
+  # OWN GitHub Actions job, and each such job starts with a FRESH
+  # actions/checkout (one matrix entry per (job, step) pair, ci-reusable.yml).
+  # Steps of a ci.yaml job therefore do NOT share a workspace: the files one
+  # step generates (the wails3 bindings, icons and build assets, the sqlc Go
+  # code, the merged i18n *.json, and the frontend/dist placeholder that
+  # main.go's `//go:embed all:frontend/dist` needs to COMPILE) are gone by the
+  # time the next step's fresh checkout runs. If we split the sequence into
+  # several ci.yaml steps, every later step would re-check-out a clean tree,
+  # find none of the generated files, and fail (or worse, pass on stale
+  # committed files). So the whole sequence is ONE step — scripts/ci-go.sh —
+  # which runs the commands in order in a single shell on a single runner. This
+  # is exactly the "one script, set -euo pipefail" option the issue's trap #2
+  # calls for.
+  #
+  # WHY THE GO JOB NEEDS `node: "26"` (the whole fix): the schema has no
+  # `go` toolchain key (a `go:` job fails ci-plan), and the fleet image BAKES
+  # the Go toolchain (pl-runner:1.70.1), so no Go setup is needed. But the
+  # `make deps` step runs `pnpm install --frozen-lockfile` in frontend/, and
+  # the image bakes node/npm (apt) but NOT a global pnpm and NOT npx. The only
+  # pnpm the fleet offers is `npx --yes pnpm@12.5.1` (same invoker the
+  # frontend job uses), and npx only lands on a ci-declarative job's PATH when
+  # the job has a `node:` key — that is what makes ci-reusable.yml run
+  # actions/setup-node for it. Verified live with the TEMP probe (run
+  # 35945066585, job WITHOUT the key): node/npm present, npx/pnpm/corepack
+  # ABSENT; and the follow-up run WITH the key (35945638045) shows setup-node
+  # running (node 26.10 from the host toolcache, npx restored). The Go
+  # toolchain is never touched by setup-node.
+  #
+  # `install:` is a required companion to the node: key, for two independent
+  # reasons:
+  #   (a) ci-reusable.yml's install fallback runs a bare `npm ci` in the
+  #       checkout root whenever a node:-keyed job has no install command —
+  #       and Kai has no root package.json, so the fallback hard-fails the
+  #       job before any step runs (run 35945638045). The `jobs:` form is the
+  #       only shape that can carry a job-level install, so it is REQUIRED for
+  #       this job (and already required by the frontend job, same shape).
+  #   (b) setup-node runs before install, so its npx shim is on PATH when the
+  #       install command runs — the `npx --yes pnpm@12.5.1` invoker works
+  #       precisely because the node: key ordered setup-node first.
+  # The install is `cd frontend && npx --yes pnpm@12.5.1 install
+  # --frozen-lockfile` — byte-identical to the frontend job's install, so the
+  # go job's install is exactly the pnpm install `make deps` would otherwise
+  # perform (make deps = go mod download + that pnpm install). The go job's
+  # ci-go.sh still calls `make deps` unchanged: the pnpm half is a no-op on
+  # the warm, freshly-installed node_modules (pnpm install is idempotent and
+  # exits 0 in a few seconds), while the go mod download half still does the
+  # Go-side work. ci-go.sh's later pnpm invocations (build:dev) keep using
+  # `npx --yes pnpm@12.5.1`; /opt/runner-cache/npm (node-cache) is warm after
+  # this install, so each npx hit is a cache lookup, not a fetch.
+  #
+  # Deliberately NOT carried over from push.yml (trap #1, #6 + apt):
+  #   - NO `sudo apt-get install ...` — the libs are baked in pl-runner:1.70.1.
+  #   - NO `make tool-deps` — it `go install ...@latest`s wails3/sqlc/
+  #     golangci-lint/govulncheck and would overwrite the fleet's pinned,
+  #     baked versions every run. make targets that would pull it in are
+  #     bypassed with `-o tool-deps` (see ci-go.sh).
+  #   - `make format` and `lint-go-fix` are replaced by the NON-fixing
+  #     equivalents (`golangci-lint run` with no --fix; a gofmt -l format
+  #     CHECK): the fixing variants rewrite source files, which would make a
+  #     dirty checkout pass and let CI silently mutate the tree. CI must only
+  #     report.
+  #   - NO Swift (macOS-only; the Go stubs compile on Linux) and no
+  #     cross-compile / darwin build (the image is linux/amd64).
+  #   - NO apt/Go-module/pnpm actions/cache — the image's shared
+  #     /opt/runner-cache is the cache (see ci-go.sh env).
+  #
+  # The 20-minute cap: ci-declarative jobs are hard-capped at
+  # timeout-minutes: 20 (ci-reusable.yml) and the schema exposes no per-job
+  # timeout override — so the sequence must fit in 20 min on a fresh checkout.
+  # The persistent /opt/runner-cache (GOMODCACHE + GOCACHE, pointed at in
+  # ci-go.sh) is what keeps the cold `go mod download` + recompile under that
+  # cap. The one-time fuzz is bounded to 30s (trap #3's "fit" requirement).
+  # If the cached warm path ever exceeds 20 min, the remedy is a Playbook
+  # change (a per-job timeout input) — out of scope here; we do NOT raise it.
+  go:
+    node: "26"
+    # Same pnpm invoker as the frontend job, as the job's own install hook.
+    # Two reasons the hook has to live here and not inside ci-go.sh:
+    #   1. setup-node runs BEFORE install, so its npx shim is on PATH when the
+    #      install command runs — a node: key is what makes the invoker work at
+    #      all (the probe showed npx ABSENT without it).
+    #   2. ci-reusable.yml's install fallback runs a bare `npm ci` in the
+    #      checkout root whenever a node:-keyed job has NO install command —
+    #      and Kai has no root package.json, so the fallback fails the job
+    #      before the step ever runs (run 35945638045: "npm ci can only
+    #      install with an existing package-lock.json"). The `jobs:` form is
+    #      the only shape that can carry a job-level install, and it is
+    #      REQUIRED for any node:-keyed job in this repo. (A `:` inside the
+    #      command is fine — ci.yaml is plain YAML; the earlier "colon" CI
+    #      error was a different, since-fixed problem.)
+    # ci-go.sh then keeps `PNPM=npx --yes pnpm@12.5.1` for its later pnpm
+    # invocations; the warm /opt/runner-cache/npm makes those cheap.
+    install: cd frontend && npx --yes pnpm@12.5.1 install --frozen-lockfile
+    steps:
+      - build-lint-test: bash scripts/ci-go.sh
