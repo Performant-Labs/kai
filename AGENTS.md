@@ -40,6 +40,20 @@ RED/GREEN ordering, rigor gates, and the named stops are code in the plugin. You
 skip, reorder, or waive a phase. On any disagreement between your judgment and the plugin's report,
 the plugin wins.
 
+### Dual-review gate policy (flotilla#457 lessons, kai-private#30)
+
+- **Gate diff is narrowed by default.** `DUAL_REVIEW_EXCLUDE="frontend/bindings package-lock.json
+  docs"` in `.env` keeps generated artifacts and docs out of the review diff (chat-transport gates
+  refuse above `DUAL_REVIEW_MAX_PROMPT_TOKENS` = 32000). Full diff is an explicit opt-in.
+- **Round cap: 2.** A BLOCK surviving the round-2 re-review is recorded (findings verbatim) and the
+  run **stops**; continuing requires an explicit monitor/principal ruling recorded in
+  `docs/handoffs/decisions.md`. Disclosure, not pass. `dual-review.sh` structurally supports only
+  rounds 1–2; do not simulate a round 3 by re-running round 1.
+- **Verbatim evidence.** Any bead comment, brief, or journal that quotes or characterizes source
+  behavior must carry a verbatim excerpt (`sed -n 'N,Mp' <file>`) with file:line — never a retyped
+  quote. Claims without excerpts are treated as unverified. (Born from the #8 run: a paraphrased
+  "isolation probe" re-confirmed its own wrong assumption and cost a full t-green round-trip.)
+
 ### Pre-flight is a hard gate
 
 `/pipeline` (or the `pipeline_preflight` tool) runs pre-flight. It returns one structured payload
