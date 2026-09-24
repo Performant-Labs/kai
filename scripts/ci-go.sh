@@ -39,6 +39,17 @@
 #      made. CI must only REPORT, never silently rewrite, so this runs
 #      `golangci-lint run` (no --fix) and a format CHECK (gofmt -l must be
 #      empty) instead.
+#   4. The Swift bridge build. push.yml (on a macOS runner) runs
+#      `make swift-build`, which invokes swiftc — but the fleet image has no
+#      Swift toolchain (swiftc/xcrun are absent, so `make swift-build` cannot
+#      run here at all). Instead the script runs the same build script in
+#      SKIP mode (`KAI_BRIDGE_SKIP_BUILD=1 bash build.sh`): build.sh removes
+#      the stale libkai_bridge.a/.dylib and then exits 0 without invoking
+#      swiftc, leaving the dylib/a COMMITTED in the repo (git-tracked, so
+#      present in every checkout) as the bridge the Go tests dlopen. This is
+#      the faithful Linux analogue: the artifacts under test are byte-identical
+#      to what a macOS `make swift-build` would produce from the same sources,
+#      and a real build simply cannot happen on a Swift-less image.
 #
 # It also omits push.yml's setup/cache steps: no setup-go, no pnpm/action-setup,
 # and no actions/cache for the Go module / build / Go-bin / pnpm caches — the
@@ -199,25 +210,34 @@ $PNPM --version
 echo "==> deps"
 make deps
 
-# 2. Generate the frontend dist placeholder that main.go's
+# 2. Swift bridge build — the fleet analogue of push.yml's `make swift-build`
+#    (see omission note #4 in the header): the image has no Swift toolchain,
+#    so build.sh runs in SKIP mode, which removes the stale bridge artifacts
+#    and exits 0, leaving the COMMITTED libkai_bridge.a/.dylib (git-tracked)
+#    as what the Go tests dlopen. The committed artifacts are byte-identical to
+#    what a macOS build would produce from the same sources.
+echo "==> swift bridge build (SKIP mode — no Swift toolchain on the fleet; the committed artifacts stand in)"
+( cd pkg/swiftbridge/scripts && KAI_BRIDGE_SKIP_BUILD=1 bash ./build.sh )
+
+# 3. Generate the frontend dist placeholder that main.go's
 #    `//go:embed all:frontend/dist` needs to COMPILE (the real build is not run
 #    here — see the lint-frontend note in ci.yaml).
 mkdir -p frontend/dist && touch frontend/dist/index.html
 
-# 3. Wails bindings (frontend/bindings) + icons + build-assets. The i18n merge
+# 4. Wails bindings (frontend/bindings) + icons + build-assets. The i18n merge
 #    runs after these so the merged `*.json` (which embed pulls in) is current.
 echo "==> wails generate (bindings icons build-assets)"
 make -o tool-deps wails3-generate
 
-# 4. sqlc-generated Go code.
+# 5. sqlc-generated Go code.
 echo "==> sqlc generate"
 make -o tool-deps sqlc
 
-# 5. Merge the split i18n JSON into the single embedded `*.json` files.
+# 6. Merge the split i18n JSON into the single embedded `*.json` files.
 echo "==> i18n merge"
 make -o tool-deps i18n
 
-# 6. Build the real frontend dev bundle into frontend/dist. `//go:embed
+# 7. Build the real frontend dev bundle into frontend/dist. `//go:embed
 #    all:frontend/dist` embeds whatever is in that dir at compile time, so
 #    lint-frontend / golangci-lint / go test all see a real bundle, exactly like
 #    push.yml (the only difference: push.yml's `pnpm build` runs after its
@@ -226,18 +246,41 @@ make -o tool-deps i18n
 echo "==> frontend build (real dist)"
 ( cd frontend && $PNPM run build:dev )
 
-# 7. Lint: the NON-fixing golangci-lint (report only — see header).
+# 8. Lint: the NON-fixing golangci-lint (report only — see header).
 echo "==> golangci-lint run (no --fix)"
 make lint-go
 
-# 8. Test — the exact invocation push.yml runs (`go test -vet=off -v
-#    ./internal/... -count=1`). Left untouched: GOMEMLIMIT (above) bounds
-#    the runtime for this step too, and the suite is ~1s, so no parallelism
-#    knob is needed (the measured OOM was govulncheck's, not the tests').
-echo "==> go test (internal/...)"
+# 9. Test — the WIDENED invocation `go test -vet=off -v ./internal/...
+#    ./pkg/... -count=1` (issue #7: the pkg/... scope now includes
+#    wails-updater-providers' loopback test). GOMEMLIMIT (above) bounds the
+#    runtime for this step, and the suite is still fast, so no parallelism knob
+#    is needed (the measured OOM was govulncheck's, not the tests').
+echo "==> go test (internal/... + pkg/...)"
 make test-go
 
-# 9. Fuzz: mirror `make fuzz-go` (a 30s run of a fuzzer) but do NOT inherit
+# 9b. Frontend test — `pnpm --dir frontend test` (vitest --run, issue #7):
+#     the same command pipeline's test.unit.command runs, so the fleet runs the
+#     suite t-green gates on. node_modules is already installed (job install
+#     hook + make deps), so vitest resolves from the warm node install.
+#
+#     Node 26 (baked in pl-runner) registers localStorage/sessionStorage as
+#     LAZY own properties on globalThis that return `undefined` unless
+#     --localstorage-file is passed; vitest's jsdom env leaves that native
+#     getter in place (it only copies window keys absent from global), so the
+#     tests' window.localStorage is undefined and every case throws. Exporting
+#     NODE_OPTIONS=--localstorage-file makes Node's own getter a real, file-
+#     backed Storage, which vitest leaves untouched (window===globalThis in the
+#     tests), so window.localStorage just works. The file lives under $HOME
+#     (writable, per-runner) and is disposable — it is test scratch, not state,
+#     and is never committed (docs/handoffs and dot-artifacts stay untracked).
+#     Exported (not scoped to the make line) so pnpm -> vitest -> the node
+#     worker processes all inherit it; it is set immediately before this step
+#     and not consumed by anything after it.
+export NODE_OPTIONS="--localstorage-file=${HOME}/.kai-localstorage.json"
+echo "==> frontend test (vitest)"
+make test-frontend
+
+# 10. Fuzz: mirror `make fuzz-go` (a 30s run of a fuzzer) but do NOT inherit
 #    make's `FUZZ`/`TIME` env vars — `fuzz -fuzz=""` is an invalid target and
 #    would hard-fail. Discover the fuzz targets by scanning the test files for
 #    `func Fuzz...` (a build would compile them anyway, so this is cheap and
@@ -254,7 +297,7 @@ else
   echo "==> no Fuzz* targets found under ./internal/...; fuzz step is a no-op (matches make fuzz-go's empty default) — skipping"
 fi
 
-# 10. Vulnerability scan — the step the OOM was measured on (issue #24).
+# 11. Vulnerability scan — the step the OOM was measured on (issue #24).
 #     The command is IDENTICAL to `make vuln-go` (`govulncheck -show verbose
 #     ./...`): same 23 root packages, same 72 modules, same stdlib — no
 #     package, module or vulnerability class is dropped. The only difference
@@ -265,7 +308,7 @@ fi
 echo "==> govulncheck (no --fix)"
 make vuln-go
 
-# 11. Format CHECK: the non-fixing counterpart of `make format`. A dirty
+# 12. Format CHECK: the non-fixing counterpart of `make format`. A dirty
 #     checkout must FAIL here (and print the files it would rewrite), not be
 #     silently rewritten. gofmt -l lists files whose formatting differs; if it
 #     is non-empty we print them and exit 1. (gofmt -l is a read-only check;
@@ -280,7 +323,7 @@ if [ -n "$UNFORMATTED" ]; then
 fi
 echo "format check: clean"
 
-# 12. Report peak memory (issue #24 acceptance: "report peak memory if
+# 13. Report peak memory (issue #24 acceptance: "report peak memory if
 #     measurable"). VmHWM in /proc/self/status is the high-water mark of this
 #     process's virtual memory; the Go runtime's own peak (the number that
 #     matters against the 3g cgroup) is the runtime.MemStats value the Go

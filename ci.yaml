@@ -83,10 +83,13 @@ jobs:
   # on the fleet image's baked tools (Go 1.27.1, golangci-lint 2.13.2, sqlc
   # 1.31.1, govulncheck 1.8.0, wails3, GTK4/WebKitGTK dev libs), in this order
   # (mirrors push.yml, minus the deliberate omissions below):
-  #   deps -> dist placeholder -> wails generate (bindings/icons/build-assets)
-  #   -> sqlc -> i18n merge -> frontend build:dev -> golangci-lint (NO --fix)
-  #   -> go test -> 30s fuzz -> govulncheck -> format CHECK (gofmt -l) ->
-  #   peak-memory report (VmHWM, issue #24).
+   #   deps -> Swift bridge build (SKIP mode, the fleet analogue of
+   #   push.yml's macOS `make swift-build` — see scripts/ci-go.sh note #4)
+   #   -> dist placeholder -> wails generate (bindings/icons/build-assets)
+   #   -> sqlc -> i18n merge -> frontend build:dev -> golangci-lint (NO --fix)
+   #   -> go test (widened ./internal/... ./pkg/..., issue #7)
+   #   -> pnpm frontend test (vitest, issue #7) -> 30s fuzz -> govulncheck
+   #   -> format CHECK (gofmt -l) -> peak-memory report (VmHWM, issue #24).
   # The full command sequence lives in scripts/ci-go.sh, which also installs
   # the memory guardrail (GOMEMLIMIT=2560MiB) that keeps govulncheck under
   # the 3g ci-host-a container limit (see MEMORY below).
@@ -154,8 +157,12 @@ jobs:
   #     CHECK): the fixing variants rewrite source files, which would make a
   #     dirty checkout pass and let CI silently mutate the tree. CI must only
   #     report.
-  #   - NO Swift (macOS-only; the Go stubs compile on Linux) and no
-  #     cross-compile / darwin build (the image is linux/amd64).
+#   - NO `swiftc`/`xcrun` invocation (macOS-only; the Go stubs compile on
+#     Linux), and no cross-compile / darwin build (the image is linux/amd64).
+#     The bridge build itself still runs on the fleet in SKIP mode (issue #7):
+#     scripts/ci-go.sh removes the stale bridge artifacts and then exits
+#     without swiftc, so the COMMITTED libkai_bridge.a/.dylib stand in as what
+#     the Go tests dlopen — the same artifacts a macOS build would produce.
   #   - NO apt/Go-module/pnpm actions/cache — the image's shared
   #     /opt/runner-cache is the cache (see ci-go.sh env).
   #

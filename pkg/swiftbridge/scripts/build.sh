@@ -5,6 +5,13 @@
 # 仅在 macOS（darwin）下需要执行，由 Taskfile / Makefile 调用。
 set -euo pipefail
 
+# 非 macOS 的 CI 镜像上没有 Swift 工具链，也不产出桥接产物：显式 KAI_BRIDGE_SKIP_BUILD=1
+# 时直接跳过整个构建（不删旧库、不调用 swiftc），让纯 Go 流程（purego 运行时 Dlopen）继续走。
+if [ "${KAI_BRIDGE_SKIP_BUILD:-0}" = "1" ]; then
+  echo ">> KAI_BRIDGE_SKIP_BUILD=1: skipping Swift bridge build (no artifacts touched)"
+  exit 0
+fi
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 脚本位于 pkg/swiftbridge/scripts/，源码在同级 internal/swift/，dylib 产出到 pkg/swiftbridge/。
 SRC_DIR="$(cd "${DIR}/../internal/swift" && pwd)"

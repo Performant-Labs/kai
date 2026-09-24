@@ -1,4 +1,4 @@
-.PHONY: help icons build-assets dev darwin-build darwin-package darwin-dmg windows-build windows-package linux-build linux-package tidy bindings sqlc swift-build lint-go lint-fe fmt-fe format-swift check-cross
+.PHONY: help icons build-assets dev darwin-build darwin-package darwin-dmg windows-build windows-package linux-build linux-package tidy bindings sqlc swift-build lint-go lint-fe fmt-fe format-swift check-cross test-go test-frontend
 
 # ==================== 构建配置 ====================
 
@@ -195,7 +195,7 @@ check-cross: ## 交叉编译验证（darwin/arm64 开 CGO + windows CGO=0；过�
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./... 2>&1 | grep -v 'ld: warning' || true
 	@echo "==> 交叉编译验证完成"
 
-check: lint-go lint-go-fix lint-frontend test-go fuzz-go vuln-go ## 检查和测试（全部）
+check: lint-go lint-go-fix lint-frontend test-go test-frontend fuzz-go vuln-go ## 检查和测试（全部）
 
 lint-go: ## Go 代码检查（有 issue 即停止）
 	golangci-lint run ./...
@@ -208,8 +208,11 @@ lint-frontend: ## 前端 TypeScript 类型检查（类型错误即停止）
 # 	pnpm --dir ./frontend run check
 	pnpm --dir ./frontend run build:dev
 
-test-go: ## Go 后端测试（测试失败即停止）
-	go test -vet=off -v ./internal/... -count=1
+test-go: ## Go 后端测试（internal + pkg；测试失败即停止）
+	go test -vet=off -v ./internal/... ./pkg/... -count=1
+
+test-frontend: ## 前端测试（vitest；测试失败即停止）
+	pnpm --dir ./frontend test
 
 fuzz-go: ## Go 模糊测试（make fuzz-go FUZZ=FuzzXxx 时间=30s；失败即停止）
 	go test -vet=off -fuzz=$(FUZZ) -fuzztime=$(or $(TIME),30s) ./internal/...

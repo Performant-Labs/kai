@@ -1,7 +1,7 @@
 {
   "project": "kai",
   "description": "Menu-bar translation app (Wails: Go backend, Svelte UI, Swift system bridge).",
-  "test": { "unit": { "command": ["sh", "-c", "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... -count=1"], "timeoutMs": 900000 } },
+  "test": { "unit": { "command": ["sh", "-c", "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... ./pkg/... -count=1 && pnpm --dir frontend test"], "timeoutMs": 900000 } },
   "paths": {
     "test": ["**/*_test.go", "**/testdata/**"],
     "production": ["internal/**", "pkg/**", "main.go", "frontend/src/**", "**/*.swift"]
