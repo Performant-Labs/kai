@@ -360,8 +360,8 @@ jobs:
           GOPATH: ${{ env.GO_PATH_DIR }}
           GOBIN: ${{ env.GO_BIN_DIR }}
         run: |
-          sed -i.bak -E "s/^([[:space:]]*)version:[[:space:]]*\"[^\"]*\"/\1version: \"${{ needs.prepare.outputs.version }}\"/" build/config.yml && rm -f build/config.yml.bak
-          echo "✔ build/config.yml 版本号已同步为 ${{ needs.prepare.outputs.version }}"
+          sed -i.bak -E "s/^([[:space:]]*)version:[[:space:]]*\"[^\"]*\"/\1version: \"${{ inputs.version }}\"/" build/config.yml && rm -f build/config.yml.bak
+          echo "✔ build/config.yml 版本号已同步为 ${{ inputs.version }}"
 
       # 生成图标资源（icns/ico/Assets.car）。所有平台均执行。
       - name: 生成图标资源
