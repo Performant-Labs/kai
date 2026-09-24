@@ -23,6 +23,22 @@ import * as application$0 from "../../../../../github.com/wailsapp/wails/v3/pkg/
 import * as $models from "./models.js";
 
 /**
+ * ActiveTranslateEngine 返回翻译窗口结果区当前绑定的「当前引擎」name（issue #9，
+ * 设计 §1）：在 PrimaryTranslateEngine 的两层之上再加一层 last-used——
+ * lastUsed 有效（kind=translate、enabled 列=1、平台支持）-> 它；
+ * 否则 settings.default_engine 有效 -> 它；
+ * 否则第一个 enabled 的翻译引擎（configstore id 顺序）；
+ * 均无 -> ""。
+ * lastUsed 是前端 localStorage（kai:translate:lastEngine）持久化的上次使用引擎；
+ * 空串等价于 PrimaryTranslateEngine（退化情形）。
+ * 解析规则与 PrimaryTranslateEngine 共用 resolveActiveTranslateEngine（不重复实现
+ * enabled/translate/supported 过滤）；「已启用」同样取自 configstore 的 enabled 列。
+ */
+export function ActiveTranslateEngine(lastUsed: string): $CancellablePromise<string> {
+    return $Call.ByID(628453120, lastUsed);
+}
+
+/**
  * AddEngine 新增单个引擎配置到 config.db，返回 DB 分配的 ID。
  */
 export function AddEngine(cfg: engine$0.EngineConfig | null): $CancellablePromise<number> {
@@ -86,6 +102,22 @@ export function GetKnownEngines(): $CancellablePromise<$models.EngineListItem[] 
  */
 export function GetOcrLangs(): $CancellablePromise<string[] | null> {
     return $Call.ByID(3491230379);
+}
+
+/**
+ * PrimaryTranslateEngine 返回翻译窗口首屏应绑定的「主翻译引擎」name，
+ * 是主引擎解析规则的权威实现（后端唯一真相源；前端 resolvePrimaryEngine 为其镜像，
+ * 由测试 (d) 的 divergence check 保证两侧一致）。
+ * 解析顺序：settings.default_engine 有效（kind=translate、已启用、平台支持）-> 它；
+ * 否则回退到第一个 enabled 的翻译引擎（configstore id 顺序，与 GetEngines 一致）；
+ * 均无 -> ""。
+ * 「非法 / 已禁用 / 未知」一律静默回退，不报错。
+ * 注意：「已启用」取自 configstore 的 enabled 列（实时），而非 registry 注册状态——
+ * 引擎被禁用后 registry 不会即时注销，GetEngines() 的 Supported 只表达平台支持，
+ * 不能作为启用态依据；故此处直接查 configStore.LoadEngines。
+ */
+export function PrimaryTranslateEngine(): $CancellablePromise<string> {
+    return $Call.ByID(1132584400);
 }
 
 /**

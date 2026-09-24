@@ -75,7 +75,13 @@
     GetEngines,
     GetAllEngines,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts';
-  import { resolvePrimaryEngine } from '../utils/resolvePrimaryEngine.ts';
+  import {
+    activeEngineFor,
+    statusDots,
+    anyPending,
+    resetEdits,
+    type DotState,
+  } from '../utils/resultPane.ts';
   import {
     GetLanguages,
     GetConfig,
@@ -100,7 +106,6 @@
   const LAYOUT_EXTRA = 48;
   // 真实测量后再加一点点安全余量，防亚像素/字体加载导致的差一点点滚动条。
   const RESULT_BUF = 12;
-  const DEFAULT_EXPANDED = 2; // 默认展开前 N 个引擎，其余折叠
 
   let fixedEl = $state<HTMLElement | null>(null);
   let resultEl = $state<HTMLElement | null>(null);
@@ -129,48 +134,55 @@
   const activeEngines = $derived(engines.filter((e) => e.kind === 'translate'));
 
   // 上次使用的引擎（localStorage 持久化，见 persisted store 的 pinKey 同款机制）。
-  // 首屏主引擎解析的最优先来源；引擎切换（下一 issue 的结果区选择器）写入它。
+  // 结果区活动引擎解析的最优先来源（issue #9 由本窗口的引擎下拉框写入，见 handleEngineChange）。
   const LAST_ENGINE_KEY = 'kai:translate:lastEngine';
   const lastUsedStore = persisted<string>(LAST_ENGINE_KEY, '');
-  let lastUsedEngine = $derived($lastUsedStore);
   // settings 的主引擎（default_engine）：解析链的中间层，onMount 时读取。
   let defaultEngine = $state<string>('');
   // GetAllEngines 形态的引擎列表（含 enabled/kind/supported）：主引擎解析的 enabled 判定
   // 需要它（GetEngines 的 EngineListItem 没有 enabled 字段）。
   let allEngines = $state<AllEngineItem[]>([]);
-  // 首屏应绑定的主翻译引擎：last-used ?? primary(default_engine) ?? first-enabled。
-  // 与后端 PrimaryTranslateEngine 同规则（前端镜像 resolvePrimaryEngine），引擎列表 /
-  // last-used / settings 任一变化即重算；本 issue 仅落地该状态，供后续结果区选择器消费。
-  const resolvedPrimary = $derived.by(() =>
-    resolvePrimaryEngine(LAST_ENGINE_KEY, defaultEngine, allEngines),
-  );
 
   // 目标语言选项：系统翻译等引擎不支持自动检测目标语言，目标语言下拉框必须排除 auto。
   const targetLanguages = $derived(languages.filter((l) => l.value !== TRANSLATE_LANG.Auto));
 
-  // 各引擎结果卡的展开状态：默认只展开前 DEFAULT_EXPANDED 个，其余折叠。
-  let expanded = $state<Record<string, boolean>>({});
-  // 引擎列表变化时，重置为默认展开前 N 个。
-  $effect(() => {
-    const next: Record<string, boolean> = {};
-    activeEngines.slice(0, DEFAULT_EXPANDED).forEach((e) => {
-      next[e.value] = true;
-    });
-    expanded = next;
-  });
-  function toggleExpand(engine: string) {
-    expanded = { ...expanded, [engine]: !expanded[engine] };
-    // 展开/折叠改变结果区高度，重算。
+  // 结果区当前绑定的引擎（issue #9）：activeEngineFor = #8 的 resolvedPrimary 推导
+  // （last-used ?? primary(default_engine) ?? first-enabled）+ 一层防御性回退（解析为 '' 但
+  // 仍有 enabled 翻译引擎时回退到第一个，保证 select 不悬空）。引擎列表 / last-used /
+  // settings 任一变化即重算；切引擎即写入 last-used（#8 的 setLastUsedEngine）。
+  const activeEngine = $derived(activeEngineFor(LAST_ENGINE_KEY, defaultEngine, allEngines));
+  // 每个 enabled 翻译引擎一个 dot（状态 = fan-out 真实输出：done/pending/failed，设计 §4）。
+  const dots = $derived(statusDots(allEngines, results, loading));
+  // 活动引擎的当前结果（失败的引擎在 results 里缺席 → null）。
+  const activeResult = $derived(activeEngine ? results[activeEngine] ?? null : null);
+  // 活动引擎正在显示/可显示的文本：手工编辑 ?? 引擎结果 ?? 空串。
+  const activeDisplay = $derived(edited.get(activeEngine) ?? activeResult?.result ?? '');
+  // 结果区引擎下拉框的显示值：activeEngine 已含「'' → 第一个 enabled」防御回退，
+  // 故 activeEngines 非空时必非空（select 永不指向 nothing）。
+  const firstEnabledName = $derived(activeEngines[0]?.value ?? '');
+  const selectValue = $derived(activeEngine || firstEnabledName);
+  // 结果区手工编辑（按引擎名聚合）：切换引擎 / 重新翻译 / 清空输入时整体丢弃，
+  // 新引擎一律从它自己的存储结果起步（无 per-engine 编辑记忆，设计 §3）。
+  let edited = $state<Map<string, string>>(new Map());
+  function setEdited(engine: string, value: string) {
+    edited = new Map(edited).set(engine, value);
+  }
+  function handleEngineChange(ev: Event) {
+    const name = (ev.currentTarget as HTMLSelectElement).value;
+    setLastUsedEngine(name);
+    // 切换引擎：丢弃上一个引擎的手工编辑，重算窗口高度（新引擎结果长度可能不同）。
+    edited = resetEdits(edited, activeEngine, name, results);
     adjustWindowHeight();
   }
 
   // 内容（输入/结果/loading）变化后，等下一帧布局稳定再按需调整窗口高度。
   $effect(() => {
-    // 依赖：输入、结果、loading、引擎列表任意变化都触发重算。
+    // 依赖：输入、结果、loading、引擎列表 / 活动引擎任意变化都触发重算。
     input;
     results;
     loading;
     activeEngines;
+    activeEngine;
     if (resultEl) {
       tick().then(adjustWindowHeight);
     }
@@ -218,7 +230,7 @@
     }
     adjusting = true;
     try {
-      // 等 expanded / 内容变化渲染完成后再测真实高度（此时临时 auto 测量，不依赖历史 resultH）。
+      // 等结果 / 活动引擎 / 内容变化渲染完成后再测真实高度（此时临时 auto 测量，不依赖历史 resultH）。
       await tick();
       const realH = measureResultRealHeight();
       // 精确设回：clamp 到 [RESULT_MIN, RESULT_MAX]，加一点点安全余量。
@@ -273,6 +285,7 @@
       results = {};
       input = '';
       loading = false;
+      edited = new Map();
       // 清空后结果区缩回，重算高度。
       adjustWindowHeight();
     });
@@ -406,6 +419,8 @@
     if (!input.trim() || activeEngines.length === 0) return;
     loading = true;
     results = {};
+    // 新一轮 fan-out 从空白开始：上一批的编辑结果对新一轮无意义，一并丢弃。
+    edited = new Map();
     // 开始翻译：结果区显示 loading 占位，立刻重算高度（动态结果区）。
     adjustWindowHeight();
     try {
@@ -421,9 +436,12 @@
     } catch (e) {
       console.error(t('log.translateRequestFailed'), e);
     } finally {
-      // 兜底：若所有引擎都失败/无响应（后端不发送结果事件），最长 15s 后强制解除 loading。
+      // 兜底（放宽，设计 §4）：15 s 时若 fan-out 仍在进行（任一 enabled 翻译引擎仍 pending）
+      // 就解除 loading；兄弟引擎各自到达已把 loading 翻 false 的，此处不再回退。原「零结果」
+      // 谓词会让失败引擎的 dot 永远停在 pending——放宽到「任一 pending」后，case 2 的唯一失败
+      // 引擎由本兜底点收敛，loading 解除的同一刻其 dot 由 pending 翻转为 failed。
       setTimeout(() => {
-        if (Object.keys(results).length === 0) loading = false;
+        if (anyPending(allEngines, results, loading)) loading = false;
       }, 15000);
     }
   }
@@ -449,7 +467,8 @@
   function clearInput() {
     input = '';
     results = {};
-    // 清空翻译：结果区缩回（无结果卡片），立刻重算窗口高度（动态结果区）。
+    edited = new Map();
+    // 清空翻译：结果区缩回（无结果），立刻重算窗口高度（动态结果区）。
     adjustWindowHeight();
   }
 </script>
@@ -606,40 +625,89 @@
     </div>
     <!-- 固定区结束 -->
 
-    <!-- 结果区：每个已开启翻译引擎一张卡，并发到达；区域自身在 [RESULT_MIN, RESULT_MAX] 间自适应高度，超出内部滚动，不影响输入框等固定区 -->
+    <!-- 结果区：只显示活动引擎（last-used/primary 推导，issue #9）的单卡结果；后端 fan-out
+         仍按已开启引擎并发、逐个流式到达（results 按引擎聚合，供状态 dot 使用），但 UI 只呈现
+         活动引擎。区域自身在 [RESULT_MIN, RESULT_MAX] 间自适应高度，超出内部滚动，不影响固定区 -->
     <section class="u-card u-card--panel flex flex-col overflow-hidden" bind:this={resultEl}>
       <div
         bind:this={resultHeaderEl}
         class="u-border-b flex items-center justify-between px-3 py-2"
       >
         <span class="u-label">{t('translate.result')}</span>
-        {#if Object.keys(results).length > 0}
-          <button
-            class="u-icon-btn u-no-drag"
-            onclick={() =>
-              copy(
-                Object.values(results)
-                  .map((r) => r.result)
-                  .join('\n\n'),
-              )}
-            aria-label={t('translate.copy')}
-            title={t('translate.copy')}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+        <div class="flex items-center gap-2">
+          {#if activeEngines.length > 0}
+            <!-- 结果区引擎下拉框（设计 §2）：受控显示值 = 活动引擎（last-used/primary 推导，
+                 见 activeEngineFor）；onchange 写 last-used（#8 的 setLastUsedEngine）并重置
+                 编辑。禁用的引擎（settings 刚切换、EventEnginesChanged 尚未落地）列为 disabled。 -->
+            <select
+              class="u-field u-select u-engine-select px-3 py-2 text-sm"
+              value={selectValue}
+              onchange={handleEngineChange}
+              aria-label={t('translate.engineActive')}
+              title={t('translate.engineActive')}
             >
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-          </button>
-        {/if}
+              {#each activeEngines as e}
+                <option value={e.value} disabled={!e.enabled}>
+                  {engineName(e.value)}{!e.enabled ? t('translate.engineDisabled') : ''}
+                </option>
+              {/each}
+            </select>
+            <!-- 每引擎一个状态 dot（设计 §4）：done/pending/failed 纯由 fan-out 真实输出派生；
+                 活动引擎的 dot 加 accent 环，让下拉框的选择一眼可见。 -->
+            <div class="flex items-center gap-1">
+              {#each activeEngines as e (e.value)}
+                {@const st = dots[e.value] as DotState}
+                <span
+                  class="h-2 w-2 rounded-full"
+                  class:bg-[var(--app-accent)]={st === 'done'}
+                  class:bg-[var(--app-muted)]={st === 'pending'}
+                  class:bg-[var(--app-danger)]={st === 'failed'}
+                  class:ring-2={e.value === activeEngine}
+                  class:ring-[var(--app-accent)]={e.value === activeEngine}
+                  title={
+                    engineName(e.value) +
+                    (st === 'done'
+                      ? ' · ' + t('translate.engineDone')
+                      : st === 'pending'
+                        ? ' · ' + t('translate.enginePending')
+                        : ' · ' + t('translate.engineFailed'))
+                  }
+                  aria-label={
+                    engineName(e.value) +
+                    (st === 'done'
+                      ? ' · ' + t('translate.engineDone')
+                      : st === 'pending'
+                        ? ' · ' + t('translate.enginePending')
+                        : ' · ' + t('translate.engineFailed'))
+                  }
+                ></span>
+              {/each}
+            </div>
+          {/if}
+          <!-- 复制按钮：只复制活动引擎当前显示文本（含手工编辑），不再拼接所有引擎（设计 §6）。 -->
+          {#if activeResult?.result || edited.has(activeEngine)}
+            <button
+              class="u-icon-btn u-no-drag"
+              onclick={() => copy(activeDisplay)}
+              aria-label={t('translate.copy')}
+              title={t('translate.copy')}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+          {/if}
+        </div>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
         {#if activeEngines.length === 0}
@@ -660,112 +728,49 @@
             </svg>
             <span class="u-muted text-sm">{t('translate.noActiveEngine')}</span>
           </div>
+        {:else if loading && !results[activeEngine]}
+          <!-- 活动引擎尚在飞行（尚无结果）：loading 占位（kai-dots + kai-loading-bar）。 -->
+          <div class="u-result-card">
+            <div class="mb-2 flex items-center gap-2">
+              <span
+                class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
+              >
+                {engineName(activeEngine)}
+              </span>
+            </div>
+            <div class="flex flex-col gap-2">
+              <p class="u-muted text-base leading-relaxed">
+                {t('common.loading')}<span class="kai-dots">{'.'.repeat(dotCount)}</span>
+              </p>
+              <div class="kai-loading-bar" aria-hidden="true"></div>
+            </div>
+          </div>
+        {:else if activeResult?.result}
+          <!-- 活动引擎已有（非空）结果：可编辑单卡（设计 §5）。编辑写回 edited[activeEngine]，
+               显示文本 = edited ?? result；切换引擎时 edited 整体丢弃，新引擎从自身结果起步。 -->
+          <div class="u-result-card">
+            <div class="mb-2 flex items-center gap-2">
+              <span
+                class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
+              >
+                {engineName(activeEngine)}
+              </span>
+              {#if activeResult.phonetic}
+                <span class="u-muted text-xs">{activeResult.phonetic}</span>
+              {/if}
+            </div>
+            <textarea
+              class="min-h-[120px] resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
+              value={activeDisplay}
+              onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
+              placeholder={t('translate.noResult')}
+            ></textarea>
+          </div>
         {:else}
-          <!-- 默认展示已开启翻译引擎卡片：未翻译时显示待翻译提示，翻译中显示 loading。
-               默认展开前 DEFAULT_EXPANDED 个，其余折叠（仅显示引擎名，点击展开）。 -->
-          <div class="flex flex-col gap-4">
-            {#each activeEngines as e}
-              {@const r = results[e.value]}
-              {@const isOpen = !!expanded[e.value]}
-              <div class="u-result-card">
-                <div class="mb-2 flex items-center gap-2">
-                  <span
-                    class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
-                  >
-                    {engineName(e.value)}
-                  </span>
-                  {#if isOpen}
-                    {#if r?.phonetic}
-                      <span class="u-muted text-xs">{r.phonetic}</span>
-                    {/if}
-                    <span class="ml-auto flex items-center gap-2">
-                      {#if r?.result}
-                        <button
-                          class="u-icon-btn u-icon-btn--sm u-no-drag"
-                          onclick={(ev) => {
-                            ev.stopPropagation();
-                            copy(r.result);
-                          }}
-                          aria-label={t('translate.copy')}
-                          title={t('translate.copy')}
-                        >
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                          </svg>
-                        </button>
-                      {/if}
-                      <button
-                        class="u-icon-btn u-icon-btn--sm u-no-drag"
-                        onclick={(ev) => {
-                          ev.stopPropagation();
-                          toggleExpand(e.value);
-                        }}
-                        aria-label={t('translate.collapse')}
-                        title={t('translate.collapse')}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <polyline points="18 15 12 9 6 15" />
-                        </svg>
-                      </button>
-                    </span>
-                  {:else}
-                    <button
-                      class="u-icon-btn u-icon-btn--sm u-no-drag ml-auto"
-                      onclick={(ev) => {
-                        ev.stopPropagation();
-                        toggleExpand(e.value);
-                      }}
-                      aria-label={t('translate.expand')}
-                      title={t('translate.expand')}
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    </button>
-                  {/if}
-                </div>
-                {#if isOpen}
-                  {#if r}
-                    <p class="whitespace-pre-wrap text-base leading-relaxed">{r.result}</p>
-                  {:else if loading}
-                    <div class="flex flex-col gap-2">
-                      <p class="u-muted text-base leading-relaxed">
-                        {t('common.loading')}<span class="kai-dots">{'.'.repeat(dotCount)}</span>
-                      </p>
-                      <div class="kai-loading-bar" aria-hidden="true"></div>
-                    </div>
-                  {/if}
-                {/if}
-              </div>
-            {/each}
+          <!-- 活动引擎失败（缺席于 results 且 loading 已解除）或引擎返回空结果：失败态（设计 §5）。
+               不重试、无重试按钮——重试即用户重按翻译按钮（重跑整个 fan-out）。 -->
+          <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <span class="text-sm" style="color: var(--app-danger)">{t('translate.failed')}</span>
           </div>
         {/if}
       </div>

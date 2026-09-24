@@ -187,7 +187,28 @@ func (w *EngineWrapper) GetEngines() []EngineListItem {
 // 引擎被禁用后 registry 不会即时注销，GetEngines() 的 Supported 只表达平台支持，
 // 不能作为启用态依据；故此处直接查 configStore.LoadEngines。
 func (w *EngineWrapper) PrimaryTranslateEngine() string {
-	name := w.settingsProvider().DefaultEngine
+	return w.activeTranslateEngine("")
+}
+
+// ActiveTranslateEngine 返回翻译窗口结果区当前绑定的「当前引擎」name（issue #9，
+// 设计 §1）：在 PrimaryTranslateEngine 的两层之上再加一层 last-used——
+// lastUsed 有效（kind=translate、enabled 列=1、平台支持）-> 它；
+// 否则 settings.default_engine 有效 -> 它；
+// 否则第一个 enabled 的翻译引擎（configstore id 顺序）；
+// 均无 -> ""。
+// lastUsed 是前端 localStorage（kai:translate:lastEngine）持久化的上次使用引擎；
+// 空串等价于 PrimaryTranslateEngine（退化情形）。
+// 解析规则与 PrimaryTranslateEngine 共用 activeTranslateEngine（不重复实现
+// enabled/translate/supported 过滤）；「已启用」同样取自 configstore 的 enabled 列。
+func (w *EngineWrapper) ActiveTranslateEngine(lastUsed string) string {
+	return w.activeTranslateEngine(lastUsed)
+}
+
+// activeTranslateEngine 是 #8（default_engine ?? first-enabled）与 #9（+ last-used 层）
+// 共用的解析核心：优先名按 lastUsed、defaultEngine 顺序逐层尝试，均不命中时
+// 回退到第一个 enabled 的 translate 引擎（configstore id 顺序），均无 -> ""。
+// 「非法 / 已禁用 / 未知」一律静默回退，不报错。
+func (w *EngineWrapper) activeTranslateEngine(lastUsed string) string {
 	metas := w.registry.AllEngines()
 	metaMap := make(map[string]engine.EngineMeta, len(metas))
 	for _, m := range metas {
@@ -199,16 +220,21 @@ func (w *EngineWrapper) PrimaryTranslateEngine() string {
 		log.Error(i18n.T("log.service_load_engine_list_fallback"), slog.Any("error", err))
 		return ""
 	}
-	for _, e := range dbEngs {
-		if e.Enabled == 0 {
+	for _, name := range []string{lastUsed, w.settingsProvider().DefaultEngine} {
+		if name == "" {
 			continue
 		}
-		m, ok := metaMap[e.Engine]
-		if !ok || m.Kind != engine.KindTranslator || !m.Supported {
-			continue
-		}
-		if name != "" && e.Engine == name {
-			return e.Engine
+		for _, e := range dbEngs {
+			if e.Enabled == 0 {
+				continue
+			}
+			m, ok := metaMap[e.Engine]
+			if !ok || m.Kind != engine.KindTranslator || !m.Supported {
+				continue
+			}
+			if e.Engine == name {
+				return e.Engine
+			}
 		}
 	}
 	for _, e := range dbEngs {

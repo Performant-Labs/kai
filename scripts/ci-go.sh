@@ -258,27 +258,40 @@ make lint-go
 echo "==> go test (internal/... + pkg/...)"
 make test-go
 
-# 9b. Frontend test — `pnpm --dir frontend test` (vitest --run, issue #7):
-#     the same command pipeline's test.unit.command runs, so the fleet runs the
-#     suite t-green gates on. node_modules is already installed (job install
-#     hook + make deps), so vitest resolves from the warm node install.
+# 9b. Frontend test — `pnpm --dir ./frontend test --no-file-parallelism`
+#     (vitest --run, issue #7): the same command pipeline's test.unit.command
+#     runs, so the fleet runs the suite t-green gates on, with vitest's file
+#     parallelism turned OFF (issue #9). node_modules is already installed
+#     (job install hook + make deps), so vitest resolves from the warm node
+#     install. The invocation is made directly here instead of via `make
+#     test-frontend` because pnpm forwards the trailing arguments to the
+#     script, so --no-file-parallelism lands on `vitest --run` without
+#     touching the Makefile or frontend/package.json.
 #
-#     Node 26 (baked in pl-runner) registers localStorage/sessionStorage as
-#     LAZY own properties on globalThis that return `undefined` unless
-#     --localstorage-file is passed; vitest's jsdom env leaves that native
-#     getter in place (it only copies window keys absent from global), so the
-#     tests' window.localStorage is undefined and every case throws. Exporting
+#     WHY SERIAL (issue #9, ~5-20% measured frontend flake): Node 26 (baked in
+#     pl-runner) registers localStorage/sessionStorage as LAZY own properties
+#     on globalThis that return `undefined` unless --localstorage-file is
+#     passed; vitest's jsdom env leaves that native getter in place (it only
+#     copies window keys absent from global), so the tests' window.localStorage
+#     is undefined and every case throws. Exporting
 #     NODE_OPTIONS=--localstorage-file makes Node's own getter a real, file-
 #     backed Storage, which vitest leaves untouched (window===globalThis in the
 #     tests), so window.localStorage just works. The file lives under $HOME
 #     (writable, per-runner) and is disposable — it is test scratch, not state,
 #     and is never committed (docs/handoffs and dot-artifacts stay untracked).
-#     Exported (not scoped to the make line) so pnpm -> vitest -> the node
-#     worker processes all inherit it; it is set immediately before this step
-#     and not consumed by anything after it.
+#     But that ONE file-backed store is shared by ALL vitest workers: with the
+#     default --file-parallelism on, the three frontend test files run in
+#     parallel node workers that all read/write the same .kai-localstorage.json,
+#     and those cross-file races are the remaining flake. --no-file-parallelism
+#     runs the test files one at a time, so no two workers share the store at
+#     once — the race surface is removed without dropping a single test case
+#     (same suite, same assertions; only the scheduling changes).
+#     NODE_OPTIONS is exported (not scoped to the pnpm line) so pnpm -> vitest
+#     -> the node worker processes all inherit it; it is set immediately before
+#     this step and not consumed by anything after it.
 export NODE_OPTIONS="--localstorage-file=${HOME}/.kai-localstorage.json"
-echo "==> frontend test (vitest)"
-make test-frontend
+echo "==> frontend test (vitest, files serial)"
+pnpm --dir ./frontend test --no-file-parallelism
 
 # 10. Fuzz: mirror `make fuzz-go` (a 30s run of a fuzzer) but do NOT inherit
 #    make's `FUZZ`/`TIME` env vars — `fuzz -fuzz=""` is an invalid target and
