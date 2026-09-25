@@ -401,14 +401,14 @@ func main() {
 	// 主窗口启动即显示并居中
 	settingsWindow.Center()
 
-	// 输入翻译窗口
+	// 输入翻译窗口：两栏布局（issue #10，锁定决策：永远左右并排）——默认/最小宽度放大，
+	// 不再锁死 420（旧 MaxWidth 移除）；高度交给窗口自身，内容区各自内部滚动。
 	translateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      model.WindowTranslate,
 		Title:     i18n.T("window.translate_title"),
-		Width:     420,
-		Height:    560,
-		MinWidth:  420,
-		MaxWidth:  420,
+		Width:     960,
+		Height:    640,
+		MinWidth:  780,
 		MinHeight: 520,
 		URL:       "/translate.html",
 		Mac: application.MacWindow{

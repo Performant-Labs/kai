@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { t, langName, engineName } from '../i18n';
   import { rootStyle } from '../stores/theme';
   import { currentLang } from '../stores/ui';
@@ -96,25 +96,33 @@
   // 各引擎翻译结果，按引擎名聚合（多引擎并发，逐个到达）。
   let results = $state<Record<string, TranslateResult>>({});
   let loading = $state(false);
-  // 结果区自身高度范围：只缩放结果区，输入框/语言条/按钮等固定区域高度不变。
-  // 高度直接测量真实渲染高度（临时放开结果区 → 读 scrollHeight → 精确设回），
-  // 避免中英文/标点/长单词断行导致的估算偏差（这是之前翻译即出滚动条的根因）。
-  const RESULT_MIN = 200;
-  const RESULT_MAX = 720;
-  // webview 内 main 还有布局间距需补偿，否则窗口比内容矮 48px → 底部被裁出滚动条：
-  // main 的 p-4（上下各 16 = 32）+ fixedEl 与 resultEl 之间的 gap-4（16）。
-  const LAYOUT_EXTRA = 48;
-  // 真实测量后再加一点点安全余量，防亚像素/字体加载导致的差一点点滚动条。
-  const RESULT_BUF = 12;
 
-  let fixedEl = $state<HTMLElement | null>(null);
-  let resultEl = $state<HTMLElement | null>(null);
-  // 结果区头部（标签行）：用于早期 return 判空；实际测量在 measureResultRealHeight 内用 resultEl 整体。
-  let resultHeaderEl = $state<HTMLElement | null>(null);
-  // 结果区动态高度：由引擎数量与译文长度计算，在 [RESULT_MIN, RESULT_MAX] 间。
-  let resultH = $state(RESULT_MIN);
-  // 缓存当前窗口宽度（只改高度，不改宽度）。
-  let winW = $state(420);
+  // 两栏布局（issue #10，锁定决策：永远左右并排，无堆叠回退）。分隔条把内容行切成
+  // 源文本栏（左）与结果栏（右），占比持久化到 localStorage，重开窗口后保留。
+  // 夹逼/换算逻辑全部在 utils/paneLayout.ts（纯函数，vitest 覆盖）。
+  import { clampRatio, ratioFromPoint } from '../utils/paneLayout.ts';
+  const dividerStore = persisted<number>('translate:divider', 0.5);
+  let panesEl = $state<HTMLElement | null>(null);
+  let leftRatio = $derived(clampRatio($dividerStore));
+
+  // 分隔条拖拽：mousedown 后在 window 上跟踪 mousemove（拖出分隔条也能继续拖），
+  // mouseup 解除。指针水平位置 → 行内占比 → 夹逼 → 写回持久化 store。
+  function startDividerDrag(ev: MouseEvent) {
+    ev.preventDefault();
+    const row = panesEl;
+    if (!row) return;
+    const move = (e: MouseEvent) => {
+      dividerStore.set(
+        ratioFromPoint(e.clientX, row.getBoundingClientRect().left, row.clientWidth),
+      );
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
 
   // 翻译中走马灯：动态省略号（. → .. → ... → .... 循环）
   let dotCount = $state(0);
@@ -154,7 +162,7 @@
   // 每个 enabled 翻译引擎一个 dot（状态 = fan-out 真实输出：done/pending/failed，设计 §4）。
   const dots = $derived(statusDots(allEngines, results, loading));
   // 活动引擎的当前结果（失败的引擎在 results 里缺席 → null）。
-  const activeResult = $derived(activeEngine ? results[activeEngine] ?? null : null);
+  const activeResult = $derived(activeEngine ? (results[activeEngine] ?? null) : null);
   // 活动引擎正在显示/可显示的文本：手工编辑 ?? 引擎结果 ?? 空串。
   const activeDisplay = $derived(edited.get(activeEngine) ?? activeResult?.result ?? '');
   // 结果区引擎下拉框的显示值：activeEngine 已含「'' → 第一个 enabled」防御回退，
@@ -170,98 +178,8 @@
   function handleEngineChange(ev: Event) {
     const name = (ev.currentTarget as HTMLSelectElement).value;
     setLastUsedEngine(name);
-    // 切换引擎：丢弃上一个引擎的手工编辑，重算窗口高度（新引擎结果长度可能不同）。
+    // 切换引擎：丢弃上一个引擎的手工编辑，新引擎从它自己的存储结果起步。
     edited = resetEdits(edited, activeEngine, name, results);
-    adjustWindowHeight();
-  }
-
-  // 内容（输入/结果/loading）变化后，等下一帧布局稳定再按需调整窗口高度。
-  $effect(() => {
-    // 依赖：输入、结果、loading、引擎列表 / 活动引擎任意变化都触发重算。
-    input;
-    results;
-    loading;
-    activeEngines;
-    activeEngine;
-    if (resultEl) {
-      tick().then(adjustWindowHeight);
-    }
-  });
-
-  // 重入/排队防护：连续结果到达时若正在测量，标记 pending，测量结束后补一次。
-  let adjusting = false;
-  let pending = false;
-  // 设计：窗口总高 = 固定区(语言条+输入卡片)真实高度 + 结果区高度 + 标题栏补偿 + 布局间距补偿。
-  // 固定区高度恒定（输入卡片 min-h 已给足），只有翻译结果区随内容伸缩。
-  //
-  // 测量高度的核心难点：任何「读当前 DOM scrollHeight 再设回 resultH」的自引用都会形成正反馈
-  // （flex 容器相互撑开 → scrollHeight 随 resultH 变大 → 一直加）。因此测量时必须把结果区临时
-  // 设为 height:auto（脱离高度限制）+ visibility:hidden（防闪烁、不影响布局回流），读其自然内容
-  // 真实高，再恢复。每次测量都从「自然内容高」起步，与历史 resultH 完全无关 → 值恒定、不累加。
-  //
-  // 测量方式：用「屏幕外克隆」彻底脱离当前 DOM 与 Svelte 的 style:height 绑定。
-  // 直接操作真实 resultEl 的 style.height 会被 Svelte 的响应式绑定覆盖/干扰，
-  // 导致读到的 scrollHeight 仍受旧 resultH 约束（偏小 → 窗口矮 → 滚动条）。
-  // 克隆一个同宽、height:auto、屏幕外的副本读 scrollHeight，完全不受原元素高度限制。
-  function measureResultRealHeight(): number {
-    if (!resultEl) return RESULT_MIN;
-    const clone = resultEl.cloneNode(true) as HTMLElement;
-    clone.style.cssText = `
-      position: fixed;
-      top: -9999px;
-      left: -9999px;
-      width: ${resultEl.offsetWidth}px;
-      height: auto;
-      max-height: none;
-      visibility: hidden;
-      pointer-events: none;
-      z-index: -1;
-    `;
-    document.body.appendChild(clone);
-    const real = clone.scrollHeight;
-    document.body.removeChild(clone);
-    return real;
-  }
-  async function adjustWindowHeight() {
-    if (!fixedEl || !resultEl || !resultHeaderEl) return;
-    if (adjusting) {
-      pending = true;
-      return;
-    }
-    adjusting = true;
-    try {
-      // 等结果 / 活动引擎 / 内容变化渲染完成后再测真实高度（此时临时 auto 测量，不依赖历史 resultH）。
-      await tick();
-      const realH = measureResultRealHeight();
-      // 精确设回：clamp 到 [RESULT_MIN, RESULT_MAX]，加一点点安全余量。
-      const ideal = Math.min(RESULT_MAX, Math.max(RESULT_MIN, realH + RESULT_BUF));
-      resultH = ideal;
-      // 真实 resultEl 高度由 JS 直接设置，不用 Svelte style:height 绑定，避免绑定覆盖/干扰。
-      resultEl.style.height = `${ideal}px`;
-      // 固定区真实高度：直接测语言条+输入卡片容器 offsetHeight（不随内容变，稳定可靠）。
-      const fixedH = fixedEl.offsetHeight;
-      // 窗口整体高度 = 固定区 + 结果区 + webview 内布局间距补偿。
-      // 只让结果区参与伸缩；LAYOUT_EXTRA 补 main 的 p-4(32)+gap-4(16)，否则窗口矮 48px 出滚动条。
-      const targetH = fixedH + resultH + LAYOUT_EXTRA;
-      console.debug(t('log.heightLogSetWindowHeight'), {
-        窗口宽度: winW,
-        固定区: fixedH,
-        结果区: resultH,
-        布局间距: LAYOUT_EXTRA,
-        目标高度: targetH,
-      });
-      try {
-        await Window.SetSize(winW, targetH);
-      } catch (e) {
-        console.error(t('log.heightLogAdjustFailed'), e);
-      }
-    } finally {
-      adjusting = false;
-      if (pending) {
-        pending = false;
-        adjustWindowHeight();
-      }
-    }
   }
 
   onMount(() => {
@@ -270,8 +188,6 @@
       if (payload && payload.engine) {
         results = { ...results, [payload.engine]: payload };
         loading = false;
-        // 翻译结果出来：结果区内容变高，立刻重算窗口高度（动态）。
-        adjustWindowHeight();
       }
     });
     const offInputFill = onEvent(EventInputFill, (text: string) => {
@@ -286,31 +202,21 @@
       input = '';
       loading = false;
       edited = new Map();
-      // 清空后结果区缩回，重算高度。
-      adjustWindowHeight();
     });
     // 设置里增删/启停引擎后广播：重新拉取引擎列表，使翻译窗口结果卡片同步最新状态
     // （否则开启/关闭的引擎不会刷新，仍是旧列表）。
     const offEngines = onEvent(EventEnginesChanged, () => {
       loadEngines();
     });
-    // 初始化与首屏测量：必须等引擎加载完成再测高度，否则默认窗口算错。
+    // 初始化与首屏：恢复置顶状态，等引擎/语言/默认值加载完成。
     (async () => {
-      // 恢复持久化的置顶状态 + 缓存窗口宽度（只改高度不改宽度）
+      // 恢复持久化的置顶状态。
       try {
         await Window.SetAlwaysOnTop($pinnedStore);
       } catch (e) {
         console.error(t('log.restorePinFailed'), e);
       }
-      try {
-        const size = await Window.Size();
-        winW = size.width;
-        console.debug(t('log.heightLogInitWidth'), winW);
-      } catch (e) {
-        console.error(t('log.inputLogReadSizeFailed'), e);
-      }
-      // 必须先等引擎/语言/默认值加载完（影响结果区占位卡片数量），否则首屏测量时
-      // activeEngines 为空会走 RESULT_MIN 算出一个过矮的窗口，之后不一定能纠正。
+      // 必须先等引擎/语言/默认值加载完（结果区下拉框与 dots 依赖它们）。
       await Promise.all([loadDefaults(), loadEngines(), loadLanguages()]);
       // 载入「自动读取剪贴板翻译」开关 + 主引擎（均持久化在 settings.json）。
       // default_engine 是主引擎解析链的中间层（last-used ?? primary ?? first-enabled）。
@@ -324,17 +230,6 @@
         }
       } catch (e) {
         console.error(t('log.autoClipboardLoadFailed'), e);
-      }
-      // 首屏主动计算一次高度：等引擎列表渲染进结果区后，用真实测量得到准确窗口高。
-      tick().then(async () => {
-        await tick();
-        console.debug(t('log.heightLogFirstAdjust'));
-        adjustWindowHeight();
-      });
-      // 字体异步加载（如自定义字体）会改变文本实际高度，加载完成后再补一次，
-      // 否则首屏测的偏矮 → 之后字体到位内容变高 → 滚动条。
-      if (typeof document !== 'undefined' && document.fonts?.ready) {
-        document.fonts.ready.then(() => adjustWindowHeight());
       }
     })();
     return () => {
@@ -421,8 +316,6 @@
     results = {};
     // 新一轮 fan-out 从空白开始：上一批的编辑结果对新一轮无意义，一并丢弃。
     edited = new Map();
-    // 开始翻译：结果区显示 loading 占位，立刻重算高度（动态结果区）。
-    adjustWindowHeight();
     try {
       // 多引擎并发由后端按已开启引擎并行，不依赖单个 engine；
       // bindings 生成的 TranslateRequest.engine 为必填，传空串以满足类型（后端忽略）。
@@ -468,63 +361,65 @@
     input = '';
     results = {};
     edited = new Map();
-    // 清空翻译：结果区缩回（无结果），立刻重算窗口高度（动态结果区）。
-    adjustWindowHeight();
   }
 </script>
 
-<div class="u-surface flex flex-col" style={rootStyleToStyle($rootStyle)}>
-  <main class="flex flex-col gap-4 overflow-hidden p-4">
-    <!-- 固定区：语言条 + 输入卡片，高度恒定不变，只有翻译结果区随内容伸缩 -->
-    <div bind:this={fixedEl} class="flex flex-col gap-4">
-      <!-- 语言控制条 -->
-      <div class="flex items-center justify-center gap-2">
-        <select
-          class="u-field u-select u-lang-select px-3 py-2 text-sm"
-          bind:value={fromLang}
-          onchange={persistLangs}
-          aria-label={t('translate.from')}
-        >
-          {#each languages as l}
-            <option value={l.value}>{langName(l.value)}</option>
-          {/each}
-        </select>
+<div class="u-surface flex h-screen flex-col" style={rootStyleToStyle($rootStyle)}>
+  <main class="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4">
+    <!-- 语言控制条：横贯两栏之上（from/swap/to 作用于整次翻译，DeepL 同款布局） -->
+    <div class="flex items-center justify-center gap-2">
+      <select
+        class="u-field u-select u-lang-select px-3 py-2 text-sm"
+        bind:value={fromLang}
+        onchange={persistLangs}
+        aria-label={t('translate.from')}
+      >
+        {#each languages as l}
+          <option value={l.value}>{langName(l.value)}</option>
+        {/each}
+      </select>
 
-        <button
-          class="u-icon-btn u-no-drag"
-          onclick={swap}
-          aria-label={t('translate.swap')}
-          title={t('translate.swap')}
+      <button
+        class="u-icon-btn u-no-drag"
+        onclick={swap}
+        aria-label={t('translate.swap')}
+        title={t('translate.swap')}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M7 10h14l-4-4" />
-            <path d="M17 14H3l4 4" />
-          </svg>
-        </button>
+          <path d="M7 10h14l-4-4" />
+          <path d="M17 14H3l4 4" />
+        </svg>
+      </button>
 
-        <select
-          class="u-field u-select u-lang-select px-3 py-2 text-sm"
-          bind:value={toLang}
-          onchange={persistLangs}
-          aria-label={t('translate.to')}
-        >
-          {#each targetLanguages as l}
-            <option value={l.value}>{langName(l.value)}</option>
-          {/each}
-        </select>
-      </div>
+      <select
+        class="u-field u-select u-lang-select px-3 py-2 text-sm"
+        bind:value={toLang}
+        onchange={persistLangs}
+        aria-label={t('translate.to')}
+      >
+        {#each targetLanguages as l}
+          <option value={l.value}>{langName(l.value)}</option>
+        {/each}
+      </select>
+    </div>
 
-      <!-- 输入区 -->
-      <section class="u-card u-card--panel flex flex-col overflow-hidden">
+    <!-- 两栏行（issue #10，锁定决策：永远左右并排，无堆叠回退）：左 = 源文本，右 = 结果，
+         中缝分隔条可拖拽（占比持久化到 localStorage，数学在 utils/paneLayout.ts） -->
+    <div bind:this={panesEl} class="flex min-h-0 flex-1 gap-3">
+      <!-- 左栏：源文本（宽度 = 持久化占比，分隔条拖拽改变；textarea 撑满余高） -->
+      <section
+        class="u-card u-card--panel flex min-w-0 flex-col overflow-hidden"
+        style="width: {leftRatio * 100}%"
+      >
         <div class="u-border-b flex items-center justify-between px-3 py-2">
           <span class="u-label">{t('translate.from')}</span>
           <div class="flex items-center gap-2">
@@ -583,7 +478,7 @@
           </div>
         </div>
         <textarea
-          class="min-h-[120px] resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
+          class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
           bind:value={input}
           placeholder={t('translate.placeholder')}></textarea>
         <div class="u-border-t flex items-center justify-between px-3 py-2">
@@ -622,159 +517,156 @@
           </div>
         </div>
       </section>
-    </div>
-    <!-- 固定区结束 -->
 
-    <!-- 结果区：只显示活动引擎（last-used/primary 推导，issue #9）的单卡结果；后端 fan-out
-         仍按已开启引擎并发、逐个流式到达（results 按引擎聚合，供状态 dot 使用），但 UI 只呈现
-         活动引擎。区域自身在 [RESULT_MIN, RESULT_MAX] 间自适应高度，超出内部滚动，不影响固定区 -->
-    <section class="u-card u-card--panel flex flex-col overflow-hidden" bind:this={resultEl}>
+      <!-- 分隔条：拖拽改变左栏占比（见 startDividerDrag / paneLayout.ts） -->
       <div
-        bind:this={resultHeaderEl}
-        class="u-border-b flex items-center justify-between px-3 py-2"
-      >
-        <span class="u-label">{t('translate.result')}</span>
-        <div class="flex items-center gap-2">
-          {#if activeEngines.length > 0}
-            <!-- 结果区引擎下拉框（设计 §2）：受控显示值 = 活动引擎（last-used/primary 推导，
+        role="separator"
+        aria-orientation="vertical"
+        class="w-1.5 shrink-0 cursor-col-resize rounded-full bg-[var(--app-muted)] opacity-40 transition-opacity hover:opacity-100 u-no-drag"
+        onmousedown={startDividerDrag}
+      ></div>
+
+      <!-- 右栏：结果（issue #9 的活动引擎单卡 + 引擎下拉框 + 状态 dots 原样迁入） -->
+      <section class="u-card u-card--panel flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div class="u-border-b flex items-center justify-between px-3 py-2">
+          <span class="u-label">{t('translate.result')}</span>
+          <div class="flex items-center gap-2">
+            {#if activeEngines.length > 0}
+              <!-- 结果区引擎下拉框（设计 §2）：受控显示值 = 活动引擎（last-used/primary 推导，
                  见 activeEngineFor）；onchange 写 last-used（#8 的 setLastUsedEngine）并重置
                  编辑。禁用的引擎（settings 刚切换、EventEnginesChanged 尚未落地）列为 disabled。 -->
-            <select
-              class="u-field u-select u-engine-select px-3 py-2 text-sm"
-              value={selectValue}
-              onchange={handleEngineChange}
-              aria-label={t('translate.engineActive')}
-              title={t('translate.engineActive')}
-            >
-              {#each activeEngines as e}
-                <option value={e.value} disabled={!e.enabled}>
-                  {engineName(e.value)}{!e.enabled ? t('translate.engineDisabled') : ''}
-                </option>
-              {/each}
-            </select>
-            <!-- 每引擎一个状态 dot（设计 §4）：done/pending/failed 纯由 fan-out 真实输出派生；
+              <select
+                class="u-field u-select u-engine-select px-3 py-2 text-sm"
+                value={selectValue}
+                onchange={handleEngineChange}
+                aria-label={t('translate.engineActive')}
+                title={t('translate.engineActive')}
+              >
+                {#each activeEngines as e}
+                  <option value={e.value} disabled={!e.enabled}>
+                    {engineName(e.value)}{!e.enabled ? t('translate.engineDisabled') : ''}
+                  </option>
+                {/each}
+              </select>
+              <!-- 每引擎一个状态 dot（设计 §4）：done/pending/failed 纯由 fan-out 真实输出派生；
                  活动引擎的 dot 加 accent 环，让下拉框的选择一眼可见。 -->
-            <div class="flex items-center gap-1">
-              {#each activeEngines as e (e.value)}
-                {@const st = dots[e.value] as DotState}
-                <span
-                  class="h-2 w-2 rounded-full"
-                  class:bg-[var(--app-accent)]={st === 'done'}
-                  class:bg-[var(--app-muted)]={st === 'pending'}
-                  class:bg-[var(--app-danger)]={st === 'failed'}
-                  class:ring-2={e.value === activeEngine}
-                  class:ring-[var(--app-accent)]={e.value === activeEngine}
-                  title={
-                    engineName(e.value) +
-                    (st === 'done'
-                      ? ' · ' + t('translate.engineDone')
-                      : st === 'pending'
-                        ? ' · ' + t('translate.enginePending')
-                        : ' · ' + t('translate.engineFailed'))
-                  }
-                  aria-label={
-                    engineName(e.value) +
-                    (st === 'done'
-                      ? ' · ' + t('translate.engineDone')
-                      : st === 'pending'
-                        ? ' · ' + t('translate.enginePending')
-                        : ' · ' + t('translate.engineFailed'))
-                  }
-                ></span>
-              {/each}
-            </div>
-          {/if}
-          <!-- 复制按钮：只复制活动引擎当前显示文本（含手工编辑），不再拼接所有引擎（设计 §6）。 -->
-          {#if activeResult?.result || edited.has(activeEngine)}
-            <button
-              class="u-icon-btn u-no-drag"
-              onclick={() => copy(activeDisplay)}
-              aria-label={t('translate.copy')}
-              title={t('translate.copy')}
-            >
+              <div class="flex items-center gap-1">
+                {#each activeEngines as e (e.value)}
+                  {@const st = dots[e.value] as DotState}
+                  <span
+                    class="h-2 w-2 rounded-full"
+                    class:bg-[var(--app-accent)]={st === 'done'}
+                    class:bg-[var(--app-muted)]={st === 'pending'}
+                    class:bg-[var(--app-danger)]={st === 'failed'}
+                    class:ring-2={e.value === activeEngine}
+                    class:ring-[var(--app-accent)]={e.value === activeEngine}
+                    title={engineName(e.value) +
+                      (st === 'done'
+                        ? ' · ' + t('translate.engineDone')
+                        : st === 'pending'
+                          ? ' · ' + t('translate.enginePending')
+                          : ' · ' + t('translate.engineFailed'))}
+                    aria-label={engineName(e.value) +
+                      (st === 'done'
+                        ? ' · ' + t('translate.engineDone')
+                        : st === 'pending'
+                          ? ' · ' + t('translate.enginePending')
+                          : ' · ' + t('translate.engineFailed'))}
+                  ></span>
+                {/each}
+              </div>
+            {/if}
+            <!-- 复制按钮：只复制活动引擎当前显示文本（含手工编辑），不再拼接所有引擎（设计 §6）。 -->
+            {#if activeResult?.result || edited.has(activeEngine)}
+              <button
+                class="u-icon-btn u-no-drag"
+                onclick={() => copy(activeDisplay)}
+                aria-label={t('translate.copy')}
+                title={t('translate.copy')}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+            {/if}
+          </div>
+        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          {#if activeEngines.length === 0}
+            <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
               <svg
-                width="16"
-                height="16"
+                class="u-muted"
+                width="40"
+                height="40"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2"
+                stroke-width="1.5"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
-            </button>
+              <span class="u-muted text-sm">{t('translate.noActiveEngine')}</span>
+            </div>
+          {:else if loading && !results[activeEngine]}
+            <!-- 活动引擎尚在飞行（尚无结果）：loading 占位（kai-dots + kai-loading-bar）。 -->
+            <div class="u-result-card">
+              <div class="mb-2 flex items-center gap-2">
+                <span
+                  class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
+                >
+                  {engineName(activeEngine)}
+                </span>
+              </div>
+              <div class="flex flex-col gap-2">
+                <p class="u-muted text-base leading-relaxed">
+                  {t('common.loading')}<span class="kai-dots">{'.'.repeat(dotCount)}</span>
+                </p>
+                <div class="kai-loading-bar" aria-hidden="true"></div>
+              </div>
+            </div>
+          {:else if activeResult?.result}
+            <!-- 活动引擎已有（非空）结果：可编辑单卡（设计 §5）。编辑写回 edited[activeEngine]，
+               显示文本 = edited ?? result；切换引擎时 edited 整体丢弃，新引擎从自身结果起步。 -->
+            <div class="u-result-card">
+              <div class="mb-2 flex items-center gap-2">
+                <span
+                  class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
+                >
+                  {engineName(activeEngine)}
+                </span>
+                {#if activeResult.phonetic}
+                  <span class="u-muted text-xs">{activeResult.phonetic}</span>
+                {/if}
+              </div>
+              <textarea
+                class="min-h-[120px] resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
+                value={activeDisplay}
+                onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
+                placeholder={t('translate.noResult')}></textarea>
+            </div>
+          {:else}
+            <!-- 活动引擎失败（缺席于 results 且 loading 已解除）或引擎返回空结果：失败态（设计 §5）。
+               不重试、无重试按钮——重试即用户重按翻译按钮（重跑整个 fan-out）。 -->
+            <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
+              <span class="text-sm" style="color: var(--app-danger)">{t('translate.failed')}</span>
+            </div>
           {/if}
         </div>
-      </div>
-      <div class="min-h-0 flex-1 overflow-y-auto p-4">
-        {#if activeEngines.length === 0}
-          <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <svg
-              class="u-muted"
-              width="40"
-              height="40"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-            <span class="u-muted text-sm">{t('translate.noActiveEngine')}</span>
-          </div>
-        {:else if loading && !results[activeEngine]}
-          <!-- 活动引擎尚在飞行（尚无结果）：loading 占位（kai-dots + kai-loading-bar）。 -->
-          <div class="u-result-card">
-            <div class="mb-2 flex items-center gap-2">
-              <span
-                class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
-              >
-                {engineName(activeEngine)}
-              </span>
-            </div>
-            <div class="flex flex-col gap-2">
-              <p class="u-muted text-base leading-relaxed">
-                {t('common.loading')}<span class="kai-dots">{'.'.repeat(dotCount)}</span>
-              </p>
-              <div class="kai-loading-bar" aria-hidden="true"></div>
-            </div>
-          </div>
-        {:else if activeResult?.result}
-          <!-- 活动引擎已有（非空）结果：可编辑单卡（设计 §5）。编辑写回 edited[activeEngine]，
-               显示文本 = edited ?? result；切换引擎时 edited 整体丢弃，新引擎从自身结果起步。 -->
-          <div class="u-result-card">
-            <div class="mb-2 flex items-center gap-2">
-              <span
-                class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
-              >
-                {engineName(activeEngine)}
-              </span>
-              {#if activeResult.phonetic}
-                <span class="u-muted text-xs">{activeResult.phonetic}</span>
-              {/if}
-            </div>
-            <textarea
-              class="min-h-[120px] resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
-              value={activeDisplay}
-              onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
-              placeholder={t('translate.noResult')}
-            ></textarea>
-          </div>
-        {:else}
-          <!-- 活动引擎失败（缺席于 results 且 loading 已解除）或引擎返回空结果：失败态（设计 §5）。
-               不重试、无重试按钮——重试即用户重按翻译按钮（重跑整个 fan-out）。 -->
-          <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <span class="text-sm" style="color: var(--app-danger)">{t('translate.failed')}</span>
-          </div>
-        {/if}
-      </div>
-    </section>
+      </section>
+    </div>
   </main>
 
   {#if toast}
