@@ -1,7 +1,9 @@
 <script lang="ts">
-  // 纯展示组件（issue #11）：把文本按 tokenize 的 token 渲染成 hover 高亮的 span。
-  // 刻意没有任何点击行为——词级交互（字典/备选）属于 issue #18。
-  // 空白 token 以纯文本渲染，保持原有换行/折行行为。
+  // Pure display component (issue #11): renders text as hover-highlighted spans based on
+  // tokenize's tokens.
+  // Deliberately has no click behavior — word-level interaction (dictionary/alternatives)
+  // belongs to issue #18.
+  // Whitespace tokens render as plain text to preserve the original line-break/wrapping behavior.
   import { tokenize } from '../utils/tokenize.ts';
 
   let { text, class: cls = '' }: { text: string; class?: string } = $props();

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { tokenize, type Token } from './tokenize.ts';
 
-// 重装不变量：任意文本切出的 token 拼回去必须逐字符等于原文（spans 渲染的根基）。
+// Reassembly invariant: tokens cut from any text must join back to exactly the original text
+// (the foundation of spans rendering).
 function expectReassembles(text: string) {
   const tokens: Token[] = tokenize(text);
   expect(tokens.map((t) => t.text).join('')).toBe(text);

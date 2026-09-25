@@ -51,12 +51,12 @@ body {
 }
 
 @layer components {
-  /* ---------- 文本 ---------- */
+  /* ---------- Text ---------- */
   .u-muted {
     color: var(--app-muted);
   }
 
-  /* 行内小标签（如系统翻译支持的语言码列表） */
+  /* Inline small tags (e.g. the list of language codes supported by system translation) */
   .u-tag {
     display: inline-flex;
     align-items: center;
@@ -110,7 +110,7 @@ body {
     color: var(--app-accent);
   }
 
-  /* ---------- 表面（窗口根容器） ---------- */
+  /* ---------- Surface (window root container) ---------- */
   .u-surface {
     background: var(--app-bg);
     color: var(--app-fg);
@@ -121,7 +121,7 @@ body {
     background: var(--app-card);
   }
 
-  /* ---------- 卡片：一个基底 + 变体 ---------- */
+  /* ---------- Card: one base + variants ---------- */
   .u-card {
     background: var(--app-card);
     border: 1px solid var(--app-border);
@@ -140,7 +140,7 @@ body {
     backdrop-filter: blur(12px);
   }
 
-  /* 划词浮窗：选区旁的应用图标按钮（点击唤起主翻译窗口） */
+  /* Selection popup: the app icon button next to the selection (click brings up the main translate window) */
   .u-icon-btn {
     width: 32px;
     height: 32px;
@@ -172,7 +172,7 @@ body {
     border-radius: 0;
   }
 
-  /* ---------- 表单控件 ---------- */
+  /* ---------- Form controls ---------- */
   .u-field {
     background: var(--app-input-bg);
     border: 1px solid var(--app-border);
@@ -196,7 +196,7 @@ body {
     color: var(--app-muted);
   }
 
-  /* 选择框：去除原生箭头，统一下拉指示器 */
+  /* Select box: remove the native arrow, unify the dropdown indicator */
   .u-select {
     appearance: none;
     -webkit-appearance: none;
@@ -206,7 +206,7 @@ body {
     background-position: right 0.75rem center;
   }
 
-  /* ---------- 按钮 ---------- */
+  /* ---------- Buttons ---------- */
   .u-btn {
     border-radius: 0.5rem;
     font-weight: 500;
@@ -246,7 +246,7 @@ body {
     background: transparent;
   }
 
-  /* ---------- 分隔 / 边框 ---------- */
+  /* ---------- Dividers / borders ---------- */
   .u-divide {
     border-color: var(--app-border);
   }
@@ -267,7 +267,7 @@ body {
     border-top: 1px solid var(--app-border);
   }
 
-  /* ---------- 导航项（侧边栏） ---------- */
+  /* ---------- Nav items (sidebar) ---------- */
   .u-nav-item {
     display: flex;
     align-items: center;
@@ -295,7 +295,7 @@ body {
     background: var(--app-accent);
   }
 
-  /* ---------- 列表项（可选中） ---------- */
+  /* ---------- List items (selectable) ---------- */
   .u-list-item {
     display: flex;
     width: 100%;
@@ -318,7 +318,7 @@ body {
     outline: 1px solid var(--app-border);
   }
 
-  /* ---------- 分段控件（Segmented control） ---------- */
+  /* ---------- Segmented control ---------- */
   .u-segment {
     display: inline-flex;
     border-radius: 0.75rem;
@@ -359,7 +359,7 @@ body {
     color: var(--app-accent-fg);
   }
 
-  /* ---------- 图标容器 ---------- */
+  /* ---------- Icon container ---------- */
   .u-icon-box {
     display: flex;
     align-items: center;
@@ -369,7 +369,7 @@ body {
     border: 1px solid var(--app-border);
   }
 
-  /* ---------- 标题栏 ---------- */
+  /* ---------- Title bar ---------- */
   .u-titlebar {
     background: var(--app-bg);
     border-bottom: 1px solid var(--app-border);
@@ -386,7 +386,7 @@ body {
     opacity: 0.55;
   }
 
-  /* macOS 红绿灯：默认半透明，悬停三个按钮或全部时显示完整彩色 + 指针 */
+  /* macOS traffic lights: translucent by default; hovering the group reveals full color + pointer cursor */
   .u-no-drag:hover .u-traffic {
     opacity: 1;
   }
@@ -427,7 +427,7 @@ body {
     color: #fff;
   }
 
-  /* ---------- 拖拽区 ---------- */
+  /* ---------- Drag region ---------- */
   .u-drag {
     -webkit-app-region: drag;
   }
@@ -436,7 +436,7 @@ body {
     -webkit-app-region: no-drag;
   }
 
-  /* ---------- 开关（macOS 风格 toggle） ---------- */
+  /* ---------- Switch (macOS-style toggle) ---------- */
   .u-switch {
     position: relative;
     display: inline-flex;
@@ -496,7 +496,7 @@ body {
     opacity: 0.5;
   }
 
-  /* ---------- 翻译页专用控件 ---------- */
+  /* ---------- Translate-window-specific controls ---------- */
   .u-lang-select,
   .u-engine-select {
     min-width: 7rem;
@@ -577,7 +577,7 @@ body {
     color: var(--app-fg);
   }
 
-  /* 翻译中走马灯：底层轨道 + 上层高亮光带横滑 */
+  /* Translating marquee: base track with a highlight band sweeping across */
   .kai-loading-bar {
     position: relative;
     height: 3px;
@@ -597,7 +597,7 @@ body {
     background: linear-gradient(90deg, transparent, var(--app-accent), transparent);
     animation: kai-marquee 1.2s ease-in-out infinite;
   }
-  /* 动态省略号容器：固定最小宽度避免点数量变化时文字抖动 */
+  /* Animated ellipsis container: fixed min-width keeps text from jittering as the dot count changes */
   .kai-dots {
     display: inline-block;
     min-width: 1.5em;
@@ -617,7 +617,7 @@ body {
     }
   }
 
-  /* 多选 chips（如 Tesseract 识别语言选择） */
+  /* Multi-select chips (e.g. Tesseract recognition language selection) */
   .u-chip {
     padding: 0.3rem 0.7rem;
     font-size: 0.8rem;

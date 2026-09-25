@@ -1,20 +1,22 @@
-// 源语言标签的「自动检测」反馈（issue #11）：源语言为 auto 且引擎已返回检测语言时，
-// 语言条不再显示裸的「检测语言」，而是显示「English (detected)」式的反馈——让用户
-// 看见系统识别到了什么。用户一旦手动固定了具体语言，反馈即消失（返回 null，调用方
-// 回退到 langName(fromLang)）。
+// "Auto-detect" feedback for the source-language label (issue #11): when the source language is
+// auto and the engine has returned a detected language, the language bar no longer shows a bare
+// "detect language" option but an "English (detected)"-style label — so the user can see what the
+// system recognized. As soon as the user manually pins a concrete language, the feedback disappears
+// (returns null; the caller falls back to langName(fromLang)).
 //
-// nameOf（语言码→展示名）由调用方注入（i18n 的 langName），auto 的语言码同样由调用方
-// 传入（TRANSLATE_LANG.Auto）——本模块保持纯函数、不依赖生成的 bindings，vitest 可直接覆盖。
+// nameOf (language code → display name) is injected by the caller (i18n's langName), and the auto
+// language code is likewise passed in by the caller (TRANSLATE_LANG.Auto) — this module stays a pure
+// function with no dependency on the generated bindings, so vitest can cover it directly.
 
 /**
- * 返回源语言下拉框中 auto 选项的显示标签。
+ * Returns the display label for the auto option in the source-language dropdown.
  *
- * @param fromLang 当前源语言选择（autoCode 或具体语言码）
- * @param autoCode auto 的语言码（TRANSLATE_LANG.Auto）
- * @param detectedFrom 引擎结果中实际识别出的源语言码（无结果/未检测时为空串）
- * @param nameOf 语言码 → 展示名
- * @param suffix 检测后缀（i18n，如 ' (detected)' / '（已检测）'，可自带前导空格）
- * @returns 覆盖标签；不需要覆盖（已固定语言，或尚无检测结果）时返回 null
+ * @param fromLang the current source-language selection (autoCode or a concrete language code)
+ * @param autoCode the language code for auto (TRANSLATE_LANG.Auto)
+ * @param detectedFrom the source language actually recognized in the engine result (empty string when there is no result / nothing detected)
+ * @param nameOf language code → display name
+ * @param suffix detected suffix (i18n, e.g. ' (detected)' in en-US, its full-width-punctuation counterpart in zh-CN; may include a leading space)
+ * @returns the override label; null when no override is needed (language pinned, or no detection yet)
  */
 export function detectedSourceLabel(
   fromLang: string,

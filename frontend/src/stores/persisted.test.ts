@@ -1,23 +1,26 @@
-// issue #7（Tester 角色，RED）：前端 vitest 示例测试。
+// issue #7 (Tester role, RED): example frontend vitest suite.
 //
-// 为什么选 persisted store（而不是 lang.ts 的 lang-name 回退）：
-//  - lang.ts 把 @bindings/.../model/models.ts 的 wails 生成 enum `Language`
-//    re-export 成 TRANSLATE_LANG / ALL_TRANSLATE_LANGS / TARGET_TRANSLATE_LANGS，
-//    整个模块身份依赖 wails 生成物，测试环境无 wails runtime，import 即解析失败。
-//  - persisted.ts 只 import svelte/store，是纯逻辑 + 真实 localStorage，
-//    正好对应 issue 约定「frontend logic in jsdom with real localStorage」。
+// Why the persisted store was chosen (rather than lang.ts's lang-name fallback):
+//  - lang.ts re-exports the wails-generated enum `Language` from
+//    @bindings/.../model/models.ts as TRANSLATE_LANG / ALL_TRANSLATE_LANGS /
+//    TARGET_TRANSLATE_LANGS; the module's identity depends on wails-generated
+//    artifacts, and with no wails runtime in the test environment the import fails
+//    to resolve.
+//  - persisted.ts only imports svelte/store — pure logic plus real localStorage,
+//    exactly matching the issue's stipulation of "frontend logic in jsdom with
+//    real localStorage".
 //
-// 约束：
-//  - jsdom 提供真实 window.localStorage，不 mock；
-//  - 无组件测试框架；
-//  - 每个用例用唯一 key 隔离，互不干扰。
+// Constraints:
+//  - jsdom provides real window.localStorage, not mocked;
+//  - no component-testing framework;
+//  - each test case uses a unique key for isolation, no interference between cases.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { persisted, pinKey } from './persisted.ts';
 
 const KEY = 'kai:test:persisted';
 
 beforeEach(() => {
-  // 清理上一用例写入的 localStorage，保证每个用例从空状态开始。
+  // Clean up localStorage written by the previous case so every case starts from an empty state.
   window.localStorage.removeItem(KEY);
   window.localStorage.removeItem(pinKey('translate'));
 });
@@ -32,7 +35,7 @@ describe('persisted store (jsdom + real localStorage)', () => {
   });
 
   it('reads back the last persisted value from localStorage on init', () => {
-    // 模拟「上次运行」写入
+    // Simulate a write from a "previous run"
     window.localStorage.setItem(KEY, JSON.stringify(7));
     const s = persisted<number>(KEY, 42);
     let got = 0;
@@ -44,7 +47,7 @@ describe('persisted store (jsdom + real localStorage)', () => {
   it('syncs localStorage on set; a new store reads the value back', () => {
     const s1 = persisted<number>(KEY, 1);
     s1.set(99);
-    // 新 store 用同 key 重新初始化 → 应读到 99 而非 initial 1
+    // A new store re-initializes with the same key -> should read 99, not initial 1
     const s2 = persisted<number>(KEY, 1);
     let got = 0;
     const unsub = s2.subscribe((v) => (got = v));

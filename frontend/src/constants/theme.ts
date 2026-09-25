@@ -1,6 +1,7 @@
-// 主题模式常量（auto 跟随系统 / light 浅色 / dark 深色）。
-// 与后端 internal/settings 的 ThemeAuto/ThemeLight/ThemeDark 对齐，
-// 避免在各组件散落 'auto' / 'light' / 'dark' 等裸字符串，便于前后端同步修改。
+// Theme mode constants (auto follows the system / light / dark).
+// Aligned with ThemeAuto/ThemeLight/ThemeDark in the backend's internal/settings,
+// avoiding bare 'auto' / 'light' / 'dark' strings scattered across components and
+// keeping frontend and backend in sync when they change.
 
 export const THEME = {
   Auto: 'auto',
@@ -8,8 +9,8 @@ export const THEME = {
   Dark: 'dark',
 } as const;
 
-// 用户可配置的主题模式（auto / light / dark）。
+// User-configurable theme mode (auto / light / dark).
 export type ThemeMode = (typeof THEME)[keyof typeof THEME];
 
-// 实际生效的主题（解析 auto 后只剩 light / dark）。
+// The actually effective theme (after resolving auto, only light / dark remain).
 export type ResolvedTheme = typeof THEME.Light | typeof THEME.Dark;

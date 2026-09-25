@@ -1,9 +1,10 @@
 import { System } from '@wailsio/runtime';
 
-// Wails v3 多窗口场景下，部分窗口（如截图翻译浮窗 screenshot）的 window._wails
-// 未被注入，导致 System.IsMac() 误返回 false（实测 screenshot 窗口 _wails 为空）。
-// 因此优先使用 System.IsMac() 等原生 API，失败时回退到 navigator.userAgent
-// （在所有窗口均可靠，已验证 screenshot 窗口 UA 为 Macintosh）。
+// Under Wails v3 multi-window, some windows (e.g. the screenshot-translation window)
+// never get window._wails injected, which makes System.IsMac() wrongly return false
+// (verified: the screenshot window's _wails is empty). So prefer native APIs like
+// System.IsMac() and fall back to navigator.userAgent on failure (reliable in every
+// window; the screenshot window's UA was verified to be Macintosh).
 export function isMac(): boolean {
   try {
     return System.IsMac();
@@ -28,5 +29,6 @@ export function isLinux(): boolean {
   }
 }
 
-// 保留 System 引用以防 tree-shaking 移除（同时便于需要 Environment() 异步信息时使用）。
+// Keep the System re-export so tree-shaking can't remove it (also handy when async
+// Environment() info is needed).
 export { System };

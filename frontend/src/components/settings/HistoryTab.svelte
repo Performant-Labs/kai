@@ -11,14 +11,15 @@
   import { Dialogs } from '@wailsio/runtime';
 
   let history = $state<HistoryItem[]>([]);
-  // 历史分页与搜索
+  // History pagination and search
   let historyKeyword = $state('');
   let historyPage = $state(1);
   const historyPageSize = 20;
   let historyTotal = $state(0);
   let historyLoading = $state(false);
 
-  // 带分页 + 搜索的历史加载：keyword 来自输入框，offset 由当前页码推算。
+  // History loading with pagination + search: keyword comes from the input, offset is derived
+  // from the current page number.
   async function loadHistory() {
     if (historyLoading) return;
     historyLoading = true;
@@ -28,7 +29,8 @@
       historyTotal = await CountHistory(kw);
       const rows = (await GetHistory(kw, offset, historyPageSize)) ?? [];
       history = rows;
-      // 校正页码：搜索后可能超出范围（如删除/条件变化），回退到最后一页。
+      // Re-clamp the page number: after a search it may be out of range (e.g. after a delete or a
+      // filter change); fall back to the last page.
       const totalPages = Math.max(1, Math.ceil(historyTotal / historyPageSize));
       if (historyPage > totalPages) {
         historyPage = totalPages;
@@ -47,7 +49,7 @@
     }
   }
 
-  // 搜索框输入：防抖 300ms 后回到第 1 页重新加载。
+  // Search input: debounce 300ms, then reload from page 1.
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   function onHistorySearch() {
     historyPage = 1;
@@ -100,7 +102,7 @@
     }
   }
 
-  // 首次挂载时加载
+  // Load on first mount
   onMount(() => {
     loadHistory();
   });
@@ -118,7 +120,7 @@
 </header>
 
 <div class="u-card u-card--panel flex flex-col p-0 overflow-hidden">
-  <!-- 搜索框 -->
+  <!-- Search box -->
   <div class="border-b p-4">
     <input
       class="u-field w-full px-3 py-2 text-sm"
@@ -164,7 +166,7 @@
     </ul>
   {/if}
 
-  <!-- 分页栏 -->
+  <!-- Pagination bar -->
   {#if historyTotal > 0}
     <div class="flex items-center justify-between gap-3 border-t p-3 text-sm">
       <span class="u-muted">

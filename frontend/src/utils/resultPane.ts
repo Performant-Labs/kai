@@ -1,22 +1,26 @@
-// issue #9：结果区纯逻辑（从 TranslateWindow.svelte 抽出的无 DOM 部分，供测试独立验证）。
+// issue #9: result-pane pure logic (the DOM-free part extracted from TranslateWindow.svelte so
+// tests can verify it independently).
 //
-// 解析规则不在这里重新发明：activeEngineFor 直接消费 #8 的 resolvePrimaryEngine
-// （last-used ?? primary(default_engine) ?? first-enabled），只在其之上加一层
-// 「'' → 第一个 enabled translate 引擎」的防御性回退，保证结果区的引擎 select
-// 永不悬空。
+// The resolution rules are not reinvented here: activeEngineFor directly consumes #8's
+// resolvePrimaryEngine (last-used ?? primary(default_engine) ?? first-enabled) and adds a single
+// defensive fallback on top — '' → the first enabled translate engine — guaranteeing the result
+// pane's engine select never dangles.
 //
-// 状态 dot 的三态是 fan-out 真实输出的纯函数（设计 §4，后端不变）：
-//   done    = results[engine].result 为非空串（结果到达即 done，与 loading 无关）；
-//   pending = loading 且该引擎尚无（非空）结果；
-//   failed  = !loading 且该引擎无（非空）结果——失败的引擎后端不发任何事件，
-//              它在 results 里就是缺席的，failed 是「缺席 + loading 已结束」的派生信号。
+// The three status-dot states are a pure function of the fan-out's real output (design §4;
+// backend unchanged):
+//   done    = results[engine].result is a non-empty string (done as soon as a result arrives, regardless of loading);
+//   pending = loading and that engine has no (non-empty) result yet;
+//   failed  = !loading and that engine has no (non-empty) result — the backend sends no event
+//             whatsoever for a failed engine, it is simply absent from results; failed is the
+//             derived signal of "absent + loading finished".
 //
-// 本模块不触碰 localStorage / wails runtime / DOM：TranslateWindow 持有 lastUsed 的
-// 持久化 store，把解析输入交给 activeEngineFor；结果区模板消费 statusDots 与 resetEdits。
+// This module never touches localStorage / wails runtime / DOM: TranslateWindow holds lastUsed's
+// persisted store and hands the resolution inputs to activeEngineFor; the result-pane template
+// consumes statusDots and resetEdits.
 
 import { resolvePrimaryEngine } from './resolvePrimaryEngine.ts';
 
-/** 结果区引擎条目（GetAllEngines 形态）：id 顺序即「第一个」的顺序。 */
+/** Result-pane engine entry (GetAllEngines shape): id order defines "first". */
 export type PaneEngine = {
   id: number;
   value: string;
@@ -27,21 +31,22 @@ export type PaneEngine = {
   builtin?: boolean;
 };
 
-/** 单引擎 fan-out 结果条目（TranslateResult 的形态，result 为译文；空串/缺席即无结果）。 */
+/** Single-engine fan-out result entry (TranslateResult shape; result is the translation; empty string / absent means no result). */
 export type PaneResult = {
   engine?: string;
   result?: string;
   phonetic?: string;
-  /** issue #42：失败载荷的原始错误与类别（pair/network/auth/engine）；成功时缺席。 */
+  /** issue #42: the failure payload's raw error and category (pair/network/auth/engine); absent on success. */
   error?: string;
   errorKind?: string;
   [key: string]: unknown;
 };
 
 /**
- * 失败载荷的面向用户文案（issue #42）：kind → 本地化 key（pair/network/auth 有
- * 可操作文案，其余回退 translate.failed），原始错误细节以「 — 」附于其后。
- * 纯函数：t（i18n 取词）由调用方注入。
+ * User-facing copy for a failure payload (issue #42): kind → localized key (pair/network/auth get
+ * actionable copy; everything else falls back to translate.failed), with the raw error detail
+ * appended after " — ".
+ * Pure function: t (i18n lookup) is injected by the caller.
  */
 export function failureMessage(
   result: PaneResult | null | undefined,
@@ -61,7 +66,7 @@ export function failureMessage(
 }
 
 /**
- * 「enabled 的 translate 引擎」谓词：kind=translate 且 enabled 且平台支持。
+ * The "enabled translate engine" predicate: kind=translate and enabled and platform-supported.
  * Exported so the target-language capability gating (issue #52, utils/targetCapability.ts)
  * shares this one definition instead of restating it.
  */
@@ -70,16 +75,17 @@ export function isEnabledTranslate(e: Pick<PaneEngine, 'kind' | 'enabled' | 'sup
 }
 
 /**
- * 解析结果区当前绑定的引擎 name（= #8 的 resolvedPrimary 推导 + 防御性回退）。
+ * Resolves the name of the engine the result pane is currently bound to (= #8's resolvedPrimary
+ * derivation + a defensive fallback).
  *
- * @param lastUsedKey   localStorage key（如 `kai:translate:lastEngine`），resolvePrimaryEngine
- *                      自行读取（真实 localStorage；损坏/空值回退下一层）。
- * @param defaultEngine settings 的 default_engine（primary，解析链中间层）。
- * @param engines       GetAllEngines 形态的引擎列表（id 顺序）。
- * @returns 解析出的引擎 name；resolvePrimaryEngine 返回 '' 而列表里仍有 enabled
- *          translate 引擎时（对未来规则变更的防御），回退到第一个 enabled 的
- *          translate 引擎，保证 select 不悬空；列表里没有任何可用引擎时返回 ''
- *          （面板展示既有「no active engine」空态）。
+ * @param lastUsedKey   localStorage key (e.g. `kai:translate:lastEngine`); resolvePrimaryEngine
+ *                      reads it itself (real localStorage; corrupt/empty values fall to the next layer).
+ * @param defaultEngine settings' default_engine (primary, the middle layer of the resolution chain).
+ * @param engines       engine list in the GetAllEngines shape (id order).
+ * @returns the resolved engine name; when resolvePrimaryEngine returns '' but the list still has
+ *          enabled translate engines (a defense against future rule changes), falls back to the
+ *          first enabled translate engine so the select never dangles; returns '' when the list
+ *          has no usable engine at all (the pane shows the existing "no active engine" empty state).
  */
 export function activeEngineFor(
   lastUsedKey: string,
@@ -94,12 +100,12 @@ export function activeEngineFor(
   return '';
 }
 
-/** 单个引擎的 dot 状态（设计 §4 的状态表）。 */
+/** A single engine's dot state (the state table of design §4). */
 export type DotState = 'pending' | 'done' | 'failed';
 
 /**
- * 单个引擎的 dot 状态：done（非空结果）> pending（loading 且无结果）> failed
- * （!loading 且无结果——失败引擎缺席于 results）。
+ * A single engine's dot state: done (non-empty result) > pending (loading and no result) > failed
+ * (!loading and no result — a failed engine is absent from results).
  */
 export function statusDot(
   engine: string,
@@ -112,8 +118,8 @@ export function statusDot(
 }
 
 /**
- * 每个 enabled translate 引擎一个 dot（activeEngines 顺序，即 id 顺序）；
- * ocr / 禁用引擎不出 dot（设计 §4）。
+ * One dot per enabled translate engine (activeEngines order, i.e. id order);
+ * ocr / disabled engines get no dot (design §4).
  */
 export function statusDots(
   engines: PaneEngine[],
@@ -129,12 +135,13 @@ export function statusDots(
 }
 
 /**
- * 15 s 回退谓词（设计 §4 扩展）：fan-out 是否仍在进行中——即存在某个 enabled
- * translate 引擎「仍在 pending」（loading 且尚无（非空）结果）。
- * 旧逻辑只在「零结果」时解除 loading；放宽到「任一 pending」后，兄弟引擎到达会
- * 各自把 loading 翻 false，失败引擎缺席、loading 解除的同一刻其 dot 由 pending
- * 翻转为 failed（case 1 即时，case 2 由本谓词在 15 s 兜底点收敛）。
- * `loading === false` 时没有任何 pending 引擎 -> 恒 false（此时回退无意义）。
+ * The 15 s fallback predicate (a design §4 extension): whether the fan-out is still in progress —
+ * i.e. some enabled translate engine is "still pending" (loading and no (non-empty) result yet).
+ * The old logic only cleared loading on "zero results"; relaxed to "any pending", sibling engines
+ * arriving each flip loading to false themselves, and the moment loading clears with a failed
+ * engine absent, its dot flips from pending to failed (case 1 is immediate; case 2 converges at
+ * this predicate's 15 s fallback point).
+ * With `loading === false` no engine can be pending -> always false (a fallback would be meaningless).
  */
 export function anyPending(
   engines: PaneEngine[],
@@ -149,10 +156,11 @@ export function anyPending(
 }
 
 /**
- * 引擎切换（或重选同一引擎）时的编辑重置（设计 §3「manual edits reset」）：
- * 返回一个新 Map，丢弃 previousEngine 的手工编辑（无 per-engine 编辑记忆）；
- * nextEngine 的显示文本回到其存储的 result（map 里没有它，显示层 ?? 兜底）。
- * 入参的旧 Map 不被修改。
+ * Edit reset on engine switch (or re-selecting the same engine) (design §3 "manual edits reset"):
+ * returns a new Map, discarding previousEngine's manual edit (no per-engine edit memory);
+ * nextEngine's displayed text reverts to its stored result (absent from the map, so the display
+ * layer's ?? takes over).
+ * The input Map is not mutated.
  */
 export function resetEdits(
   edited: Map<string, string>,

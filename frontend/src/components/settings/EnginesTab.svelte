@@ -32,7 +32,7 @@
   import { EventEnginesChanged } from '../../utils/events';
   let engines = $state<AllEngineItem[]>([]);
 
-  // 按 Kind 分组展示：翻译引擎 / OCR 引擎（TTS 的 apple 引擎归入翻译类）
+  // Grouped display by Kind: translate engines / OCR engines (TTS's apple engine is grouped under translate)
   type EngineGroup = { kind: string; title: string; items: AllEngineItem[] };
   const engineGroups = $derived.by<EngineGroup[]>(() => {
     const order = ['translate', 'ocr'];
@@ -50,23 +50,24 @@
     }
     return order.map((k) => map.get(k)!).filter((g) => g.items.length > 0);
   });
-  // 主（默认）翻译引擎标识：settings.default_engine。星标按钮据此高亮；
-  // 初始从 GetConfig() 读取，增删/启停引擎后由 loadPrimary() 重读。
+  // Primary (default) translation engine identifier: settings.default_engine. The star button
+  // highlights based on it; read initially from GetConfig(), re-read by loadPrimary() after
+  // engines are added/removed or enabled/disabled.
   let primaryEngine = $state<string>('');
   let selectedId = $state<number | null>(null);
   let schema = $state<EngineSchema | null>(null);
   let configValues = $state<Record<string, string>>({});
 
-  // OCR 引擎（vision / tesseract）统一存放于 Extra(JSON) 的专属参数：
-  //   - ocrLangs:     语言码多选（"+" 拼接，如 "chi_sim+eng"）
-  //   - ocrCorrect:   是否开启语言校正（仅 vision 语义，tesseract 忽略）
-  //   - ocrTimeoutSec: OCR 超时秒数（默认 60）
-  //   - ocrRetry:     Vision OCR 失败兜底重试次数（仅 vision 语义，tesseract 忽略，默认 2）
+  // OCR engines (vision / tesseract) keep their dedicated params unified in Extra(JSON):
+  //   - ocrLangs:     multi-select of language codes (joined with "+", e.g. "chi_sim+eng")
+  //   - ocrCorrect:   whether language correction is on (vision semantics only; tesseract ignores it)
+  //   - ocrTimeoutSec: OCR timeout in seconds (default 60)
+  //   - ocrRetry:     Vision OCR failure fallback retry count (vision semantics only; tesseract ignores it, default 2)
   let ocrLangs = $state<string[]>([]);
   let ocrCorrect = $state(true);
   let ocrTimeoutSec = $state(60);
   let ocrRetry = $state(2);
-  // OCR 语言码候选项（来自后端 GetOcrLangs，与 Extra(JSON) 解耦）
+  // OCR language-code candidates (from the backend's GetOcrLangs, decoupled from Extra(JSON))
   let ocrLangOptions = $state<string[]>([]);
 
   function toggleOcrLang(code: string) {
@@ -75,15 +76,16 @@
     else set.add(code);
     ocrLangs = [...set];
   }
-  // 解析引擎 extra(JSON) 中的 OCR 参数，回填到本地状态（vision / tesseract 共用）。
-  // 兼容旧数据：extra 为纯字符串语言码（非 JSON）时，整串作为 langs 兜底。
+  // Parse the OCR params out of the engine's extra(JSON), populating local state (shared by vision / tesseract).
+  // Legacy-data compatibility: when extra is a plain string of language codes (not JSON), the
+  // whole string is used as the langs fallback.
   function loadOcrOpts(extra: string | undefined) {
     ocrLangs = [];
     ocrCorrect = true;
     ocrTimeoutSec = 60;
     ocrRetry = 2;
     if (!extra) return;
-    // 先试 JSON（统一方案）
+    // Try JSON first (the unified approach)
     try {
       const o = JSON.parse(extra);
       if (typeof o.langs === 'string' && o.langs) {
@@ -97,15 +99,16 @@
       if (typeof o.retry_count === 'number' && o.retry_count > 0) ocrRetry = o.retry_count;
       return;
     } catch {
-      /* 不是 JSON，落下面兼容旧纯字符串语言码 */
+      /* Not JSON; fall through to the legacy plain-string language-code compat below */
     }
     ocrLangs = extra
       .split('+')
       .map((s) => s.trim())
       .filter(Boolean);
   }
-  // 将 OCR 参数合并进 extra(JSON)。langs 仅 tesseract 写入（vision 走系统 Vision 框架，无需语言码）；
-  // correct 仅在 vision（isVision=true）时写入。
+  // Merge the OCR params into extra(JSON). langs is written only for tesseract (vision uses the
+  // system Vision framework and needs no language codes); correct is written only for vision
+  // (isVision=true).
   function buildExtraWithOcr(extra: string | undefined, isVision: boolean): string {
     let o: Record<string, unknown> = {};
     if (extra) {
@@ -123,13 +126,14 @@
     }
     return JSON.stringify(o);
   }
-  // LLM 翻译引擎（openai / anthropic / gemini）统一存放于 Extra(JSON) 的参数：
-  //   - llmModel:      模型名（如 gpt-4o-mini）
-  //   - llmTimeoutSec: 单次请求超时（秒，默认 30）
+  // LLM translation engines (openai / anthropic / gemini) keep their params unified in Extra(JSON):
+  //   - llmModel:      model name (e.g. gpt-4o-mini)
+  //   - llmTimeoutSec: per-request timeout (seconds, default 30)
   let llmModel = $state('');
   let llmTimeoutSec = $state(30);
-  // 解析引擎 extra(JSON) 中的 LLM 参数，回填到本地状态。
-  // 兼容旧数据：extra 为纯模型名字符串（非 JSON）时，整串作为 model 兜底。
+  // Parse the LLM params out of the engine's extra(JSON), populating local state.
+  // Legacy-data compatibility: when extra is a plain model-name string (not JSON), the whole
+  // string is used as the model fallback.
   function loadLlmOpts(extra: string | undefined) {
     llmModel = '';
     llmTimeoutSec = 30;
@@ -140,11 +144,11 @@
       if (typeof o.timeout_sec === 'number' && o.timeout_sec > 0) llmTimeoutSec = o.timeout_sec;
       return;
     } catch {
-      /* 不是 JSON，落下面兼容旧纯模型名字符串 */
+      /* Not JSON; fall through to the legacy plain model-name string compat below */
     }
     llmModel = extra;
   }
-  // 将 LLM 参数合并进 extra(JSON)。model 为空时由后端回落默认模型。
+  // Merge the LLM params into extra(JSON). When model is empty, the backend falls back to its default model.
   function buildExtraWithLlm(extra: string | undefined): string {
     let o: Record<string, unknown> = {};
     if (extra) {
@@ -158,22 +162,23 @@
     o.timeout_sec = Number(llmTimeoutSec) || 30;
     return JSON.stringify(o);
   }
-  // system 引擎支持的语言列表（只读展示，由后端从 Translation.framework 读取）
+  // The system engine's supported-language list (read-only display; the backend reads it from Translation.framework)
   let systemLangs = $state<string[]>([]);
   let systemLangsLoading = $state(false);
-  // tesseract 安装探测结果（选中 tesseract 时刷新，供右侧展示「已安装/未安装」+ 路径/版本）
+  // Tesseract install probe result (refreshed when tesseract is selected; the right side shows
+  // "installed / not installed" + path/version)
   let tesseract = $state<{ installed: boolean; path: string; version: string; os: string } | null>(
     null,
   );
 
-  // 新增引擎弹层
+  // Add-engine modal
   let showAdd = $state(false);
   let knownEngines = $state<EngineListItem[]>([]);
   let addName = $state('');
   let addSchema = $state<EngineFieldSchema[]>([]);
   let addValues = $state<Record<string, string>>({});
 
-  // secret 字段明文/掩码切换状态（按字段 key 记录），便于查看已保存的密钥值。
+  // Secret-field plaintext/masked toggle state (tracked per field key) so saved secret values can be inspected.
   let revealed = $state<Record<string, boolean>>({});
   function toggleReveal(key: string) {
     revealed = { ...revealed, [key]: !revealed[key] };
@@ -203,8 +208,9 @@
     }
   }
 
-  // 从 settings 读取主引擎标识（星标高亮的依据）。增删/启停引擎后重读，
-  // 使「主引擎被禁用 → 星标不高亮」的降级即时反映到 UI（但不改写保存值）。
+  // Read the primary-engine identifier from settings (the basis for star highlighting). Re-read
+  // after engines are added/removed or enabled/disabled, so the "primary disabled → star not
+  // highlighted" demotion reflects in the UI immediately (without rewriting the saved value).
   async function loadPrimary() {
     try {
       const cfg = await GetConfig();
@@ -214,9 +220,10 @@
     }
   }
 
-  // 设为主引擎：点星标 → SaveConfig 读改写（只改 default_engine，不清零其它字段）
-  // → 广播 EventEnginesChanged 让翻译窗口重新解析 → 本地星标状态即时更新。
-  // 已为主引擎时再点一次 = 取消（清空 default_engine）。
+  // Set as primary engine: click the star → SaveConfig read-modify-write (only changes
+  // default_engine, doesn't zero other fields) → broadcast EventEnginesChanged so the translate
+  // window re-resolves → the local star state updates immediately.
+  // Clicking again while already primary = clear it (empties default_engine).
   async function setPrimary(e: AllEngineItem) {
     const wasPrimary = primaryEngine === e.value;
     const next = wasPrimary ? '' : e.value;
@@ -232,7 +239,7 @@
         });
       }
     } catch (err) {
-      // 失败：回滚本地星标状态 + 报错（与 toggleEngine 的错误处理同形）。
+      // Failure: roll back the local star state + show an error (same shape as toggleEngine's error handling).
       console.error(t('log.setPrimaryFailed'), err);
       primaryEngine = wasPrimary ? '' : primaryEngine;
       await Dialogs.Error({
@@ -247,7 +254,7 @@
     configValues = {};
     const eng = engines.find((e) => e.id === id);
     if (!eng) return;
-    // 拉取已持久化的完整配置，回填表单（服务地址 / API Key 等不再为空）
+    // Fetch the fully persisted config and populate the form (endpoint / API key etc. are no longer empty)
     let saved: EngineConfig | null = null;
     try {
       const s: EngineSchema = await GetEngineSchema(eng.value);
@@ -265,30 +272,30 @@
       console.error(t('log.engineLoadFieldsFailed'), e);
       schema = null;
     }
-    // 选中系统翻译引擎时，拉取并显示其支持的语言列表（只读）
+    // When the system translation engine is selected, fetch and display its supported languages (read-only)
     if (eng.value === 'apple' && eng.supported) {
       loadSystemLangs();
     } else {
       systemLangs = [];
     }
-    // 选中 tesseract 时探测本机是否安装，供右侧展示安装状态
+    // When tesseract is selected, probe whether it's installed locally, for the right side to show install status
     if (eng.value === 'tesseract') {
       checkTesseract();
     } else {
       tesseract = null;
     }
-    // 选中任意 OCR 引擎（vision / tesseract）时，回填其 extra(JSON) 中的 OCR 专属参数
+    // When any OCR engine (vision / tesseract) is selected, populate its dedicated OCR params from extra(JSON)
     if (eng.kind === 'ocr') {
       await loadOcrLangs();
       loadOcrOpts(saved?.extra);
     }
-    // 选中 LLM 翻译引擎（openai / anthropic / gemini）时，回填 extra(JSON) 中的模型与超时
+    // When an LLM translation engine (openai / anthropic / gemini) is selected, populate the model and timeout from extra(JSON)
     if (['openai', 'anthropic', 'gemini'].includes(eng.value)) {
       loadLlmOpts(saved?.extra);
     }
   }
 
-  // checkTesseract 调用后端探测本机 tesseract 安装情况
+  // checkTesseract asks the backend to probe the local tesseract installation
   async function checkTesseract() {
     try {
       tesseract = await CheckTesseract();
@@ -298,7 +305,8 @@
     }
   }
 
-  // loadSystemLangs 从后端读取系统翻译支持的语言（Translation.framework 已安装语言包）。
+  // loadSystemLangs reads the languages supported by system translation from the backend
+  // (Translation.framework's installed language packs).
   async function loadSystemLangs() {
     systemLangsLoading = true;
     systemLangs = [];
@@ -313,8 +321,10 @@
     }
   }
 
-  // parseErr 把后端抛出的错误转换为可展示文案。
-  // 后端必填校验错误形如「缺少必填项：settings.engine_field.xxx」，其中 key 走 i18n。
+  // parseErr converts an error thrown by the backend into displayable copy.
+  // The backend's required-field validation errors have the localized "missing required field"
+  // prefix (settings.engineMissing) followed by a settings.engine_field.xxx key; that key part
+  // goes through i18n.
   function parseErr(e: unknown): string {
     const msg = e instanceof Error ? e.message : String(e);
     const prefix = t('settings.engineMissing');
@@ -328,12 +338,12 @@
   async function saveConfig() {
     const eng = engines.find((e) => e.id === selectedId);
     if (!eng) return;
-    // OCR 引擎（vision / tesseract）：把 OCR 专属参数写回 extra(JSON) 再提交
+    // OCR engines (vision / tesseract): write the dedicated OCR params back into extra(JSON) before submitting
     let extra = configValues['extra'] || undefined;
     if (eng.kind === 'ocr') {
       extra = buildExtraWithOcr(configValues['extra'], eng.value === 'vision');
     }
-    // LLM 引擎（openai / anthropic / gemini）：把模型名与超时写回 extra(JSON) 再提交
+    // LLM engines (openai / anthropic / gemini): write the model name and timeout back into extra(JSON) before submitting
     if (['openai', 'anthropic', 'gemini'].includes(eng.value)) {
       extra = buildExtraWithLlm(configValues['extra']);
     }
@@ -351,7 +361,7 @@
         Title: t('settings.engineSavedTitle'),
         Message: t('settings.engineSaved'),
       });
-      // 保存可能改变启用态/配置，重新拉取并广播变更给翻译窗口等
+      // Saving may change enabled state/config: re-fetch and broadcast the change to the translate window etc.
       await loadEngines();
       emitEvent(EventEnginesChanged);
     } catch (e) {
@@ -364,9 +374,10 @@
 
   async function toggleEngine(id: number, enabled: boolean, el?: HTMLInputElement) {
     const eng = engines.find((x) => x.id === id);
-    // 系统内置引擎（如 vision 系统 OCR / apple 系统翻译）可切换启用，但不可删除；
-    // OCR 内置项切换时由后端保证 OCR 单选（自动禁用其它 OCR）。
-    // 不支持当前平台的引擎（如 apple 仅 macOS）禁止开关。
+    // Built-in engines (e.g. vision system OCR / apple system translation) can toggle enabled but
+    // cannot be deleted; when a built-in OCR item toggles, the backend enforces OCR single-select
+    // (auto-disabling other OCR engines).
+    // Engines not supported on the current platform (e.g. apple is macOS-only) cannot be toggled.
     if (eng && !eng.supported) {
       if (el) el.checked = eng.enabled;
       engines = engines.map((x) => (x.id === id ? { ...x, enabled: eng.enabled } : x));
@@ -374,21 +385,24 @@
     }
     try {
       await ToggleEngineEnabled(id, enabled);
-      // 成功：重新拉取以与后端保持一致
+      // Success: re-fetch to stay consistent with the backend
       await loadEngines();
-      // 启停可能改变「主引擎是否仍可用」：重读主引擎标识，使被禁用的主引擎星标
-      // 即时降级（解析回退由后端/翻译窗口接管，这里只更新视觉，不改写保存值）。
+      // Enable/disable may change "whether the primary engine is still usable": re-read the
+      // primary identifier so a disabled primary's star demotes immediately (resolution fallback
+      // is handled by the backend/translate window; this only updates the visuals, never the
+      // saved value).
       await loadPrimary();
-      // 广播引擎变更，通知翻译窗口等重新拉取引擎列表
+      // Broadcast the engine change, telling the translate window etc. to re-fetch their engine lists
       emitEvent(EventEnginesChanged);
     } catch (e) {
       await Dialogs.Error({
         Title: t('settings.engineOpErrorTitle'),
         Message: parseErr(e),
       });
-      // 回滚本地状态：校验失败时 checkbox 已被用户点动，Svelte 的 keyed each
-      // 复用同一 DOM 节点不会主动撤销浏览器已翻动过的 checked，导致视觉卡住。
-      // 因此直接用 DOM 把勾选态同步回滚，并同步 engines 数据源。
+      // Roll back local state: on validation failure the user has already toggled the checkbox,
+      // and Svelte's keyed each reusing the same DOM node won't proactively undo the browser's
+      // flipped checked, leaving the visual stuck.
+      // So sync the checked state back via the DOM directly, and sync the engines data source too.
       const prev = !enabled;
       if (el) el.checked = prev;
       engines = engines.map((x) => (x.id === id ? { ...x, enabled: prev } : x));
@@ -400,7 +414,7 @@
       await RemoveEngine(id);
       selectedId = null;
       await loadEngines();
-      // 广播引擎变更，通知翻译窗口等重新拉取引擎列表
+      // Broadcast the engine change, telling the translate window etc. to re-fetch their engine lists
       emitEvent(EventEnginesChanged);
       await Dialogs.Info({
         Title: t('settings.engineSavedTitle'),
@@ -414,7 +428,7 @@
     }
   }
 
-  // 打开新增引擎弹层（下拉来自 GetKnownEngines，列表只渲染数据库已有项）
+  // Open the add-engine modal (the dropdown comes from GetKnownEngines; the list renders only engines already in the database)
   async function openAdd() {
     showAdd = true;
     addName = '';
@@ -439,7 +453,7 @@
     }
   }
 
-  // 选择引擎类型后动态加载该引擎的字段 schema
+  // Load the engine's field schema dynamically after selecting the engine type
   async function onAddNameChange(name: string) {
     addName = name;
     addValues = {};
@@ -474,13 +488,13 @@
       });
       return;
     }
-    // OCR 引擎：把 OCR 专属参数（langs/timeout）拼进 extra(JSON) 再提交
+    // OCR engine: assemble the dedicated OCR params (langs/timeout) into extra(JSON) before submitting
     let extra = addValues['extra'] || undefined;
     const addSchemaKind = addSchema.length ? addSchema[0] : null;
     if (addSchemaKind && (await addEngineIsOcr(addName))) {
       extra = buildExtraWithOcr(addValues['extra'], addName === 'vision');
     }
-    // LLM 引擎（openai / anthropic / gemini）：把模型名与超时拼进 extra(JSON) 再提交
+    // LLM engines (openai / anthropic / gemini): assemble the model name and timeout into extra(JSON) before submitting
     if (['openai', 'anthropic', 'gemini'].includes(addName)) {
       extra = buildExtraWithLlm(addValues['extra']);
     }
@@ -496,7 +510,7 @@
       });
       showAdd = false;
       await loadEngines();
-      // 广播引擎变更，通知翻译窗口等重新拉取引擎列表
+      // Broadcast the engine change, telling the translate window etc. to re-fetch their engine lists
       emitEvent(EventEnginesChanged);
     } catch (e) {
       await Dialogs.Error({
@@ -506,7 +520,7 @@
     }
   }
 
-  // addEngineIsOcr 判断新增的引擎类型是否为 OCR（按后端 KnownEngines 的 kind）。
+  // addEngineIsOcr decides whether the engine type being added is OCR (per the backend KnownEngines' kind).
   async function addEngineIsOcr(name: string): Promise<boolean> {
     try {
       const s: EngineSchema = await GetEngineSchema(name);
@@ -539,9 +553,11 @@
           {#each group.items as e (e.id)}
             <div class="u-list-item" class:is-active={selectedId === e.id}>
               {#if e.kind === 'translate'}
-                <!-- 主引擎星标：点选设为主翻译引擎（立即落盘 + 广播），再点取消。
-                     仅翻译引擎渲染；禁用引擎的星标 disabled（不可设为主引擎）。
-                     高亮条件 = 已设为主引擎 且 当前启用（主引擎被禁用时星标自动降级）。 -->
+                <!-- Primary-engine star: click to set as the primary translation engine (persists
+                     immediately + broadcasts); click again to clear. Rendered only for translate
+                     engines; a disabled engine's star is disabled (cannot be set as primary).
+                     Highlight condition = currently primary AND enabled (a disabled primary's star
+                     auto-demotes). -->
                 <button
                   class="u-icon-btn u-icon-btn--sm"
                   class:u-icon-btn--active={primaryEngine === e.value && e.enabled}
@@ -640,7 +656,7 @@
         {/if}
         {#each schema?.fields ?? [] as f}
           {#if f.widget === 'ocr_status'}
-            <!-- tesseract 安装状态探测卡（含可编辑自定义二进制路径 endpoint），仅 tesseract schema 声明 -->
+            <!-- Tesseract install-status probe card (with an editable custom binary path endpoint); declared only in the tesseract schema -->
             {#if tesseract}
               <div
                 class="flex flex-col gap-2 rounded-md border px-3 py-2 text-xs"
@@ -695,7 +711,7 @@
               </div>
             {/if}
           {:else if f.widget === 'ocr_langs'}
-            <!-- OCR 识别语言多选（仅 tesseract），候选项取 ocrLangOptions -->
+            <!-- OCR recognition-language multi-select (tesseract only); candidates from ocrLangOptions -->
             <div>
               <p class="text-sm font-medium">{f.label_key ? t(f.label_key as any) : f.field}</p>
               {#if f.hint_key}<p class="u-muted text-xs">{t(f.hint_key as any)}</p>{/if}
@@ -713,7 +729,7 @@
               </div>
             </div>
           {:else if f.widget === 'ocr_timeout'}
-            <!-- OCR 超时（秒） -->
+            <!-- OCR timeout (seconds) -->
             <div class="flex items-center justify-between gap-4">
               <div>
                 <p class="text-sm font-medium">{f.label_key ? t(f.label_key as any) : f.field}</p>
@@ -728,7 +744,7 @@
               />
             </div>
           {:else if f.widget === 'ocr_retry'}
-            <!-- OCR 失败重试次数（仅 vision） -->
+            <!-- OCR failure retry count (vision only) -->
             <div class="flex items-center justify-between gap-4">
               <div>
                 <p class="text-sm font-medium">{f.label_key ? t(f.label_key as any) : f.field}</p>
@@ -743,7 +759,7 @@
               />
             </div>
           {:else if f.widget === 'ocr_correct'}
-            <!-- OCR 语言校正开关（仅 vision） -->
+            <!-- OCR language-correction toggle (vision only) -->
             <div class="flex items-center justify-between gap-4">
               <div>
                 <p class="text-sm font-medium">{f.label_key ? t(f.label_key as any) : f.field}</p>
@@ -755,7 +771,7 @@
               </label>
             </div>
           {:else if f.widget === 'llm_model'}
-            <!-- LLM 翻译引擎：模型名 -->
+            <!-- LLM translation engine: model name -->
             <div>
               <label class="mb-1.5 block text-sm font-medium" for={'ef-' + f.field}>
                 {f.label_key ? t(f.label_key as any) : f.field}
@@ -769,7 +785,7 @@
               />
             </div>
           {:else if f.widget === 'llm_timeout'}
-            <!-- LLM 翻译引擎：单次请求超时（秒） -->
+            <!-- LLM translation engine: per-request timeout (seconds) -->
             <div class="flex items-center justify-between gap-4">
               <div>
                 <p class="text-sm font-medium">{f.label_key ? t(f.label_key as any) : f.field}</p>
@@ -784,7 +800,7 @@
               />
             </div>
           {:else if f.type === 'secret'}
-            <!-- 密钥类字段：支持明文/掩码切换，便于查看已保存的值 -->
+            <!-- Secret-type field: plaintext/masked toggle so saved values can be inspected -->
             {@const revealKey = 'ef-reveal-' + f.field}
             <div>
               <label class="mb-1.5 block text-sm font-medium" for={'ef-' + f.field}>
@@ -811,7 +827,7 @@
               </div>
             </div>
           {:else}
-            <!-- 普通文本字段 -->
+            <!-- Plain text field -->
             <div>
               <label class="mb-1.5 block text-sm font-medium" for={'ef-' + f.field}>
                 {f.label_key ? t(f.label_key as any) : f.field}
@@ -1005,7 +1021,7 @@
               </label>
             </div>
           {:else if f.widget === 'llm_model'}
-            <!-- 新增弹层：LLM 模型名 -->
+            <!-- Add modal: LLM model name -->
             <div>
               <label class="mb-1.5 block text-sm font-medium" for={'add-ef-' + f.field}>
                 {f.label_key ? t(f.label_key as any) : f.field}
@@ -1019,7 +1035,7 @@
               />
             </div>
           {:else if f.widget === 'llm_timeout'}
-            <!-- 新增弹层：LLM 超时（秒） -->
+            <!-- Add modal: LLM timeout (seconds) -->
             <div class="flex items-center justify-between gap-4">
               <div>
                 <p class="text-sm font-medium">{f.label_key ? t(f.label_key as any) : f.field}</p>
@@ -1034,7 +1050,7 @@
               />
             </div>
           {:else if f.type === 'secret'}
-            <!-- 密钥类字段：支持明文/掩码切换，便于查看已保存的值 -->
+            <!-- Secret-type field: plaintext/masked toggle so saved values can be inspected -->
             {@const revealKey = 'add-ef-reveal-' + f.field}
             <div>
               <label class="mb-1.5 block text-sm font-medium" for={'add-ef-' + f.field}>

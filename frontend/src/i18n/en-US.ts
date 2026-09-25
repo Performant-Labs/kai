@@ -229,7 +229,7 @@ export const en: Dict = {
     permScreenRecording: 'Screen Recording',
     permScreenRecordingHint:
       'Screenshot translation needs this to read the selected screen region for OCR (no video is recorded).',
-    // TODO: 输入监控 i18n key（permInputMonitoring / permInputMonitoringHint）当前未使用，已注释。
+    // TODO: the Input Monitoring i18n keys (permInputMonitoring / permInputMonitoringHint) are currently unused and commented out.
     // permInputMonitoring: 'Input Monitoring',
     // permInputMonitoringHint: 'Copy key (simulated Cmd+C) relies on this permission; without it the key press is silently dropped by the system.',
     permExpand: 'Details',
@@ -280,7 +280,7 @@ export const en: Dict = {
     uk: 'Ukrainian',
     id: 'Indonesian',
     auto: 'Auto',
-    // 系统翻译（Translation.framework）已安装语言包全称（BCP-47 with region/script）
+    // Full names of language packs installed for system translation (Translation.framework) (BCP-47 with region/script)
     'vi-Latn-VN': 'Vietnamese',
     'pt-Latn-BR': 'Portuguese (Brazil)',
     'uk-Cyrl-UA': 'Ukrainian',

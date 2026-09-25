@@ -16,13 +16,13 @@
   const TAB_KEY = 'settingsTab';
   const VALID_TABS: Tab[] = ['general', 'engines', 'shortcuts', 'history'];
 
-  // 记住上次选中的 Tab，刷新后恢复（默认通用）
+  // Remember the last selected tab and restore it on reload (default: general)
   function readSavedTab(): Tab {
     try {
       const saved = localStorage.getItem(TAB_KEY) as Tab | null;
       if (saved && VALID_TABS.includes(saved)) return saved;
     } catch {
-      /* localStorage 不可用时忽略，回退默认 */
+      /* Ignore when localStorage is unavailable; fall back to the default */
     }
     return 'general';
   }
@@ -75,7 +75,7 @@
             try {
               localStorage.setItem(TAB_KEY, item.id);
             } catch {
-              /* 忽略写入失败 */
+              /* Ignore write failures */
             }
           }}
         >

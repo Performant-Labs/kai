@@ -1,17 +1,18 @@
 import { FrontendLog } from '@bindings/cnb.cool/dtapp/kai/internal/logutil/frontendlogservice.ts';
 import { t } from '../i18n';
 
-// 把前端的 console 日志与 JS 错误转发到 Go，统一写入 logs/frontend.log。
-// 避免在 dev 环境之外丢失前端报错线索（正式包无 devtools）。
+// Forwards frontend console logs and JS errors to Go, which writes them to logs/frontend.log.
+// Keeps frontend error clues from being lost outside dev (packaged builds have no devtools).
 
 let installed = false;
 
 type Level = 'debug' | 'info' | 'warn' | 'error';
 
-// 发送单条日志到 Go。异步、吞掉异常，避免前端日志回环影响主流程。
+// Sends a single log entry to Go. Async, swallows exceptions so logging never loops
+// back into or blocks the main flow.
 function send(level: Level, msg: string) {
   FrontendLog(level, msg).catch(() => {
-    /* 忽略转发失败，不阻塞前端 */
+    /* Ignore forwarding failures; never block the frontend */
   });
 }
 
@@ -28,7 +29,7 @@ function serialize(args: unknown[]): string {
     .join(' ');
 }
 
-// 安装全局错误捕获与 console 转发。每个窗口入口调用一次即可（幂等）。
+// Installs global error capture and console forwarding. Call once per window entry point (idempotent).
 export function installFrontendLogging() {
   if (installed) return;
   installed = true;
@@ -62,13 +63,13 @@ export function installFrontendLogging() {
     send('error', serialize(args));
   };
 
-  // 未捕获的同步/异步错误
+  // Uncaught sync/async errors
   window.addEventListener('error', (e: ErrorEvent) => {
     const detail = e.error?.stack || `${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`;
     send('error', t('log.uncaughtError') + detail);
   });
 
-  // 未处理的 Promise 拒绝
+  // Unhandled promise rejections
   window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
     const reason = e.reason?.stack || e.reason?.message || String(e.reason);
     send('error', t('log.unhandledRejection') + reason);

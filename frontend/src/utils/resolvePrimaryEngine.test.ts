@@ -1,26 +1,29 @@
-// issue #8（Tester 角色，RED）：翻译窗口首屏主引擎解析规则（前端镜像）。
+// issue #8 (Tester role, RED): the translate window's first-render primary-engine resolution
+// rules (frontend mirror).
 //
-// 规则（与设计文档 §4 的 Go 权威实现 PrimaryTranslateEngine 对齐，test d 的
-// divergence check 保证两侧一致）：
+// Rules (aligned with the design doc §4's Go authoritative implementation PrimaryTranslateEngine;
+// test d's divergence check guarantees both sides agree):
 //
-//   解析顺序 last-used ?? primary ?? first-enabled：
-//   1. lastUsed（localStorage 持久化的上次使用引擎）在 enabled translate 引擎中 -> 它；
-//   2. 否则 settings 的 default_engine 有效（在列表中、kind=translate、enabled）-> 它；
-//   3. 否则第一个 enabled 的 translate 引擎（列表 id 顺序）；
-//   4. 没有 enabled 的 translate 引擎 -> ''。
+//   Resolution order last-used ?? primary ?? first-enabled:
+//   1. lastUsed (the last-used engine persisted in localStorage), if among enabled translate engines -> it;
+//   2. otherwise settings' default_engine if valid (in the list, kind=translate, enabled) -> it;
+//   3. otherwise the first enabled translate engine (list id order);
+//   4. no enabled translate engines -> ''.
 //
-// 「enabled translate」谓词 = kind === 'translate' && enabled && supported
-// （与 Go 侧 GetAllEngines 形态一致；见设计 §3）。
+// The "enabled translate" predicate = kind === 'translate' && enabled && supported
+// (consistent with the Go-side GetAllEngines shape; see design §3).
 //
-// RED 说明：resolvePrimaryEngine 尚不存在（设计 §4 的前端镜像模块），本文件
-// import 即解析失败。这是「行为缺失」的 RED，不是环境或拼写问题。
-// 引擎列表与 Go 侧 (b)/(c) 用同一组数据，Go 侧测试解析结果必须与本文件一致。
+// RED note: resolvePrimaryEngine does not exist yet (the design §4 frontend-mirror module), so
+// this file fails to resolve on import. This is a "missing behavior" RED, not an environment or
+// typo problem.
+// The engine list uses the same dataset as the Go side's (b)/(c); the Go-side tests must resolve
+// to the same results as this file.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resolvePrimaryEngine } from './resolvePrimaryEngine.ts';
 
 const LAST_USED_KEY = 'kai:translate:lastEngine';
 
-// 与 Go 侧 (b)/(c) 相同的引擎列表（configstore id 顺序：google=1, deepl=2）。
+// Same engine list as the Go side's (b)/(c) (configstore id order: google=1, deepl=2).
 const ENGINES = [
   {
     id: 1,
@@ -42,7 +45,7 @@ const ENGINES = [
   },
 ];
 
-// 把 google 禁用后的列表（对应 Go 侧 test c 的中段状态）。
+// The list after disabling google (the mid-state of the Go side's test c).
 const ENGINES_GOOGLE_DISABLED = ENGINES.map((e) =>
   e.value === 'google' ? { ...e, enabled: false } : e,
 );
@@ -63,14 +66,14 @@ beforeEach(() => {
 
 describe('resolvePrimaryEngine (last-used ?? primary ?? first-enabled, real localStorage)', () => {
   it('last-used wins when it is among enabled translate engines', () => {
-    // 真实写入 localStorage（persisted store 的写入路径同形）。
+    // Write to localStorage for real (same shape as the persisted store's write path).
     window.localStorage.setItem(LAST_USED_KEY, JSON.stringify('deepl'));
     expect(resolvePrimaryEngine(LAST_USED_KEY, 'google', ENGINES)).toBe('deepl');
   });
 
   it('falls back to primary when the last-used engine is disabled', () => {
     window.localStorage.setItem(LAST_USED_KEY, JSON.stringify('google'));
-    // google 已禁用（与 Go 侧 test c 同一列表状态），primary 仍是 deepl。
+    // google is disabled (same list state as the Go side's test c); primary is still deepl.
     expect(resolvePrimaryEngine(LAST_USED_KEY, 'deepl', ENGINES_GOOGLE_DISABLED)).toBe('deepl');
   });
 
@@ -93,7 +96,7 @@ describe('resolvePrimaryEngine (last-used ?? primary ?? first-enabled, real loca
   });
 
   it('reads real localStorage: an empty-string last-used does not override primary', () => {
-    // 真实读回（模拟 persisted store 从 localStorage 初始化的路径）。
+    // Read back for real (simulating the persisted store's initialize-from-localStorage path).
     window.localStorage.setItem(LAST_USED_KEY, JSON.stringify(''));
     expect(resolvePrimaryEngine(LAST_USED_KEY, 'deepl', ENGINES)).toBe('deepl');
   });

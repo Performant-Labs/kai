@@ -13,7 +13,8 @@
 
   let { curLang = $bindable<LangCode>(Lang.ZHCN) }: { curLang: LangCode } = $props();
 
-  // 匿名统计开关：初始值从配置读取，变更经 SaveConfig 落盘（Go 侧 analytics 据此决定是否上报）。
+  // Anonymous analytics toggle: initial value read from config; changes persist via SaveConfig
+  // (the Go-side analytics uses this to decide whether to report).
   let analyticsEnabled = $state(false);
 
   const themeOptions = $derived.by<{ mode: ThemeMode; label: string }[]>(() => [
@@ -27,14 +28,14 @@
       const cfg = await GetConfig();
       if (cfg) analyticsEnabled = cfg.analytics_enabled ?? false;
     } catch {
-      /* 忽略读取失败，回退默认关 */
+      /* Ignore read failures; fall back to the default (off) */
     }
   });
 
   async function changeLang(l: LangCode) {
-    curLang = l; // 下拉高亮保留原始 mode（auto/zh-CN/en-US）
-    userLang.set(l); // 同步用户 mode，刷新后下拉框仍选中该项
-    locale.set(resolveLang(l)); // i18n 实际生效语言立即解析，避免 auto 时显示 key
+    curLang = l; // the dropdown highlight keeps the original mode (auto/zh-CN/en-US)
+    userLang.set(l); // sync the user mode so the dropdown still selects this item after a reload
+    locale.set(resolveLang(l)); // resolve the effective i18n language immediately, avoiding raw keys when auto
     try {
       const cfg = (await GetConfig()) ?? ({ language: l } as any);
       await SaveConfig({ ...cfg, language: l });

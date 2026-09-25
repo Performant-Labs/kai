@@ -7,15 +7,16 @@ import { GetConfig } from '@bindings/cnb.cool/dtapp/kai/internal/service/configw
 
 export const activeWindow = writable<string>('');
 
-// userLang 保存用户设置的「界面语言 mode」（auto/zh-CN/en-US），与 locale（解析后的实际生效语言）区分。
-// 设置页下拉框应绑定 userLang，否则 auto 用户会被显示成解析后的具体语言。
+// userLang holds the user-selected UI language mode (auto/zh-CN/en-US), distinct from
+// locale (the resolved, actually effective language). The settings dropdown must bind
+// userLang, otherwise auto users would be shown as the resolved concrete language.
 export const userLang = writable<LangCode>(Lang.Auto);
 
 let unregister: Array<() => void> = [];
 
 export async function initWindow(): Promise<void> {
   try {
-    // 读取界面语言配置（Settings.Language 为界面语言：auto/zh-CN/en-US）
+    // Read the UI language config (Settings.Language is the UI language: auto/zh-CN/en-US).
     const cfg = await GetConfig();
     if (cfg?.language) {
       userLang.set(cfg.language as LangCode);
@@ -29,7 +30,7 @@ export async function initWindow(): Promise<void> {
   unregister = [];
   unregister.push(
     onEvent(EventLocaleChanged, (payload: LocaleChangedPayload) => {
-      // Language 为界面语言 mode（auto/zh-CN/en-US）。
+      // Language is the UI language mode (auto/zh-CN/en-US).
       if (payload?.language) {
         userLang.set(payload.language as LangCode);
         setLocale(resolveLang(payload.language as LangCode));

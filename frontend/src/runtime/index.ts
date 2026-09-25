@@ -14,5 +14,7 @@ export function emitEvent(name: string, data?: any): void {
 
 export { Window, System };
 
-// 桌面通知由后端 Wails notifications service 直接发送原生通知（macOS 走 UNUserNotificationCenter），
-// 不再经前端 Web Notification 转发（前端在后台时不会弹窗，且绕开了系统通知授权）。
+// Desktop notifications are sent natively by the backend Wails notifications service
+// (macOS via UNUserNotificationCenter) instead of being relayed through the frontend Web
+// Notification API (the frontend can't show notifications while in the background, and
+// this path also bypasses system notification permission prompts).

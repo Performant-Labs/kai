@@ -1,69 +1,75 @@
-// 应用事件名称常量，防止拼写错误（对齐 internal/events/events.go 的 Go 端定义）。
+// App event name constants to prevent typos (aligned with the Go-side definitions in internal/events/events.go).
 
-// EventWindowShow 前端呼出窗口，payload: 'settings' | 'main'
+// EventWindowShow: frontend asks to bring up a window, payload: 'settings' | 'main'
 export const EventWindowShow = 'kai:window:show';
 
-// EventWindowClosing 窗口关闭按钮（标题栏 X）被点击时广播；各窗口按需清理自身状态
-// （如翻译窗口清空结果），再执行关闭。payload 可选窗口名。
+// EventWindowClosing: broadcast when a window's close button (title-bar X) is clicked; each window
+// cleans up its own state as needed (e.g. the translate window clears results), then closes.
+// payload: optional window name.
 export const EventWindowClosing = 'kai:window:closing';
 
-// EventLocaleChanged 界面语言变更后广播，payload: LocaleChangedPayload
+// EventLocaleChanged: broadcast after the UI language changes, payload: LocaleChangedPayload
 export const EventLocaleChanged = 'kai:locale:changed';
-/** 截图翻译结果投递（后端 区域截图→OCR→翻译 完成后推送）：payload 为 ScreenshotResult */
+/** Screenshot-translation result delivery (pushed after the backend's region-screenshot → OCR → translate pipeline finishes): payload is ScreenshotResult */
 export const EventScreenshotOCR = 'kai:screenshot:ocr';
-/** 前端请求重新截图（点击「重新截图」按钮）：后端触发一次新的区域截图流程 */
+/** Frontend requests a new screenshot (the "re-screenshot" button clicked): the backend triggers a new region-screenshot flow */
 export const EventScreenshotRecapture = 'kai:screenshot:recapture';
-/** 前端改语言后触发：复用上次 OCR 原文，跳过截图/OCR 直接按新语言重新翻译。payload: ScreenshotRetranslatePayload */
+/** Triggered after the frontend changes language: reuses the last OCR'd source text, skipping screenshot/OCR, and retranslates with the new language. payload: ScreenshotRetranslatePayload */
 export const EventScreenshotRetranslate = 'kai:screenshot:retranslate';
 
-// 截图/OCR 缓存的 session 标识：区分不同入口，避免互相覆盖（对齐 internal/events/events.go）。
-/** 截图翻译窗口（含热键/菜单/重新截图按钮，全部投到 ScreenshotWindow） */
+// Session identifiers for the screenshot/OCR cache: distinguish entry points so they
+// don't overwrite each other (aligned with internal/events/events.go).
+/** Screenshot-translation window (hotkey/menu/re-screenshot button all target ScreenshotWindow) */
 export const ScreenshotSessionScreenshot = 'screenshot';
-/** 输入翻译页内的截图 OCR（预留，与截图翻译窗口隔离） */
+/** Screenshot OCR within the input-translation page (reserved, isolated from the screenshot-translation window) */
 export const ScreenshotSessionInput = 'input';
 
-// EventThemeChanged 主题变更广播，payload: ThemeChangedPayload
+// EventThemeChanged: theme change broadcast, payload: ThemeChangedPayload
 export const EventThemeChanged = 'kai:theme:changed';
 
-// EventHotkeysChanged 快捷键重注册完成后广播，payload: string[]
+// EventHotkeysChanged: broadcast after hotkeys are re-registered, payload: string[]
 export const EventHotkeysChanged = 'kai:hotkeys:changed';
 
-// EventInputFill 选区回填主窗口输入框，payload: string（选中文本）
+// EventInputFill: fills the selection back into the main window's input box, payload: string (selected text)
 export const EventInputFill = 'kai:input:fill';
 
-// EventTranslateResult 多引擎翻译逐个返回结果，payload: TranslateResult
+// EventTranslateResult: multi-engine translation results arrive one by one, payload: TranslateResult
 export const EventTranslateResult = 'kai:translate:result';
 
-// EventEnginesChanged 设置里增删/启停翻译引擎后广播，通知翻译窗口等刷新引擎列表。
-// 无 payload（纯前端窗口间通知，各窗口自行重新拉取 GetEngines）。
+// EventEnginesChanged: broadcast after translation engines are added/removed or enabled/disabled in
+// settings, telling the translate window and others to refresh their engine lists.
+// No payload (pure frontend window-to-window notification; each window re-fetches GetEngines itself).
 export const EventEnginesChanged = 'kai:engines:changed';
 
-// EventAutoClipboardChanged 输入翻译窗口「自动读取剪贴板翻译」开关状态变化后广播。
-// payload: boolean（开启=true / 关闭=false）。设置页据此实时禁用/恢复复制键两个开关。
+// EventAutoClipboardChanged: broadcast after the translate window's "auto-read clipboard" toggle changes.
+// payload: boolean (on=true / off=false). The settings page uses this to disable/restore the two copy-hotkey
+// switches in real time.
 export const EventAutoClipboardChanged = 'kai:auto-clipboard:changed';
 
-// 事件 payload 类型定义（对齐 internal/events/events.go 的 Go 端结构体）
+// Event payload type definitions (aligned with the Go-side structs in internal/events/events.go)
 
-// LocaleChangedPayload 语言变更事件参数。
-// mode 为用户配置模式（取自 constants/lang 的 Lang：auto/zh/en）；
-// language 为实际生效语言（zh/en，auto 时由系统 locale 派生）。
+// LocaleChangedPayload: language-change event arguments.
+// mode is the user-configured mode (from constants/lang's Lang: auto/zh/en);
+// language is the actually effective language (zh/en; derived from the system locale when auto).
 export interface LocaleChangedPayload {
   mode: string; // Lang: auto | zh | en
   language: string; // zh | en
 }
 
-// ThemeChangedPayload 主题变更事件参数。
-// mode 为用户配置模式（取自 constants/theme 的 ThemeMode：auto/light/dark）；
-// theme 为系统真实外观（dark/light，由 Env.IsDarkMode() 派生）。
+// ThemeChangedPayload: theme-change event arguments.
+// mode is the user-configured mode (from constants/theme's ThemeMode: auto/light/dark);
+// theme is the actual system appearance (dark/light, derived from Env.IsDarkMode()).
 export interface ThemeChangedPayload {
   mode: string; // ThemeMode: auto | light | dark
   theme: string; // dark | light
 }
 
-// ScreenshotRetranslatePayload 截图翻译改语言重新翻译事件参数。
-// session 标识缓存来源（ScreenshotSessionScreenshot / ScreenshotSessionInput），
-// 后端据此取用对应入口最近一次 OCR 原文，避免不同入口互相串。
-// from/to 为目标翻译语言组合（from 允许 Auto），后端复用上次 OCR 原文重新翻译。
+// ScreenshotRetranslatePayload: screenshot-translation change-language-and-retranslate event arguments.
+// session identifies the cache source (ScreenshotSessionScreenshot / ScreenshotSessionInput);
+// the backend uses it to pick up the latest OCR'd source text for that entry point, preventing
+// cross-talk between different entry points.
+// from/to is the source/target translation language pair (from may be Auto); the backend reuses the
+// last OCR'd source text and retranslates.
 export interface ScreenshotRetranslatePayload {
   session: string; // ScreenshotSessionScreenshot | ScreenshotSessionInput
   from: string; // TranslateLang: auto | zh | en | ...

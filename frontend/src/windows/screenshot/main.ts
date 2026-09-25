@@ -10,7 +10,7 @@ installFrontendLogging();
 initTheme();
 initWindow();
 
-// 把 WebView 的 UA 传给后端，作为全局 HTTP 请求默认 User-Agent
+// Pass the WebView's UA to the backend, used as the default User-Agent for all HTTP requests.
 AppService.SetUserAgent(navigator.userAgent);
 console.debug('UA:', navigator.userAgent);
 

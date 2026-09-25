@@ -1,31 +1,32 @@
-// issue #9（Tester 角色，RED）：结果区纯逻辑模块（设计 §1/§3/§4 测试 (b)）。
+// issue #9 (Tester role, RED): result-pane pure-logic module (design §1/§3/§4 test (b)).
 //
-// 实现必须把结果区的纯逻辑抽到 frontend/src/utils/resultPane.ts（本文件按其
-// 导出名 import），TranslateWindow 消费它们：
-//   - activeEngineFor(lastUsed, defaultEngine, engines)：
+// The implementation must extract the result pane's pure logic into
+// frontend/src/utils/resultPane.ts (this file imports it by its export names), which
+// TranslateWindow consumes:
+//   - activeEngineFor(lastUsed, defaultEngine, engines):
 //       resolvePrimaryEngine(lastUsed, defaultEngine, engines)
-//       || 第一个 enabled translate 引擎（防御性回退，保证 select 永不悬空）；
-//     解析规则不在此处重新发明——必须消费 #8 的 resolvePrimaryEngine。
-//   - statusDot(engine, results, loading) / statusDots(engines, results, loading)：
-//     每个 enabled translate 引擎一个 dot，'pending' | 'done' | 'failed'：
-//       done    = results[engine]?.result 为非空串；
-//       pending = loading === true 且无（非空）结果；
-//       failed  = !loading 且无（非空）结果（失败的引擎后端不发出任何事件，
-//                  它在 results 里就是缺席的——设计 §4 的 failed 是派生信号）。
-//   - resetEdits(edited, previousEngine, nextEngine, results)：切换引擎时丢弃
-//     上一引擎的手工编辑，新引擎从其存储的 result 开始（设计 §3「manual edits
-//     reset」：无 per-engine 编辑记忆）。
-//   - anyPending(engines, results)：15 s 回退谓词「是否仍有引擎没有结果」
-//     （设计 §4 扩展：从「零结果」放宽到「任一 pending」）。
+//       || the first enabled translate engine (defensive fallback, guaranteeing the select never dangles);
+//     the resolution rules are not reinvented here — it must consume #8's resolvePrimaryEngine.
+//   - statusDot(engine, results, loading) / statusDots(engines, results, loading):
+//     one dot per enabled translate engine, 'pending' | 'done' | 'failed':
+//       done    = results[engine]?.result is a non-empty string;
+//       pending = loading === true and no (non-empty) result;
+//       failed  = !loading and no (non-empty) result (the backend emits no event whatsoever for a
+//                  failed engine — it is simply absent from results; design §4's failed is a derived signal).
+//   - resetEdits(edited, previousEngine, nextEngine, results):on engine switch, discard the
+//     previous engine's manual edit; the new engine starts from its stored result (design §3
+//     "manual edits reset": no per-engine edit memory).
+//   - anyPending(engines, results):the 15 s fallback predicate "does any engine still lack a result"
+//     (a design §4 extension: relaxed from "zero results" to "any pending").
 //
-// 无 mock：真实 jsdom localStorage（NODE_OPTIONS=--localstorage-file，见
-// vitest.config.ts 头注）、真实 setTimeout（Node 真计时器；15 s 用例用真实
-// 等待，不 mock 定时器、不 stub wails runtime）。
+// No mocks: real jsdom localStorage (NODE_OPTIONS=--localstorage-file, see the vitest.config.ts
+// header note), real setTimeout (Node real timers; the 15 s case waits for real, no mocked timers,
+// no stubbed wails runtime).
 //
-// RED 说明：./resultPane.ts 模块尚不存在（结果区逻辑今天内联在
-// TranslateWindow.svelte 里）——本文件 import 即失败，vitest 报出
-// 「Failed to resolve import ... resultPane.ts」。这是「行为缺失」的 RED。
-// 本文件不触碰任何现有测试/模块；实现落地后本文件应全部转绿。
+// RED note: the ./resultPane.ts module does not exist yet (the result-pane logic is inlined in
+// TranslateWindow.svelte today) — this file fails on import, with vitest reporting
+// "Failed to resolve import ... resultPane.ts". This is a "missing behavior" RED.
+// This file touches no existing tests/modules; once the implementation lands it should turn all green.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
@@ -41,7 +42,7 @@ import {
 
 const LAST_USED_KEY = 'kai:translate:lastEngine';
 
-// 与 #8 前端镜像测试同一组引擎（configstore id 顺序：google=1, deepl=2）。
+// The same engine set as the #8 frontend-mirror test (configstore id order: google=1, deepl=2).
 const ENGINES: PaneEngine[] = [
   { id: 1, value: 'google', name: 'google', kind: 'translate', enabled: true, supported: true },
   { id: 2, value: 'deepl', name: 'deepl', kind: 'translate', enabled: true, supported: true },
@@ -61,14 +62,15 @@ const GOOGLE_DISABLED: PaneEngine[] = ENGINES.map((e) =>
 );
 
 beforeEach(() => {
-  // 真实 localStorage（Node 26 需 --localstorage-file，见 vitest.config.ts）。
+  // Real localStorage (Node 26 needs --localstorage-file, see vitest.config.ts).
   window.localStorage.removeItem(LAST_USED_KEY);
 });
 
-// 收尾清理：--localstorage-file 是文件后端 store，removeItem 的删除可能以空串
-// 形式残留（resolvePrimaryEngine 的「no-op on empty」守卫会跳过它），并在
-// 后续测试文件（resolvePrimaryEngine.test.ts 等）的 vitest worker 中跨文件泄漏。
-// 用 clear() 兜底：每个测试结束后不向 store 留下任何状态，文件间互不污染。
+// Cleanup: --localstorage-file is a file-backed store, so a removeItem deletion can linger as an
+// empty string (which resolvePrimaryEngine's "no-op on empty" guard skips) and leak across files
+// in later test files' (resolvePrimaryEngine.test.ts etc.) vitest workers.
+// clear() as the safety net: after each test the store retains no state, so files never pollute
+// each other.
 afterEach(() => {
   window.localStorage.clear();
 });
@@ -97,11 +99,12 @@ describe('activeEngineFor (consumes #8 resolvePrimaryEngine + defensive fallback
   });
 
   it('defensive fallback: takes the first enabled engine when resolvePrimaryEngine returns "" (select never dangles)', () => {
-    // 让 #8 镜像返回 ''：localStorage 里 last-used 是损坏/非法值且 primary 为空、
-    // 同时构造一个 resolvePrimaryEngine 会落到 '' 的引擎列表不可能存在
-    // （有 enabled 引擎时它必返回第一个）——因此该防御分支只对「resolve 返回 ''
-    // 且列表非空」这种未来规则变更防御；此处用全部禁用的列表验证 activeEngineFor
-    // 返回 ''（没有可回退对象时也只能是空，行为定义：返回 resolve 原值）。
+    // Make the #8 mirror return '': last-used in localStorage is a corrupt/invalid value and primary is empty.
+    // Constructing an engine list that makes resolvePrimaryEngine land on '' is impossible
+    // (with any enabled engine it necessarily returns the first) — so this defensive branch only
+    // guards against a future rule change of "resolve returns '' while the list is non-empty";
+    // here an all-disabled list verifies activeEngineFor returns '' (with nothing to fall back to
+    // it can only be empty; the behavior contract: return resolve's value as-is).
     const noneEnabled = ENGINES.map((e) => ({ ...e, enabled: false }));
     expect(activeEngineFor(LAST_USED_KEY, '', noneEnabled)).toBe('');
   });
@@ -172,9 +175,9 @@ describe('resetEdits (switching engines drops the previous engine manual edits)'
     };
     const edited = new Map<string, string>([['google', 'manually edited text']]);
     const next = resetEdits(edited, 'google', 'deepl', results);
-    // google 的编辑被丢弃。
+    // google's edit is dropped.
     expect(next.get('google')).toBeUndefined();
-    // deepl 的显示文本回到其存储 result（编辑 map 里没有它，显示层取 result）。
+    // deepl's displayed text reverts to its stored result (absent from the edit map, so the display layer takes result).
     expect(next.get('deepl')).toBeUndefined();
     expect(next.get('deepl') ?? results['deepl']?.result).toBe('hallo');
   });
@@ -195,7 +198,7 @@ describe('resetEdits (switching engines drops the previous engine manual edits)'
   });
 });
 
-// issue #42：失败载荷的面向用户文案（kind → 本地化 key，原始细节附带）。
+// issue #42: user-facing copy for failure payloads (kind → localized key, raw detail appended).
 describe('failureMessage (#42 surfacing failure reasons)', () => {
   const t = (key: string) => {
     const dict: Record<string, string> = {

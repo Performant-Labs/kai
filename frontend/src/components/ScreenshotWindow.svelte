@@ -30,15 +30,16 @@
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import { persisted, pinKey } from '../stores/persisted';
 
-  // 置顶状态持久化到 localStorage，与输入翻译窗口（pinKey('translate')）相互独立的记忆。
+  // Pin state persists to localStorage, a memory independent of the translate window's (pinKey('translate')).
   const pinnedStore = persisted<boolean>(pinKey('screenshot'), false);
   let pinned = $derived($pinnedStore);
   async function togglePin() {
     const next = !pinned;
     pinnedStore.set(next);
-    // 仅在用户主动 pin 时调用 SetAlwaysOnTop(true)。注意：不可在 next=false 时调用
-    // SetAlwaysOnTop(false)——那会把创建时的 floating 层级压回 NSNormal，重新引入遮挡。
-    // 窗口层级（floating）由 main.go 的 AlwaysOnTop:true 保证，pin 仅记忆用户偏好。
+    // Only call SetAlwaysOnTop(true) when the user actively pins. Note: never call
+    // SetAlwaysOnTop(false) when next=false — that would push the window level (floating, set at
+    // creation) back down to NSNormal, reintroducing occlusion. The window level (floating) is
+    // guaranteed by main.go's AlwaysOnTop:true; pinning only remembers the user's preference.
     if (next) {
       try {
         await Window.SetAlwaysOnTop(true);
@@ -51,8 +52,9 @@
   let result = $state<ScreenshotResult | null>(null);
   let imgEl: HTMLImageElement | undefined = $state();
 
-  // 截图翻译的语言条：展示源/目标语言，用户可直接选择。
-  // 改语言后前端带防抖 emit EventScreenshotRetranslate，后端复用上次 OCR 原文直接重翻（跳过截图/OCR）。
+  // The screenshot-translation language bar: shows source/target languages, directly user-selectable.
+  // After a language change the frontend emits EventScreenshotRetranslate with a debounce; the backend
+  // reuses the last OCR'd source text and retranslates directly (skipping screenshot/OCR).
   let fromLang = $state<TranslateLang>(TRANSLATE_LANG.Auto);
   let toLang = $state<TranslateLang>(TRANSLATE_LANG.EN);
 
@@ -70,7 +72,7 @@
     }
   }
 
-  // 从设置读取默认源/目标语言，作为语言条初始展示值。
+  // Read default source/target languages from settings as the language bar's initial display values.
   async function loadDefaults() {
     try {
       const cfg = await GetConfig();
@@ -81,14 +83,15 @@
     }
   }
 
-  // retranslateTimer 防抖：改语言后 300ms 再触发重翻，避免连选时频繁请求。
+  // retranslateTimer debounce: trigger the retranslate 300ms after a language change, avoiding
+  // frequent requests during rapid consecutive changes.
   let retranslateTimer: ReturnType<typeof setTimeout> | null = null;
-  let langReady = false; // 首次渲染（loadDefaults）期间不触发重翻，仅用户改动后才发。
-  // 语言条变化即自动重翻（防抖）。监听两侧语言，任一侧变化都触发。
+  let langReady = false; // No retranslate during the first render (loadDefaults); only user changes emit.
+  // Auto-retranslate on language-bar change (debounced). Watches both sides; a change on either triggers.
   $effect(() => {
     const f = fromLang;
     const t = toLang;
-    if (!langReady) return; // 跳过初始值设定
+    if (!langReady) return; // Skip initial assignment
     if (retranslateTimer) clearTimeout(retranslateTimer);
     retranslateTimer = setTimeout(() => {
       try {
@@ -103,7 +106,7 @@
       }
     }, 300);
   });
-  // 默认仅展开前两个「翻译成功」的卡片，其余（含失败的）全部收起。
+  // By default only the first two "translation succeeded" cards start expanded; all others (including failures) stay collapsed.
   const successEngines = $derived(
     (result?.translations ?? []).filter((t) => t?.result).map((t) => t.engine),
   );
@@ -117,7 +120,8 @@
     }
   }
 
-  // 交换源/目标语言（Auto 不参与交换，落到 to 侧则视为无效，保持 Auto）。
+  // Swap source/target languages (Auto doesn't participate in swaps; landing on the to side is
+  // treated as invalid and stays Auto).
   function swapLangs() {
     if (fromLang === TRANSLATE_LANG.Auto) return;
     const tmp = toLang;
@@ -126,10 +130,11 @@
   }
 
   function closeWindow() {
-    // 关闭前清理图片/译文等状态，下次打开是干净窗口。
-    // 注意：关闭走 Window.Close() → 后端 WindowClosing hook（Cancel + Hide），
-    // 与输入翻译窗口一致。不要用 Window.Hide() 直接隐藏——那样会绕过后端
-    // hook，导致窗口隐藏状态异常、下次 Show 时 Focus 不生效（表现为被遮挡）。
+    // Clean up image/translation state before closing so the next open is a clean window.
+    // Note: closing goes through Window.Close() → the backend's WindowClosing hook (Cancel + Hide),
+    // same as the translate window. Don't use Window.Hide() to hide directly — that bypasses the
+    // backend hook, leaving the window's hidden state wrong and making Focus ineffective on the
+    // next Show (which manifests as being occluded).
     result = null;
     if (imgEl) imgEl.src = '';
     try {
@@ -161,7 +166,7 @@
 
   const off = onEvent(EventScreenshotOCR, (data: ScreenshotResult) => {
     try {
-      // 收到后端推送的原始事件（后端→前端），第一手证据：判断"后端到底推了什么"。
+      // Raw event pushed by the backend (backend→frontend), first-hand evidence: what did the backend actually push?
       console.debug(t('log.screenshotLogOcrEvent'), {
         hasImage: !!data.image,
         imagePrefix: (data.image ?? '').slice(0, 80),
@@ -170,15 +175,16 @@
         translations: (data.translations ?? []).length,
       });
       const incoming = Array.isArray(data.translations) ? data.translations : [];
-      // 原文 + 截图整体替换（每次推送都带），保证识别到内容即展示。
+      // Source text + screenshot are replaced wholesale (every push carries them), so display happens as soon as something is recognized.
       const base = {
         image: data.image,
         text: data.text ?? '',
         to: data.to,
         error: data.error ?? '',
       };
-      // translations 按 engine 增量合并：已有同引擎则覆盖，否则追加。
-      // 这样后端先推空（仅原文），再逐条推译文时前端逐条显示。
+      // translations merges incrementally by engine: same engine overwrites, otherwise appended.
+      // This way the backend first pushes empty (source text only), then translations one by one
+      // as the frontend displays them one by one.
       const merged = new Map<string, TranslateResult>();
       for (const t of result?.translations ?? []) {
         if (t && typeof t.engine === 'string') merged.set(t.engine, t);
@@ -205,20 +211,23 @@
     }
   });
 
-  // img 的 src 由响应式 effect 同步（result.image 变化即重设），
-  // 避免 onEvent 在 result 赋值后、DOM 尚未重渲染（imgEl 尚未 bind:this 就绪）时
-  // 直接 imgEl.src = ... 设到 undefined 上导致图片不显示。
-  // 同时挂 onerror 诊断图片加载失败。
+  // The img's src is synced by a reactive effect (reset whenever result.image changes),
+  // avoiding the case where onEvent assigns result before the DOM re-renders (imgEl's bind:this
+  // not yet ready) and a direct imgEl.src = ... assignment lands on undefined, leaving the image
+  // blank.
+  // Also attaches an onerror to diagnose image load failures.
   $effect(() => {
     const url = result?.image;
     if (imgEl && url) {
-      // 挂载一次性的 onerror 诊断（只在首次挂载时设，避免每次 effect 重跑重复绑定）。
-      // 注意：error 态（OCR 超时/失败）下 result 被整体重设为带 error 的新对象，
-      // 本 effect 会重跑但 src 不变（下方守卫），不应触发真正的加载失败——
-      // 故 onerror 仅记录、降为 warn，且带 error 态不报，避免超时路径下的误报。
+      // Attach the one-time onerror diagnostic (set only on first attach, avoiding repeated
+      // binding on every effect rerun).
+      // Note: in the error state (OCR timeout/failure) result is reset wholesale to a new object
+      // carrying error; this effect re-runs but src is unchanged (guard below), which shouldn't
+      // count as a real load failure — so onerror only logs at warn level and skips reporting in
+      // the error state, avoiding false positives on the timeout path.
       if (!imgEl.dataset.ocrErrBound) {
         imgEl.onerror = () => {
-          if (result?.error) return; // 错误态下图片可能被卸载重挂，onerror 属副作用，非真加载失败
+          if (result?.error) return; // In the error state the image may be unmounted/remounted; onerror is a side effect, not a real load failure
           console.warn(t('log.screenshotImageLoadFailed'), {
             imageLen: url.length,
             imagePrefix: url.slice(0, 80),
@@ -226,15 +235,17 @@
         };
         imgEl.dataset.ocrErrBound = '1';
       }
-      // 关键：仅在 src 真正变化时重设，避免每次事件 new 对象导致的大 base64 图被反复重设 src 而偶发 onerror。
+      // Key: only reset src when it actually changed, avoiding the sporadic onerror caused by
+      // each event's new object re-setting the large base64 image's src over and over.
       if (imgEl.getAttribute('src') !== url) {
         imgEl.src = url;
       }
     }
   });
 
-  // 监听本窗口（screenshot）关闭事件：原生红 X → 后端 WindowClosing hook 广播
-  // EventWindowClosing，这里按窗口名过滤后清空截图与译文，下次打开是干净窗口。
+  // Listens for this window's (screenshot) close event: the native red X → the backend's
+  // WindowClosing hook broadcasts EventWindowClosing; filtered by window name here, the screenshot
+  // and translations are cleared so the next open is a clean window.
   const offClosing = onEvent(EventWindowClosing, (name: string) => {
     if (name !== WindowScreenshot) return;
     result = null;
@@ -248,15 +259,17 @@
       loadCapability();
     });
     loadDefaults().then(() => {
-      // loadDefaults 设定初始值后，下一拍再允许语言变更触发重翻，避免初始设定误触发。
+      // After loadDefaults sets the initial values, allow language changes to trigger retranslate
+      // on the next tick, avoiding a false trigger from the initial assignment.
       setTimeout(() => {
         langReady = true;
       }, 0);
     });
-    // 截图翻译窗口是临时浮窗。窗口层级已在 main.go 设 MacWindowLevelModalPanel，
-    // 默认即浮在普通窗口之上（无需 AlwaysOnTop）。这里仅在用户主动 pin 时
-    // 调用 SetAlwaysOnTop(true) 永久钉住；pin=false 时不调用，避免把 modalPanel
-    // 层级压回普通（否则会丢失浮起能力）。
+    // The screenshot-translation window is a transient floating window. Its window level is set
+    // to MacWindowLevelModalPanel in main.go, so it floats above normal windows by default
+    // (AlwaysOnTop not needed). Here we only call SetAlwaysOnTop(true) to pin permanently when the
+    // user actively pins; when pin=false it is not called, avoiding pushing the modalPanel level
+    // back down to normal (which would lose the floating ability).
     if ($pinnedStore) {
       try {
         await Window.SetAlwaysOnTop(true);
@@ -275,7 +288,7 @@
 <div class="u-surface relative flex h-full flex-col overflow-hidden">
   {#if result}
     <div class="flex min-h-0 flex-1">
-      <!-- 左：区域截图 -->
+      <!-- Left: region screenshot -->
       <div
         class="flex min-w-0 flex-1 items-center justify-center border-r border-[var(--app-border)] p-3"
       >
@@ -286,9 +299,10 @@
         />
       </div>
 
-      <!-- 右：原文 + 多引擎译文 -->
+      <!-- Right: source text + multi-engine translations -->
       <div class="flex min-w-0 flex-1 flex-col overflow-y-auto p-4">
-        <!-- 常驻工具栏：仅出现在右侧内容区顶部，置顶（与输入翻译窗口各自记忆）+ 重新截图。 -->
+        <!-- Persistent toolbar: only at the top of the right content area — pin (remembered
+             separately from the translate window) + re-screenshot. -->
         <div class="mb-3 flex items-center justify-end gap-2">
           <button
             class="u-icon-btn u-icon-btn--sm u-no-drag"
@@ -323,7 +337,8 @@
         </div>
 
         {#if result.error}
-          <!-- 识别/翻译失败：停止转圈并展示错误（含超时），不再无限"识别中" -->
+          <!-- Recognition/translation failure: stop the spinner and show the error (including
+               timeouts) instead of an endless "recognizing" -->
           <div
             class="flex flex-1 flex-col items-center justify-center gap-3 text-[var(--app-muted)]"
           >
@@ -336,7 +351,7 @@
             <span class="text-xs">{t('screenshot.retryHint')}</span>
           </div>
         {:else if !result.text}
-          <!-- 识别中：OCR 尚未返回原文 -->
+          <!-- Recognizing: OCR hasn't returned the source text yet -->
           <div
             class="flex flex-1 flex-col items-center justify-center gap-3 text-[var(--app-muted)]"
           >
@@ -346,7 +361,7 @@
             <span class="text-sm">{t('screenshot.recognizing')}</span>
           </div>
         {:else}
-          <!-- 语言控制条：样式与输入翻译窗口一致，用户可直接改语言触发重翻。 -->
+          <!-- Language bar: styled like the translate window's; changing language directly triggers a retranslate. -->
           <div class="mb-3 flex items-center justify-center gap-2">
             <select
               class="u-field u-select u-lang-select px-3 py-2 text-sm"
@@ -440,7 +455,7 @@
               {/each}
             </div>
           {:else}
-            <!-- 翻译中：OCR 已完成、译文尚未返回 -->
+            <!-- Translating: OCR finished, translations not back yet -->
             <div class="mt-4 flex flex-col items-center gap-2 text-[var(--app-muted)]">
               <span
                 class="h-6 w-6 animate-spin rounded-full border-2 border-[var(--app-border)] border-t-[var(--app-accent)]"

@@ -16,31 +16,32 @@
   import { onEvent } from '../../runtime';
   import { EventAutoClipboardChanged } from '../../utils/events';
 
-  // 单个注册类快捷键的表单形态（按键 + 启用状态），与后端 HotkeyEntry 对齐。
+  // Form shape of a single (registration) hotkey (key + enabled state), aligned with the backend's HotkeyEntry.
   type HotkeyEntry = { key: string; enabled: boolean };
-  // 单个执行类快捷键的表单形态，与后端 ExecKeyEntry 对齐（执行键是独立分类，不混用 HotkeyEntry）。
+  // Form shape of a single exec key, aligned with the backend's ExecKeyEntry (exec keys are a
+  // separate category, never mixed with HotkeyEntry).
   type ExecKeyEntry = { key: string; enabled: boolean; fallback: boolean };
-  // 注册类快捷键表单：可编辑副本（2 项）
+  // Hotkey form: editable copy (2 items)
   type HotkeyForm = {
     input: HotkeyEntry;
     screenshot: HotkeyEntry;
   };
-  // 执行类快捷键表单（独立分类）：当前仅复制键。
+  // Exec-key form (separate category): currently only the copy hotkey.
   type ExecKeyForm = {
     copy: ExecKeyEntry;
   };
-  // 注册类快捷键默认值（与后端 DefaultSettings.Hotkeys 保持一致）。
+  // Default hotkeys (kept in sync with the backend's DefaultSettings.Hotkeys).
   const defaultHotkeys: HotkeyForm = {
     input: { key: 'Alt+A', enabled: true },
     screenshot: { key: 'Alt+S', enabled: false },
   };
-  // 执行类快捷键默认值（与后端 DefaultSettings.ExecKeys 保持一致）。
+  // Default exec keys (kept in sync with the backend's DefaultSettings.ExecKeys).
   const defaultExecKeys: ExecKeyForm = {
     copy: { key: 'Cmd+C', enabled: true, fallback: true },
   };
 
-  // 快捷键表单：可编辑副本（注册类 2 项 + 复制键）
-  // 初始值预填各快捷键的真实默认值，避免未加载时输入框为空。
+  // Shortcut forms: editable copies (2 hotkeys + the copy exec key)
+  // Initial values prefill each shortcut's real default so inputs are never empty before loading.
   let hotkeyForm = $state<HotkeyForm>({
     input: { ...defaultHotkeys.input },
     screenshot: { ...defaultHotkeys.screenshot },
@@ -48,21 +49,24 @@
   let execKeyForm = $state<ExecKeyForm>({
     copy: { ...defaultExecKeys.copy },
   });
-  // 录制态：正在捕获按键的快捷键字段名（null 表示未录制）。注册键与执行键分两个分类。
+  // Recording state: the shortcut field name currently capturing a key (null = not recording).
+  // Hotkeys and exec keys are two separate categories.
   type RecordableKey = keyof HotkeyForm | keyof ExecKeyForm;
   let recordingKey = $state<RecordableKey | null>(null);
 
-  // 自动剪贴板翻译开启时，复制键被自动关闭（避免双重触发），此处禁止在设置页修改复制键。
+  // When auto-clipboard translation is on, the copy hotkey is automatically disabled (avoiding
+  // double-triggering); editing the copy hotkey here is forbidden in that case.
   let copyDisabled = $state(false);
 
-  // 授权卡片仅 macOS 需要（辅助功能 / 屏幕录制均为 macOS TCC 权限）。
-  // Windows 复制键走 makc 调用 user32.dll、全局热键走 RegisterHotKey，均无需用户授权；
-  // Linux 同样无需此类授权。故非 Mac 平台直接隐藏授权区块。
-  // 使用统一的平台判断（Wails v3 多窗口下 _wails 可能丢失，需 UA 兜底）。
+  // Permission cards are only needed on macOS (Accessibility / Screen Recording are both macOS TCC
+  // permissions). On Windows the copy hotkey goes through makc calling user32.dll and global hotkeys
+  // use RegisterHotKey — neither needs user permission; Linux likewise needs none of these. So the
+  // permission block is hidden entirely on non-Mac platforms.
+  // Uses the unified platform check (under Wails v3 multi-window, _wails may be missing, so the UA is the fallback).
   const isMac = detectMac();
   console.debug(t('log.shortcutsTabIsMac'), isMac);
 
-  // 辅助功能授权状态（macOS）：true=已授权，false=未授权，null=检测中/未知（非 darwin 始终 true）
+  // Accessibility permission state (macOS): true=granted, false=denied, null=detecting/unknown (always true on non-darwin)
   let accGranted = $state<boolean | null>(null);
   let accLoading = $state(false);
 
@@ -81,14 +85,14 @@
   async function openAccessibility() {
     try {
       await OpenAccessibilitySettings();
-      // 弹窗后稍等用户操作，再刷新一次状态
+      // After the dialog opens, give the user a moment, then refresh the state once
       setTimeout(loadAccessibility, 800);
     } catch (e) {
       console.error(t('log.shortcutOpenAccessibilityFailed'), e);
     }
   }
 
-  // 屏幕录制授权状态（截图翻译依赖）：true=已授权，false=未授权，null=检测中/未知（非 darwin 始终 true）
+  // Screen Recording permission state (screenshot translation depends on it): true=granted, false=denied, null=detecting/unknown (always true on non-darwin)
   let srGranted = $state<boolean | null>(null);
   let srLoading = $state(false);
 
@@ -107,33 +111,37 @@
   async function openScreenRecording() {
     try {
       await OpenScreenRecordingSettings();
-      // 弹窗后稍等用户操作，再刷新一次状态
+      // After the dialog opens, give the user a moment, then refresh the state once
       setTimeout(loadScreenRecording, 800);
     } catch (e) {
       console.error(t('log.shortcutOpenScreenRecordingFailed'), e);
     }
   }
 
-  // 加载快捷键页所需的全部授权状态。仅拉数据，不改变展开/收起状态，
-  // 以免手动刷新时把用户展开着的卡片强制收起。
+  // Loads all permission states the shortcuts page needs. Data-fetch only; it never changes the
+  // expanded/collapsed state, so a manual refresh doesn't forcibly collapse a card the user
+  // expanded.
   async function loadShortcutPermissions() {
     await Promise.all([loadAccessibility(), loadScreenRecording()]);
-    // 仅首次加载完成后设置一次初始展开状态：都已授权则默认收起，否则展开。
+    // Set the initial expanded state once, after the first load completes: all granted →
+    // collapsed by default, otherwise expanded.
     if (!permInitDone) {
       permInitDone = true;
       permExpanded = !(accGranted === true && srGranted === true);
     }
   }
 
-  // 授权区块展开状态：默认折叠。仅在页面首次加载（首次数据返回）时按授权状态
-  // 决定一次初始值；之后的刷新与手动展开/收起都由用户控制，不被重置。
+  // The permission block's expanded state: collapsed by default. Its initial value is decided once
+  // by permission state on the page's first load (first data return); subsequent refreshes and
+  // manual expand/collapse are user-controlled and never reset.
   let permExpanded = $state(false);
-  let permInitDone = false; // 初始展开状态是否已设置，确保只设一次
+  let permInitDone = false; // whether the initial expanded state has been set; ensures it's set only once
 
-  // 授权是否都已明确授予（辅助功能 + 屏幕录制），仅用于模板折叠判断。
+  // Whether all permissions are explicitly granted (Accessibility + Screen Recording); only used for the template's collapse check.
   let permAllGranted = $derived(accGranted === true && srGranted === true);
 
-  // 用 e.code 取主键，避免 macOS Option(Alt) 组合键把 e.key 变成组合字符（如 Alt+S → 'ß'）
+  // Use e.code for the main key, avoiding macOS Option(Alt) combos turning e.key into a composed
+  // character (e.g. Alt+S → 'ß')
   function keyName(e: KeyboardEvent): string {
     if (e.code?.startsWith('Key')) return e.code.slice(3); // KeyS -> S
     if (e.code?.startsWith('Digit')) return e.code.slice(5); // Digit1 -> 1
@@ -158,10 +166,10 @@
     if (e.metaKey) mods.push('Cmd');
     if (e.shiftKey) mods.push('Shift');
     const main = keyName(e);
-    if (!main) return; // 仅按修饰键，等待主键
+    if (!main) return; // Modifier only; wait for the main key
     const combo = [...mods, main].join('+');
     const k = recordingKey;
-    recordingKey = null; // 先置空，防止组合键产生的重复 keydown 再次写入
+    recordingKey = null; // Clear first, preventing a duplicate keydown from the combo writing again
     if (k) {
       if (k === 'copy') {
         execKeyForm.copy.key = combo;
@@ -172,8 +180,9 @@
   }
 
   function startRecord(key: keyof HotkeyForm | 'copy') {
-    // 复制键被自动剪贴板锁定（copyDisabled）时禁止录制，作为 disabled 属性的兜底，
-    // 防止极端情况下点击穿透导致复制键被修改。
+    // When the copy hotkey is locked by auto-clipboard (copyDisabled), forbid recording — a
+    // backstop for the disabled attribute, preventing a click-through in edge cases from
+    // modifying the copy hotkey.
     if (key === 'copy' && copyDisabled) return;
     recordingKey = key;
   }
@@ -181,15 +190,17 @@
   onMount(() => {
     loadShortcuts();
     loadShortcutPermissions();
-    // 翻译窗口切换自动剪贴板开关时，实时禁用/恢复本页复制键控件。
+    // When the translate window toggles auto-clipboard, disable/restore this page's copy-hotkey controls in real time.
     const offAuto = onEvent(EventAutoClipboardChanged, (enabled: boolean) => {
       copyDisabled = enabled;
     });
     return () => offAuto();
   });
 
-  // 仅靠跨窗口事件可能收不到（多窗口隔离），故窗口重新获得焦点时（如从翻译窗切回设置页）
-  // 再读一次 GetConfig，确保自动剪贴板状态已同步，复制键控件正确进入/退出禁用态。
+  // Cross-window events alone may not arrive (multi-window isolation), so when the window regains
+  // focus (e.g. switching back from the translate window to settings), read GetConfig once more to
+  // make sure the auto-clipboard state is synced and the copy-hotkey controls correctly enter/exit
+  // the disabled state.
   async function refreshCopyDisabled() {
     try {
       const cfg = await GetConfig();
@@ -235,14 +246,14 @@
         execkeys: { copy: execKeyForm.copy },
       };
       await SaveConfig(next as any);
-      // 桌面软件用 Wails v3 原生信息对话框，与失败错误框风格统一、更醒目
+      // Desktop app: use Wails v3's native info dialog, consistent with the failure error dialog and more prominent
       await Dialogs.Info({
         Title: t('settings.hkSavedTitle'),
         Message: t('settings.hkSaved'),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // 桌面软件用 Wails v3 原生错误对话框，比内联文字更醒目
+      // Desktop app: use Wails v3's native error dialog, more prominent than inline text
       await Dialogs.Error({
         Title: t('settings.hkSaveErrorTitle'),
         Message: msg,
@@ -258,11 +269,11 @@
   <p class="u-muted mt-1 text-sm">{t('settings.shortcutsHint')}</p>
 </header>
 
-<!-- 快捷键所需授权状态：仅 macOS 需要（辅助功能 + 屏幕录制均为 macOS TCC 权限） -->
+<!-- Permissions required by shortcuts: only needed on macOS (Accessibility + Screen Recording are both macOS TCC permissions) -->
 {#if isMac}
   <div class="u-card u-card--panel mb-5 p-5">
     {#if permAllGranted && !permExpanded}
-      <!-- 折叠态：都已授权时默认收起，仅显示概览一行 -->
+      <!-- Collapsed state: all granted collapses by default, showing only the summary line -->
       <div class="flex items-center justify-between gap-4">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium">{t('settings.permTitle')}</span>
@@ -281,7 +292,7 @@
         </div>
       </div>
     {:else}
-      <!-- 展开态：显示明细 + 刷新/收起 -->
+      <!-- Expanded state: details + refresh/collapse -->
       <div class="mb-1 flex items-center justify-between gap-4">
         <div class="text-sm font-medium">{t('settings.permTitle')}</div>
         <div class="flex shrink-0 items-center gap-2">
@@ -301,7 +312,7 @@
       <p class="u-muted mb-4 text-xs">{t('settings.permHint')}</p>
 
       <div class="space-y-4">
-        <!-- 辅助功能 -->
+        <!-- Accessibility -->
         <div class="flex items-center justify-between gap-4">
           <div class="min-w-0">
             <div class="text-sm font-medium">{t('settings.permAccessibility')}</div>
@@ -321,7 +332,7 @@
           </div>
         </div>
 
-        <!-- 屏幕录制：截图翻译依赖 -->
+        <!-- Screen Recording: screenshot translation depends on it -->
         <div class="flex items-center justify-between gap-4">
           <div class="min-w-0">
             <div class="text-sm font-medium">{t('settings.permScreenRecording')}</div>

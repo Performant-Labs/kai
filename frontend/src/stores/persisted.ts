@@ -1,26 +1,28 @@
 import { writable, type Writable } from 'svelte/store';
 
-// localStorage-backed writable store：状态变更自动持久化，初始化时从 localStorage 读取。
+// localStorage-backed writable store: changes are persisted automatically; reads initial
+// value from localStorage on creation.
 export function persisted<T>(key: string, initial: T): Writable<T> {
   let start = initial;
   try {
     const raw = localStorage.getItem(key);
     if (raw !== null) start = JSON.parse(raw) as T;
   } catch {
-    // ignore 损坏值，回退 initial
+    // ignore corrupt values, fall back to initial
   }
   const store = writable<T>(start);
   store.subscribe((v) => {
     try {
       localStorage.setItem(key, JSON.stringify(v));
     } catch {
-      // ignore 写入失败（如隐私模式）
+      // ignore write failures (e.g. private browsing mode)
     }
   });
   return store;
 }
 
-// 按窗口名生成置顶状态的持久化 key，确保各窗口（translate/settings/selection）的置顶状态相互独立。
+// Builds the persistence key for a window's always-on-top state so each window
+// (translate/settings/selection) keeps an independent pin state.
 export function pinKey(windowName: string): string {
   return `kai:${windowName}:pinned`;
 }

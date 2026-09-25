@@ -1,5 +1,5 @@
-// 窗口名常量，与 internal/model/windows.go 对齐（单一真相源在 Go 端）。
-// 用作 EventWindowClosing / EventWindowShow 等事件的窗口标识 payload。
+// Window name constants, aligned with internal/model/windows.go (single source of truth in Go).
+// Used as the window identifier payload of EventWindowClosing / EventWindowShow and similar events.
 export const WindowTranslate = 'translate';
 export const WindowSettings = 'settings';
 export const WindowScreenshot = 'screenshot';

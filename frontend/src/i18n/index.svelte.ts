@@ -3,17 +3,18 @@ import { zh, type Dict } from './zh-CN';
 import { en } from './en-US';
 import { Lang, type LangCode } from '../constants/lang';
 
-// 对外暴露 LangCode 类型（界面语言：auto/zh-CN/en-US），供 index.ts 及组件复用。
+// Re-export the LangCode type (UI language: auto/zh-CN/en-US) for index.ts and components to reuse.
 export type { LangCode };
 
-// i18n 实际生效语言只能是 zh-CN/en-US（auto 由 resolveLang 解析），故 dicts 仅两键。
+// The actually effective i18n language can only be zh-CN/en-US (auto is resolved by
+// resolveLang), so dicts has exactly two keys.
 type ResolvedLang = typeof Lang.ZHCN | typeof Lang.ENUS;
 const dicts: Record<ResolvedLang, Dict> = { [Lang.ZHCN]: zh, [Lang.ENUS]: en };
 
-// 用 runes 状态持有当前语言，使 t() 在任意组件内自动响应式刷新
+// Hold the current language in runes state so t() refreshes reactively in any component.
 let currentLang = $state<ResolvedLang>(Lang.ZHCN);
 
-// 兼容旧的 writable 用法（ui.ts 等仍通过 setLocale/get 操作）
+// Backwards compatibility with the old writable usage (ui.ts etc. still operate via setLocale/get).
 const localeStore = writable<ResolvedLang>(Lang.ZHCN);
 localeStore.subscribe((l) => {
   if (l !== currentLang) currentLang = l;
@@ -48,8 +49,8 @@ export function getSystemLocale() {
   return lang.startsWith('zh') ? Lang.ZHCN : Lang.ENUS;
 }
 
-// 把界面语言（Lang：auto/zh-CN/en-US）解析为实际生效语言（zh-CN/en-US）。
-// auto 时跟随系统语言（getSystemLocale），不依赖后端系统语言 API。
+// Resolve the UI language (Lang: auto/zh-CN/en-US) into the actually effective language (zh-CN/en-US).
+// For auto, follow the system language (getSystemLocale) instead of the backend system-language API.
 export function resolveLang(lang: LangCode): typeof Lang.ZHCN | typeof Lang.ENUS {
   if (lang === Lang.ZHCN || lang === Lang.ENUS) return lang;
   return getSystemLocale();

@@ -7,7 +7,8 @@
 
   let { onClose, windowName }: { onClose?: () => void; windowName?: string } = $props();
 
-  // 平台判断统一走 runtime/platform（Wails v3 多窗口下 _wails 可能丢失，需 UA 兜底）。
+  // Platform checks all go through runtime/platform (under Wails v3 multi-window, _wails may be
+  // missing, so the UA is the fallback).
   const isMacPlatform = isMac();
   console.debug(t('log.titleBarIsMac'), isMacPlatform);
 
@@ -18,7 +19,7 @@
     Window.ToggleMaximise();
   }
   function close() {
-    // 自定义关闭行为（如截图窗口仅隐藏不销毁）；否则走标准关闭流程。
+    // Custom close behavior (e.g. the screenshot window only hides, it isn't destroyed); otherwise the standard close flow.
     if (onClose) {
       onClose();
       return;

@@ -45,7 +45,7 @@ export async function initTheme(): Promise<void> {
     const mode = await GetTheme();
     if (mode === THEME.Auto || mode === THEME.Light || mode === THEME.Dark)
       themeMode.set(mode as ThemeMode);
-    // 使用 @wailsio/runtime 原生 API 获取系统暗色模式，减少 RPC 调用
+    // Use the native @wailsio/runtime API to get the system dark mode, reducing RPC calls.
     const isDarkMode = await System.IsDarkMode();
     systemDark.set(isDarkMode);
   } catch {
@@ -59,8 +59,8 @@ export async function initTheme(): Promise<void> {
   unregister = [];
   unregister.push(
     onEvent(EventThemeChanged, (data: ThemeChangedPayload) => {
-      // 单一主题事件：mode=用户配置模式，theme=系统真实外观。
-      // 非 auto 用 mode；auto 时用 theme 跟随系统。
+      // Single theme event: mode = user-configured mode, theme = actual system appearance.
+      // Non-auto uses mode; auto uses theme to follow the system.
       if (data?.mode === THEME.Auto || data?.mode === THEME.Light || data?.mode === THEME.Dark) {
         themeMode.set(data.mode as ThemeMode);
       }
@@ -89,10 +89,11 @@ export async function setTheme(mode: ThemeMode): Promise<void> {
   }
 }
 
-// 将应用内主题应用到原生标题栏（macOS 红绿灯/标题、Windows 标题栏）。
-// 注意：beta.15 的 Wails 在 Go 与前端 runtime 均未声明“运行时切换常驻窗口主题”的公开 API，
-// 这里尝试调用 window.runtime.Window 的主题方法；若运行时支持则实时跟随，
-// 不支持则静默跳过（窗口创建时的初始 Theme 兜底）。
+// Applies the in-app theme to the native title bar (macOS traffic lights/title, Windows title bar).
+// Note: Wails beta.15 declares no public API (neither Go nor frontend runtime) for switching the
+// theme of a persistent window at runtime, so this tries the window.runtime.Window theme methods:
+// if the runtime supports them it follows in real time; if not, it silently skips (the initial
+// Theme set at window creation is the fallback).
 function applyNativeTheme(): void {
   const mode = get(themeMode);
   const w = Window as unknown as {

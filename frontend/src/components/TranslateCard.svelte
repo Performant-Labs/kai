@@ -10,9 +10,11 @@
     onCopied,
   }: { tr: TranslateResult; expanded?: boolean; onCopied?: (text: string) => void } = $props();
 
-  // 卡片可折叠：默认仅前两个翻译成功的展开（由父组件计算 expanded 传入），其余收起。
-  // expanded 仅作初始值——用户点击头部 toggle 改变的是 isOpen 自身，无需反向同步 prop，
-  // 故用 untrack 显式取初值，消除 Svelte 的 state_referenced_locally 警告。
+  // The card is collapsible: by default only the first two successful translations start expanded
+  // (the parent computes `expanded` and passes it in); the rest start collapsed.
+  // expanded is only the initial value — clicking the header toggle changes isOpen itself, so the
+  // prop never needs to be synced back; untrack reads the initial value explicitly, silencing
+  // Svelte's state_referenced_locally warning.
   let isOpen = $state(untrack(() => expanded));
 
   async function copyText(text: string | undefined) {
@@ -27,8 +29,9 @@
 </script>
 
 <div class="u-card p-3">
-  <!-- 该 div 在有翻译结果时动态充当按钮（role=button + tabindex + 键盘支持），
-       属于有意为之的交互元素，故忽略非交互元素的 tabindex 静态检查。 -->
+  <!-- This div dynamically acts as a button when a translation result exists (role=button +
+       tabindex + keyboard support). It is an intentionally interactive element, so the
+       non-interactive-element tabindex static check is ignored. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="flex items-center justify-between"

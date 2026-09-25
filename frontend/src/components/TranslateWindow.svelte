@@ -9,14 +9,16 @@
   import { onEvent, emitEvent } from '../runtime';
   import { Window, Clipboard } from '@wailsio/runtime';
 
-  // 置顶状态持久化到 localStorage，重开窗口后保留。
-  // #39：默认置顶（modal 语义）——工作窗口在显式 Hide（快捷键切换 / 红 X / 托盘）之前
-  // 保持浮在其它应用之上，不再因失焦沉底「消失」。🧷 按钮语义不变：作为解除置顶的开关。
+  // Pin state persists to localStorage and survives reopening the window.
+  // #39: pinned by default (modal semantics) — the working window stays above other apps until
+  // explicitly hidden (hotkey toggle / red X / tray) and no longer "disappears" below them when
+  // it loses focus. The 🧷 button keeps its meaning: the unpin/pin toggle.
   const PIN_MODAL_MIGRATION_KEY = 'kai:translate:pinnedModalDefault';
   const pinnedStore = persisted<boolean>(pinKey('translate'), true);
-  // 一次性迁移：老用户在旧默认（false）下已被 subscribe 静默写入 false，构造默认翻转
-  // 对他们无效——检测到「存了 false 且未见迁移标记」即重置为置顶并落标记。迁移后
-  // 再解除置顶的用户（flag 已在）永远被尊重。
+  // One-time migration: existing users were silently written false under the old default (false)
+  // by subscribe, so merely flipping the constructed default does nothing for them — on seeing
+  // "stored false and no migration flag" we reset to pinned and set the flag. Users who unpin
+  // after the migration (flag already present) are always respected.
   if (typeof localStorage !== 'undefined' && !localStorage.getItem(PIN_MODAL_MIGRATION_KEY)) {
     if (localStorage.getItem(pinKey('translate')) === JSON.stringify(false)) {
       pinnedStore.set(true);
@@ -34,17 +36,18 @@
     }
   }
 
-  // 自动读取剪贴板并翻译：开启后经 SaveConfig 把复制键（execkeys.copy.enabled/fallback）
-  // 置 false 并记录快照，关闭时恢复，避免与复制键双重触发。开关状态持久化在 settings.json
-  // （auto_clipboard）。开启后按下「输入翻译」快捷键即由后端直接读取系统剪贴板并翻译，
-  // 不再由前端轮询。
+  // Auto-read clipboard and translate: when enabled, SaveConfig turns the copy hotkey
+  // (execkeys.copy.enabled/fallback) off and records a snapshot, restored on disable, avoiding
+  // double-triggering with the copy hotkey. The toggle state persists in settings.json
+  // (auto_clipboard). When enabled, pressing the "input translation" hotkey makes the backend
+  // read the system clipboard and translate directly — no more frontend polling.
   let autoClipboard = $state(false);
 
   async function applyAutoClipboard(next: boolean) {
-    // 必须用完整 Settings 保存，否则 SaveConfig 会把其它字段清零。
+    // Must save the full Settings, otherwise SaveConfig zeroes out the other fields.
     const cfg = (await GetConfig()) ?? ({} as any);
     if (next) {
-      // 仅在尚无快照时记录（防重复快照），并关闭复制键两个开关。
+      // Record the snapshot only if none exists yet (avoid double snapshots), and turn off both copy-hotkey switches.
       if (!cfg.copy_key_snapshot && cfg.execkeys?.copy) {
         cfg.copy_key_snapshot = { ...cfg.execkeys.copy };
       }
@@ -54,7 +57,7 @@
       }
       cfg.auto_clipboard = true;
     } else {
-      // 恢复复制键原状态并清掉快照。
+      // Restore the copy hotkey's original state and drop the snapshot.
       if (cfg.copy_key_snapshot && cfg.execkeys?.copy) {
         cfg.execkeys.copy.enabled = cfg.copy_key_snapshot.enabled;
         cfg.execkeys.copy.fallback = cfg.copy_key_snapshot.fallback;
@@ -64,7 +67,7 @@
     }
     await SaveConfig(cfg as any);
     autoClipboard = next;
-    // 广播给设置页，实时禁用/恢复复制键开关。
+    // Broadcast to the settings page, disabling/restoring the copy-hotkey switches in real time.
     emitEvent(EventAutoClipboardChanged, next);
   }
 
@@ -109,20 +112,23 @@
   let languages = $state<NamedItem[]>([]);
   let fromLang = $state<TranslateLang>(TRANSLATE_LANG.Auto);
   let toLang = $state<TranslateLang>(TRANSLATE_LANG.EN);
-  // 各引擎翻译结果，按引擎名聚合（多引擎并发，逐个到达）。
+  // Per-engine translation results, aggregated by engine name (multi-engine concurrency,
+  // arriving one by one).
   let results = $state<Record<string, TranslateResult>>({});
   let loading = $state(false);
 
-  // 两栏布局（issue #10，锁定决策：永远左右并排，无堆叠回退）。分隔条把内容行切成
-  // 源文本栏（左）与结果栏（右），占比持久化到 localStorage，重开窗口后保留。
-  // 夹逼/换算逻辑全部在 utils/paneLayout.ts（纯函数，vitest 覆盖）。
+  // Two-pane layout (issue #10, locked decision: always side by side, no stacked fallback).
+  // The divider splits the content row into the source pane (left) and the results pane (right);
+  // the ratio persists to localStorage and survives reopening the window.
+  // All clamping/conversion math lives in utils/paneLayout.ts (pure functions, covered by vitest).
   import { clampRatio, ratioFromPoint } from '../utils/paneLayout.ts';
   const dividerStore = persisted<number>('translate:divider', 0.5);
   let panesEl = $state<HTMLElement | null>(null);
   let leftRatio = $derived(clampRatio($dividerStore));
 
-  // 分隔条拖拽：mousedown 后在 window 上跟踪 mousemove（拖出分隔条也能继续拖），
-  // mouseup 解除。指针水平位置 → 行内占比 → 夹逼 → 写回持久化 store。
+  // Divider drag: after mousedown, mousemove is tracked on window (dragging past the divider
+  // keeps working); mouseup releases. Pointer horizontal position → row ratio → clamp → write
+  // back to the persisted store.
   function startDividerDrag(ev: MouseEvent) {
     ev.preventDefault();
     const row = panesEl;
@@ -140,10 +146,11 @@
     window.addEventListener('mouseup', up);
   }
 
-  // 词级 span 渲染（issue #11 基础工作）：两栏的文本以 SpanText（hover 高亮 span）展示，
-  // 编辑仍走 textarea。规则：栏内文本非空且未处于编辑态 → 展示 span 层；点击 span 层
-  // 切回 textarea（词级点击本身刻意无行为，字典/备选是 #18）。空文本恒为 textarea
-  // （占位符可见、可直接输入）。
+  // Word-level span rendering (issue #11 groundwork): both panes' text renders as SpanText
+  // (hover-highlighted spans), editing still goes through the textarea. Rule: pane text non-empty
+  // and not in editing state → show the span layer; clicking the span layer switches back to the
+  // textarea (word clicks themselves are deliberately inert; dictionary/alternatives are #18).
+  // Empty text is always a textarea (placeholder visible, directly typeable).
   let editingSource = $state(true);
   let editingResult = $state(false);
   let sourceEl = $state<HTMLTextAreaElement | null>(null);
@@ -159,7 +166,7 @@
     tick().then(() => resultEl?.focus());
   }
 
-  // 翻译中走马灯：动态省略号（. → .. → ... → .... 循环）
+  // Translating marquee: animated ellipsis (. → .. → ... → .... cycling)
   let dotCount = $state(0);
   $effect(() => {
     if (!loading) {
@@ -176,36 +183,41 @@
 
   const activeEngines = $derived(engines.filter((e) => e.kind === 'translate'));
 
-  // 上次使用的引擎（localStorage 持久化，见 persisted store 的 pinKey 同款机制）。
-  // 结果区活动引擎解析的最优先来源（issue #9 由本窗口的引擎下拉框写入，见 handleEngineChange）。
+  // Last-used engine (persisted in localStorage, same mechanism as the persisted store's pinKey).
+  // The highest-priority source when resolving the result pane's active engine (issue #9; written
+  // by this window's engine dropdown, see handleEngineChange).
   const LAST_ENGINE_KEY = 'kai:translate:lastEngine';
   const lastUsedStore = persisted<string>(LAST_ENGINE_KEY, '');
-  // settings 的主引擎（default_engine）：解析链的中间层，onMount 时读取。
+  // settings' primary engine (default_engine): the middle layer of the resolution chain, read on mount.
   let defaultEngine = $state<string>('');
-  // GetAllEngines 形态的引擎列表（含 enabled/kind/supported）：主引擎解析的 enabled 判定
-  // 需要它（GetEngines 的 EngineListItem 没有 enabled 字段）。
+  // Engine list in the GetAllEngines shape (includes enabled/kind/supported): the primary-engine
+  // resolution's enabled judgment needs it (GetEngines' EngineListItem has no enabled field).
   let allEngines = $state<AllEngineItem[]>([]);
 
-  // 目标语言选项：系统翻译等引擎不支持自动检测目标语言，目标语言下拉框必须排除 auto。
+  // Target-language options: engines like system translation don't support auto-detecting the
+  // target language, so the target dropdown must exclude auto.
   const targetLanguages = $derived(languages.filter((l) => l.value !== TRANSLATE_LANG.Auto));
 
-  // 结果区当前绑定的引擎（issue #9）：activeEngineFor = #8 的 resolvedPrimary 推导
-  // （last-used ?? primary(default_engine) ?? first-enabled）+ 一层防御性回退（解析为 '' 但
-  // 仍有 enabled 翻译引擎时回退到第一个，保证 select 不悬空）。引擎列表 / last-used /
-  // settings 任一变化即重算；切引擎即写入 last-used（#8 的 setLastUsedEngine）。
+  // The engine the result pane is currently bound to (issue #9): activeEngineFor = #8's
+  // resolvedPrimary derivation (last-used ?? primary(default_engine) ?? first-enabled) plus one
+  // defensive fallback (falls back to the first engine when resolution is '' but enabled translate
+  // engines still exist, guaranteeing the select never dangles). Recomputed whenever the engine
+  // list / last-used / settings change; switching engines writes last-used (#8's setLastUsedEngine).
   const activeEngine = $derived(activeEngineFor(LAST_ENGINE_KEY, defaultEngine, allEngines));
-  // 每个 enabled 翻译引擎一个 dot（状态 = fan-out 真实输出：done/pending/failed，设计 §4）。
+  // One dot per enabled translate engine (state = the fan-out's real output: done/pending/failed, design §4).
   const dots = $derived(statusDots(allEngines, results, loading));
-  // 活动引擎的当前结果（失败的引擎在 results 里缺席 → null）。
+  // The active engine's current result (a failed engine is absent from results → null).
   const activeResult = $derived(activeEngine ? (results[activeEngine] ?? null) : null);
-  // 活动引擎正在显示/可显示的文本：手工编辑 ?? 引擎结果 ?? 空串。
+  // The text the active engine is showing / can show: manual edit ?? engine result ?? empty string.
   const activeDisplay = $derived(edited.get(activeEngine) ?? activeResult?.result ?? '');
-  // 结果区引擎下拉框的显示值：activeEngine 已含「'' → 第一个 enabled」防御回退，
-  // 故 activeEngines 非空时必非空（select 永不指向 nothing）。
+  // The result-pane engine dropdown's display value: activeEngine already includes the
+  // "'' → first enabled" defensive fallback, so it is never empty while activeEngines is non-empty
+  // (the select never points at nothing).
   const firstEnabledName = $derived(activeEngines[0]?.value ?? '');
   const selectValue = $derived(activeEngine || firstEnabledName);
-  // 自动检测反馈（issue #11）：源语言为 auto 且活动引擎已返回结果时，
-  // 语言条的 auto 选项显示「English (detected)」式标签；固定语言时不覆盖。
+  // Auto-detect feedback (issue #11): when the source language is auto and the active engine has
+  // returned a result, the language bar's auto option shows an "English (detected)"-style label;
+  // it never overrides a pinned language.
   const detectedFrom = $derived(String(activeResult?.from ?? ''));
   function fromOptionLabel(value: string): string {
     const label = detectedSourceLabel(
@@ -217,8 +229,9 @@
     );
     return label ?? langName(value);
   }
-  // 结果区手工编辑（按引擎名聚合）：切换引擎 / 重新翻译 / 清空输入时整体丢弃，
-  // 新引擎一律从它自己的存储结果起步（无 per-engine 编辑记忆，设计 §3）。
+  // Result-pane manual edits (aggregated by engine name): discarded wholesale on engine switch /
+  // retranslate / clearing input; a new engine always starts from its own stored result
+  // (no per-engine edit memory, design §3).
   let edited = $state<Map<string, string>>(new Map());
   function setEdited(engine: string, value: string) {
     edited = new Map(edited).set(engine, value);
@@ -226,13 +239,13 @@
   function handleEngineChange(ev: Event) {
     const name = (ev.currentTarget as HTMLSelectElement).value;
     setLastUsedEngine(name);
-    // 切换引擎：丢弃上一个引擎的手工编辑，新引擎从它自己的存储结果起步。
+    // Engine switch: discard the previous engine's manual edit; the new engine starts from its own stored result.
     edited = resetEdits(edited, activeEngine, name, results);
     editingResult = false;
   }
 
   onMount(() => {
-    // 事件监听需先注册（await 加载期间若有翻译结果到达也不丢失）。
+    // Event listeners must register first (so a result arriving during the awaited loads isn't lost).
     const offResult = onEvent(EventTranslateResult, (payload: TranslateResult) => {
       if (payload && payload.engine) {
         results = { ...results, [payload.engine]: payload };
@@ -245,30 +258,32 @@
       doTranslate();
     });
     const offClosing = onEvent(EventWindowClosing, (name: string) => {
-      // 全局广播：只处理本窗口（translate）的关闭，避免关闭别的窗口误清空翻译。
+      // Global broadcast: only handle this window's (translate) closing, so closing another
+      // window doesn't mistakenly clear the translation.
       if (name !== WindowTranslate) return;
       results = {};
       input = '';
       loading = false;
       edited = new Map();
     });
-    // 设置里增删/启停引擎后广播：重新拉取引擎列表，使翻译窗口结果卡片同步最新状态
-    // （否则开启/关闭的引擎不会刷新，仍是旧列表）。
+    // Broadcast after engines are added/removed or enabled/disabled in settings: re-fetch the
+    // engine list so the translate window's result cards sync to the latest state (otherwise
+    // enabled/disabled engines never refresh and the old list sticks).
     const offEngines = onEvent(EventEnginesChanged, () => {
       loadEngines();
     });
-    // 初始化与首屏：恢复置顶状态，等引擎/语言/默认值加载完成。
+    // Initialization and first render: restore pin state, then wait for engines/languages/defaults to load.
     (async () => {
-      // 恢复持久化的置顶状态。
+      // Restore the persisted pin state.
       try {
         await Window.SetAlwaysOnTop($pinnedStore);
       } catch (e) {
         console.error(t('log.restorePinFailed'), e);
       }
-      // 必须先等引擎/语言/默认值加载完（结果区下拉框与 dots 依赖它们）。
+      // Must wait for engines/languages/defaults to load first (the result pane's dropdown and dots depend on them).
       await Promise.all([loadDefaults(), loadEngines(), loadLanguages()]);
-      // 载入「自动读取剪贴板翻译」开关 + 主引擎（均持久化在 settings.json）。
-      // default_engine 是主引擎解析链的中间层（last-used ?? primary ?? first-enabled）。
+      // Load the "auto-read clipboard" toggle + primary engine (both persisted in settings.json).
+      // default_engine is the middle layer of the primary-engine resolution chain (last-used ?? primary ?? first-enabled).
       try {
         const cfg = await GetConfig();
         if (cfg?.auto_clipboard) {
@@ -289,7 +304,7 @@
     };
   });
 
-  // 从设置文件读取默认源/目标语言作为初始值（未配置回退 auto/zh）。
+  // Read default source/target languages from the settings file as initial values (fall back to auto/zh when unset).
   async function loadDefaults() {
     try {
       const cfg = await GetConfig();
@@ -300,7 +315,7 @@
     }
   }
 
-  // 持久化当前源/目标语言到设置文件。
+  // Persist the current source/target languages to the settings file.
   async function persistLangs() {
     try {
       const cfg = (await GetConfig()) ?? ({} as any);
@@ -318,9 +333,9 @@
   );
 
   async function loadEngines() {
-    // GetEngines：结果区渲染（无 enabled 字段，只区分 translate/ocr + supported）。
-    // GetAllEngines：主引擎解析的 enabled 判定（含 enabled/kind/supported）。
-    // 二者并行拉取，避免二次往返；任一失败各自回退，互不阻塞。
+    // GetEngines: result-pane rendering (no enabled field; only translate/ocr + supported).
+    // GetAllEngines: the enabled judgment for primary-engine resolution (includes enabled/kind/supported).
+    // Both fetched in parallel to avoid a second round trip; on failure each falls back independently, never blocking the other.
     try {
       const [list, all] = await Promise.all([GetEngines(), GetAllEngines()]);
       engines = list ?? [];
@@ -332,9 +347,11 @@
     }
   }
 
-  // 记录「上次使用的引擎」到 localStorage（last-used 是主引擎解析链的最优先来源）。
-  // 由下一 issue 的结果区引擎选择器调用：用户切到某引擎即 setLastUsedEngine(它)，
-  // 之后重开窗口首屏直接绑定它（若该引擎仍 enabled）。
+  // Records the "last-used engine" to localStorage (last-used is the highest-priority source in
+  // the primary-engine resolution chain).
+  // Called by the result pane's engine selector (a later issue): when the user switches to an
+  // engine, setLastUsedEngine(it) runs, and after reopening the window the first render binds
+  // directly to it (if that engine is still enabled).
   function setLastUsedEngine(name: string) {
     lastUsedStore.set(name);
   }
@@ -350,8 +367,10 @@
   }
 
   function swap() {
-    // 复制键/源语言为「自动检测」时无法直接作为目标语言（目标下拉框无 auto 选项）。
-    // 此时把源语言落到一个具体语言（zh）再交换，保证交换永远有可见效果，且 toLang 不会落到 auto。
+    // When the source language is "auto-detect" it cannot serve directly as the target language
+    // (the target dropdown has no auto option). In that case land the source language on a
+    // concrete language (zh) before swapping, so the swap always has a visible effect and toLang
+    // never lands on auto.
     const from = fromLang === TRANSLATE_LANG.Auto ? TRANSLATE_LANG.ZH : fromLang;
     const to = toLang === TRANSLATE_LANG.Auto ? TRANSLATE_LANG.ZH : toLang;
     fromLang = to;
@@ -363,26 +382,30 @@
     if (!input.trim() || activeEngines.length === 0) return;
     loading = true;
     results = {};
-    // 新一轮 fan-out 从空白开始：上一批的编辑结果对新一轮无意义，一并丢弃。
+    // A new fan-out round starts blank: the previous batch's edits are meaningless for the new
+    // round and are discarded with it.
     edited = new Map();
     editingResult = false;
     try {
-      // 多引擎并发由后端按已开启引擎并行，不依赖单个 engine；
-      // bindings 生成的 TranslateRequest.engine 为必填，传空串以满足类型（后端忽略）。
+      // Multi-engine concurrency is handled in parallel by the backend across enabled engines, independent of any single engine;
+      // the bindings-generated TranslateRequest.engine is required, so pass an empty string to satisfy the type (the backend ignores it).
       await TranslateMulti({
         text: input,
         from: fromLang as TranslateLang,
         to: toLang as TranslateLang,
         engine: '',
       });
-      // 结果通过 EventTranslateResult 逐个异步到达，loading 在收到首个结果时由模板判断解除。
+      // Results arrive asynchronously one by one via EventTranslateResult; the template clears
+      // loading when the first result lands.
     } catch (e) {
       console.error(t('log.translateRequestFailed'), e);
     } finally {
-      // 兜底（放宽，设计 §4）：15 s 时若 fan-out 仍在进行（任一 enabled 翻译引擎仍 pending）
-      // 就解除 loading；兄弟引擎各自到达已把 loading 翻 false 的，此处不再回退。原「零结果」
-      // 谓词会让失败引擎的 dot 永远停在 pending——放宽到「任一 pending」后，case 2 的唯一失败
-      // 引擎由本兜底点收敛，loading 解除的同一刻其 dot 由 pending 翻转为 failed。
+      // Fallback (relaxed, design §4): at 15 s, if the fan-out is still in progress (any enabled
+      // translate engine still pending), clear loading anyway; engines whose siblings already
+      // flipped loading to false don't get re-flipped here. The old "zero results" predicate left
+      // a failed engine's dot stuck on pending forever — relaxed to "any pending", case 2's sole
+      // failed engine converges at this fallback point, and the same moment loading clears, its
+      // dot flips from pending to failed.
       setTimeout(() => {
         if (anyPending(allEngines, results, loading)) loading = false;
       }, 15000);
@@ -417,7 +440,7 @@
 
 <div class="u-surface flex h-screen flex-col" style={rootStyleToStyle($rootStyle)}>
   <main class="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4">
-    <!-- 语言控制条：横贯两栏之上（from/swap/to 作用于整次翻译，DeepL 同款布局） -->
+    <!-- Language bar: spans both panes (from/swap/to apply to the whole translation; DeepL-style layout) -->
     <div class="flex items-center justify-center gap-2">
       <select
         class="u-field u-select u-lang-select px-3 py-2 text-sm"
@@ -469,10 +492,11 @@
       </select>
     </div>
 
-    <!-- 两栏行（issue #10，锁定决策：永远左右并排，无堆叠回退）：左 = 源文本，右 = 结果，
-         中缝分隔条可拖拽（占比持久化到 localStorage，数学在 utils/paneLayout.ts） -->
+    <!-- Two-pane row (issue #10, locked decision: always side by side, no stacked fallback):
+         left = source text, right = results; the divider between panes is draggable (ratio
+         persists to localStorage, math in utils/paneLayout.ts) -->
     <div bind:this={panesEl} class="flex min-h-0 flex-1 gap-3">
-      <!-- 左栏：源文本（宽度 = 持久化占比，分隔条拖拽改变；textarea 撑满余高） -->
+      <!-- Left pane: source text (width = persisted ratio, changed by divider drag; the textarea fills the remaining height) -->
       <section
         class="u-card u-card--panel flex min-w-0 flex-col overflow-hidden"
         style="width: {leftRatio * 100}%"
@@ -543,7 +567,7 @@
             onblur={() => (editingSource = false)}
             placeholder={t('translate.placeholder')}></textarea>
         {:else}
-          <!-- 非编辑态：词级 span 渲染（hover 高亮，无点击行为——#18） -->
+          <!-- Non-editing state: word-level span rendering (hover highlight, no click behavior — #18) -->
           <div
             class="min-h-0 flex-1 cursor-text overflow-y-auto p-4 text-base leading-relaxed"
             onclick={enterSourceEdit}
@@ -588,7 +612,7 @@
         </div>
       </section>
 
-      <!-- 分隔条：拖拽改变左栏占比（见 startDividerDrag / paneLayout.ts） -->
+      <!-- Divider: dragging changes the left pane's ratio (see startDividerDrag / paneLayout.ts) -->
       <div
         role="separator"
         aria-orientation="vertical"
@@ -596,15 +620,16 @@
         onmousedown={startDividerDrag}
       ></div>
 
-      <!-- 右栏：结果（issue #9 的活动引擎单卡 + 引擎下拉框 + 状态 dots 原样迁入） -->
+      <!-- Right pane: results (issue #9's active-engine single card + engine dropdown + status dots, migrated as-is) -->
       <section class="u-card u-card--panel flex min-w-0 flex-1 flex-col overflow-hidden">
         <div class="u-border-b flex items-center justify-between px-3 py-2">
           <span class="u-label">{t('translate.result')}</span>
           <div class="flex items-center gap-2">
             {#if activeEngines.length > 0}
-              <!-- 结果区引擎下拉框（设计 §2）：受控显示值 = 活动引擎（last-used/primary 推导，
-                 见 activeEngineFor）；onchange 写 last-used（#8 的 setLastUsedEngine）并重置
-                 编辑。禁用的引擎（settings 刚切换、EventEnginesChanged 尚未落地）列为 disabled。 -->
+              <!-- Result-pane engine dropdown (design §2): controlled display value = the active engine
+                 (last-used/primary derivation, see activeEngineFor); onchange writes last-used
+                 (#8's setLastUsedEngine) and resets edits. Disabled engines (just toggled in
+                 settings, before EventEnginesChanged lands) are listed as disabled. -->
               <select
                 class="u-field u-select u-engine-select px-3 py-2 text-sm"
                 value={selectValue}
@@ -618,8 +643,9 @@
                   </option>
                 {/each}
               </select>
-              <!-- 每引擎一个状态 dot（设计 §4）：done/pending/failed 纯由 fan-out 真实输出派生；
-                 活动引擎的 dot 加 accent 环，让下拉框的选择一眼可见。 -->
+              <!-- One status dot per engine (design §4): done/pending/failed derived purely from the
+                 fan-out's real output; the active engine's dot gets an accent ring so the dropdown's
+                 selection is visible at a glance. -->
               <div class="flex items-center gap-1">
                 {#each activeEngines as e (e.value)}
                   {@const st = dots[e.value] as DotState}
@@ -646,7 +672,8 @@
                 {/each}
               </div>
             {/if}
-            <!-- 复制按钮：只复制活动引擎当前显示文本（含手工编辑），不再拼接所有引擎（设计 §6）。 -->
+            <!-- Copy button: copies only the active engine's currently displayed text (including
+                 manual edits), no longer concatenating all engines (design §6). -->
             {#if activeResult?.result || edited.has(activeEngine)}
               <button
                 class="u-icon-btn u-no-drag"
@@ -691,7 +718,7 @@
               <span class="u-muted text-sm">{t('translate.noActiveEngine')}</span>
             </div>
           {:else if loading && !results[activeEngine]}
-            <!-- 活动引擎尚在飞行（尚无结果）：loading 占位（kai-dots + kai-loading-bar）。 -->
+            <!-- The active engine is still in flight (no result yet): loading placeholder (kai-dots + kai-loading-bar). -->
             <div class="u-result-card">
               <div class="mb-2 flex items-center gap-2">
                 <span
@@ -708,8 +735,9 @@
               </div>
             </div>
           {:else if activeResult?.result}
-            <!-- 活动引擎已有（非空）结果：可编辑单卡（设计 §5）。编辑写回 edited[activeEngine]，
-               显示文本 = edited ?? result；切换引擎时 edited 整体丢弃，新引擎从自身结果起步。 -->
+            <!-- The active engine has a (non-empty) result: editable single card (design §5). Edits
+               write back to edited[activeEngine]; displayed text = edited ?? result. On engine switch
+               edited is discarded wholesale and the new engine starts from its own result. -->
             <div class="u-result-card">
               <div class="mb-2 flex items-center gap-2">
                 <span
@@ -730,7 +758,7 @@
                   onblur={() => (editingResult = false)}
                   placeholder={t('translate.noResult')}></textarea>
               {:else}
-                <!-- 非编辑态：词级 span 渲染（hover 高亮）；点击进入编辑（#9 的可编辑语义保留） -->
+                <!-- Non-editing state: word-level span rendering (hover highlight); click to edit (#9's editable semantics kept) -->
                 <div
                   class="min-h-[120px] cursor-text text-base leading-relaxed"
                   onclick={enterResultEdit}
@@ -740,8 +768,9 @@
               {/if}
             </div>
           {:else}
-            <!-- 活动引擎失败（缺席于 results 且 loading 已解除）或引擎返回空结果：失败态（设计 §5）。
-               不重试、无重试按钮——重试即用户重按翻译按钮（重跑整个 fan-out）。 -->
+            <!-- The active engine failed (absent from results with loading already cleared) or returned
+               an empty result: failed state (design §5). No retry, no retry button — retrying means the
+               user presses the translate button again (re-running the whole fan-out). -->
             <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
               <span class="text-sm" style="color: var(--app-danger)">{t('translate.failed')}</span>
             </div>
