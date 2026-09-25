@@ -1,8 +1,12 @@
 // bridge_log.swift
-// Swift 桥接层日志子系统：等级常量、日志配置 cdecl、中英文日志文案、按天滚动与压缩。
-// 所有桥接日志通过 bridgeFileLog 追加写入 dataDir/logs/kai-bridge.log，不带前缀；
-// 未设置日志目录（kai_set_log_config 未调用）则不写任何日志。日志等级、保留天数、压缩
-// 开关均由 Go 侧 LogConfig 经 kai_set_log_config 传入，与主应用日志（kai.log）保持一致策略。
+// The Swift bridge layer's logging subsystem: level constants, the log-config cdecl,
+// Chinese/English log copy, day rotation and compression.
+// All bridge logs are appended via bridgeFileLog to dataDir/logs/kai-bridge.log with no
+// prefix;
+// when no log directory is set (kai_set_log_config not called), nothing is written. Level,
+// retention days and the compression
+// switch all come from the Go side's LogConfig via kai_set_log_config, matching the main app
+// log (kai.log) policy.
 import AppKit
 import ApplicationServices
 import CoreGraphics
@@ -11,25 +15,32 @@ import NaturalLanguage
 import Translation
 import Vision
 
-// 日志等级数值映射（数值越大越严重，仅当 level >= bridgeLogLevel 才落盘）。
+// Log-level numeric mapping (higher = more severe; persisted only when
+// level >= bridgeLogLevel).
 let BRIDGE_LOG_DEBUG: Int = 0
 let BRIDGE_LOG_INFO: Int = 1
 let BRIDGE_LOG_WARN: Int = 2
 let BRIDGE_LOG_ERROR: Int = 3
 
-// 日志目录由 Go 在启动时通过 kai_set_log_config 设置（指向 dataDir/logs）；
-// 未设置则为 nil，bridgeFileLog 直接返回。等级/保留天数/压缩同步来自 LogConfig。
+// The log directory is set by Go at startup via kai_set_log_config (pointing at
+// dataDir/logs);
+// when unset it is nil and bridgeFileLog returns immediately. Level/retention/compression
+// also sync from LogConfig.
 var bridgeLogDir: URL? = nil
 var bridgeLogLevel: Int = BRIDGE_LOG_INFO
 var bridgeRetentionDays: Int = 30
 var bridgeCompress: Bool = true
 
-// 当前日志语言：由 Go 经 kai_set_locale 设置；"zh" 输出中文日志，"en" 输出英文日志，默认 zh。
+// Current log language: set by Go via kai_set_locale; "zh" writes Chinese logs, "en" writes
+// English logs; default zh.
 var bridgeLogLocale: String = "zh"
 
-// kai_set_log_config 由 Go 在启动时及配置热更新时调用，统一设置桥接层日志目录与策略。
-// dir：日志目录（dataDir/logs）；level：debug/info/warn/error（非法回退 info）；
-// retention_days：保留天数（<=0 表示仅按天滚动、不清理）；compress：过期归档是否压缩为 .gz。
+// kai_set_log_config is called by Go at startup and on config hot-updates, uniformly setting
+// the bridge layer's log directory and policy.
+// dir: log directory (dataDir/logs); level: debug/info/warn/error (invalid falls back to
+// info);
+// retention_days: days to keep (<=0 = day rotation only, no cleanup); compress: whether
+// expired archives are compressed to .gz.
 @_cdecl("kai_set_log_config")
 public func kai_set_log_config(
   _ dir: UnsafePointer<CChar>?,
@@ -59,8 +70,10 @@ public func kai_set_log_config(
       String(bridgeCompress)), level: BRIDGE_LOG_INFO)
 }
 
-// kai_set_locale 由 Go 在启动时及语言切换时调用，设置桥接层日志输出语言。
-// locale：形如 "zh-CN" / "en-US" 的语言码；以 "en" 开头视为英文，其余按中文处理。
+// kai_set_locale is called by Go at startup and on language switches, setting the bridge
+// layer's log output language.
+// locale: a code like "zh-CN" / "en-US"; anything starting with "en" is English, everything
+// else is treated as Chinese.
 @_cdecl("kai_set_locale")
 public func kai_set_locale(_ locale: UnsafePointer<CChar>?) {
   guard let locale = locale else { return }
@@ -68,9 +81,10 @@ public func kai_set_locale(_ locale: UnsafePointer<CChar>?) {
   bridgeLogLocale = l.hasPrefix("en") ? "en" : "zh"
 }
 
-// bridgeLogText 按当前 bridgeLogLocale 返回中/英日志文案。
-// key 为稳定英文标识（与 Go i18n 表解耦）；Swift 仅维护这一张轻量小表。
-// 文案中的 %@ / %d 占位符与 String(format:) 对应。
+// bridgeLogText returns the Chinese/English log copy per the current bridgeLogLocale.
+// key is a stable English identifier (decoupled from the Go i18n tables); Swift maintains
+// only this one lightweight table.
+// The %@ / %d placeholders in the copy correspond to String(format:).
 func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
   let zh: [String: String] = [
     "log.config_applied": "日志配置已应用 dir=%@ level=%d retention_days=%d compress=%@",
@@ -149,13 +163,13 @@ func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
     "input.settings": "input monitoring: open system settings panel",
   ]
   guard let tmpl = (bridgeLogLocale == "en" ? en : zh)[key] else {
-    // 缺翻译时直接透传 key，便于发现遗漏
+    // When a translation is missing, pass the key through to make gaps visible
     return key
   }
   return String(format: tmpl, arguments: args)
 }
 
-// bridgeDayString 返回日期的 2006-01-02 形式，用于按天滚动的归档文件名。
+// bridgeDayString returns the date as 2006-01-02, for day-rotated archive file names.
 private func bridgeDayString(_ d: Date) -> String {
   let f = DateFormatter()
   f.timeZone = TimeZone.current
@@ -163,7 +177,8 @@ private func bridgeDayString(_ d: Date) -> String {
   return f.string(from: d)
 }
 
-// bridgeGzip 调用系统 gzip 压缩文件，成功则删除原文件；失败静默返回（保留原文件）。
+// bridgeGzip compresses a file with the system gzip, deleting the original on success; on
+// failure it returns silently (keeping the original).
 private func bridgeGzip(_ path: String) {
   let proc = Process()
   proc.executableURL = URL(fileURLWithPath: "/usr/bin/gzip")
@@ -176,16 +191,20 @@ private func bridgeGzip(_ path: String) {
   }
 }
 
-// 追加一行到 kai-bridge.log（ISO8601 时间戳，本地时区，无前缀）。
-// level 决定等级过滤：默认 info；低于当前 bridgeLogLevel 的日志直接丢弃。
-// 写入前按天滚动：若 kai-bridge.log 的 mtime 非今天，则归档为 kai-bridge-YYYY-MM-DD.log
-// （bridgeCompress 为真时压缩为 .gz），归档文件名沿用 kai- 前缀，由 Go 侧统一清理策略覆盖。
+// Appends one line to kai-bridge.log (ISO8601 timestamp, local timezone, no prefix).
+// level drives level filtering: default info; logs below the current bridgeLogLevel are
+// dropped.
+// Day-rotates before writing: when kai-bridge.log's mtime is not today, it is archived as
+// kai-bridge-YYYY-MM-DD.log
+// (compressed to .gz when bridgeCompress is true); archive names keep the kai- prefix and are
+// covered by the Go side's unified cleanup policy.
 func bridgeFileLog(_ message: String, level: Int = BRIDGE_LOG_INFO) {
   guard level >= bridgeLogLevel else { return }
   guard let dir = bridgeLogDir else { return }
   let url = dir.appendingPathComponent("kai-bridge.log")
 
-  // 按天滚动：当前文件 mtime 非今天则归档（先压缩再保留，供 Go cleanup 删除过期）。
+  // Day rotation: archive the current file when its mtime is not today (compress first, then
+  // keep — the Go cleanup deletes expired archives).
   if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
     let mtime = attrs[.modificationDate] as? Date,
     !Calendar.current.isDateInToday(mtime)
@@ -213,7 +232,7 @@ func bridgeFileLog(_ message: String, level: Int = BRIDGE_LOG_INFO) {
   }
 }
 
-// uniqueBridgePath 若 path 已存在则在中段插入 .N 避免覆盖。
+// uniqueBridgePath inserts .N into the middle of path when it exists, avoiding overwrite.
 private func uniqueBridgePath(_ path: String) -> String {
   if !FileManager.default.fileExists(atPath: path) { return path }
   let url = URL(fileURLWithPath: path)

@@ -13,11 +13,11 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// Google 免 API Key 的公开翻译端点（网页端 gtx 接口）。
+// Google's key-free public translation endpoint (the web gtx interface).
 const googleEndpoint = "https://translate.googleapis.com/translate_a/single"
 
-// googleLang 把内部语言码映射为 Google gtx 端点接受的码。
-// gtx 对 "zh" 也能工作，但 "zh-CN" 更稳，故统一转换。
+// googleLang maps internal language codes to the codes the Google gtx endpoint accepts.
+// gtx also works with "zh", but "zh-CN" is more reliable, so the mapping is uniform.
 func googleLang(code string) string {
 	switch code {
 	case "zh", "zh-CN", "zh_CN":
@@ -29,13 +29,13 @@ func googleLang(code string) string {
 	}
 }
 
-// googleTranslator Google 翻译引擎（免 Key）。
+// googleTranslator is the Google translation engine (key-free).
 type googleTranslator struct {
 	endpoint string
 	client   *http.Client
 }
 
-// NewGoogle 创建 Google 翻译引擎。endpoint 为空时使用默认公开端点。
+// NewGoogle creates the Google translation engine. An empty endpoint uses the default public one.
 func NewGoogle(endpoint string, client *http.Client) Translator {
 	if endpoint == "" {
 		endpoint = googleEndpoint
@@ -48,7 +48,7 @@ func NewGoogle(endpoint string, client *http.Client) Translator {
 
 func (g *googleTranslator) Name() string { return "google" }
 
-// Translate 调用 Google 公开端点完成翻译。
+// Translate performs the translation via Google's public endpoint.
 func (g *googleTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
 	if req.Text == "" {
 		return nil, fmt.Errorf(i18n.T("err.empty_text"))
@@ -82,7 +82,7 @@ func (g *googleTranslator) Translate(ctx context.Context, req model.TranslateReq
 		return nil, fmt.Errorf(i18n.T("err.google_http"), resp.StatusCode, string(body), resp.StatusCode, string(body))
 	}
 
-	// 解析 Google gtx 响应：[[["dst","src",...],...], "detected_lang", ...]
+	// Parse the Google gtx response: [[["dst","src",...],...], "detected_lang", ...]
 	var gresp googleResponse
 	if err := json.Unmarshal(body, &gresp); err != nil {
 		return nil, fmt.Errorf(i18n.T("err.google_parse"), err, err)
@@ -101,17 +101,19 @@ func (g *googleTranslator) Translate(ctx context.Context, req model.TranslateReq
 	}, nil
 }
 
-// googleResponse 表示 Google gtx (dt=t) 的响应。
-// 根结构：[ 翻译段数组, ... , 检测源语言, ... ]
-// 翻译段数组：[[dst, src, ...], ...]，其中 dst(译文)在 [0]、src(原文)在 [1]。
-// 由于响应是不规则嵌套数组，用自定义 UnmarshalJSON 把位置语义收敛到具名字段。
+// googleResponse represents the Google gtx (dt=t) response.
+// Root structure: [ translation-segment array, ..., detected source language, ... ]
+// Segment array: [[dst, src, ...], ...] with dst (the translation) at [0] and src (the
+// original) at [1].
+// Because the response is an irregularly nested array, a custom UnmarshalJSON collapses the
+// positional semantics into named fields.
 type googleResponse struct {
 	Translated   string
 	DetectedLang string
 }
 
 func (r *googleResponse) UnmarshalJSON(data []byte) error {
-	// 根层级：第 0 元素是翻译段数组，第 2 元素是检测源语言
+	// Root level: element 0 is the translation-segment array, element 2 is the detected source language
 	var raw []json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -125,7 +127,7 @@ func (r *googleResponse) UnmarshalJSON(data []byte) error {
 	}
 	var sb strings.Builder
 	for _, seg := range segs {
-		// 每段格式 [dst, src, null, null, N, ...]，仅取 dst(索引0)字符串字段
+		// Each segment is [dst, src, null, null, N, ...]; take only the dst (index 0) string field
 		var pair []json.RawMessage
 		if err := json.Unmarshal(seg, &pair); err != nil || len(pair) == 0 {
 			continue

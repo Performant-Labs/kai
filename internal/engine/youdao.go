@@ -18,8 +18,8 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// youdaoTranslator 有道智云翻译引擎（需 appKey + appSecret）。
-// 配置：APIKey=appKey，Secret=appSecret。
+// youdaoTranslator is the Youdao Zhiyun translation engine (needs appKey + appSecret).
+// Config: APIKey=appKey, Secret=appSecret.
 type youdaoTranslator struct {
 	appKey   string
 	appSec   string
@@ -27,7 +27,7 @@ type youdaoTranslator struct {
 	client   *http.Client
 }
 
-// NewYoudao 创建有道翻译引擎。
+// NewYoudao creates the Youdao translation engine.
 func NewYoudao(cfg *EngineConfig, client *http.Client) Translator {
 	ep := cfg.Endpoint
 	if ep == "" {
@@ -82,7 +82,7 @@ func (y *youdaoTranslator) Translate(ctx context.Context, req model.TranslateReq
 	salt := strconv.Itoa(rand.Intn(1<<31) + 1)
 	curtime := strconv.FormatInt(time.Now().Unix(), 10)
 	q := req.Text
-	// 输入超过 20 字符时截断（有道要求 input=q 前 10 + 后 10）
+	// Truncate input over 20 chars (Youdao requires input = first 10 + last 10 of q)
 	input := q
 	if len([]rune(q)) > 20 {
 		r := []rune(q)

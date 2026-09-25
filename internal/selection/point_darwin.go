@@ -6,7 +6,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// currentSelectionPoint 通过 Swift 桥接（AX）获取前台 app 窗口锚点，用于浮窗定位。
+// currentSelectionPoint gets the foreground app window anchor via the Swift bridge (AX)
+// for floating-window positioning.
 func currentSelectionPoint() *application.Point {
 	if !isAccessibilityEnabled() {
 		return nil
@@ -18,18 +19,22 @@ func currentSelectionPoint() *application.Point {
 	return &application.Point{X: x, Y: y}
 }
 
-// primaryScreenSize 返回主屏幕分辨率（经 Swift 桥接）。
+// primaryScreenSize returns the primary screen resolution (via the Swift bridge).
 func primaryScreenSize() (float64, float64) {
 	return screenSizeViaBridge()
 }
 
-// TODO(2026-08-11): currentSelectionOSA 已禁用 Swift 取词。原实现 selectedTextViaBridge →
-// Swift kai_selected_text 因用户反馈引发电脑异常被一并注释禁用。现恒返回空串，使 darwin 上
-// currentSelection() 自然回退到剪贴板兜底（与输入翻译「优先复制键」逻辑对齐）。
-// 恢复方式：取消注释下方 selectedTextViaBridge 调用，并确保 bridge_darwin.go 与 Swift 端已恢复。
+// TODO(2026-08-11): currentSelectionOSA has Swift text capture disabled. The original
+// implementation (selectedTextViaBridge → Swift kai_selected_text) was commented out after
+// users reported machine issues. It now always returns an empty string, so currentSelection()
+// on darwin naturally falls back to the clipboard (aligned with the input-translate
+// "copy key first" logic).
+// To restore: uncomment the selectedTextViaBridge call below and make sure bridge_darwin.go
+// and the Swift side are restored.
 //
-// currentSelectionOSA 通过 Swift 桥接层（AXUIElement）读取当前应用选区文本（macOS）。
-// 不再依赖 AppleScript / System Events。
+// currentSelectionOSA reads the current app's selection text via the Swift bridge layer
+// (AXUIElement) on macOS.
+// No longer depends on AppleScript / System Events.
 //
 //	func currentSelectionOSA() string {
 //		return selectedTextViaBridge(nil, 0)

@@ -8,19 +8,21 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// WindowWrapper 薄适配层：负责各窗口的呼出（主窗口 / 设置窗口）。
-// 窗口句柄由 app 引用按需查询，避免持有过期的 window 实例。
-// 仅暴露前端需要的 RPC，不实现 wails 生命周期三件套。
+// WindowWrapper is a thin adapter: responsible for summoning each window (main window /
+// settings window).
+// Window handles are looked up on demand via the app reference, avoiding stale window
+// instances.
+// Only exposes the RPCs the frontend needs — none of the wails lifecycle trio.
 type WindowWrapper struct {
 	app *application.App
 }
 
-// NewWindowWrapper 构造窗口 Wrapper。app 允许在 app 就绪后通过 SetApp 注入。
+// NewWindowWrapper constructs the window Wrapper. app may be injected via SetApp once ready.
 func NewWindowWrapper(app *application.App) *WindowWrapper {
 	return &WindowWrapper{app: app}
 }
 
-// SetApp 在 app 就绪后注入。
+// SetApp injects the app once it is ready.
 func (w *WindowWrapper) SetApp(app *application.App) {
 	w.app = app
 }
@@ -49,7 +51,8 @@ func (w *WindowWrapper) settingsWindow() application.Window {
 	return win
 }
 
-// screenshotWindow 按名取截图翻译窗口句柄（与 translateWindow/settingsWindow 同款）。
+// screenshotWindow fetches the screenshot translate window handle by name (same style as
+// translateWindow/settingsWindow).
 func (w *WindowWrapper) screenshotWindow() application.Window {
 	if w.app == nil {
 		return nil
@@ -62,11 +65,13 @@ func (w *WindowWrapper) screenshotWindow() application.Window {
 	return win
 }
 
-// showAndFocus 呼出并确保窗口真正可见。
-// 注意：Wails v3 对 Hidden 窗口会延迟创建 webview 实现（impl）。
-// 首次调用 Show() 时若 impl 尚为 nil，底层只触发 Run() 创建 webview 而「不会」真正 show，
-// 导致第一次快捷键呼出时窗口不出现、需再按一次才生效。
-// 因此连续两次 Show()：第一次触发 Run() 创建 impl，第二次 impl 已就绪真正 show。
+// showAndFocus summons and ensures the window is really visible.
+// Note: Wails v3 lazily creates the webview implementation (impl) for Hidden windows.
+// On the first Show() call, if impl is still nil, the underlying layer only triggers Run()
+// to create the webview and does NOT actually show — the first hotkey invocation shows
+// nothing and a second press is needed.
+// Hence two consecutive Show() calls: the first triggers Run() to build the impl, the second
+// actually shows now that the impl is ready.
 func showAndFocus(win application.Window) {
 	if win == nil {
 		return
@@ -76,19 +81,21 @@ func showAndFocus(win application.Window) {
 	win.Focus()
 }
 
-// ShowTranslateWindow 呼出翻译窗口
+// ShowTranslateWindow summons the translate window
 func (w *WindowWrapper) ShowTranslateWindow() {
 	showAndFocus(w.translateWindow())
 }
 
-// ShowSettings 打开设置
+// ShowSettings opens settings
 func (w *WindowWrapper) ShowSettings() {
 	showAndFocus(w.settingsWindow())
 }
 
-// ShowScreenshotWindow 呼出截图翻译窗口（与 ShowTranslateWindow 对称）。
-// 注：main.go 的 EventWindowShow('screenshot') 当前仍走独立的 showScreenshotWindow()
-// 包级函数；后续可统一迁移到本方法，使窗口呼出全部收口到 WindowWrapper。
+// ShowScreenshotWindow summons the screenshot translate window (symmetric with
+// ShowTranslateWindow).
+// Note: main.go's EventWindowShow('screenshot') still goes through the standalone
+// showScreenshotWindow() package-level function; it can later be migrated here uniformly so
+// all window summons choke-point through WindowWrapper.
 func (w *WindowWrapper) ShowScreenshotWindow() {
 	showAndFocus(w.screenshotWindow())
 }

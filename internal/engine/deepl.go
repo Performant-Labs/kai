@@ -12,15 +12,16 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// DeepL 翻译引擎（需 API Key）。免费版（每月 50 万字符）同样需要注册获取 API Key，
-// 端点用 api-free.deepl.com；Pro 版用 api.deepl.com。两者认证方式相同，仅端点不同。
+// The DeepL translation engine (needs an API Key). The free tier (500k chars/month) also
+// requires registering for an API key, with the api-free.deepl.com endpoint; Pro uses
+// api.deepl.com. Both authenticate identically — only the endpoint differs.
 type deeplTranslator struct {
 	endpoint string
 	apiKey   string
 	client   *http.Client
 }
 
-// NewDeepL 创建 DeepL 引擎。endpoint 为空时按免费版默认。
+// NewDeepL creates the DeepL engine. An empty endpoint defaults to the free tier.
 func NewDeepL(cfg *EngineConfig, client *http.Client) Translator {
 	ep := cfg.Endpoint
 	if ep == "" {
@@ -33,11 +34,11 @@ func NewDeepL(cfg *EngineConfig, client *http.Client) Translator {
 	}
 }
 
-// Name 返回引擎标识。
+// Name returns the engine identifier.
 func (d *deeplTranslator) Name() string { return "deepl" }
 
-// deeplLang 把内部语言码映射为 DeepL 接受的大写码（ZH/EN/...）。
-// DeepL 不支持 auto，返回空串表示让 DeepL 自动检测源语言。
+// deeplLang maps internal language codes to the uppercase codes DeepL accepts (ZH/EN/...).
+// DeepL doesn't support auto; returning an empty string lets DeepL auto-detect the source.
 func deeplLang(code string) string {
 	switch strings.ToLower(code) {
 	case "zh", "zh-cn", "zh_cn":
@@ -57,9 +58,9 @@ func deeplLang(code string) string {
 	case "ru":
 		return "RU"
 	case "auto", "":
-		return "" // 自动检测
+		return "" // auto-detect
 	default:
-		// 已是 DeepL 风格大写码则原样返回
+		// Already a DeepL-style uppercase code; return as-is
 		return strings.ToUpper(code)
 	}
 }

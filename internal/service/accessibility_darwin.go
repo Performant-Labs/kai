@@ -9,9 +9,9 @@ import (
 	"cnb.cool/dtapp/kai/pkg/swiftbridge"
 )
 
-// isAccessibilityEnabled 检查 macOS 辅助功能是否已授权当前二进制。
+// isAccessibilityEnabled checks whether macOS accessibility is granted to the current binary.
 func (s *AppService) isAccessibilityEnabled() bool {
-	// dylib 未加载时安全降级：视为未授权（不 panic）。
+	// Degrade safely when the dylib isn't loaded: treat as not authorized (no panic).
 	if !swiftbridge.Available() {
 		s.log.Warn(i18n.T("log.swiftbridge_unavailable"))
 		return false
@@ -21,7 +21,8 @@ func (s *AppService) isAccessibilityEnabled() bool {
 	return enabled
 }
 
-// openAccessibilitySettings 通过系统弹窗请求辅助功能授权（仅 darwin 生效）。
+// openAccessibilitySettings requests accessibility permission via the system dialog (darwin
+// only).
 func (s *AppService) openAccessibilitySettings() {
 	s.log.Info(i18n.T("log.accessibility_request"))
 	if !swiftbridge.Available() {
@@ -30,7 +31,8 @@ func (s *AppService) openAccessibilitySettings() {
 	swiftbridge.KaiAccessibilityRequest()
 }
 
-// isScreenRecordingEnabled 检查 macOS 屏幕录制是否已授权当前二进制（截图 OCR 依赖）。
+// isScreenRecordingEnabled checks whether macOS screen recording is granted to the current
+// binary (required by screenshot OCR).
 func (s *AppService) isScreenRecordingEnabled() bool {
 	if !swiftbridge.Available() {
 		s.log.Warn(i18n.T("log.swiftbridge_unavailable"))
@@ -41,7 +43,8 @@ func (s *AppService) isScreenRecordingEnabled() bool {
 	return enabled
 }
 
-// openScreenRecordingSettings 弹系统「屏幕录制」授权框（仅 darwin 生效）。
+// openScreenRecordingSettings pops the system "Screen Recording" permission dialog (darwin
+// only).
 func (s *AppService) openScreenRecordingSettings() {
 	s.log.Info(i18n.T("log.screenrecording_request"))
 	if !swiftbridge.Available() {
@@ -50,16 +53,19 @@ func (s *AppService) openScreenRecordingSettings() {
 	swiftbridge.KaiScreenRecordingRequest()
 }
 
-// TODO: 输入监控相关（isInputMonitoringEnabled / openInputMonitoringSettings）当前未使用，已注释。需 robotgo 模拟复制键时恢复。
-// // isInputMonitoringEnabled 检查 macOS「输入监控」是否已授权当前二进制。
+// TODO: input-monitoring related (isInputMonitoringEnabled / openInputMonitoringSettings)
+// currently unused, commented out. Restore when robotgo is needed to simulate the copy key.
+// // isInputMonitoringEnabled checks whether macOS "Input Monitoring" is granted to the
+// current binary.
 // func (s *AppService) isInputMonitoringEnabled() bool {
 // 	enabled := C.kai_input_monitoring_enabled() != 0
-// 	s.log.Info(i18n.T("log.input_monitoring_query"), slog.Bool("结果", enabled))
+// 	s.log.Info(i18n.T("log.input_monitoring_query"), slog.Bool("result", enabled))
 // 	return enabled
 // }
 //
-// // openInputMonitoringSettings 打开系统「安全性与隐私 > 输入监控」设置面板（仅 darwin 生效）。
+// // openInputMonitoringSettings opens the system "Security & Privacy > Input Monitoring"
+// settings pane (darwin only).
 // func (s *AppService) openInputMonitoringSettings() {
-// 	s.log.Info("[Kai-Bridge-Cgo] 输入监控授权 打开系统设置面板")
+// 	s.log.Info("[Kai-Bridge-Cgo] input monitoring permission: opening system settings pane")
 // 	C.kai_input_monitoring_request()
 // }

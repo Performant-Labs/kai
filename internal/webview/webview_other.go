@@ -1,11 +1,11 @@
 //go:build !windows
 
-// Package webview 提供 Windows 平台 WebView2 的浏览器参数兜底。
-// 非 Windows 平台（macOS / Linux）无需注入，提供空实现。
+// Package webview provides Windows WebView2 browser-argument fallbacks.
+// Non-Windows platforms (macOS / Linux) need no injection; empty implementations provided.
 package webview
 
-// BrowserArgs 在非 Windows 平台返回 nil（无 WebView2，无需浏览器参数）。
+// BrowserArgs returns nil on non-Windows platforms (no WebView2, no browser args).
 func BrowserArgs() []string { return nil }
 
-// ApplyOptions 在非 Windows 平台为空操作（AdditionalBrowserArgs 字段不存在）。
+// ApplyOptions is a no-op on non-Windows platforms (no AdditionalBrowserArgs field).
 func ApplyOptions(opts any) {}

@@ -1,13 +1,18 @@
-// Package analytics 提供统一的匿名使用统计上报（基于 PostHog）。
+// Package analytics provides unified anonymous usage-stats reporting (based on PostHog).
 //
-// 设计要点：
-//   - 单一上报出口：翻译/OCR/更新等后端事件直接在 Go 侧调用 Track；
-//     纯前端 UI 事件（设置页打开、开关切换）由前端经 Wails 事件 kai:analytics:track 转交 Track，
-//     因此不需要在前端 webview 里加载 posthog-js，前后端共用同一个匿名设备 ID。
-//   - 门控：仅当 buildinfo.PosthogToken 非空 + 非 dev 构建（或显式 EnableDevUpload）+ 用户开启开关（settings.analytics_enabled）时才上报。
-//   - 匿名：设备 ID 取自 machineid.ProtectedID("kai")（按应用名 HMAC 的机器指纹，匿名且稳定）；
-//     获取失败则不上报。不收集任何用户信息。
-//   - 隐私：开关关闭后立刻关闭 client、停止连网。
+// Design points:
+//   - Single reporting outlet: backend events (translation/OCR/updates etc.) call Track
+//     directly on the Go side; pure frontend UI events (settings page opened, toggles
+//     flipped) are forwarded to Track by the frontend via the Wails event
+//     kai:analytics:track — so posthog-js never loads in the frontend webview, and frontend
+//     and backend share the same anonymous device ID.
+//   - Gating: reporting happens only when buildinfo.PosthogToken is non-empty + a non-dev
+//     build (or explicit EnableDevUpload) + the user switch is on
+//     (settings.analytics_enabled).
+//   - Anonymous: the device ID comes from machineid.ProtectedID("kai") (an HMAC-by-app-name
+//     machine fingerprint — anonymous and stable); on failure nothing is reported. No user
+//     information is collected.
+//   - Privacy: switching off immediately closes the client and stops network activity.
 package analytics
 
 import (
@@ -24,15 +29,18 @@ import (
 	"github.com/posthog/posthog-go"
 )
 
-// PostHog Token 统一由 buildinfo.PosthogToken 经 -ldflags 注入，不再读取任何环境变量。
+// The PostHog token is injected uniformly via buildinfo.PosthogToken through -ldflags; no
+// environment variables are read anymore.
 
-// endpoint PostHog 上报地址（云版 US 默认；自托管改成你们的实例地址）。
+// endpoint is the PostHog reporting address (US cloud default; for self-hosting, point it
+// at your own instance).
 const endpoint = "https://us.i.posthog.com"
 
-// appName 上报时携带的应用标识（固定为 kai，用于在同一 PostHog 实例多应用/多构建时区分）。
+// appName is the app identifier carried with reports (fixed to kai; distinguishes
+// apps/builds within the same PostHog instance).
 const appName = "kai"
 
-// 事件名常量（与产品分析方案对齐）。
+// Event name constants (aligned with the product analytics plan).
 const (
 	EventAppStarted          = "app_started"
 	EventAppInstalled        = "app_installed"
@@ -54,25 +62,32 @@ var (
 	ss        *settings.Service
 )
 
-// devUpload 允许 dev 构建（Dev=true）也上报数据的本地调试开关，默认 false。
-// 正式构建（Dev=false）不受此开关影响，始终按 token + 用户开关决定。
+// devUpload is a local debugging switch allowing dev builds (Dev=true) to also report;
+// default false.
+// Release builds (Dev=false) are unaffected — always decided by token + user switch.
 var devUpload atomic.Bool
 
-// EnableDevUpload 打开 dev 构建下的上报，仅用于本地调试验证管道。
-// 调用后 IsDev() 不再拦截，行为等同正式构建。生产环境切勿调用。
+// EnableDevUpload turns on reporting for dev builds, for locally debugging the pipeline
+// only.
+// After calling it, IsDev() no longer blocks — behavior equals a release build. Never call
+// this in production.
 func EnableDevUpload() {
 	devUpload.Store(true)
 }
 
-// devModeBlocks 当前是否处于“禁止上报”的 dev 态：dev 构建且未显式开启 dev 上报。
-// 所有上报门控统一走此方法，便于日后调整 dev 测试策略。
+// devModeBlocks reports whether we're currently in the "reporting forbidden" dev state: a
+// dev build with dev upload not explicitly enabled.
+// All reporting gates go through this method, making future dev-testing policy changes
+// easy.
 func devModeBlocks() bool {
 	return buildinfo.IsDev() && !devUpload.Load()
 }
 
-// Init 惰性初始化：获取匿名设备 ID（machineid），记录 settings 服务。
-// 必须在 settings.NewService 之后、app.Run 之前调用。
-// 若 machineid 不可用，deviceOK=false，后续上报将被 Enabled 拦截（错误即不上报）。
+// Init lazily initializes: fetches the anonymous device ID (machineid) and records the
+// settings service.
+// Must be called after settings.NewService and before app.Run.
+// If machineid is unavailable, deviceOK=false and later reporting is blocked by Enabled (a
+// failure means no reporting).
 func Init(dataDir string, svc *settings.Service) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -88,7 +103,8 @@ func Init(dataDir string, svc *settings.Service) {
 	deviceOK = true
 }
 
-// Enabled 当前是否允许上报：token 非空 + machineid 可用 + 非 dev 构建 + 用户开启开关。
+// Enabled reports whether reporting is currently allowed: token non-empty + machineid
+// available + non-dev build + the user switch on.
 func Enabled() bool {
 	if buildinfo.PosthogToken == "" {
 		return false
@@ -104,9 +120,10 @@ func Enabled() bool {
 	return ss != nil && ss.Get() != nil && ss.Get().AnalyticsEnabled
 }
 
-// analyticsState 返回当前是否上报及原因（i18n key），用于启动日志（不直接用 Enabled()
-// 是为了在关闭时也能给出“为什么关”的提示：未配 token / 设备 ID 不可用 / dev 构建 / 用户关闭）。
-// 返回的是 i18n key，由调用方经 i18n.T 翻译，避免硬编码文案。
+// analyticsState returns whether we report and why (an i18n key), for the startup log (not
+// using Enabled() directly so that, when off, we can also say "why it's off": no token /
+// device ID unavailable / dev build / user switch off).
+// Returns an i18n key, translated by the caller via i18n.T, avoiding hardcoded copy.
 func analyticsState() (enabled bool, reasonKey string) {
 	if buildinfo.PosthogToken == "" {
 		return false, "log.analytics_reason_no_token"
@@ -126,8 +143,9 @@ func analyticsState() (enabled bool, reasonKey string) {
 	return true, "log.analytics_reason_on"
 }
 
-// IsFirstLaunch 是否尚未发送过 app_installed（首装事件仅发一次）。
-// 基于 settings 中持久化的 AnalyticsInstalled 标志；调用前需已 Init。
+// IsFirstLaunch reports whether app_installed hasn't been sent yet (the first-install event
+// fires once).
+// Based on the AnalyticsInstalled flag persisted in settings; Init must have run first.
 func IsFirstLaunch() bool {
 	mu.RLock()
 	svc := ss
@@ -135,7 +153,8 @@ func IsFirstLaunch() bool {
 	return svc != nil && svc.Get() != nil && !svc.Get().AnalyticsInstalled
 }
 
-// ensureClient 按需建立 client（仅当 key 非空且非 dev）。已建立则直接返回。
+// ensureClient builds the client on demand (only when the key is non-empty and the build
+// is non-dev). Returns immediately if already built.
 func ensureClient() posthog.Client {
 	mu.RLock()
 	if hasClient {
@@ -149,18 +168,21 @@ func ensureClient() posthog.Client {
 	if key == "" || devModeBlocks() {
 		return nil
 	}
-	// 关键：必须自传 Transport。posthog-go 的 makeHttpClient 仅在 transport==nil 时
-	// 才会去断言 http.DefaultTransport.(*http.Transport)，而本项目已把 DefaultTransport
-	// 替换为 *useragent.Transport（含 UA/日志包裹层），断言失败直接 panic。主动传入非 nil
-	// 的 Transport（即项目已包裹好的 DefaultTransport），它就不会触碰默认 transport，
-	// 上报请求同样带上全局 UA 并计入 HTTP 日志。
+	// Key: we must pass our own Transport. posthog-go's makeHttpClient only asserts
+	// http.DefaultTransport.(*http.Transport) when transport==nil, and this project has
+	// replaced DefaultTransport with *useragent.Transport (UA/logging wrappers), so that
+	// assertion would panic. Passing a non-nil Transport (the project's already-wrapped
+	// DefaultTransport) keeps it from touching the default transport — and reporting
+	// requests then carry the global UA and land in the HTTP log too.
 	//
-	// DisableGeoIP：该 SDK 默认（nil）会禁用 GeoIP 归属（GetDisableGeoIP 在 nil 时返回 true，
-	// 自动给每事件带 $geoip_disable）。Kai 是桌面客户端，需显式 Ptr(false) 放开，
-	// 让 PostHog 按请求 IP 做粗粒度地理归属（国家/地区/城市，不含精确位置）。
-	// IsServer：默认（nil）会把事件标为 server-side，而 server 事件 PostHog 不会用请求 IP
-	// 做 GeoIP 归因；Kai 实际运行在用户机器上，应 Ptr(false) 以客户端身份上报，
-	// 否则 $is_server 会被省略且设备 OS 归属正常。
+	// DisableGeoIP: the SDK's default (nil) disables GeoIP attribution (GetDisableGeoIP
+	// returns true on nil, auto-attaching $geoip_disable to every event).
+	// Kai is a desktop client, so it explicitly sets Ptr(false) to let PostHog do coarse
+	// geographic attribution by request IP (country/region/city, no precise location).
+	// IsServer: the default (nil) marks events as server-side, and PostHog won't use the
+	// request IP for GeoIP attribution on server events; Kai actually runs on user machines,
+	// so it should report as a client with Ptr(false), otherwise $is_server is omitted and
+	// device-OS attribution misfires.
 	c, err := posthog.NewWithConfig(key, posthog.Config{
 		Endpoint:               endpoint,
 		Transport:              http.DefaultTransport,
@@ -179,7 +201,8 @@ func ensureClient() posthog.Client {
 	return c
 }
 
-// Track 上报一个自定义事件。内部已做开关/构建模式门控，调用方无需判断。
+// Track reports a custom event. Switch/build-mode gating is internal — callers need not
+// check.
 func Track(event string, props map[string]any) {
 	if !Enabled() {
 		return
@@ -197,7 +220,8 @@ func Track(event string, props map[string]any) {
 	}
 }
 
-// Identify 设置设备级 person 属性（版本/系统/语言等），使后续事件自动继承。
+// Identify sets device-level person properties (version/OS/language etc.) so later events
+// inherit them automatically.
 func Identify(props map[string]any) {
 	if !Enabled() {
 		return
@@ -210,9 +234,11 @@ func Identify(props map[string]any) {
 	for k, v := range props {
 		p.Set(k, v)
 	}
-	// app_name 固定标识，作为 person 属性便于在同一 PostHog 实例多应用/多构建时区分。
+	// app_name is a fixed identifier, kept as a person property to distinguish apps/builds
+	// within the same PostHog instance.
 	p.Set("app_name", appName)
-	// project_id 来自 buildinfo 注入，作为 person 属性便于在同一 PostHog 实例多项目时分组。
+	// project_id comes from buildinfo injection; a person property for grouping across
+	// projects in the same PostHog instance.
 	if buildinfo.PosthogProjectID != "" {
 		p.Set("project_id", buildinfo.PosthogProjectID)
 	}
@@ -221,22 +247,24 @@ func Identify(props map[string]any) {
 	}
 }
 
-// Error 便捷上报 error_occurred 事件。
+// Error conveniently reports an error_occurred event.
 func Error(kind string, props map[string]any) {
 	m := map[string]any{"kind": kind}
 	maps.Copy(m, props)
 	Track(EventError, m)
 }
 
-// AppStarted 启动时上报：首次启动额外发 app_installed，并 Identify 设备属性 + 发 app_started。
+// AppStarted reports at startup: first launches additionally send app_installed, then
+// Identify device properties + send app_started.
 func AppStarted(appVersion, uiLang, channel string, isFirstLaunch bool) {
-	// 启动日志：打印匿名统计开关状态（便于从日志确认是否在上报）。
+	// Startup log: print the anonymous analytics switch state (easy confirmation from logs
+	// of whether reporting is happening).
 	on, reasonKey := analyticsState()
 	slog.Info(i18n.T("log.analytics_state"), "enabled", on, "reason", i18n.T(reasonKey))
 
 	if isFirstLaunch && Enabled() {
 		Track(EventAppInstalled, map[string]any{"app_version": appVersion, "channel": channel})
-		// 标记已发送首装事件，避免重复（持久化到 settings）。
+		// Mark the first-install event as sent to avoid repeats (persisted to settings).
 		mu.RLock()
 		svc := ss
 		mu.RUnlock()
@@ -257,7 +285,7 @@ func AppStarted(appVersion, uiLang, channel string, isFirstLaunch bool) {
 	})
 }
 
-// SetEnabled 由前端开关调用：写回 settings 并持久化。
+// SetEnabled is called by the frontend switch: writes back to settings and persists.
 func SetEnabled(enabled bool) error {
 	mu.Lock()
 	svc := ss
@@ -277,7 +305,7 @@ func SetEnabled(enabled bool) error {
 	return nil
 }
 
-// Close 应用退出时调用：冲刷并关闭 client（停止连网）。
+// Close is called at app shutdown: flushes and closes the client (stops networking).
 func Close() {
 	closeClient()
 }
@@ -292,7 +320,7 @@ func closeClient() {
 	}
 }
 
-// LenBucket 把文本长度分桶，避免高基数属性。
+// LenBucket buckets text length, avoiding high-cardinality properties.
 func LenBucket(n int) string {
 	switch {
 	case n <= 0:

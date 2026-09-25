@@ -2,7 +2,8 @@
 
 package selection
 
-// isAccessibilityEnabled Windows 下 UI Automation 无需额外授权开关，恒为真。
+// isAccessibilityEnabled: UI Automation on Windows needs no extra permission toggle,
+// always true.
 func isAccessibilityEnabled() bool {
 	return true
 }

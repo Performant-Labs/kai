@@ -14,31 +14,33 @@ import (
 	"cnb.cool/dtapp/kai/internal/settings"
 )
 
-// issue #8（Tester 角色，RED）：PrimaryTranslateEngine 的解析规则。
+// issue #8 (Tester role, RED): PrimaryTranslateEngine's resolution rules.
 //
-// 规则（设计文档 §1，权威实现）：
-//   1. settings 的 default_engine 非空、且该引擎在引擎列表中 kind=translate 且 enabled
-//      -> 返回它；
-//   2. 否则（未设置 / 名字不在列表 / kind 非 translate / 被禁用）
-//      -> 回退到引擎列表中第一个 enabled 的 translate 引擎（configstore id 顺序）；
-//   3. 没有可用引擎 -> 空串。
+// Rules (design doc §1, the authoritative implementation):
+//   1. settings' default_engine is non-empty, and that engine is in the engine list with
+//      kind=translate and enabled -> return it;
+//   2. otherwise (unset / name not in list / kind not translate / disabled)
+//      -> fall back to the first enabled translate engine in the list (configstore id order);
+//   3. no usable engine -> empty string.
 //
-// 无 mock：引擎配置落 t.TempDir 的真实 SQLite（configstore.Open），google 引擎
-// Endpoint 指向真实 loopback httptest.Server，注册进真实 Registry；settings 用
-// 真实 settings.Service（真实 settings.json 文件）。app/hotkeyMgr 传 nil：
-// 构造函数允许 nil 注入，且本测试只调用 GetEngines 与 PrimaryTranslateEngine，
-// 二者均不触碰 app/hotkeyMgr。
+// No mocks: engine config lands in real SQLite under t.TempDir (configstore.Open), the
+// google engine's Endpoint points at a real loopback httptest.Server registered into a real
+// Registry; settings uses a real settings.Service (a real settings.json file). app/hotkeyMgr
+// are passed as nil: the constructor allows nil injection, and this test only calls
+// GetEngines and PrimaryTranslateEngine — neither touches app/hotkeyMgr.
 //
-// RED 说明：EngineWrapper 目前没有 PrimaryTranslateEngine 方法，settings.Settings
-// 也没有 DefaultEngine 字段——编译即失败（undefined）。这是「行为缺失」的 RED。
-// GetEngines/GetAllEngines 今天都不返回 enabled 状态（GetEngines 按 registry 过滤，
-// GetAllEngines 不暴露给解析器），实现时由 PrimaryTranslateEngine 自行按
-// configstore 的 enabled 列解析（GetEngines 的 id 顺序语义保持不变）。
+// RED note: EngineWrapper has no PrimaryTranslateEngine method yet and settings.Settings has
+// no DefaultEngine field — this fails at compile time (undefined). This is a
+// "missing behavior" RED.
+// GetEngines/GetAllEngines today return no enabled state (GetEngines filters by registry,
+// GetAllEngines is not exposed to the resolver), so the implementation must resolve by
+// configstore's enabled column inside PrimaryTranslateEngine itself (GetEngines' id-order
+// semantics stay unchanged).
 
 const gtxPrimaryFixture = `[[["Hello","Bonjour","","","0"]],null,"en"]`
 
-// setupPrimaryEnv 在 t.TempDir 内搭真实 configstore + settings + registry，
-// 按指定引擎行建库并注册。返回 (store, svc, wrapper, cleanup)。
+// setupPrimaryEnv builds a real configstore + settings + registry inside t.TempDir, creating
+// and registering the specified engine rows. Returns (store, svc, wrapper, cleanup).
 func setupPrimaryEnv(t *testing.T, rows []*engine.EngineConfig) (*configstore.Store, *settings.Service, *EngineWrapper) {
 	t.Helper()
 	store, err := configstore.Open(filepath.Join(t.TempDir(), "config.db"))
@@ -72,8 +74,9 @@ func setupPrimaryEnv(t *testing.T, rows []*engine.EngineConfig) (*configstore.St
 	return store, svc, NewEngineWrapper(reg, store, svc, (*application.App)(nil), nil)
 }
 
-// TestPrimaryTranslateEngineFallbackInvalidName (b)：default_engine 指向一个
-// 不在引擎列表里的名字 -> 解析必须回退到列表中第一个 enabled 的 translate 引擎。
+// TestPrimaryTranslateEngineFallbackInvalidName (b): default_engine points at a name not in
+// the engine list -> resolution must fall back to the first enabled translate engine in the
+// list.
 func TestPrimaryTranslateEngineFallbackInvalidName(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -96,8 +99,8 @@ func TestPrimaryTranslateEngineFallbackInvalidName(t *testing.T) {
 	}
 }
 
-// TestPrimaryTranslateEngineFallsBackWhenPrimaryDisabled (c)：primary 之后被禁用
-// -> 解析重新回退到下一个 enabled 的 translate 引擎（不报错、不清空配置）。
+// TestPrimaryTranslateEngineFallsBackWhenPrimaryDisabled (c): the primary is later disabled
+// -> resolution falls back to the next enabled translate engine (no error, config kept).
 func TestPrimaryTranslateEngineFallsBackWhenPrimaryDisabled(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -110,7 +113,7 @@ func TestPrimaryTranslateEngineFallsBackWhenPrimaryDisabled(t *testing.T) {
 		{Engine: "deepl", Enabled: true, APIKey: "k"},
 	})
 
-	// 设 primary = google（enabled），解析应命中它。
+	// Set primary = google (enabled); resolution should hit it.
 	svc.Get().DefaultEngine = "google"
 	if err := svc.Save(); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -119,7 +122,7 @@ func TestPrimaryTranslateEngineFallsBackWhenPrimaryDisabled(t *testing.T) {
 		t.Fatalf("enabled primary should resolve to google, got %q", got)
 	}
 
-	// 通过 configstore 真实路径把 primary（google）禁用。
+	// Disable the primary (google) through the real configstore path.
 	ctx := context.Background()
 	row, err := store.GetEngineByName(ctx, "google")
 	if err != nil || row == nil {
@@ -129,14 +132,16 @@ func TestPrimaryTranslateEngineFallsBackWhenPrimaryDisabled(t *testing.T) {
 		t.Fatalf("SetEngineEnabled: %v", err)
 	}
 
-	// 解析必须重新回退：deepl 是列表里下一个（id 顺序）enabled 的 translate 引擎。
+	// Resolution must fall back again: deepl is the next (id order) enabled translate engine
+	// in the list.
 	if got := w.PrimaryTranslateEngine(); got != "deepl" {
 		t.Fatalf("disabled primary should re-resolve to deepl, got %q (disabling did not trigger fallback)", got)
 	}
 }
 
-// TestPrimaryTranslateEngineUnsetFallsBackToFirstEnabled：default_engine 未设置
-// （空串，零值）-> 回退到第一个 enabled 的 translate 引擎。规则第 2 步的未设置分支。
+// TestPrimaryTranslateEngineUnsetFallsBackToFirstEnabled: default_engine unset (empty
+// string, zero value) -> falls back to the first enabled translate engine. The unset branch
+// of rule step 2.
 func TestPrimaryTranslateEngineUnsetFallsBackToFirstEnabled(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -149,7 +154,7 @@ func TestPrimaryTranslateEngineUnsetFallsBackToFirstEnabled(t *testing.T) {
 		{Engine: "google", Enabled: true, Endpoint: srv.URL},
 	})
 
-	// deepl 在 id 顺序里排第一且 enabled；google 第二。未设置 primary -> deepl。
+	// deepl is first in id order and enabled; google second. primary unset -> deepl.
 	if got := w.PrimaryTranslateEngine(); got != "deepl" {
 		t.Fatalf("unset default_engine should fall back to the first enabled translate engine deepl, got %q", got)
 	}

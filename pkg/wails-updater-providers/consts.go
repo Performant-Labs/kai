@@ -2,45 +2,50 @@ package wails_updater_providers
 
 import "strings"
 
-// Locale 语言代码类型。
+// Locale is a language code type.
 type Locale string
 
-// 支持的语言（locale）常量：避免调用方散落 "zh-CN" / "en-US" 裸字符串。
+// Supported language (locale) constants: keeps callers from scattering bare "zh-CN" /
+// "en-US" strings.
 const (
 	LocaleZhCN Locale = "zh-CN"
 	LocaleEnUS Locale = "en-US"
 )
 
-// Theme 更新窗口主题类型。
+// Theme is the update window theme type.
 type Theme string
 
-// 更新窗口主题（theme）常量：包级全局，由 SetTheme 设置。
-// 调用方可注入应用自身主题，使更新弹窗与宿主应用配色一致，而非依赖系统媒体查询。
+// Update window theme constants: package globals set by SetTheme.
+// Callers can inject their app's own theme so the update dialog matches the host app's
+// colors instead of relying on the system media query.
 const (
-	// ThemeDark 强制深色。
+	// ThemeDark forces dark.
 	ThemeDark Theme = "dark"
-	// ThemeLight 强制浅色。
+	// ThemeLight forces light.
 	ThemeLight Theme = "light"
 )
 
-// Source 更新源类型。
+// Source is an update source type.
 type Source string
 
-// 更新源（source）常量：包级全局，由 SetSource 设置；同时用于 Provider.Name()。
+// Update source constants: package globals set by SetSource; also used by
+// Provider.Name().
 const (
 	SourceCNB    Source = "cnb"
 	SourceGithub Source = "github"
 	SourceAuto   Source = "auto"
 )
 
-// MetadataKey 是写入 updater.Release.Metadata 的 key 常量，避免散落裸字符串。
+// MetadataKey holds key constants written into updater.Release.Metadata, avoiding scattered
+// bare strings.
 const (
-	// MetadataReleaseHTMLURL 发布页地址（用于前端跳转/展示）。
+	// MetadataReleaseHTMLURL is the release page URL (for frontend links/display).
 	MetadataReleaseHTMLURL = "release.htmlURL"
 )
 
-// normalizeLocale 把任意 locale 字符串归一化为受支持的 Locale；
-// 空串或未知 locale 经别名表匹配，仍不匹配则回退 zh-CN（默认语言）。
+// normalizeLocale normalizes any locale string into a supported Locale;
+// empty or unknown locales go through the alias table, and anything still unmatched falls
+// back to zh-CN (the default language).
 func normalizeLocale(locale string) Locale {
 	if _, ok := i18nMessages[Locale(locale)]; ok {
 		return Locale(locale)
@@ -51,8 +56,8 @@ func normalizeLocale(locale string) Locale {
 	return (LocaleZhCN)
 }
 
-// normalizeTheme 把任意主题归一化为受支持的 Theme；
-// 空串或未知主题回退 ThemeDark（默认深色）。
+// normalizeTheme normalizes any theme into a supported Theme;
+// empty or unknown themes fall back to ThemeDark (the default dark).
 func normalizeTheme(theme Theme) Theme {
 	switch theme {
 	case ThemeLight, ThemeDark:
@@ -62,8 +67,8 @@ func normalizeTheme(theme Theme) Theme {
 	}
 }
 
-// normalizeSource 把任意源偏好归一化为受支持的 Source；
-// 空串或未知值回退 SourceAuto（按语言选主源）。
+// normalizeSource normalizes any source preference into a supported Source;
+// empty or unknown values fall back to SourceAuto (primary source picked by language).
 func normalizeSource(src Source) Source {
 	switch src {
 	case SourceCNB, SourceGithub, SourceAuto:

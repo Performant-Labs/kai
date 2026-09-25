@@ -4,7 +4,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// readClipboardText 跨平台读取系统剪贴板文本。app 为 nil 时直接返回空串。
+// readClipboardText reads the system clipboard text cross-platform. A nil app returns an
+// empty string directly.
 func readClipboardText(app *application.App) string {
 	if app == nil {
 		return ""

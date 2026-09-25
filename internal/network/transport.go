@@ -13,10 +13,12 @@ import (
 	"cnb.cool/dtapp/kai/internal/useragent"
 )
 
-// unwrapHTTPTransport 逐层解包被 useragent.Wrap（httplog.WrapTransport 最外层）
-// 包裹的 RoundTripper，还原出底层 *http.Transport。BuildHTTPClient 借此在包裹层
-// 之外设置代理；测试也用它断言底层 Transport 类型。仅解包 *useragent.Transport
-// 一层（测试/非 DEBUG 环境足矣）；DEBUG 下多包的 LoggingRoundTripper 不在此处理。
+// unwrapHTTPTransport unwraps, layer by layer, a RoundTripper wrapped by useragent.Wrap
+// (with httplog.WrapTransport outermost), recovering the underlying *http.Transport.
+// BuildHTTPClient uses this to set the proxy outside the wrapping layers; tests also use it
+// to assert the underlying Transport type. Only the single *useragent.Transport layer is
+// unwrapped (enough for tests / non-DEBUG); the multi-wrapped LoggingRoundTripper under
+// DEBUG is not handled here.
 func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
 	for rt != nil {
 		if t, ok := rt.(*http.Transport); ok {
@@ -31,20 +33,20 @@ func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
 	return nil, false
 }
 
-// BuildHTTPClient 根据设置构建带有自定义 DNS 和代理的 HTTP 客户端
+// BuildHTTPClient builds an HTTP client with custom DNS and proxy per settings
 func BuildHTTPClient(s settings.Settings) *http.Client {
 	transport := httplogstore.WrapTransport(&http.Transport{
-		// 自定义 DNS 解析
+		// Custom DNS resolution
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
 			}
 
-			// 使用自定义 DNS 解析
+			// Use custom DNS resolution
 			ips, err := resolveHost(s, host)
 			if err != nil || len(ips) == 0 {
-				// 回退到系统默认
+				// Fall back to the system default
 				d := net.Dialer{Timeout: 10 * time.Second}
 				return d.DialContext(ctx, network, addr)
 			}
@@ -56,12 +58,13 @@ func BuildHTTPClient(s settings.Settings) *http.Client {
 		ResponseHeaderTimeout: 30 * time.Second,
 	})
 
-	// 配置代理
+	// Configure proxy
 	if s.Proxy.Enabled && s.Proxy.Host != "" {
 		proxyURL := buildProxyURL(s.Proxy)
 		if proxyURL != nil {
-			// WrapTransport 返回的是被 useragent.Transport 包裹的 RoundTripper，
-			// 故须先解包拿到底层 *http.Transport 再设置代理（直接断言 *http.Transport 必失败）。
+			// WrapTransport returns a RoundTripper wrapped by useragent.Transport, so unwrap
+			// first to reach the underlying *http.Transport before setting the proxy (a direct
+			// *http.Transport assertion would always fail).
 			if t, ok := unwrapHTTPTransport(transport); ok {
 				t.Proxy = http.ProxyURL(proxyURL)
 			}
@@ -74,7 +77,7 @@ func BuildHTTPClient(s settings.Settings) *http.Client {
 	}
 }
 
-// resolveHost 使用设置中启用的 DNS 服务器解析域名
+// resolveHost resolves a hostname using the settings-enabled DNS servers
 func resolveHost(s settings.Settings, host string) ([]net.IP, error) {
 	var servers []string
 	for _, dns := range s.DNSConfigs {
@@ -84,11 +87,11 @@ func resolveHost(s settings.Settings, host string) ([]net.IP, error) {
 	}
 
 	if len(servers) == 0 {
-		// 没有启用自定义 DNS，使用系统默认
+		// No custom DNS enabled; use the system default
 		return net.DefaultResolver.LookupIP(context.Background(), "ip4", host)
 	}
 
-	// 使用第一个启用的 DNS 服务器
+	// Use the first enabled DNS server
 	for _, server := range servers {
 		ips, err := queryDNSServer(server, host)
 		if err == nil && len(ips) > 0 {
@@ -96,11 +99,11 @@ func resolveHost(s settings.Settings, host string) ([]net.IP, error) {
 		}
 	}
 
-	// 全部失败，回退到系统默认
+	// All failed; fall back to the system default
 	return net.DefaultResolver.LookupIP(context.Background(), "ip4", host)
 }
 
-// queryDNSServer 向指定 DNS 服务器查询 A 记录
+// queryDNSServer queries an A record from the given DNS server
 func queryDNSServer(server, host string) ([]net.IP, error) {
 	resolver := &net.Resolver{
 		PreferGo: true,
@@ -116,7 +119,7 @@ func queryDNSServer(server, host string) ([]net.IP, error) {
 	return resolver.LookupIP(ctx, "ip4", host)
 }
 
-// buildProxyURL 根据代理配置构建 URL
+// buildProxyURL builds the proxy URL from the proxy config
 func buildProxyURL(proxy settings.ProxyConfig) *url.URL {
 	host := fmt.Sprintf("%s:%d", proxy.Host, proxy.Port)
 	if proxy.Username != "" {

@@ -1,6 +1,9 @@
-// Package translate 提供翻译 / OCR 的核心编排能力（纯业务逻辑，不依赖 wails 生命周期）。
-// 负责：单引擎翻译、多引擎并行翻译、图片 OCR、截图 OCR，以及翻译成功后写入历史。
-// 引擎注册与选择走 engine.Registry；历史持久化走 historystore；用户配置走 settings.Service。
+// Package translate provides the core orchestration for translation / OCR (pure business
+// logic, no dependency on the wails lifecycle).
+// It covers: single-engine translation, multi-engine parallel translation, image OCR,
+// screenshot OCR, and writing history after a successful translation.
+// Engine registration and selection go through engine.Registry; history persistence through
+// historystore; user config through settings.Service.
 package translate
 
 import (
@@ -23,8 +26,9 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// Service 翻译 / OCR 编排领域服务。
-// 所有依赖通过 NewService 显式注入，不持有共享容器，便于单独替换与测试。
+// Service is the translation / OCR orchestration domain service.
+// All dependencies are injected explicitly via NewService — no shared container — making
+// individual replacement and testing easy.
 type Service struct {
 	registry    *engine.Registry
 	history     *historystore.Store
@@ -32,21 +36,24 @@ type Service struct {
 	settings    *settings.Service
 	app         *application.App
 
-	// screenshotCacheMu 保护 screenshotCache 的并发读写。
+	// screenshotCacheMu guards concurrent access to screenshotCache.
 	screenshotCacheMu sync.RWMutex
-	// screenshotCache 按 session（截图翻译窗口 / 输入翻译页）分别缓存最近一次
-	// OCR 原文与截图，供改语言后 ScreenshotRetranslate 复用（跳过截图/OCR 直接重翻）。
-	// 区分 session 避免不同入口的 OCR 结果互相覆盖。
+	// screenshotCache caches, per session (screenshot translate window / input translate
+	// page), the most recent OCR source text and screenshot, for ScreenshotRetranslate to
+	// reuse after a language change (skipping screenshot/OCR and retranslating directly).
+	// Per-session separation keeps OCR results from different entry points from clobbering
+	// each other.
 	screenshotCache map[string]ocrCache
 }
 
-// ocrCache 单次截图 OCR 的缓存单元。
+// ocrCache is one cached screenshot-OCR unit.
 type ocrCache struct {
 	text     string
 	imageURL string
 }
 
-// NewService 构造翻译编排服务。app 允许在构造后通过 SetApp 注入（启动编排期 app 才就绪）。
+// NewService constructs the translation orchestration service. app may be injected after
+// construction via SetApp (app only becomes ready during the startup orchestration).
 func NewService(reg *engine.Registry, hist *historystore.Store, st *settings.Service, app *application.App) *Service {
 	return &Service{
 		registry:        reg,
@@ -57,13 +64,14 @@ func NewService(reg *engine.Registry, hist *historystore.Store, st *settings.Ser
 	}
 }
 
-// SetApp 在 app 就绪后注入（启动编排阶段）。
+// SetApp injects the app once it is ready (startup orchestration phase).
 func (s *Service) SetApp(app *application.App) {
 	s.app = app
 }
 
-// screenshotWindow 按名取截图翻译窗口句柄（收口 GetByName，避免业务代码散落裸写）。
-// 与 internal/service/window_wrapper.go 的 translateWindow()/settingsWindow() 同款风格。
+// screenshotWindow fetches the screenshot translate window handle by name (a single choke
+// point over GetByName, avoiding business code scattering raw lookups).
+// Same style as translateWindow()/settingsWindow() in internal/service/window_wrapper.go.
 func (s *Service) screenshotWindow() application.Window {
 	if s.app == nil {
 		return nil
@@ -76,24 +84,34 @@ func (s *Service) screenshotWindow() application.Window {
 	return win
 }
 
-// showScreenshotWindow 呼出截图窗口（与 window_wrapper.showAndFocus / TriggerInput 同款范式）。
-// 因 translate 包不能反向 import service 包（循环依赖），此处独立实现。
-// 连续两次 Show() 的原因：Wails v3 (beta.9) 对 Hidden 窗口首次 Show() 仅同步创建
-// webview impl 而不真正 show（webview_window.go:Show 在 impl==nil 时 InvokeSync(Run) 后 return），
-// 第二次 Show() 时 impl 已就绪才会真正 show；随后 Focus() 激活前台。
-// 与之相对，App.Show()/Hide() 是同步直接 cgo（见 application.go:994），非主线程调用会
-// 触发 AppKit 线程断言 → SIGTRAP 崩溃，故严禁在后台 goroutine 直接调 s.app.Show()。
-// 整个序列包在 InvokeAsync 主线程闭包内执行，避免跨 goroutine 建不出 impl。
+// showScreenshotWindow summons the screenshot window (same paradigm as
+// window_wrapper.showAndFocus / TriggerInput).
+// Implemented independently here because the translate package cannot import the service
+// package back (circular dependency).
+// Why two consecutive Show() calls: Wails v3 (beta.9), on the first Show() of a Hidden
+// window, only synchronously creates the webview impl without actually showing
+// (webview_window.go:Show invokes InvokeSync(Run) then returns when impl==nil); only on the
+// second Show(), with the impl ready, does it actually show; Focus() then brings it to the
+// front.
+// By contrast, App.Show()/Hide() are synchronous direct cgo calls (see application.go:994);
+// calling them off the main thread trips an AppKit thread assertion → SIGTRAP crash, so
+// never call s.app.Show() from a background goroutine.
+// The whole sequence is wrapped in an InvokeAsync main-thread closure, avoiding the impl
+// failing to build across goroutines.
 func showScreenshotWindow(win application.Window) {
 	if win == nil {
 		slog.Error(i18n.T("log.screenshot_window_nil"))
 		return
 	}
-	// 整个"建 impl + 显示 + 激活"序列必须在主线程执行：
-	// 若从 hotkey 回调（后台 goroutine）同步调 Show()，首次建 impl 的 Run() 内部嵌套 dispatch_async +
-	// 信号量同步等待主线程，极易在主线程忙时建不出 impl（IsVisible 永远 false → 窗口不显示）。
-	// 用 InvokeAsync 把序列派发到主线程事件循环执行，闭包内首次 Show 的 InvokeSync(w.Run) 直接在主线程
-	// 同步完成建 impl，不再跨 goroutine 等待。任意调用方（hotkey/事件）都安全，不崩。
+	// The whole "build impl + show + focus" sequence must run on the main thread:
+	// if Show() were called synchronously from a hotkey callback (background goroutine), the
+	// Run() that builds the impl on first show nests a dispatch_async + semaphore wait on the
+	// main thread, which easily fails to build the impl when the main thread is busy
+	// (IsVisible stays false → the window never shows).
+	// InvokeAsync dispatches the sequence onto the main thread's event loop; inside the
+	// closure, the first Show's InvokeSync(w.Run) builds the impl synchronously right on the
+	// main thread, with no cross-goroutine waiting. Safe (no crash) from any caller
+	// (hotkey/event).
 	application.InvokeAsync(func() {
 		slog.Debug(i18n.T("log.screenshot_window_show_enter",
 			"Visible", win.IsVisible(), "Focused", win.IsFocused()))
@@ -112,13 +130,15 @@ func showScreenshotWindow(win application.Window) {
 	})
 }
 
-// SetConfigStore 注入引擎配置库，供历史写入时按引擎名解析 ID。
+// SetConfigStore injects the engine config store, used to resolve engine IDs by name when
+// writing history.
 func (s *Service) SetConfigStore(cs *configstore.Store) {
 	s.configStore = cs
 }
 
-// Translate 单引擎翻译：先按引擎名取已注册 translator，失败回退默认引擎；
-// 成功写入历史（失败仅记录日志，不影响返回）。
+// Translate performs a single-engine translation: looks up the registered translator by
+// engine name, falling back to the default engine on failure;
+// on success the result is written to history (failures are only logged, not surfaced).
 func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult, error) {
 	engineName := req.EngineName
 	reg, ok := s.registry.GetTranslator(engineName)
@@ -133,7 +153,7 @@ func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult,
 	return res, nil
 }
 
-// translateWithEngine 执行单个翻译引擎调用并组装结果。
+// translateWithEngine runs a single translation-engine call and assembles the result.
 func (s *Service) translateWithEngine(reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
 	timeout := 30 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -142,7 +162,8 @@ func (s *Service) translateWithEngine(reg engine.Translator, engineName string, 
 	start := time.Now()
 	resCh := make(chan *model.TranslateResult, 1)
 	errCh := make(chan error, 1)
-	// 翻译引擎调用放在 goroutine，通过带缓冲 channel 回收结果，便于超时与并发编排。
+	// The engine call runs in a goroutine; results are collected over buffered channels for
+	// easy timeout and concurrency orchestration.
 	go func() {
 		res, err := reg.Translate(ctx, req)
 		if err != nil {
@@ -178,15 +199,18 @@ func (s *Service) translateWithEngine(reg engine.Translator, engineName string, 
 	}
 }
 
-// TranslateMulti 并行启动所有「已开启的翻译引擎」的翻译，结果逐个流式推送到前端（EventTranslateResult）。
-// registry 中仅包含用户在设置页启用并成功注册的引擎（OCR 引擎不纳入翻译并行）。
-// 返回已启动的引擎数；实际结果通过事件异步到达，前端按 engine 字段聚合展示。
+// TranslateMulti starts translations on all "enabled translation engines" in parallel,
+// streaming each result to the frontend as it lands (EventTranslateResult).
+// The registry only contains engines the user enabled in the settings page and that
+// registered successfully (OCR engines are excluded from the parallel translation).
+// Returns the number of engines started; actual results arrive asynchronously via events,
+// with the frontend aggregating by the engine field.
 func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMultiResult, error) {
 	all := s.registry.AllEngines()
 	started := 0
 	engines := make([]string, 0, len(all))
 	for _, meta := range all {
-		// 仅并行已开启的「翻译」引擎，跳过 OCR 引擎。
+		// Only parallelize enabled "translation" engines; skip OCR engines.
 		if meta.Kind != engine.KindTranslator {
 			continue
 		}
@@ -196,15 +220,18 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 		}
 		engines = append(engines, meta.Name)
 		started++
-		// 每个引擎独立 goroutine，互不阻塞；完成后通过应用级事件推给前端。
+		// Each engine gets its own goroutine, never blocking the others; completion is pushed
+		// to the frontend via an app-level event.
 		go func(reg engine.Translator, name string) {
 			res, err := s.translateWithEngine(reg, name, req)
 			if err != nil {
 				slog.Error(i18n.T("log.translate_multi_engine_failed"), slog.String("engine", name), slog.Any("error", err))
 				analytics.Error("translate_failed", map[string]any{"engine": name})
-				// issue #42：失败不再静默丢弃——以 Error/ErrorKind 载荷推送同一事件，
-				// 前端据此显示 per-engine 失败原因（分类见 ClassifyEngineError）。
-				// From 置空：失败载荷不声明「检测出的源语言」，避免自动检测标签误用。
+				// issue #42: failures are no longer silently dropped — the same event is pushed
+				// with Error/ErrorKind payload, and the frontend shows the per-engine failure
+				// reason (categories per ClassifyEngineError).
+				// From is left empty: the failure payload doesn't claim a "detected source
+				// language", avoiding misuse of the auto-detect label.
 				if s.app != nil {
 					s.app.Event.Emit(events.EventTranslateResult, model.TranslateResult{
 						Engine:    name,
@@ -234,7 +261,8 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 	return &model.TranslateMultiResult{Count: started}, nil
 }
 
-// Ocr 图片 OCR：直接对传入的图片数据执行 OCR（图片已由调用方截好/选好）。
+// Ocr runs image OCR: performs OCR directly on the provided image data (the caller has
+// already captured/selected the image).
 func (s *Service) Ocr(req model.OcrRequest) (*model.OcrResult, error) {
 	if len(req.ImageData) == 0 {
 		return nil, fmt.Errorf(i18n.T("err.ocr_empty_image"))
@@ -246,7 +274,8 @@ func (s *Service) Ocr(req model.OcrRequest) (*model.OcrResult, error) {
 	return s.ocrWithEngine(ocr, req)
 }
 
-// ScreenshotOCR 截图 OCR：先截图，再对截到的图片执行 OCR，结果推给前端（EventTranslateResult）。
+// ScreenshotOCR is screenshot OCR: captures the screen first, then OCRs the captured image,
+// pushing the result to the frontend (EventTranslateResult).
 func (s *Service) ScreenshotOCR(engineName string) (*model.OcrResult, error) {
 	img, err := engine.CaptureScreenshot()
 	if err != nil {
@@ -255,15 +284,19 @@ func (s *Service) ScreenshotOCR(engineName string) (*model.OcrResult, error) {
 	return s.TriggerOcr(engineName, img)
 }
 
-// ScreenshotTranslate 截图翻译主流程（分阶段流式）：
-//  1. 捕获区域截图 → 系统 OCR 识别文字
-//  2. 立即 Emit EventScreenshotOCR（image+text，translations 空），前端先显示截图与原文
-//  3. 逐引擎翻译，每完成一条再 Emit 一次（累积 translations），前端增量追加译文卡片
-//     翻译失败的引擎也以「失败占位」形式追加，避免静默丢失。
+// ScreenshotTranslate is the main screenshot-translate flow (staged streaming):
+//  1. capture a region screenshot → system OCR extracts the text
+//  2. immediately Emit EventScreenshotOCR (image+text, translations empty); the frontend
+//     shows the screenshot and source text right away
+//  3. translate per engine, Emitting once more after each finishes (accumulating
+//     translations); the frontend appends translation cards incrementally.
+//     Engines that fail to translate are appended as a "failure placeholder" too, so nothing
+//     is silently lost.
 //
-// session 标识缓存来源（events.ScreenshotSessionScreenshot / ScreenshotSessionInput），
-// 用于把本次 OCR 原文与截图按入口隔离，避免不同入口互相覆盖重翻缓存。
-// 返回完整结果供调用方直接使用（如需要同步回应）。
+// session identifies the cache origin (events.ScreenshotSessionScreenshot /
+// ScreenshotSessionInput), keeping this round's OCR text and screenshot isolated per entry
+// point so different entries don't clobber each other's retranslate cache.
+// Returns the full result for callers that need a synchronous reply.
 func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -276,15 +309,19 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	}
 	slog.Debug(i18n.T("log.screenshot_capture_region_done"), slog.Int("image_bytes", len(img)))
 
-	// 截图一完成（用户框选松手、img 已到手）立即呼出窗口，不必等 OCR 与翻译
-	// （识别在页面内自行处理）。本路径与输入翻译窗口 TriggerInput（manager.go:101-102
-	// 的 w.Show();w.Focus()）保持**完全一致的安全范式**：Hidden 窗口首次 Show() 时
-	// Wails 仅同步创建 webview impl 而不真正 show（见 beta.9 webview_window.go:Show），
-	// 需再 Show() 一次 impl 已就绪才真正显示；随后 Focus() 激活前台。
-	// 注意：Focus() 内部走 InvokeSync 会派发回主线程，在 hotkey 回调等非主线程调用安全；
-	// 而 App.Show()/Hide() 是同步直接 cgo 调用（application.go:994 的 impl.show()），
-	// 在非主线程调用会触发 AppKit 线程断言 → SIGTRAP 崩溃（已实测栈证）。故本路径
-	// 严禁用 s.app.Show()，只用窗口级的 Show()/Focus()，完全对齐 TriggerInput。
+	// As soon as the screenshot completes (user released the drag, img is in hand), summon
+	// the window immediately — no need to wait for OCR and translation (recognition is
+	// handled within the page). This path follows the **exact same safe paradigm** as the
+	// input translate window's TriggerInput (w.Show();w.Focus() in manager.go:101-102): on
+	// the first Show() of a Hidden window, Wails only synchronously creates the webview impl
+	// without actually showing (see beta.9 webview_window.go:Show); a second Show() actually
+	// displays it once the impl is ready; Focus() then activates the foreground.
+	// Note: Focus() internally uses InvokeSync, which dispatches back to the main thread and
+	// is safe from non-main-thread callers like hotkey callbacks; whereas App.Show()/Hide()
+	// are synchronous direct cgo calls (impl.show() at application.go:994) and calling them
+	// off the main thread trips an AppKit thread assertion → SIGTRAP crash (verified with a
+	// real stack). So this path must never use s.app.Show() — only window-level
+	// Show()/Focus(), fully aligned with TriggerInput.
 	showScreenshotWindow(s.screenshotWindow())
 	imageURL := "data:image/png;base64," + encodeImage(img)
 	if s.app != nil {
@@ -307,7 +344,8 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	if err != nil {
 		slog.Error(i18n.T("log.screenshot_ocr_failed"), slog.String("ocr_engine", ocrName), slog.Any("error", err))
 		analytics.Error("ocr_failed", map[string]any{"ocr_provider": ocrName})
-		// OCR 失败（含超时）必须把错误投递前端，否则页面会一直停在"正在识别文字…"转圈。
+		// OCR failure (including timeout) must be delivered to the frontend, otherwise the
+		// page keeps spinning on "recognizing text…".
 		if s.app != nil {
 			s.app.Event.Emit(events.EventScreenshotOCR, model.ScreenshotResult{
 				Image:        imageURL,
@@ -325,7 +363,8 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 		slog.Warn(i18n.T("log.screenshot_ocr_empty"))
 		return nil, fmt.Errorf(i18n.T("err.ocr_no_text"))
 	}
-	// 按 session 缓存本次 OCR 原文与截图，供改语言后 ScreenshotRetranslate 复用（隔离不同入口）。
+	// Cache this round's OCR text and screenshot per session for ScreenshotRetranslate to
+	// reuse after a language change (isolating different entry points).
 	s.screenshotCacheMu.Lock()
 	s.screenshotCache[session] = ocrCache{text: text, imageURL: imageURL}
 	s.screenshotCacheMu.Unlock()
@@ -338,7 +377,8 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 
 	imageURL = "data:image/png;base64," + encodeImage(img)
 
-	// 阶段一：先推送截图 + 原文，让前端立刻显示（识别到内容即展示，不必等翻译）。
+	// Stage one: push the screenshot + source text first so the frontend can display
+	// immediately (shown as soon as content is recognized — no waiting for translation).
 	first := model.ScreenshotResult{Image: imageURL, Text: text, Translations: nil, To: to}
 	if s.app != nil {
 		s.app.Event.Emit(events.EventScreenshotOCR, first)
@@ -363,7 +403,8 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	return &result, nil
 }
 
-// enabledTranslatorNames 返回当前已启用且可取的翻译引擎名（供匿名统计上报）。
+// enabledTranslatorNames returns the currently enabled, retrievable translation engine names
+// (for anonymous analytics reporting).
 func (s *Service) enabledTranslatorNames() []string {
 	names := make([]string, 0)
 	for _, meta := range s.registry.AllEngines() {
@@ -377,9 +418,12 @@ func (s *Service) enabledTranslatorNames() []string {
 	return names
 }
 
-// ScreenshotRetranslate 改语言后重新翻译：复用指定 session 最近一次截图 OCR 的原文与截图，
-// 跳过截图/OCR 阶段，直接用传入的 from/to 重新调用各引擎并增量推送 EventScreenshotOCR。
-// 返回累积的翻译结果。若对应 session 尚无 OCR 缓存（未截过图）则返回错误。
+// ScreenshotRetranslate retranslates after a language change: reuses the most recent
+// screenshot-OCR text and screenshot of the given session, skipping the screenshot/OCR
+// stages, and directly re-invokes each engine with the passed from/to, pushing
+// EventScreenshotOCR incrementally.
+// Returns the accumulated translation results. Errors when the session has no OCR cache yet
+// (no screenshot taken).
 func (s *Service) ScreenshotRetranslate(session string, from, to model.Language) error {
 	s.screenshotCacheMu.RLock()
 	cache, ok := s.screenshotCache[session]
@@ -396,10 +440,14 @@ func (s *Service) ScreenshotRetranslate(session string, from, to model.Language)
 	return nil
 }
 
-// translateAllStream 并发调用所有已开启的翻译引擎（每个引擎独立 goroutine，互不阻塞）；
-// 每完成一条（成功或失败占位）即 Emit 一次 EventScreenshotOCR（携带已累积的 translations），
-// 前端按 engine 去重增量追加，实现译文逐条到达、google 超时不再拖住 deepl 等其它引擎。
-// 返回最终累积的翻译结果列表（顺序按引擎注册顺序，非完成顺序）。
+// translateAllStream concurrently invokes all enabled translation engines (each in its own
+// goroutine, never blocking the others);
+// each completion (success or failure placeholder) Emits EventScreenshotOCR once (carrying
+// the accumulated translations), and the frontend dedupes by engine and appends
+// incrementally, so translations arrive one by one and a google timeout no longer holds up
+// deepl and the other engines.
+// Returns the final accumulated result list (ordered by engine registration order, not
+// completion order).
 func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string, to model.Language) []model.TranslateResult {
 	metas := s.registry.AllEngines()
 	type task struct {
@@ -420,7 +468,8 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	// out 按引擎注册顺序保留槽位，并发写各自下标，避免追加竞态。
+	// out keeps slots in engine registration order, written concurrently at their own
+	// indices, avoiding append races.
 	out := make([]model.TranslateResult, len(tasks))
 	for i, t := range tasks {
 		wg.Add(1)
@@ -431,7 +480,8 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 			var item model.TranslateResult
 			if err != nil {
 				slog.Warn(i18n.T("log.translate_screenshot_engine_failed"), slog.String("engine", meta.Name), slog.Any("error", err))
-				// 失败也追加占位卡片，让用户看到哪个引擎没翻出来。
+				// Failures also append a placeholder card so the user can see which engine
+				// didn't produce a translation.
 				item = model.TranslateResult{
 					Engine: meta.Name,
 					From:   req.From,
@@ -445,7 +495,9 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 			}
 			mu.Lock()
 			out[idx] = item
-			// 每完成一条就增量推送当前已完成的全部结果（未完成引擎的槽位为空，前端按 engine 去重追加，空 Result 当作占位）。
+			// Push incrementally after each completion with all results finished so far
+			// (unfinished engines' slots are empty; the frontend dedupes by engine and appends,
+			// treating an empty Result as a placeholder).
 			partial := make([]model.TranslateResult, 0, len(out))
 			for _, o := range out {
 				if o.Engine != "" {
@@ -464,7 +516,8 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 		}(i, t.meta, t.reg)
 	}
 	wg.Wait()
-	// 过滤未完成的空槽（理论上 wg.Wait 后都已填好，保险）。
+	// Filter out unfinished empty slots (theoretically all filled after wg.Wait; belt and
+	// braces).
 	final := make([]model.TranslateResult, 0, len(out))
 	for _, o := range out {
 		if o.Engine != "" {
@@ -474,10 +527,12 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 	return final
 }
 
-// TriggerOcr 对给定图片执行 OCR，返回识别结果。
-// 注意：OCR 结果通过返回值返回给调用方（ScreenshotTranslate 统一经 EventScreenshotOCR 推送前端），
-// 不可在此用 EventTranslateResult 发出——该事件注册类型为 TranslateResult，发 OcrResult 会触发
-// "data of type model.OcrResult ... does not match registered data type model.TranslateResult" 的 ERR。
+// TriggerOcr runs OCR on the given image, returning the recognition result.
+// Note: the OCR result is returned to the caller via the return value (ScreenshotTranslate
+// uniformly pushes it to the frontend via EventScreenshotOCR) — it must NOT be emitted here
+// via EventTranslateResult: that event's registered type is TranslateResult, and sending an
+// OcrResult triggers the ERR "data of type model.OcrResult ... does not match registered
+// data type model.TranslateResult".
 func (s *Service) TriggerOcr(engineName string, img []byte) (*model.OcrResult, error) {
 	ocr, ok := s.registry.GetOcr(engineName)
 	if !ok {
@@ -490,9 +545,10 @@ func (s *Service) TriggerOcr(engineName string, img []byte) (*model.OcrResult, e
 	return res, nil
 }
 
-// ocrWithEngine 执行单个 OCR 引擎调用并组装结果。
-// req 携带 Engine/CorrectText/TimeoutSec；Go 侧 ctx 超时取 Swift 超时 + 余量，
-// 保证 Swift 内部超时先返回 "ocr timeout"，Go 不会被过早的 ctx.Done() 假触发。
+// ocrWithEngine runs a single OCR-engine call and assembles the result.
+// req carries Engine/CorrectText/TimeoutSec; the Go-side ctx timeout is set to the Swift
+// timeout + headroom, ensuring Swift's internal timeout returns "ocr timeout" first and Go is
+// never falsely triggered by a premature ctx.Done().
 func (s *Service) ocrWithEngine(ocr engine.OcrEngine, req model.OcrRequest) (*model.OcrResult, error) {
 	swiftTimeout := req.TimeoutSec
 	if swiftTimeout <= 0 {
@@ -533,7 +589,8 @@ func (s *Service) ocrWithEngine(ocr engine.OcrEngine, req model.OcrRequest) (*mo
 	}
 }
 
-// saveHistory 翻译成功后写入历史库（失败仅记录日志，不影响返回）。
+// saveHistory writes a successful translation to the history store (failures are only
+// logged, not surfaced).
 func (s *Service) saveHistory(res *model.TranslateResult) {
 	if s.history == nil || res == nil {
 		return
@@ -552,7 +609,7 @@ func (s *Service) saveHistory(res *model.TranslateResult) {
 	if engineRow != nil {
 		engineID = engineRow.ID
 	}
-	// 去重：内容完全相同的翻译不重复入库
+	// Dedupe: translations with identical content are not stored twice.
 	if dup, _ := s.history.FindByKey(ctx, res.Text, string(res.From), string(res.To), engineID, fromOCR); dup > 0 {
 		return
 	}
@@ -569,7 +626,7 @@ func (s *Service) saveHistory(res *model.TranslateResult) {
 	}
 }
 
-// encodeImage 把图片字节编码为 base64 字符串（不含 data URL 前缀）。
+// encodeImage encodes image bytes into a base64 string (without the data URL prefix).
 func encodeImage(b []byte) string {
 	return base64.StdEncoding.EncodeToString(b)
 }

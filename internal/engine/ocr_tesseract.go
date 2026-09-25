@@ -16,23 +16,24 @@ import (
 )
 
 var (
-	// ErrEmptyImage 图片数据为空
+	// ErrEmptyImage means the image data is empty.
 	ErrEmptyImage = errors.New(i18n.T("err.ocr_empty_image"))
-	// ErrNoScreenshot 当前平台不支持系统截图
+	// ErrNoScreenshot means the current platform doesn't support system screenshots.
 	ErrNoScreenshot = errors.New(i18n.T("err.ocr_screenshot_unsupported"))
-	// ErrTesseractNotFound 本机未找到 tesseract 可执行文件
+	// ErrTesseractNotFound means the tesseract binary wasn't found on this machine.
 	ErrTesseractNotFound = errors.New(i18n.T("err.ocr_tesseract_not_found"))
 )
 
-// tesseractCandidates GUI 应用（如打包后的 Kai.app）从 launchd 启动不继承 shell 的 PATH，
-// 故额外探测常见安装路径（Homebrew Apple Silicon / Intel）。
+// tesseractCandidates: GUI apps (e.g. the packaged Kai.app) launched from launchd don't
+// inherit the shell's PATH, so common install locations are probed as well
+// (Homebrew Apple Silicon / Intel).
 var tesseractCandidates = []string{
 	"/opt/homebrew/bin/tesseract",
 	"/usr/local/bin/tesseract",
 	"/usr/bin/tesseract",
 }
 
-// resolveTesseract 返回可用的 tesseract 可执行路径；找不到返回空串。
+// resolveTesseract returns a usable tesseract executable path; an empty string when not found.
 func resolveTesseract() string {
 	if p, err := exec.LookPath("tesseract"); err == nil {
 		return p
@@ -45,27 +46,31 @@ func resolveTesseract() string {
 	return ""
 }
 
-// TesseractOCR 基于系统 tesseract 命令的本地 OCR 引擎（纯 Go exec 调用，无 CGO）。
-// 需要本机安装 tesseract（mac: brew install tesseract；linux: apt install tesseract-ocr）。
-// 持有所属引擎配置，OCR 专属参数（langs / timeout）统一从 Extra(JSON) 读取，
-// 与 vision 共用 parseOCRExtra 解析，保证 extra 格式一致。
+// TesseractOCR is a local OCR engine based on the system tesseract command (pure Go exec,
+// no CGO). Requires tesseract installed on the machine (mac: brew install tesseract;
+// linux: apt install tesseract-ocr).
+// It holds its engine config; OCR-specific params (langs / timeout) are read uniformly from
+// Extra(JSON), parsed with the same parseOCRExtra as vision to keep the extra format
+// consistent.
 type TesseractOCR struct {
 	name   string
-	config *EngineConfig // 持有所属引擎配置，从 Extra(JSON) 读取 langs / timeout
-	bin    string        // tesseract 可执行路径（用户指定或自动探测）
+	config *EngineConfig // Holds the owning engine config; reads langs / timeout from Extra(JSON)
+	bin    string        // tesseract executable path (user-specified or auto-detected)
 }
 
-// TesseractStatus 描述本机 tesseract 的安装探测结果，供前端按系统类型展示安装状态。
+// TesseractStatus describes the local tesseract install probe result, for the frontend to
+// show install state per OS.
 type TesseractStatus struct {
-	Installed bool   `json:"installed"` // 是否探测到 tesseract 可执行文件
-	Path      string `json:"path"`      // 探测到的可执行路径（未安装则为空）
-	Version   string `json:"version"`   // 探测到的版本号（未安装则为空），取自 `tesseract --version`
-	OS        string `json:"os"`        // 当前运行系统（darwin/linux/windows），供前端选择对应安装命令
+	Installed bool   `json:"installed"` // Whether a tesseract executable was found
+	Path      string `json:"path"`      // The detected executable path (empty when not installed)
+	Version   string `json:"version"`   // The detected version (empty when not installed), from `tesseract --version`
+	OS        string `json:"os"`        // Current OS (darwin/linux/windows), lets the frontend pick the matching install command
 }
 
-// TesseractInstalled 探测本机是否已安装 tesseract，返回路径、版本与系统类型。
-// 与 NewTesseractOCR 的探测逻辑一致（PATH + 常见安装路径）；
-// 命中后追加执行 `tesseract --version` 提取版本号（首行形如 tesseract 5.3.4）。
+// TesseractInstalled probes whether tesseract is installed locally, returning path, version
+// and OS. Uses the same probe logic as NewTesseractOCR (PATH + common install locations);
+// on a hit it additionally runs `tesseract --version` to extract the version (first line
+// looks like tesseract 5.3.4).
 func TesseractInstalled() TesseractStatus {
 	status := TesseractStatus{OS: runtime.GOOS}
 	if p := resolveTesseract(); p != "" {
@@ -76,8 +81,9 @@ func TesseractInstalled() TesseractStatus {
 	return status
 }
 
-// tesseractVersion 执行 `tesseract --version` 提取版本号（首行形如 "tesseract 5.3.4"）。
-// 解析失败返回空串（不影响「已安装」判定）。
+// tesseractVersion runs `tesseract --version` and extracts the version (first line looks like
+// "tesseract 5.3.4"). Returns an empty string on parse failure (doesn't affect the "installed"
+// verdict).
 func tesseractVersion(bin string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -85,11 +91,11 @@ func tesseractVersion(bin string) string {
 	if err != nil {
 		return ""
 	}
-	// 首行示例：tesseract 5.3.4  leptonica-1.83.0  ...
+	// Example first line: tesseract 5.3.4  leptonica-1.83.0  ...
 	first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
 	fields := strings.FieldsSeq(first)
 	for f := range fields {
-		// 版本号形如 5.3.4（含点、纯数字段）
+		// Version looks like 5.3.4 (contains dots, purely numeric segments)
 		if strings.Count(f, ".") >= 1 && !strings.ContainsAny(f, " /\\") {
 			return f
 		}
@@ -97,8 +103,9 @@ func tesseractVersion(bin string) string {
 	return ""
 }
 
-// NewTesseractOCR 构造 OCR 引擎。cfg 为 tesseract 引擎的 EngineConfig（含 Extra(JSON) 中的
-// langs / timeout_sec）；bin(Endpoint) 为空时自动探测本机 tesseract。
+// NewTesseractOCR constructs the OCR engine. cfg is the tesseract engine's EngineConfig
+// (containing langs / timeout_sec from Extra(JSON)); when bin (Endpoint) is empty, the local
+// tesseract is auto-detected.
 func NewTesseractOCR(cfg *EngineConfig) *TesseractOCR {
 	bin := ""
 	if cfg != nil {
@@ -110,8 +117,8 @@ func NewTesseractOCR(cfg *EngineConfig) *TesseractOCR {
 	return &TesseractOCR{name: "tesseract", config: cfg, bin: bin}
 }
 
-// ocrOptions 解析当前配置与本次请求的参数，得到最终生效的 langs / timeout。
-// 优先级：req 显式覆盖 > 引擎 Extra 配置 > 内置默认(chi_sim+eng / 60s)。
+// ocrOptions resolves the effective langs / timeout from the current config and this request.
+// Priority: explicit req override > engine Extra config > built-in defaults (chi_sim+eng / 60s).
 func (t *TesseractOCR) ocrOptions(req model.OcrRequest) (langs string, timeoutSec int) {
 	langs = DefaultOCRLangs["tesseract"]
 	timeoutSec = DefaultOCRTimeoutSec
@@ -128,7 +135,7 @@ func (t *TesseractOCR) ocrOptions(req model.OcrRequest) (langs string, timeoutSe
 	return
 }
 
-// optExtra 安全取 EngineConfig.Extra；cfg 为 nil 时返回空串。
+// optExtra safely reads EngineConfig.Extra; returns an empty string when cfg is nil.
 func optExtra(cfg *EngineConfig) string {
 	if cfg == nil {
 		return ""
@@ -136,17 +143,18 @@ func optExtra(cfg *EngineConfig) string {
 	return cfg.Extra
 }
 
-// Name 引擎名
+// Name returns the engine name.
 func (t *TesseractOCR) Name() string { return t.name }
 
-// Recognize 识别图片字节中的文字
+// Recognize extracts text from the image bytes.
 func (t *TesseractOCR) Recognize(ctx context.Context, req model.OcrRequest) (*model.OcrResult, error) {
 	if len(req.ImageData) == 0 {
 		return nil, ErrEmptyImage
 	}
 	langs, timeoutSec := t.ocrOptions(req)
 
-	// 以 req 携带的 ctx 为主，叠加引擎配置的超时上限（含 Swift/vision 约定的 +10s 余量）。
+	// Use the ctx carried by req as the base, layered with the engine config's timeout cap
+	// (including the +10s headroom agreed with Swift/vision).
 	if _, ok := ctx.Deadline(); !ok && timeoutSec > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec+10)*time.Second)
@@ -166,7 +174,7 @@ func (t *TesseractOCR) Recognize(ctx context.Context, req model.OcrRequest) (*mo
 	outBase := strings.TrimSuffix(tmp.Name(), ".png")
 	bin := t.bin
 	if bin == "" {
-		bin = "tesseract" // 兜底，便于在错误中暴露 PATH 问题
+		bin = "tesseract" // Fallback, so PATH problems surface in the error
 	}
 	cmd := exec.CommandContext(ctx, bin, tmp.Name(), outBase, "-l", langs, "--psm", "6")
 	var stderr bytes.Buffer
@@ -197,14 +205,15 @@ func (t *TesseractOCR) Recognize(ctx context.Context, req model.OcrRequest) (*mo
 	}, nil
 }
 
-// OcrError OCR 执行错误
+// OcrError is an OCR execution error.
 type OcrError struct{ Msg string }
 
 func (e *OcrError) Error() string { return e.Msg }
 
-// CaptureRegion 弹出系统交互式选区截图（用户拖拽框选），返回裁剪后 PNG 字节。
-// 该模式会让用户用鼠标在屏幕上拖出一个矩形，松手后落盘到临时文件；
-// 需屏幕录制授权。依赖 macOS 自带 screencapture（无需安装）。
+// CaptureRegion pops the system's interactive region screenshot (user drag-selects) and
+// returns the cropped PNG bytes. In this mode the user drags a rectangle on screen with the
+// mouse; on release it is written to a temp file. Requires screen-recording permission.
+// Relies on macOS's bundled screencapture (nothing to install).
 func CaptureRegion(ctx context.Context) ([]byte, error) {
 	switch runtime.GOOS {
 	case "darwin":
@@ -215,12 +224,14 @@ func CaptureRegion(ctx context.Context) ([]byte, error) {
 		path := tmp.Name()
 		tmp.Close()
 		defer os.Remove(path)
-		// -i 交互模式（用户拖拽框选选区），-x 静默无快门声。
-		// 注意：-R 是「按指定矩形(非交互)捕获」需带 -R x,y,w,h 值，不能和 -i 混用，
-		// 单独 "-i -R" 会让 screencapture 直接报 exit status 1。交互框选只用 -i。
+		// -i interactive mode (user drag-selects), -x silent, no shutter sound.
+		// Note: -R means "capture the given rectangle (non-interactive)" and needs
+		// -R x,y,w,h values; it cannot be combined with -i — a bare "-i -R" makes
+		// screencapture exit status 1 immediately. Interactive drag-select uses -i only.
 		cmd := exec.CommandContext(ctx, "screencapture", "-i", "-x", path)
 		if err := cmd.Run(); err != nil {
-			// 用户按 ESC 取消框选时 screencapture 退出码非 0；视为取消，不视为系统错误。
+			// screencapture exits non-zero when the user presses ESC to cancel; treat as
+			// cancellation, not a system error.
 			return nil, fmt.Errorf("%s: %w", i18n.T("err.ocr_region_capture_failed"), err)
 		}
 		data, err := os.ReadFile(path)
@@ -228,7 +239,8 @@ func CaptureRegion(ctx context.Context) ([]byte, error) {
 			return nil, fmt.Errorf("%s: %w", i18n.T("err.ocr_read_region_failed"), err)
 		}
 		if len(data) == 0 {
-			// screencapture 退出码 0 但产出空文件（如框选面积为 0），返回明确错误避免下游 OCR 误报。
+			// screencapture exited 0 but produced an empty file (e.g. zero-area selection);
+			// return a clear error so downstream OCR doesn't misreport.
 			return nil, ErrEmptyImage
 		}
 		return data, nil
@@ -237,7 +249,7 @@ func CaptureRegion(ctx context.Context) ([]byte, error) {
 	}
 }
 
-// CaptureScreenshot 用系统截图工具截全屏，返回 PNG 字节。
+// CaptureScreenshot captures the full screen with the system screenshot tool, returning PNG bytes.
 func CaptureScreenshot() ([]byte, error) {
 	tmp, err := os.CreateTemp("", "kai-shot-*.png")
 	if err != nil {
@@ -252,10 +264,10 @@ func CaptureScreenshot() ([]byte, error) {
 	case "darwin":
 		cmd = exec.Command("screencapture", "-x", path)
 	case "linux":
-		// ImageMagick import 截取全屏
+		// ImageMagick import captures the full screen
 		cmd = exec.Command("import", "-window", "root", path)
 	case "windows":
-		// TODO(M6): 用内置工具，如 powershell 调 ScreenCapture
+		// TODO(M6): use a built-in tool, e.g. powershell calling ScreenCapture
 		return nil, ErrNoScreenshot
 	default:
 		return nil, ErrNoScreenshot

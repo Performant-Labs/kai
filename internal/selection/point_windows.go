@@ -17,7 +17,7 @@ var (
 	procGetSystemMetrics    = user32.NewProc("GetSystemMetrics")
 )
 
-// UI Automation 常量
+// UI Automation constants
 var (
 	CLSID_CUIAutomation          = "{FF48DBA4-60EF-4201-AA87-54103EEF594E}"
 	IID_IUIAutomation            = "{30CBE57D-D9D0-452A-AB13-7AC5AC4825EE}"
@@ -26,7 +26,7 @@ var (
 
 const UIA_TextPatternId = 10014
 
-// IUIAutomation COM 接口（vtbl 风格，仅实现本场景用到的方法）
+// IUIAutomation COM interface (vtbl style, implementing only the methods used here)
 type IUIAutomation struct {
 	ole.IUnknown
 	ElementFromHandle func(this uintptr, hwnd uintptr, element **IUIAutomationElement) uintptr
@@ -47,7 +47,8 @@ type IUIAutomationTextRange struct {
 	GetText func(this uintptr, maxLength int32, text **uint16) uintptr
 }
 
-// GetSelectedText 经 UI Automation 读取 Windows 前台窗口的选中文本（无需先复制）。
+// GetSelectedText reads the Windows foreground window’s selected text via UI Automation
+// (no copy first).
 func GetSelectedText() string {
 	ole.CoInitialize(0)
 	defer ole.CoUninitialize()
@@ -111,12 +112,14 @@ func GetSelectedText() string {
 	return text
 }
 
-// currentSelectionOSA 供 currentSelection 在 windows 上优先经 UI Automation 读取选区。
+// currentSelectionOSA lets currentSelection prefer reading the selection via UI Automation
+// on windows.
 func currentSelectionOSA() string {
 	return GetSelectedText()
 }
 
-// currentSelectionPoint 用 user32 取鼠标坐标作为浮窗定位锚点。
+// currentSelectionPoint uses user32 to get the mouse coordinates as the floating-window
+// anchor.
 func currentSelectionPoint() *application.Point {
 	type point struct{ X, Y int32 }
 	var p point
@@ -124,7 +127,7 @@ func currentSelectionPoint() *application.Point {
 	return &application.Point{X: int(p.X), Y: int(p.Y)}
 }
 
-// primaryScreenSize 返回主屏幕分辨率。
+// primaryScreenSize returns the primary screen resolution.
 func primaryScreenSize() (float64, float64) {
 	const (
 		SM_CXSCREEN = 0

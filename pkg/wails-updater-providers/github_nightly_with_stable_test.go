@@ -10,14 +10,18 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// TestGitHubNightlyWithStableNeedsUpdate GitHub 源「需要更新」场景（走公开入口）：
-// 已订阅 nightly 渠道（prerelease=true）且线上同时存在稳定版与 nightly 时，Check 应返回
-// nightly（nightly-x1b2c3），而非被稳定版覆盖。验证 nightly 是优先渠道，且更新只从 nightly 自身判定。
+// TestGitHubNightlyWithStableNeedsUpdate: the GitHub source's "update needed" scenario (via
+// the public entries):
+// with the nightly channel subscribed (prerelease=true) and both a stable version and a
+// nightly online, Check should return
+// the nightly (nightly-x1b2c3), not get overridden by the stable. Verifies nightly is the
+// priority channel and the update is judged from the nightly itself.
 func TestGitHubNightlyWithStableNeedsUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
 
-	// /releases/latest 返回正式稳定版 v1.2.0（非预发布，仅 checkStable 用到）。
+	// /releases/latest returns the formal stable v1.2.0 (not a prerelease; only checkStable
+	// uses it).
 	mux.HandleFunc("/repos/"+testRepo+"/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(githubRelease{
 			TagName:     "v1.2.0",
@@ -25,15 +29,16 @@ func TestGitHubNightlyWithStableNeedsUpdate(t *testing.T) {
 			Prerelease:  false,
 			PublishedAt: now.Add(-1 * time.Hour).Format(time.RFC3339),
 			Assets: []githubAsset{
-				{Name: "example-darwin-arm64.app.zip", Size: 12345},       // 干扰：非 updater- 前缀
-				{Name: "updater-windows-amd64.zip", Size: int64(7776665)}, // 干扰：错误平台
+				{Name: "example-darwin-arm64.app.zip", Size: 12345},       // decoy: no updater- prefix
+				{Name: "updater-windows-amd64.zip", Size: int64(7776665)}, // decoy: wrong platform
 				{Name: "updater-darwin-arm64.zip.sig", Size: 256},
 				{Name: "SHA256SUMS", Size: int64(512)},
 				{Name: "updater-darwin-arm64.zip", Size: int64(9988776)},
 			},
 		})
 	})
-	// 发布列表：含稳定版 v1.2.0 与预发布 nightly（checkPrerelease 从此筛选预发布）。
+	// Release list: stable v1.2.0 plus a prerelease nightly (checkPrerelease filters
+	// pre-releases from here).
 	mux.HandleFunc("/repos/"+testRepo+"/releases", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode([]githubRelease{
 			{
@@ -42,8 +47,8 @@ func TestGitHubNightlyWithStableNeedsUpdate(t *testing.T) {
 				Prerelease:  true,
 				PublishedAt: now.Add(-1 * time.Hour).Format(time.RFC3339),
 				Assets: []githubAsset{
-					{Name: "example-darwin-arm64.app.zip", Size: 12345},       // 干扰：非 updater- 前缀
-					{Name: "updater-windows-amd64.zip", Size: int64(7776665)}, // 干扰：错误平台
+					{Name: "example-darwin-arm64.app.zip", Size: 12345},       // decoy: no updater- prefix
+					{Name: "updater-windows-amd64.zip", Size: int64(7776665)}, // decoy: wrong platform
 					{Name: "updater-darwin-arm64.zip.sig", Size: 256},
 					{Name: "SHA256SUMS", Size: int64(512)},
 					{Name: "GIT_COMMIT", Size: 41},
@@ -81,7 +86,7 @@ func TestGitHubNightlyWithStableNeedsUpdate(t *testing.T) {
 		GithubRepo:    testRepo,
 		GithubToken:   "test-token",
 		BuildTime:     now.Add(-72 * time.Hour),
-		Prerelease:    true, // 订阅 nightly 渠道
+		Prerelease:    true, // subscribe to the nightly channel
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",
 		GitCommitFile: "GIT_COMMIT",
@@ -104,8 +109,10 @@ func TestGitHubNightlyWithStableNeedsUpdate(t *testing.T) {
 	}
 }
 
-// TestGitHubNightlyWithStableNoUpdate GitHub 源「不需要更新」场景（走公开入口）：
-// 已订阅 nightly 渠道，且 nightly 本机已是最新（buildTime 晚于 nightly），Check 应返回 error。
+// TestGitHubNightlyWithStableNoUpdate: the GitHub source's "no update" scenario (via the
+// public entries):
+// the nightly channel is subscribed and the local nightly is already latest (buildTime later
+// than the nightly); Check should return an error.
 func TestGitHubNightlyWithStableNoUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
@@ -153,7 +160,7 @@ func TestGitHubNightlyWithStableNoUpdate(t *testing.T) {
 	mp, err := NewMirrorProvider(&Options{
 		GithubRepo:    testRepo,
 		GithubToken:   "test-token",
-		BuildTime:     now.Add(1 * time.Hour), // 比 nightly 与 stable 都新
+		BuildTime:     now.Add(1 * time.Hour), // newer than both the nightly and stable
 		Prerelease:    true,
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",
@@ -174,9 +181,12 @@ func TestGitHubNightlyWithStableNoUpdate(t *testing.T) {
 	}
 }
 
-// TestGitHubNightlyWithStableNoStableFallbackOnLatest GitHub 源「开启预发布时稳定版一起参与」守护（走公开入口）：
-// 订阅 nightly，但 nightly 发布时间不比本机 buildTime 新（本机更新），nightly 判定为不需要更新（nil,nil）；
-// 此时稳定版 1.2.0 比本机新且资产匹配，按"两个版本一起参与"语义，Check 应返回稳定版 1.2.0 候选。
+// TestGitHubNightlyWithStableNoStableFallbackOnLatest: guard for the GitHub source's "with
+// prerelease on, stable also competes" (via the public entries):
+// nightly is subscribed, but the nightly's publish time is not newer than the local buildTime
+// (local is newer), so the nightly is judged no-update (nil,nil);
+// the stable 1.2.0 is newer than local with matching assets, so under the "both versions
+// compete" semantics Check should return the stable 1.2.0 candidate.
 func TestGitHubNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
@@ -199,7 +209,7 @@ func TestGitHubNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 				TagName:     "nightly-x1b2c3",
 				Name:        "nightly build",
 				Prerelease:  true,
-				PublishedAt: now.Add(-48 * time.Hour).Format(time.RFC3339), // 旧于本地
+				PublishedAt: now.Add(-48 * time.Hour).Format(time.RFC3339), // older than local
 				Assets: []githubAsset{
 					{Name: "updater-darwin-arm64.zip", Size: 9988776},
 					{Name: "SHA256SUMS", Size: int64(512)},
@@ -227,7 +237,7 @@ func TestGitHubNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 	mp, err := NewMirrorProvider(&Options{
 		GithubRepo:    testRepo,
 		GithubToken:   "test-token",
-		BuildTime:     now.Add(1 * time.Hour), // 本机 buildTime 晚于 nightly 发布时间，nightly 判定为不需要更新
+		BuildTime:     now.Add(1 * time.Hour), // local buildTime later than the nightly’s publish time; nightly judged no-update
 		Prerelease:    true,
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",
@@ -237,8 +247,10 @@ func TestGitHubNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
-	// 开启预发布：取最新一条 = nightly-x1b2c3（预发布），本机 buildTime 晚于其发布时间 → 判定不需要更新。
-	// 新逻辑按"最新一条类型"判定，不回退到第二路稳定版：nightly 不需要更新即 up-to-date。
+	// Prerelease on: the newest entry = nightly-x1b2c3 (a pre-release); local buildTime is
+	// later than its publish time → judged no-update.
+	// The new logic judges by "the newest entry's type" and does not fall back to the stable
+	// second pass: the nightly needs no update, so it's up-to-date.
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
 	t.Logf("[GitHub] current version (currentVersion=%q, buildTime=%s), needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
@@ -250,10 +262,14 @@ func TestGitHubNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 	}
 }
 
-// TestGitHubNightlyWithStableNoStableFallbackOnError GitHub 源「开启预发布时稳定版一起参与」守护（走公开入口）：
-// 订阅 nightly 但 nightly 通道直接出错（发布列表端点 500，prerelease 失败）；
-// 此时稳定版 1.2.0 可用且资产匹配，按"两个版本一起参与"语义，Check 应返回稳定版 1.2.0 候选（而非报错）。
-// 注意：GitHub 的 nightly（/releases）与 stable（/releases/latest）是不同端点，可分别控制状态。
+// TestGitHubNightlyWithStableNoStableFallbackOnError: guard for the GitHub source's "with
+// prerelease on, stable also competes" (via the public entries):
+// nightly is subscribed but the nightly channel errors outright (the release-list endpoint
+// returns 500; prerelease fails);
+// the stable 1.2.0 is usable with matching assets, so under the "both versions compete"
+// semantics Check should return the stable 1.2.0 candidate (rather than erroring).
+// Note: GitHub's nightly (/releases) and stable (/releases/latest) are different endpoints,
+// so their statuses can be controlled separately.
 func TestGitHubNightlyWithStableNoStableFallbackOnError(t *testing.T) {
 	mux := http.NewServeMux()
 
@@ -294,7 +310,8 @@ func TestGitHubNightlyWithStableNoStableFallbackOnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
-	// 开启预发布：取最新一条走 /releases 列表端点，该端点 500 → 整体报错，不回退到 /releases/latest 稳定版。
+	// Prerelease on: the newest entry goes through the /releases list endpoint; that endpoint
+	// 500s → the whole thing errors, without falling back to the /releases/latest stable.
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
 	t.Logf("[GitHub] current version (currentVersion=%q, buildTime=%s), needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))

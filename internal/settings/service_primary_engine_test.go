@@ -4,14 +4,16 @@ import (
 	"testing"
 )
 
-// issue #8（Tester 角色，RED）：default_engine 配置字段的落盘往返。
+// issue #8 (Tester role, RED): persistence round-trip of the default_engine config field.
 //
-// 真实数据目录（t.TempDir）+ 真实 settings.json 文件，无 mock：
-// 保存后换新 Service 实例重新读盘，default_engine 必须原样往返。
+// Real data directory (t.TempDir) + real settings.json file, no mocks:
+// after saving, a fresh Service instance re-reads from disk and default_engine must
+// round-trip unchanged.
 //
-// RED 说明：当前 Settings 结构体没有 DefaultEngine 字段（json "default_engine"），
-// writeConfig/setDefaults 也不序列化它，因此本文件编译即失败
-// （cfg.DefaultEngine undefined）。这是「行为缺失」的 RED，不是环境或拼写问题。
+// RED note: the Settings struct has no DefaultEngine field (json "default_engine") yet, and
+// writeConfig/setDefaults don't serialize it either, so this file fails at compile time
+// (cfg.DefaultEngine undefined). This is a "missing behavior" RED — not an environment or
+// typo problem.
 
 func TestDefaultEngineConfigRoundtrip(t *testing.T) {
 	dir := t.TempDir()
@@ -27,7 +29,7 @@ func TestDefaultEngineConfigRoundtrip(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	// 新实例重新读盘：default_engine 必须从 settings.json 往返回来。
+	// Fresh instance re-reads from disk: default_engine must round-trip from settings.json.
 	svc2, err := NewService(dir)
 	if err != nil {
 		t.Fatalf("second NewService: %v", err)

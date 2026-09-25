@@ -35,7 +35,8 @@ func TestEncryptDecryptRoundtrip(t *testing.T) {
 }
 
 func TestDecryptLegacyPlaintext(t *testing.T) {
-	// 旧版明文数据（无前缀）应原样返回，保证迁移前数据可读。
+	// Legacy plaintext data (no prefix) should be returned as-is, keeping pre-migration
+	// data readable.
 	plain := "old-plain-secret"
 	dec, err := DecryptSecret(plain)
 	if err != nil {

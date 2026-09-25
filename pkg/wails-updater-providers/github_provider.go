@@ -14,25 +14,26 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
-// githubProvider 实现 GitHub 源的 updater.Provider（nightly + stable）。
+// githubProvider implements the updater.Provider for the GitHub source (nightly + stable).
 type githubProvider struct {
-	client        *http.Client        // HTTP 客户端（构造期从包全局 GetClient 注入）
-	lg            *slog.Logger        // 日志器（构造期从包全局 GetLogger 注入）
-	repo          string              // GitHub 仓库路径
-	assetMatcher  github.AssetMatcher // 资源匹配器（官方类型）
-	checksumFile  string              // 校验和文件名，用于下载后校验产物完整性
-	gitCommitFile string              // 预发布 git commit 文件名
-	buildTimeFile string              // 预发布 build time 文件名
-	token         string              // GitHub 访问令牌（Bearer）
-	buildTime     time.Time           // 本机构建时间
-	gitCommit     string              // 本机 git commit
-	prerelease    bool                // 是否订阅 nightly（预发布）渠道
+	client        *http.Client        // HTTP client (injected from the package-global GetClient at construction)
+	lg            *slog.Logger        // logger (injected from the package-global GetLogger at construction)
+	repo          string              // GitHub repo path
+	assetMatcher  github.AssetMatcher // asset matcher (the official type)
+	checksumFile  string              // checksum file name, verifies artifact integrity after download
+	gitCommitFile string              // pre-release git commit file name
+	buildTimeFile string              // pre-release build time file name
+	token         string              // GitHub access token (Bearer)
+	buildTime     time.Time           // this machine's build time
+	gitCommit     string              // this machine's git commit
+	prerelease    bool                // whether the nightly (pre-release) channel is subscribed
 }
 
-// t 以当前包全局 locale 渲染 i18n 文案的便捷方法。
+// t is a convenience method rendering i18n copy with the current package-global locale.
 func (g *githubProvider) t(key string, data ...any) string { return T(key, data...) }
 
-// apiRequest 请求 GitHub API 接口，带 Accept: application/json 与 Bearer 授权（token 非空时）。
+// apiRequest calls a GitHub API endpoint with Accept: application/json and Bearer auth
+// (when token is non-empty).
 func (g *githubProvider) apiRequest(ctx context.Context, url string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -45,7 +46,8 @@ func (g *githubProvider) apiRequest(ctx context.Context, url string) (*http.Requ
 	return req, nil
 }
 
-// fileRequest 下载 GitHub 文件，带 Accept: application/octet-stream 与 Bearer 授权（token 非空时）。
+// fileRequest downloads a GitHub file with Accept: application/octet-stream and Bearer
+// auth (when token is non-empty).
 func (g *githubProvider) fileRequest(ctx context.Context, url string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -58,15 +60,17 @@ func (g *githubProvider) fileRequest(ctx context.Context, url string) (*http.Req
 	return req, nil
 }
 
-// Name 实现 updater.Provider 接口，返回 "github"。
+// Name implements the updater.Provider interface, returning "github".
 func (g *githubProvider) Name() string { return string(SourceGithub) }
 
-// Check 实现 updater.Provider 接口。
-// 开启预发布（prerelease=true）时：prerelease 与 stable 两个候选一起参与比较（取发布时间更晚者）；
-// 关闭预发布时只查稳定版（checkStable 本就排除预发布）。
+// Check implements the updater.Provider interface.
+// With prerelease on (prerelease=true): both the prerelease and stable candidates compete
+// (the later publish time wins);
+// with prerelease off, only the stable channel is checked (checkStable already excludes
+// pre-releases).
 func (g *githubProvider) Check(ctx context.Context, req updater.CheckRequest) (*updater.Release, error) {
 	g.lg.Debug(g.t("updater_start"))
-	// 关闭预发布：只查稳定版（checkStable 本就排除预发布，只看稳定版）。
+	// Prerelease off: only the stable channel (checkStable already excludes pre-releases).
 	if !g.prerelease {
 		rel, err := g.checkStable(ctx, req)
 		if err != nil {
@@ -76,29 +80,37 @@ func (g *githubProvider) Check(ctx context.Context, req updater.CheckRequest) (*
 		return rel, nil
 	}
 
-	// 开启预发布：取发布时间最新的一条作为候选，按它自身类型判定——
-	// 是预发布则下载 gitCommit/buildTime 比较；是稳定版则按版本号 isNewer 比较。
-	// 即"最新版本是什么类型，就用什么方式判定"，不再单独跑稳定版第二路、也不按发布时间择优。
+	// Prerelease on: take the newest published entry as the candidate and judge by its own
+	// type —
+	// a pre-release compares downloaded gitCommit/buildTime; a stable version compares
+	// version numbers via isNewer.
+	// I.e. "whatever type the latest version is, that's how it's judged" — no separate stable
+	// second pass, no picking by publish time.
 	g.lg.Debug(g.t("updater_check_nightly_channel"))
 	return g.checkPrerelease(ctx, req)
 }
 
-// Download 实现 updater.Provider 接口，复用共用下载逻辑。
+// Download implements the updater.Provider interface, reusing the shared download logic.
 func (g *githubProvider) Download(ctx context.Context, rel *updater.Release, dst io.Writer, onProgress func(written, total int64)) error {
 	return downloadRelease(ctx, g.lg, g.client, ghDownloadURL, g.repo, rel, dst, onProgress, "", g.fileRequest)
 }
 
-// fetchChecksum 拉取并解析本源的校验和侧车，复用共用逻辑。
+// fetchChecksum fetches and parses this source’s checksum sidecar, reusing the shared
+// logic.
 func (g *githubProvider) fetchChecksum(ctx context.Context, downloadURLTpl, repo string, rel *updater.Release, sidecar string) ([]byte, bool) {
 	return fetchReleaseChecksum(ctx, g.lg, g.client, downloadURLTpl, repo, rel, sidecar, "", g.fileRequest)
 }
 
-// checkPrerelease 检查 GitHub 的 Pre-release（预发布）更新：遍历发布列表筛选预发布，
-// 按发布时间取最新，再用 gitCommit/buildTime 文件内容判定是否需要更新。
+// checkPrerelease checks GitHub Pre-release updates: walks the release list filtering
+// pre-releases,
+// takes the newest by publish time, then decides update-needed from the gitCommit/buildTime
+// file contents.
 func (g *githubProvider) checkPrerelease(ctx context.Context, req updater.CheckRequest) (*updater.Release, error) {
-	// GitHub 的 /releases/latest 只返回稳定版（不含预发布），Pre-release 必须遍历
-	// 发布列表、筛选 Prerelease==true 的所有条目，按发布时间倒序取最新一条作为候选。
-	// Pre-release 不限于名为 nightly，只要标记为预发布都参与比较。
+	// GitHub's /releases/latest only returns stable versions (no pre-releases), so
+	// Pre-releases require walking the release list, filtering Prerelease==true entries and
+	// taking the newest by publish time (descending) as the candidate.
+	// Pre-releases aren't limited to ones named nightly — anything marked pre-release
+	// competes.
 	listURL := strings.ReplaceAll(ghReleasesList, "{repo}", g.repo)
 	httpReq, err := g.apiRequest(ctx, listURL)
 	if err != nil {
@@ -123,7 +135,8 @@ func (g *githubProvider) checkPrerelease(ctx context.Context, req updater.CheckR
 		g.lg.Warn(g.t("updater_err_decode", "Err", err.Error()))
 		return nil, fmt.Errorf("%s", g.t("updater_err_decode", map[string]any{"Err": err.Error()}))
 	}
-	// 开启预发布：取发布时间最新的一条（不分预发布/稳定），按它自身类型判定。
+	// Prerelease on: take the newest published entry (pre-release or stable) and judge by
+	// its own type.
 	sortReleasesByPublishedAt(releases)
 	rel := releases[0]
 	publishedAt, err := time.Parse(time.RFC3339, rel.PublishedAt)
@@ -135,14 +148,16 @@ func (g *githubProvider) checkPrerelease(ctx context.Context, req updater.CheckR
 	assets := githubAssetsToReleaseAssets(rel.Assets)
 	idx := g.assetMatcher(req, assets)
 	if idx < 0 || idx >= len(assets) {
-		// 最新一条的升级产物不匹配本机平台/架构：该候选不适用，视为 up-to-date（而非 provider 失败）。
+		// The newest entry’s upgrade artifact doesn’t match this machine’s platform/arch:
+		// the candidate doesn’t apply — treat as up-to-date (not a provider failure).
 		g.lg.Debug(g.t("updater_nightly_no_asset", "Tag", rel.TagName, "Platform", req.Platform, "Arch", req.Arch))
 		return nil, nil
 	}
 	filename := rel.Assets[idx].Name
 	sizeOf := rel.Assets[idx].Size
 
-	// 稳定版（最新一条不是预发布）：直接比较版本号，不需要更新则 up-to-date。
+	// Stable (the newest entry is not a pre-release): compare version numbers directly;
+	// no update needed = up-to-date.
 	if !rel.Prerelease {
 		tag := strings.TrimPrefix(rel.TagName, "v")
 		if !isNewer(tag, req.CurrentVersion) {
@@ -171,19 +186,21 @@ func (g *githubProvider) checkPrerelease(ctx context.Context, req updater.CheckR
 		return nil, fmt.Errorf("%s", g.t("updater_err_build_release", map[string]any{"Err": err.Error()}))
 	}
 
-	// Pre-release 额外下载 gitCommit / buildTime 两个文件，按内容判定是否需要更新。
+	// Pre-releases additionally download the gitCommit / buildTime files and decide from
+	// their content.
 	remoteCommit, okCommit := fetchGitCommitFile(ctx, g.lg, g.client, ghDownloadURL, g.repo, out, g.gitCommitFile, "", g.fileRequest)
 	remoteBuildTime, okTime := fetchBuildTimeFile(ctx, g.lg, g.client, ghDownloadURL, g.repo, out, g.buildTimeFile, "", g.fileRequest)
 	if !okCommit || !okTime {
 		g.lg.Warn(g.t("updater_err_prerelease_meta_missing"), "Tag", rel.TagName, "Commit", okCommit, "BuildTime", okTime)
 		return nil, fmt.Errorf("%s", g.t("updater_err_prerelease_meta_missing"))
 	}
-	// 优先比较 gitCommit：相同（兼容短 hash / 完整 hash 前缀匹配）代表不需要更新（nil,nil = up-to-date）。
+	// Compare gitCommit first: equal (short hash / full hash prefix matching) means no
+	// update (nil,nil = up-to-date).
 	if commitEqual(g.gitCommit, remoteCommit) {
 		g.lg.Debug(g.t("updater_err_nightly_same_commit", "Commit", remoteCommit))
 		return nil, nil
 	}
-	// gitCommit 不同：比较 buildTime，本机 < 远程才可更新。
+	// gitCommit differs: compare buildTime; updatable only when local < remote.
 	if g.buildTime.IsZero() {
 		g.lg.Debug(g.t("updater_nightly_no_local_build_time"))
 		return nil, fmt.Errorf("%s", g.t("updater_err_local_build_time_empty"))
@@ -204,7 +221,8 @@ func (g *githubProvider) checkPrerelease(ctx context.Context, req updater.CheckR
 	return out, nil
 }
 
-// checkStable 检查 GitHub 的稳定版更新：取 latest release 比对版本号。
+// checkStable checks GitHub stable updates: fetches the latest release and compares
+// versions.
 func (g *githubProvider) checkStable(ctx context.Context, req updater.CheckRequest) (*updater.Release, error) {
 	releaseURL := strings.ReplaceAll(ghReleaseLatest, "{repo}", g.repo)
 	httpReq, err := g.apiRequest(ctx, releaseURL)
@@ -237,7 +255,8 @@ func (g *githubProvider) checkStable(ctx context.Context, req updater.CheckReque
 	tag := strings.TrimPrefix(rel.TagName, "v")
 	if req.CurrentVersion != "" && !isNewer(tag, req.CurrentVersion) {
 		g.lg.Debug(g.t("updater_stable_not_newer", "Tag", tag))
-		// latest 不比当前新 = 已是最新（nil,nil = up-to-date，而非 provider 失败）。
+		// latest not newer than current = up to date (nil,nil = up-to-date, not a provider
+		// failure).
 		return nil, nil
 	}
 	publishedAt, perr := time.Parse(time.RFC3339, rel.PublishedAt)
@@ -268,8 +287,8 @@ func (g *githubProvider) checkStable(ctx context.Context, req updater.CheckReque
 	return out, nil
 }
 
-// githubAssetsToReleaseAssets 把 GitHub 发布资源归一化为官方 github.ReleaseAsset，
-// 以便直接套用官方 AssetMatcher。
+// githubAssetsToReleaseAssets normalizes GitHub release assets into the official
+// github.ReleaseAsset so the official AssetMatcher applies directly.
 func githubAssetsToReleaseAssets(assets []githubAsset) []github.ReleaseAsset {
 	out := make([]github.ReleaseAsset, 0, len(assets))
 	for _, a := range assets {

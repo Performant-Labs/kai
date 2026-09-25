@@ -8,15 +8,16 @@ import (
 	"cnb.cool/dtapp/kai/internal/i18n"
 )
 
-// NotificationService 封装原生桌面通知的授权检查与安全发送，
-// 避免调用方直接裸调 Wails notifications service 时漏掉授权判断
-// （macOS 上未授权会静默失败，且无法排查）。
+// NotificationService wraps permission checks and safe sending for native desktop
+// notifications, so callers never bare-call the Wails notifications service and miss the
+// permission check (on macOS an unauthorized send fails silently and is undebuggable).
 type NotificationService struct {
 	svc *notifications.NotificationService
 }
 
-// NewNotificationService 构造通知服务。svc 传 nil 时内部回退到
-// notifications.NotificationService_ 单例，方便 main.go 直接复用已注册的服务实例。
+// NewNotificationService constructs the notification service. Passing nil for svc falls back
+// internally to the notifications.NotificationService_ singleton, letting main.go directly
+// reuse the already-registered service instance.
 func NewNotificationService(svc *notifications.NotificationService) *NotificationService {
 	if svc == nil {
 		svc = notifications.NotificationService_
@@ -24,8 +25,9 @@ func NewNotificationService(svc *notifications.NotificationService) *Notificatio
 	return &NotificationService{svc: svc}
 }
 
-// ensureAuthorized 检查通知授权，未授权时主动申请。
-// 返回是否最终获得授权；任何错误仅记录日志，不影响调用方主流程。
+// ensureAuthorized checks notification permission and actively requests it when missing.
+// Returns whether authorization was ultimately granted; any error is only logged and never
+// affects the caller's main flow.
 func (n *NotificationService) ensureAuthorized() bool {
 	authorized, err := n.svc.CheckNotificationAuthorization()
 	if err != nil {
@@ -40,8 +42,9 @@ func (n *NotificationService) ensureAuthorized() bool {
 	return authorized
 }
 
-// Notify 安全发送通知：先确保授权，未授权或被拒则跳过并记录日志，
-// 发送失败也只记日志，绝不向上抛出（更新检查等后台流程不应被通知问题阻断）。
+// Notify safely sends a notification: ensures authorization first; skips and logs when
+// unauthorized or denied. Send failures are also only logged, never propagated upward
+// (background flows like update checks must not be blocked by notification problems).
 func (n *NotificationService) Notify(opts notifications.NotificationOptions) {
 	if !n.ensureAuthorized() {
 		slog.Warn(i18n.T("log.notification_denied"))

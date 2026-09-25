@@ -1,6 +1,7 @@
 // apple_ocr.swift
-// Vision OCR 相关 @_cdecl 入口：kai_ocr。
-// 依赖 bridge_errors.swift（错误码 / Codable / 编码辅助）、bridge_common.swift（writeCString）、
+// Vision OCR @_cdecl entries: kai_ocr.
+// Depends on bridge_errors.swift (error codes / Codable / encoding helpers),
+// bridge_common.swift (writeCString),
 // bridge_log.swift（bridgeFileLog / bridgeLogText）。
 import AppKit
 import ApplicationServices
@@ -12,12 +13,16 @@ import Translation
 import UniformTypeIdentifiers
 import Vision
 
-// kai_ocr：对传入的图片（base64 PNG/JPEG）执行 Vision 文本识别（默认中文，支持更多语言）。
-// 参数顺序/类型必须与 Go 端 cgo 声明一致：
+// kai_ocr: runs Vision text recognition on the provided image (base64 PNG/JPEG; Chinese by
+// default, more languages supported).
+// Parameter order/types must match the Go side's cgo declaration:
 //   int kai_ocr(const char* img, char* out, int out_cap, int correct, int timeout_sec);
-// out 接收 {"text":"...","regions":[{"text","conf","box"}]}（OCRSuccess）；失败写入 {"code":"...","detail":"..."}（BridgeError）。
-// correct 为 0/1（对应 Go 端 usesLanguageCorrection 开关）；timeout_sec 为识别超时秒数（替代原硬编码 15s）；
-// retry 为 Vision OCR 失败兜底重试次数（<=0 用默认 2），仅对 CRImageReaderError 类瞬拒生效。
+// out receives {"text":"...","regions":[{"text","conf","box"}]} (OCRSuccess); on failure it
+// gets {"code":"...","detail":"..."} (BridgeError).
+// correct is 0/1 (the Go side's usesLanguageCorrection switch); timeout_sec is the
+// recognition timeout in seconds (replacing the old hardcoded 15s);
+// retry is the Vision OCR failure-fallback retry count (<=0 uses the default 2), effective
+// only against CRImageReaderError-style transient rejections.
 @_cdecl("kai_ocr")
 public func kai_ocr(
   _ base64: UnsafePointer<CChar>?,
@@ -31,7 +36,8 @@ public func kai_ocr(
   let correctionOn = correct != 0
   let timeout = max(Int(timeout_sec), 1)
   let retryCount = max(Int(retry), 0)
-  // 诊断：确认 cgo 调用约定是否生效（out_cap 应收到 1<<20 量级，out 不应为 nil）。
+  // Diagnostics: confirm the cgo calling convention works (out_cap should arrive around
+  // 1<<20; out must not be nil).
   bridgeFileLog(
     bridgeLogText(
       "ocr.entry", out == nil ? "nil" : "ok", out_cap, correctionOn ? "on" : "off", timeout),
@@ -66,22 +72,32 @@ public func kai_ocr(
       into: out, cap: out_cap)
   }
 
-  // 像素规范化（CRImageReaderError error 1 根治）：
-  // 区域截图直接喂 VNImageRequestHandler 偶发 CRImageReaderError error 1（perform 0.000s 瞬拒）。
-  // 根因是 Vision 对带 alpha 通道 / 色彩空间未知 / 半透明像素的图会直接拒识。
-  // 双重兜底：
-  //  ① CGContext 重绘为「标准 sRGB + 8bit + noneSkipLast（A 置 255 不透明）」，去掉退化色彩空间与半透明语义；
-  //     注：本机 macOS 26.2 上 CGImageAlphaInfo.none 的 bitmap context 创建会返回 nil（实测
-  //     failed to create bitmap context），故用 noneSkipLast 保底确保 context 可创建，A=255 不透明 Vision 兼容良好。
-  //  ② 再经 JPEG 容器重封装读回（JPEG 无 alpha，强制丢弃半透明像素），是真正去半透明的关键一步。
-  // 关键：归一化抽成 normalizedVariant(_:)，在失败重试循环里**每次都重新归一化原始 cg**（而非复用同一张），
-  // 因为单次归一化在边缘图上可能未完全治愈 error 1，重新走一遍 JPEG 重封装路径有时能成功。
-  // noneSkipLast（RGBA，A 不透明）每像素 4 字节 → bytesPerRow 用 w*4（按 16 字节对齐）。
+  // Pixel normalization (root-cures CRImageReaderError error 1):
+  // Feeding a region screenshot straight into VNImageRequestHandler sporadically fails with
+  // CRImageReaderError error 1 (an instant rejection, perform in 0.000s).
+  // The root cause: Vision outright rejects images with an alpha channel / unknown color
+  // space / semi-transparent pixels.
+  // Double fallback:
+  //  1. Redraw via CGContext into "standard sRGB + 8-bit + noneSkipLast (A forced to 255,
+  //     opaque)", removing the degenerate color space and semi-transparency semantics;
+  //     note: on this machine's macOS 26.2, creating a bitmap context with
+  //     CGImageAlphaInfo.none returns nil (observed
+  //     "failed to create bitmap context"), so noneSkipLast is used to guarantee the context
+  //     can be created; opaque A=255 works well with Vision.
+  //  2. Then re-wrap through a JPEG container and read back (JPEG has no alpha, forcibly
+  //     discarding semi-transparent pixels) — the step that truly removes
+  //     semi-transparency.
+  // Key: normalization is factored into normalizedVariant(_:), and the failure-retry loop
+  // **re-normalizes the original cg every time** (rather than reusing one image),
+  // because a single normalization may not fully cure error 1 on edge-case images; re-running
+  // the JPEG re-wrap path sometimes succeeds.
+  // noneSkipLast (RGBA, opaque A) is 4 bytes per pixel → bytesPerRow = w*4 (16-byte
+  // aligned).
   func normalizedVariant(_ src: CGImage) -> CGImage {
     let rw = src.width
     let rh = src.height
     let bytesPerRow = (rw * 4 + 15) & ~15
-    var work: CGImage = src  // 任一步失败都兜底用上一步结果，避免整体失败
+    var work: CGImage = src  // on any step failure, fall back to the previous result rather than failing wholesale
     if let ctx = CGContext(
       data: nil, width: rw, height: rh, bitsPerComponent: 8,
       bytesPerRow: bytesPerRow, space: CGColorSpaceCreateDeviceRGB(),
@@ -136,16 +152,21 @@ public func kai_ocr(
       "ocr.redraw_info", rawBpp, rawAlpha, rawCS, cg.bitsPerPixel, cg.alphaInfo.rawValue, w, h),
     level: BRIDGE_LOG_DEBUG)
 
-  // 初始归一化（首试用），重试时按 attempt 重新归一化原始 cg。
+  // Initial normalization (for the first attempt); on retries, re-normalize the original cg
+  // per attempt.
   let redrawn: CGImage = normalizedVariant(cg)
 
   let request = VNRecognizeTextRequest()
-  // correctionOn（Go 端 correct 0/1）：开启语言校正时用 accurate 级别；关闭时仍用 accurate
-  // 但关闭 usesLanguageCorrection 以换取更快推理（fast 级别在中文密集场景召回更差，故保留 accurate）。
+  // correctionOn (the Go side's correct 0/1): with language correction on, use the accurate
+  // level; when off, still accurate
+  // but with usesLanguageCorrection disabled for faster inference (fast recalls worse in
+  // Chinese-dense scenes, so accurate is kept).
   request.recognitionLevel = .accurate
   request.usesLanguageCorrection = correctionOn
-  // 收敛语言候选：cs=unknown 退化图上多语言候选会加大 Vision 内部解码器崩溃概率（error 1）。
-  // 主候选集只保留最常用的中/英/繁，避免 ja/ko 这类在退化图上触发拒识。
+  // Converge the language candidates: on a cs=unknown degenerate image, many language
+  // candidates raise the odds of a Vision internal decoder crash (error 1).
+  // The primary candidate set keeps only the most common zh/en/zh-Hant, avoiding ja/ko-style
+  // rejections on degenerate images.
   let primaryLangs = ["zh-Hans", "zh-Hant", "en"]
   request.recognitionLanguages = primaryLangs
 
@@ -153,8 +174,10 @@ public func kai_ocr(
   let sema = DispatchSemaphore(value: 0)
   let start = Date()
 
-  // performOCR 执行一次 Vision 识别；返回 nil 表示成功（resultJSON 已写好），
-  // 返回非 nil 表示失败详情（含 error 1 等），供调用方决定重试。img 为本次要识别的（已归一化）像素。
+  // performOCR runs one Vision recognition pass; a nil return means success (resultJSON is
+  // populated),
+  // non-nil means failure detail (including error 1 etc.) for the caller to decide on retry.
+  // img is the (already normalized) pixels to recognize this round.
   func performOCR(_ langs: [String], _ img: CGImage) -> String? {
     let req = VNRecognizeTextRequest()
     req.recognitionLevel = .accurate
@@ -172,9 +195,9 @@ public func kai_ocr(
         guard let candidate = obs.topCandidates(1).first else { continue }
         let txt = candidate.string
         let conf = candidate.confidence
-        let bb = obs.boundingBox  // 归一化坐标，原点左下
+        let bb = obs.boundingBox  // normalized coordinates, origin bottom-left
         let x1 = Int(bb.origin.x * CGFloat(w))
-        let y1 = Int((1 - bb.origin.y - bb.height) * CGFloat(img.height))  // 翻转 y 到左上原点
+        let y1 = Int((1 - bb.origin.y - bb.height) * CGFloat(img.height))  // flip y to a top-left origin
         let x2 = Int((bb.origin.x + bb.width) * CGFloat(w))
         let y2 = Int((1 - bb.origin.y) * CGFloat(img.height))
         lines.append(txt)
@@ -191,28 +214,36 @@ public func kai_ocr(
   }
 
   DispatchQueue.global(qos: .userInitiated).async {
-    // 兜底重试：依次尝试不同语言候选集 + 每次重新归一化原始像素，绕过 Vision 在该图上
-    // 对多语言候选 / 退化像素格式的崩溃（CRImageReaderError error 1）。
-    // 语言候选集优先级：主候选集(中/英/繁) → 单一中文 → 单一英文（用尽后循环复用）。
-    // 每轮都从原始 cg 重新归一化（normalizedVariant），单次归一化在边缘图上可能未治愈 error 1，
-    // 重新走一遍 JPEG 重封装路径有时能成功——这是 error 1 必复现场景的关键兜底。
-    // retry 为用户配置的「额外语言候选重试次数」（不含首试）；但 CRImageReaderError error 1
-    // 是像素格式瞬拒，重归一化是关键兜底，不应被用户关掉——故 maxAttempts 下限保底 2
-    // （首试 + 至少 1 次重归一化重试），确保 error 1 必复现场景仍有机会自愈。
+    // Fallback retries: try different language candidate sets in turn + re-normalize the
+    // original pixels each time, working around Vision's crash on this image with multi-language
+    // candidates / degenerate pixel formats (CRImageReaderError error 1).
+    // Candidate-set priority: primary set (zh/en/zh-Hant) → Chinese only → English only
+    // (cycled for reuse once exhausted).
+    // Every round re-normalizes from the original cg (normalizedVariant); a single
+    // normalization may not cure error 1 on edge-case images,
+    // and re-running the JPEG re-wrap path sometimes succeeds — the key fallback for
+    // reliably-reproducing error 1 scenarios.
+    // retry is the user-configured "extra language-candidate retry count" (excluding the
+    // first attempt); but CRImageReaderError error 1
+    // is a pixel-format transient rejection and re-normalization is the key fallback that the
+    // user should not be able to switch off — hence maxAttempts has a floor of 2
+    // (first attempt + at least one re-normalization retry), so reliably-reproducing error 1
+    // scenarios still get a chance to self-heal.
     let langCandidates: [[String]] = [primaryLangs, ["zh-Hans"], ["en"]]
-    let maxAttempts = max(1 + max(retryCount, 0), 2)  // 至少 2 次：首试 + 至少 1 次重归一化
+    let maxAttempts = max(1 + max(retryCount, 0), 2)  // at least 2: first try + at least one re-normalization
     var detail: String?
     var attempt = 0
     while attempt < maxAttempts {
       attempt += 1
       let langs = langCandidates[(attempt - 1) % langCandidates.count]
-      // 第 1 次用初始归一化 redrawn；之后每次从原始 cg 重新归一化，换一条像素路径再试。
+      // The 1st attempt uses the initial normalization (redrawn); each later attempt
+      // re-normalizes from the original cg, trying a different pixel path.
       let img = attempt == 1 ? redrawn : normalizedVariant(cg)
       detail = performOCR(langs, img)
-      if detail == nil { break }  // 成功，退出重试循环
-      // 非 CRImageReaderError（如 timeout）不重试，直接上报
+      if detail == nil { break }  // success; leave the retry loop
+      // Non-CRImageReaderError failures (e.g. timeout) are not retried — report directly
       if !detail!.contains("CRImageReaderError") { break }
-      if attempt >= maxAttempts { break }  // 已达重试上限
+      if attempt >= maxAttempts { break }  // retry cap reached
       bridgeFileLog(
         bridgeLogText("ocr.retry", attempt, langs.joined(separator: ","), detail!),
         level: BRIDGE_LOG_WARN)
@@ -236,9 +267,12 @@ public func kai_ocr(
   return writeCString(resultJSON, into: out, cap: out_cap)
 }
 
-// normalizeToJPEG 把 CGImage 编码为 JPEG（sRGB、8bit、无 alpha），返回规范化后的图片数据。
-// 用于根治 VNImageRequestHandler 的 CRImageReaderError error 1：经 JPEG 容器重封装后，
-// 像素被强制转为 Vision 兼容性最好的格式，规避源图色彩空间未知 / 半透明边缘导致的拒识。
+// normalizeToJPEG encodes a CGImage into JPEG (sRGB, 8-bit, no alpha), returning the
+// normalized image data.
+// Used to root-cure VNImageRequestHandler's CRImageReaderError error 1: after the JPEG
+// container re-wrap,
+// pixels are forcibly converted into Vision's most compatible format, avoiding rejections
+// caused by unknown color spaces / semi-transparent edges in the source image.
 private func normalizeToJPEG(_ image: CGImage) -> Data? {
   let mutData = NSMutableData()
   guard

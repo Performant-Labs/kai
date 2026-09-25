@@ -1,24 +1,30 @@
 //go:build darwin
 
-// Package swiftbridge 是 Kai 的 Swift 桥接层（纯 Go 动态加载器 + 双端契约类型）。
+// Package swiftbridge is Kai's Swift bridge layer (a pure-Go dynamic loader + two-sided
+// contract types).
 //
-// 通过 github.com/ebitengine/purego 在运行时 Dlopen 加载 libkai_bridge.dylib，
-// 注册全部 kai_* 函数指针（零 cgo，桥接库不静态链接进主二进制）。改 Swift 后只需重编
-// internal/swift/build.sh（产 .dylib 并自动复制到本目录），运行时 Dlopen 加载即最新，
-// 规避「重编后 app 仍是旧代码」的疑虑。
+// It loads libkai_bridge.dylib at runtime via github.com/ebitengine/purego's Dlopen and
+// registers all kai_* function pointers (zero cgo; the bridge library is never statically
+// linked into the main binary). After changing Swift code, just rebuild
+// internal/swift/build.sh (produces the .dylib and copies it into this directory); the
+// runtime Dlopen then loads the latest — no "rebuilt but app still runs old code" doubts.
 //
-// 类型（OCRSuccess / TranslateSuccess / BridgeErr* / SelectionPoint / ScreenSize 等）与
-// Swift 端 Codable / BRIDGE_ERR_* 字面量一一对应，详见 bridge_errors.go 与 internal/swift/。
+// The types (OCRSuccess / TranslateSuccess / BridgeErr* / SelectionPoint / ScreenSize etc.)
+// correspond one-to-one with the Swift side's Codable / BRIDGE_ERR_* literals; see
+// bridge_errors.go and internal/swift/.
 //
-// 类型映射遵循 purego 约定：
-//   - C 的 char*（仅输入字符串） -> Go 的 string（purego 自动 C 字符串化，调用结束释放）
-//   - C 的 char*（输出缓冲区）   -> Go 的 unsafe.Pointer（调用方用 unsafe.Pointer(&buf[0])）
-//   - C 的 int / Int32           -> Go 的 int32（macOS LP64 下 C int 为 32 位）
-//   - C 的 Bool                  -> Go 的 bool（1 字节 _Bool）
+// Type mapping follows purego conventions:
+//   - C char* (input-only strings) -> Go string (purego auto-CString's and frees after the
+//     call)
+//   - C char* (output buffer)      -> Go unsafe.Pointer (caller passes
+//     unsafe.Pointer(&buf[0]))
+//   - C int / Int32                -> Go int32 (C int is 32-bit under macOS LP64)
+//   - C Bool                       -> Go bool (1-byte _Bool)
 //
-// 本文件仅 macOS 编译（purego.Dlopen/RTLD_* 为 Unix 专有）。非 macOS 平台由 load_other.go
-// 提供同签名空实现（Init 直接返回 nil，函数指针保持 nil，调用方均在 darwin 下、非 darwin
-// 不触发；main.go 无条件调用的 Init 在非 darwin 下为空操作）。
+// This file compiles on macOS only (purego.Dlopen/RTLD_* are Unix-only). Non-macOS platforms
+// get same-signature empty implementations from load_other.go (Init returns nil directly,
+// function pointers stay nil; all callers are behind darwin builds and never trigger on
+// non-darwin; the Init that main.go calls unconditionally is a no-op on non-darwin).
 package swiftbridge
 
 import (
@@ -41,7 +47,7 @@ var (
 	loadErr  error
 	handle   uintptr
 
-	// kai_* 函数指针（由 purego 注册，零 cgo）。
+	// kai_* function pointers (registered by purego, zero cgo).
 	KaiOCR                    func(base64 string, out unsafe.Pointer, outCap int32, correct int32, timeout int32, retry int32) int32
 	KaiAccessibilityEnabled   func() int32
 	KaiAccessibilityRequest   func() int32
@@ -56,14 +62,18 @@ var (
 	KaiTranslate              func(src string, dst string, text string, out unsafe.Pointer, outCap int32) int32
 )
 
-// dylib 默认与本 .go 源文件同目录（build.sh 会把最新 libkai_bridge.dylib 复制到这里）。
+// The dylib defaults to the same directory as this .go source file (build.sh copies the
+// latest libkai_bridge.dylib here).
 const dylibName = "libkai_bridge.dylib"
 
-// Init 加载 dylib 并注册全部 kai_* 函数。可重复调用（仅首次真正执行）。
-// dylibPath 可选：传空则用默认（与本包源文件同目录的 libkai_bridge.dylib，开发态）；
-// 若默认路径加载失败，自动回退尝试打包后的 app bundle 标准位置
-// Contents/Frameworks/libkai_bridge.dylib（由 build 脚本拷入）。
-// 所有候选都失败才返回错误，且调用方（经 Available()）仍应安全降级，不致命。
+// Init loads the dylib and registers all kai_* functions. Safe to call repeatedly (only the
+// first call actually runs).
+// dylibPath is optional: an empty value uses the default (libkai_bridge.dylib in this
+// package's source directory, dev mode);
+// if the default path fails to load, it automatically falls back to the packaged app bundle
+// standard location Contents/Frameworks/libkai_bridge.dylib (copied in by the build script).
+// An error is returned only when every candidate fails, and callers (via Available()) should
+// still degrade safely — not fatal.
 func Init(dylibPath string) error {
 	loadOnce.Do(func() {
 		candidates := make([]string, 0, 6)
@@ -71,10 +81,13 @@ func Init(dylibPath string) error {
 			candidates = append(candidates, dylibPath)
 		}
 		if buildinfo.IsDev() {
-			// 开发态：优先本地 pkg/swiftbridge/libkai_bridge.dylib（build.sh 产出），
-			// 改 Swift 重编后无需重编 Go 二进制即生效。仅保留两条可靠路径：
-			//  - 与本 .go 源文件同目录（go build 把真实源路径编进二进制，直接命中 pkg/swiftbridge/）
-			//  - 可执行文件所在目录（项目根或 bin/）上溯到项目根后的 pkg/swiftbridge/
+			// Dev mode: prefer the local pkg/swiftbridge/libkai_bridge.dylib (build.sh's
+			// output) — after rebuilding Swift it takes effect without rebuilding the Go
+			// binary. Only two reliable paths are kept:
+			//  - the directory of this .go source file (go build embeds the real source path
+			//    into the binary, hitting pkg/swiftbridge/ directly)
+			//  - pkg/swiftbridge/ under the project root, walked up from the executable's
+			//    directory (project root or bin/)
 			if _, thisFile, _, ok := runtime.Caller(0); ok {
 				candidates = append(candidates, filepath.Join(filepath.Dir(thisFile), dylibName))
 			}
@@ -86,8 +99,10 @@ func Init(dylibPath string) error {
 				)
 			}
 		}
-		// 非开发态（打包产物）从 go:embed 内嵌字节落地临时文件加载，不依赖外部文件；
-		// 开发态本地文件缺失时也以 embed 兜底，确保任何情况都能加载、绝不 panic。
+		// Non-dev (packaged): load from the go:embed-embedded bytes written to a temp file,
+		// no external file needed;
+		// in dev, the embed also backs up a missing local file, so loading always succeeds and
+		// never panics.
 		if embedded, err := writeEmbeddedDylib(); err == nil {
 			candidates = append(candidates, embedded)
 		}
@@ -116,8 +131,10 @@ func Init(dylibPath string) error {
 	return loadErr
 }
 
-// writeEmbeddedDylib 把 go:embed 内嵌的 dylib 字节落地到临时文件并返回其路径。
-// purego.Dlopen 仅支持路径加载，故内嵌字节必须先写出文件。文件权限 0o755 以便 dlopen 执行。
+// writeEmbeddedDylib writes the go:embed-embedded dylib bytes to a temp file and returns its
+// path.
+// purego.Dlopen only supports path loading, so the embedded bytes must be written out first.
+// File permissions are 0o755 so dlopen can execute it.
 func writeEmbeddedDylib() (string, error) {
 	if len(dylibEmbed) == 0 {
 		return "", fmt.Errorf("embedded dylib is empty")
@@ -133,7 +150,8 @@ func writeEmbeddedDylib() (string, error) {
 	return p, nil
 }
 
-// registerAll 逐个注册 kai_* 函数；符号缺失不致命（记录后跳过），保证其余函数仍可用。
+// registerAll registers the kai_* functions one by one; a missing symbol is not fatal
+// (logged then skipped), keeping the remaining functions usable.
 func registerAll(h uintptr) {
 	register := func(fptr any, name string) {
 		if err := registerSafe(fptr, h, name); err != nil {
@@ -154,14 +172,17 @@ func registerAll(h uintptr) {
 	register(&KaiTranslate, "kai_translate")
 }
 
-// Available 报告 Swift 桥接层是否成功加载（dylib 已 Dlopen 且 handle 有效）。
-// 调用方在调用任何 KaiXxx 函数指针前应先判断；加载失败（非 macOS、dylib 缺失/路径错、
-// 或损坏）时返回 false，调用点应安全降级而不得直接调用 nil 函数指针（否则 panic）。
+// Available reports whether the Swift bridge loaded successfully (dylib Dlopen'ed and the
+// handle valid).
+// Callers must check before invoking any KaiXxx function pointer; on load failure (non-macOS,
+// dylib missing/wrong path/corrupt) it returns false and call sites must degrade safely —
+// never call a nil function pointer (it panics).
 func Available() bool {
 	return handle != 0
 }
 
-// registerSafe 包装 RegisterLibFunc，把 panic/error 转为 error 返回（符号缺失时不直接 panic）。
+// registerSafe wraps RegisterLibFunc, converting panic/error into a returned error (a
+// missing symbol doesn't panic directly).
 func registerSafe(fptr any, h uintptr, name string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

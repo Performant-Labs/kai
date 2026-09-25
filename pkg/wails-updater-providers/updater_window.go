@@ -8,14 +8,17 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// 更新窗口的窗口名/尺寸/resize 事件名统一走包全局变量（在 mirror_provider.go 定义）：
-// globalWindowName / globalWindowW / globalWindowH / globalResizeEvent，
-// 对外通过 SetWindowName/GetWindowName 等包函数读写，便于运行时覆盖。
+// The update window's name/size/resize event names go through package globals (defined in
+// mirror_provider.go):
+// globalWindowName / globalWindowW / globalWindowH / globalResizeEvent,
+// read/written externally via package functions like SetWindowName/GetWindowName for runtime
+// overrides.
 
-// handleMu 保护 updaterHandles，语言切换刷新 HTML 时需串行更新。
-// 框架内部 user 动作事件名（用户点窗口按钮触发）。BYO 模式下框架不在这些
-// 事件里 show/hide 我们的窗口，所以用户主动关闭窗口由本包监听这些事件自行
-// Hide 完成（见 registerCloseHandler）。
+// handleMu guards updaterHandles; the language-switch HTML refresh needs serialized updates.
+// Framework-internal user action event names (fired when the user clicks window buttons). In
+// BYO mode the framework does not show/hide our window on these
+// events, so user-initiated closes are done by this package listening for these events and
+// hiding itself (see registerCloseHandler).
 const (
 	evtUserCancel = "wails:updater:user:cancel"
 	evtUserSkip   = "wails:updater:user:skip"
@@ -25,19 +28,20 @@ const (
 var (
 	handleMu                sync.Mutex
 	updaterHandles          = map[string]*updaterWindow{}
-	resizeHandlerRegistered bool // resize 全局监听只注册一次，避免重复重建窗口时泄漏
-	closeHandlerRegistered  bool // user 动作关闭监听只注册一次
-	themeHandlerRegistered  bool // 系统主题变更监听只注册一次
+	resizeHandlerRegistered bool // the resize global listener registers once, avoiding leaks on repeated window rebuilds
+	closeHandlerRegistered  bool // the user-action close listener registers once
+	themeHandlerRegistered  bool // the system theme change listener registers once
 )
 
-// updaterWindow 把库自建的 *application.WebviewWindow 适配成
-// updater.WindowHandle。注意：这里 *故意不实现* updater.WindowSizer
-// （即不暴露 SetSize 方法），否则框架 transition() 会用内置尺寸覆盖我们
-// 由 JS 驱动的自适应高度。高度自适应改由本包内部监听 eventResize 后调用
-// win.SetSize 完成。
+// updaterWindow adapts the library's own *application.WebviewWindow into
+// updater.WindowHandle. Note: this *deliberately does not implement* updater.WindowSizer
+// (i.e. it exposes no SetSize method), otherwise the framework's transition() would overwrite
+// our JS-driven adaptive height with its built-in sizes. Height adaptation instead happens
+// inside this package: on eventResize we call
+// win.SetSize.
 //
-// 框架在 Init 时注册此 handle 指针，此后无需变更；语言/主题切换通过 SetHTML
-// 刷新内容，窗口实例保持不变。
+// The framework registers this handle pointer at Init and it never changes after that;
+// language/theme switches refresh content via SetHTML, keeping the same window instance.
 type updaterWindow struct {
 	win *application.WebviewWindow
 	app *application.App
@@ -47,44 +51,54 @@ func (h *updaterWindow) EmitEvent(name string, data ...any) bool {
 	return h.win.EmitEvent(name, data...)
 }
 
-// Show 由框架在 transition 到展示状态时调用。幂等。
+// Show is called by the framework when transitioning to the showing state. Idempotent.
 func (h *updaterWindow) Show() {
 	h.win.Show()
 }
 
-// Close 由框架在两种场景调用：
-//  1. 用户点「取消/跳过/稍后提醒」按钮 → 框架 u.closeWindow → handle.Close
-//  2. CheckAndInstall 重开 session 时清理旧 session → u.session.close → handle.Close
+// Close is called by the framework in two scenarios:
+//  1. the user clicks "Cancel/Skip/Remind me later" → framework u.closeWindow → handle.Close
+//  2. CheckAndInstall reopens a session and cleans up the old one → u.session.close →
+//     handle.Close
 //
-// 注意第 2 种场景：CheckAndInstall 每次执行都会 close 上一次残留的 session，
-// 而本 BYO 窗口的显示完全由菜单 ShowUpdaterWindow 掌控、与框架 session 生命周期
-// 无关。若此处 Hide，第二次「检查更新」时刚 Show 的窗口会被立刻藏掉（一闪而过）。
-// 因此这里做成 no-op——窗口显隐完全由本包控制：
-//   - 显示：ShowUpdaterWindow 强制重建可见窗口
-//   - 隐藏：用户点 X（WindowClosing → Hide）或点按钮（registerCloseHandler 监听
-//     user:cancel/skip/remind 后 Hide）。第 2 种场景的旧 session close 不会再误藏。
+// Note scenario 2: every CheckAndInstall run closes the leftover previous session,
+// while this BYO window's visibility is controlled entirely by the menu's ShowUpdaterWindow —
+// unrelated to the framework session lifecycle. If we hid here, the window just shown by a
+// second "check for updates" would be hidden instantly (a flash).
+// So this is a no-op — window visibility is fully controlled by this package:
+//   - showing: ShowUpdaterWindow force-rebuilds a visible window
+//   - hiding: the user clicks X (WindowClosing → Hide) or a button (registerCloseHandler
+//     listens for user:cancel/skip/remind and hides). Scenario 2's old session close no
+//     longer hides by mistake.
 func (h *updaterWindow) Close() {}
 
-// createUpdaterWindow 仅创建一个 *updaterWindow 对象（稳定句柄），**不创建底层
-// WebviewWindow**。窗口的按需创建推迟到第一次 ShowUpdaterWindow 才发生——这样启动
-// 阶段（app.Updater.Init 经 OpenUpdaterWindow 拿到句柄）不会把更新窗口建出来，
-// 避免无谓的 webview 初始化与系统红绿灯占位。句柄对象一经创建便保持稳定，后续
-// 只重建其内部的 win（见 recreateNativeWindow），这样框架 Init 时持有的 WindowHandle
-// 指针在窗口销毁重建后依然有效——否则「关闭后再检查更新」弹出的新窗口与框架持有的
-// 旧句柄不是同一个对象，user:cancel 会打到已销毁的旧窗口，表现为「关闭按钮没反应」。
+// createUpdaterWindow only creates a *updaterWindow object (a stable handle), **not the
+// underlying WebviewWindow**. The window's on-demand creation is deferred to the first
+// ShowUpdaterWindow — so the startup phase (app.Updater.Init getting the handle via
+// OpenUpdaterWindow) never builds the update window,
+// avoiding needless webview initialization and traffic-light placeholder. Once created, the
+// handle object stays stable; afterwards
+// only its inner win is rebuilt (see recreateNativeWindow), so the WindowHandle pointer the
+// framework held at Init remains valid across window destroy/rebuild — otherwise the new
+// window from "check for updates after closing" and the framework's
+// old handle would be different objects, user:cancel would hit the destroyed old window, and
+// the close button would appear dead.
 func createUpdaterWindow(app *application.App) *updaterWindow {
 	return &updaterWindow{app: app}
 }
 
-// recreateNativeWindow 仅重建 h 底层的 WebviewWindow（h 对象本身保持稳定）。
-// 创建时 Wails 会正确注入原生桥接 window._wails.invoke 与 inline event shim，
-// 因此 JS 的 Events.Emit（关闭/安装/跳过按钮、resize 自适应）均可用。
+// recreateNativeWindow rebuilds only h's underlying WebviewWindow (the h object itself stays
+// stable).
+// At creation, Wails correctly injects the native bridge window._wails.invoke and the inline
+// event shim,
+// so JS Events.Emit (close/install/skip buttons, resize adaptivity) all work.
 func recreateNativeWindow(app *application.App, h *updaterWindow, show bool) {
-	// 底色 BackgroundColour：仅作 webview 加载前的底色闪现，深 (30,30,30) / 浅 (255,255,255)，
-	// 跟随应用主题 GetTheme()（dark/light，auto 已由 main.go 的 resolveUpdaterTheme 解析后
-	// 通过 SetTheme 灌入）。
-	// 标题栏外观（macOS Appearance / Windows CustomTheme）一律不自定义，
-	// 与主窗口（settings）保持一致，走系统默认标题栏。
+	// BackgroundColour: only the pre-load flash color of the webview — dark (30,30,30) /
+	// light (255,255,255),
+	// following the app theme GetTheme() (dark/light; auto was already resolved by main.go's
+	// resolveUpdaterTheme and pushed in via SetTheme).
+	// Title-bar appearance (macOS Appearance / Windows CustomTheme) is never customized;
+	// it matches the main window (settings) and uses the system default title bar.
 	dark := GetTheme() == ThemeDark
 	bg := application.NewRGB(255, 255, 255)
 	appearance := application.NSAppearanceNameAqua
@@ -103,27 +117,30 @@ func recreateNativeWindow(app *application.App, h *updaterWindow, show bool) {
 		Height:               globalWindowH,
 		HTML:                 renderWindowHTML(app),
 		DisableResize:        false,
-		Hidden:               true, // 一律隐藏创建，显示由调用方双 Show() 完成（规避 80010108）
-		AllowSimpleEventEmit: true, // 关键：允许 JS Events.Emit 直接驱动 Go 监听
+		Hidden:               true, // always created hidden; showing is the caller’s double Show() job (avoids 80010108)
+		AllowSimpleEventEmit: true, // key: lets JS Events.Emit drive Go listeners directly
 		BackgroundColour:     bg,
-		// 标题栏主题跟随应用内主题（dark/light）：使用 Wails3 原生主题 API
-		// （macOS 的 Mac.Appearance / Windows 的 WindowsWindow.Theme），
-		// 不依赖 CustomTheme 颜色自定义。这样应用内切换深/浅时标题栏随之变化。
+		// Title-bar theme follows the in-app theme (dark/light): uses Wails3's native theme
+		// APIs (macOS Mac.Appearance / Windows WindowsWindow.Theme),
+		// not CustomTheme color overrides. Switching dark/light in-app then updates the title
+		// bar too.
 		Mac: application.MacWindow{
 			Appearance: appearance,
 		},
 		Windows: application.WindowsWindow{
-			// 与 settings/translate/screenshot 一致设为 false。Windows 上
-			// true 会让窗口带上 WS_EX_TOOLWINDOW（工具窗口），其原生标题栏
-			// 高度与关闭按钮样式与别的普通窗口不一致；false 使标题栏表现对齐主窗口。
+			// Set false, consistent with settings/translate/screenshot. On Windows,
+			// true adds WS_EX_TOOLWINDOW (tool window), whose native title bar
+			// height and close button styling differ from normal windows; false keeps the
+			// title bar aligned with the main window.
 			HiddenOnTaskbar: false,
 			Theme:           winTheme,
 		},
-		// 标题栏 最小化/最大化/关闭按钮：与主窗口（settings）完全一致
+		// Title bar minimize/maximize/close buttons: exactly like the main window (settings)
 		MinimiseButtonState: application.ButtonHidden,
 		MaximiseButtonState: application.ButtonHidden,
 		CloseButtonState:    application.ButtonEnabled,
-		// 始终保持在应用其他窗口之上（不抢占其他前台 app）。
+		// Always stays above the app’s other windows (without stealing focus from other
+		// foreground apps).
 		AlwaysOnTop: true,
 	})
 
@@ -135,43 +152,53 @@ func recreateNativeWindow(app *application.App, h *updaterWindow, show bool) {
 	h.win = win
 }
 
-// getLiveUpdaterWindow 返回存活的更新窗口句柄：若窗口尚未创建、或已被用户
-// 关闭销毁（Wails 内部 WindowClosing 监听会销毁并移出注册表），返回 nil。
-// 与 ensureUpdaterWindow 区别：本函数不重建窗口，仅做存活探测（语言/主题刷新
-// 时若窗口已销毁则无需刷新，留待 ShowUpdaterWindow 重建即可，避免对销毁窗口
-// 调 SetHTML/SetTitle/SetSize 导致原生崩溃）。
+// getLiveUpdaterWindow returns a live update window handle: nil when the window was never
+// created or was closed/destroyed by the user (Wails' internal WindowClosing listener
+// destroys it and removes it from the registry).
+// Unlike ensureUpdaterWindow, this function never rebuilds — it only probes liveness (when
+// refreshing language/theme, a destroyed window needs no refresh; leave it to
+// ShowUpdaterWindow to rebuild, avoiding native crashes from calling
+// SetHTML/SetTitle/SetSize on a destroyed window).
 //
-// 关键：仅靠 app.Window.Get(name) 不足够——窗口被销毁时 Go 对象仍会滞留注册表
-// 一段时间，且 wails 的 SetTitle/SetSize 仅判 w.impl != nil（销毁后 impl 不会被
-// 置空），对已在 teardown 的原生视图发 setTitle: 会抛 NSInvalidArgumentException
-// 直接 SIGABRT。因此必须再用窗口自身的 IsVisible() 兜底（其内部对 isDestroyed()
-// 返回 false），仅当窗口当前真正可见时才视为可用。
+// Key: app.Window.Get(name) alone is not enough — after a window is destroyed its Go object
+// lingers in the registry for a while, and wails' SetTitle/SetSize only check
+// w.impl != nil (impl is never nil'ed after destruction); sending setTitle: to a native view
+// already in teardown throws NSInvalidArgumentException
+// and SIGABRTs immediately. So the window's own IsVisible() is used as the backstop
+// (internally it returns false for isDestroyed()),
+// and the window counts as usable only when currently truly visible.
 //
-// 必须在 handleMu 保护下调用。
+// Must be called under handleMu.
 func getLiveUpdaterWindow(app *application.App) *updaterWindow {
 	h, ok := updaterHandles[globalWindowName]
 	if !ok || h == nil || h.win == nil {
 		return nil
 	}
-	// 注册表按 id 管理；窗口被销毁后 app.Window.Get(name) 返回 false。
+	// The registry keys by id; after a window is destroyed app.Window.Get(name) returns
+	// false.
 	if _, live := app.Window.Get(globalWindowName); !live {
 		return nil
 	}
-	// 仅当窗口当前可见才算「可安全刷新」；隐藏（含从未展示的 Hidden 窗口）
-	// 或已销毁的窗口跳过——下次 ShowUpdaterWindow 会重建出含最新文案的窗口。
+	// A window counts as "safely refreshable" only when currently visible; hidden windows
+	// (including never-shown Hidden ones)
+	// or destroyed ones are skipped — the next ShowUpdaterWindow rebuilds a window with the
+	// latest copy.
 	if !h.win.IsVisible() {
 		return nil
 	}
 	return h
 }
 
-// ensureUpdaterWindow 返回可用的更新窗口句柄。句柄对象（*updaterWindow）一旦
-// 创建便保持稳定并存入 updaterHandles；仅当底层 WebviewWindow 缺失或已被销毁
-// 时重建 h.win。这样框架 Init 持有的 WindowHandle（指向同一个 h 对象）在窗口
-// 销毁重建后依然有效——这是「关闭按钮在重开后没反应」的根因修复点。
-// resize 全局监听仅注册一次（resizeHandlerRegistered 守卫），避免重复重建泄漏。
+// ensureUpdaterWindow returns a usable update window handle. The handle object
+// (*updaterWindow) stays stable once created and is stored in updaterHandles; h.win is rebuilt
+// only when the underlying WebviewWindow is missing or destroyed.
+// This keeps the WindowHandle the framework held at Init (pointing at the same h object)
+// valid across window destroy/rebuild — the root-cause fix for "the close button is dead
+// after reopening".
+// The resize global listener registers once (guarded by resizeHandlerRegistered), avoiding
+// leaks on repeated rebuilds.
 //
-// 必须在 handleMu 保护下调用。
+// Must be called under handleMu.
 func ensureUpdaterWindow(app *application.App) *updaterWindow {
 	h := updaterHandles[globalWindowName]
 	if h == nil {
@@ -192,7 +219,8 @@ func ensureUpdaterWindow(app *application.App) *updaterWindow {
 		return h
 	}
 
-	// 句柄对象稳定；仅当底层原生窗口缺失或已销毁时重建 h.win（隐藏态）。
+	// The handle object is stable; rebuild h.win (hidden) only when the underlying native
+	// window is missing or destroyed.
 	alive := h.win != nil
 	if alive {
 		if _, live := app.Window.Get(globalWindowName); !live {
@@ -205,55 +233,66 @@ func ensureUpdaterWindow(app *application.App) *updaterWindow {
 	return h
 }
 
-// OpenUpdaterWindow 在给定 app 上创建一个稳定的更新窗口句柄，并包装成
-// updater.Window 选项返回供 app.Updater.Init 使用。**注意：此处只创建稳定句柄
-// 对象，并不创建底层 WebviewWindow**——底层窗口推迟到第一次 ShowUpdaterWindow
-// 才按需创建，因此启动阶段不会把更新窗口建出来（避免无用 webview 初始化、
-// 系统红绿灯占位等）。由框架的 Show()/检查更新菜单触发显示时才真正建窗口。
+// OpenUpdaterWindow creates a stable update window handle on the given app, wraps it into an
+// updater.Window option and returns it for app.Updater.Init. **Note: this only creates the
+// stable handle object; it does not create the underlying WebviewWindow** — the underlying
+// window is created on demand at the first ShowUpdaterWindow, so the startup phase never
+// builds the update window (avoiding useless webview initialization, traffic-light
+// placeholder, etc.). The window is truly built only when the framework's Show()/check-updates
+// menu triggers a show.
 //
-// 初始语言直接读包全局 GetLocale（注入到 HTML 模板）；配色跟随应用 GetTheme()。
-// 调用方在 Open 前通过 SetLocale/SetTheme 设定语言与主题即可。
+// The initial language is read straight from the package global GetLocale (injected into the
+// HTML template); colors follow the app's GetTheme().
+// Callers just set language and theme via SetLocale/SetTheme before Open.
 func OpenUpdaterWindow(app *application.App) updater.WindowOption {
 	handleMu.Lock()
 	defer handleMu.Unlock()
 	return updater.BYOWindow(ensureUpdaterWindow(app))
 }
 
-// ShowUpdaterWindow 显示更新窗口（检查更新菜单点击时调用）。
+// ShowUpdaterWindow shows the update window (called on check-for-updates menu clicks).
 //
-// 关键修复（一闪而过根因）：
-//  1. 每次显示都强制销毁旧 WebviewWindow 并重建为可见窗口，使新窗口**不隶属于
-//     任何旧 session**；随后 CheckAndInstall 清理旧 session 时调 handle.Close
-//     （本包已实现为 no-op），不会再误藏当前显示的窗口。
-//  2. Wails v3 对 Hidden 窗口的首次 Show() 只触发 webview 创建、不真正显示，
-//     需连续两次 Show()（与项目内 showScreenshotWindow 的已知 workaround 一致），
-//     并补 Focus() 确保窗口真正置前显示。
+// Key fixes (root cause of the "flash then vanish"):
+//  1. Every show force-destroys the old WebviewWindow and rebuilds it as visible, so the new
+//     window **belongs to no old session**; when CheckAndInstall later cleans the old session
+//     it calls handle.Close
+//     (implemented as a no-op in this package), so it can no longer hide the currently shown
+//     window.
+//  2. Wails v3's first Show() of a Hidden window only triggers webview creation without
+//     actually showing; two consecutive Show() calls are needed (the same known workaround as
+//     the project's showScreenshotWindow),
+//     plus a Focus() to make sure the window really comes to the front.
 func ShowUpdaterWindow(app *application.App) {
 	handleMu.Lock()
 	defer handleMu.Unlock()
 	h := ensureUpdaterWindow(app)
-	// 按需创建：窗口此前从未建过（Init 阶段只建了稳定句柄、未建底层 WebviewWindow），
-	// 直接创建一个可见窗口即可，无需先建隐藏再销毁。已存在则销毁旧窗口重建为可见。
+	// On-demand creation: the window was never built before (Init only created the stable
+	// handle, not the underlying WebviewWindow),
+	// so just create a visible window directly — no need to build hidden then destroy. If one
+	// exists, destroy the old window and rebuild it visible.
 	if h.win == nil {
 		recreateNativeWindow(app, h, true)
 	} else {
-		h.win.Close() // WebviewWindow.Close：框架无条件销毁并移出注册表
+		h.win.Close() // WebviewWindow.Close: the framework unconditionally destroys and removes from the registry
 		recreateNativeWindow(app, h, true)
 	}
 	h.win.Show()
-	h.win.Show() // 双 Show：规避 Wails Hidden 首次 Show 不显示的 bug
+	h.win.Show() // double Show: works around Wails’ bug where the first Show of a Hidden window doesn’t show
 	h.win.Focus()
 }
 
-// SetUpdaterLocaleTheme 应用新语言与配色到更新窗口。
-// 必须在 OpenUpdaterWindow 之后调用（语言/主题切换场景）。
+// SetUpdaterLocaleTheme applies a new language and colors to the update window.
+// Must be called after OpenUpdaterWindow (language/theme switch scenario).
 //
-// 关键：可见窗口不能用 SetHTML 刷新——SetHTML 重载后 Wails 不会重新注入原生
-// 桥接 window._wails.invoke，导致 JS 的 Events.Emit（关闭/安装/跳过按钮、resize
-// 自适应）全部失效，表现为「关闭按钮没反应、窗口不自适应」。因此可见时改为
-// 销毁并重建底层 WebviewWindow（recreateNativeWindow，创建路径由 Wails 正确注入
-// 桥接与 inline event shim）；h 对象保持稳定，框架持有的 WindowHandle 仍有效。
-// 不可见/已销毁的窗口跳过刷新——下次 ShowUpdaterWindow 会重建出含最新文案的窗口。
+// Key: a visible window cannot be refreshed with SetHTML — after a SetHTML reload, Wails
+// does not re-inject the native bridge window._wails.invoke, so all JS Events.Emit (close/
+// install/skip buttons, resize adaptivity) break, showing up as "close button dead, window
+// doesn't adapt". So when visible we instead
+// destroy and rebuild the underlying WebviewWindow (recreateNativeWindow; the creation path
+// gets the bridge and inline event shim injected correctly by Wails); the h object stays
+// stable, so the framework's WindowHandle remains valid.
+// Invisible/destroyed windows skip the refresh — the next ShowUpdaterWindow rebuilds a
+// window with the latest copy.
 func SetUpdaterLocaleTheme(app *application.App) {
 	handleMu.Lock()
 	defer handleMu.Unlock()
@@ -262,23 +301,29 @@ func SetUpdaterLocaleTheme(app *application.App) {
 	if h == nil {
 		return
 	}
-	// 重建底层窗口以最新文案重新渲染；重建后重新显示（保持用户当前可见状态）。
+	// Rebuild the underlying window to re-render with the latest copy; show it again after
+	// rebuilding (preserving the user’s current visible state).
 	recreateNativeWindow(app, h, true)
 	h.win.Show()
-	h.win.Show() // 双 Show：与 ShowUpdaterWindow 保持一致
+	h.win.Show() // double Show: consistent with ShowUpdaterWindow
 	h.win.Focus()
 }
 
-// registerResizeHandler 监听前端 JS 通过 Events.Emit(globalResizeEvent, [w, h])
-// 发来的自适应高度请求，转成对窗口的 SetSize 调用。
+// registerResizeHandler listens for adaptive-height requests the frontend JS sends via
+// Events.Emit(globalResizeEvent, [w, h]) and turns them into window SetSize calls.
 //
-// 注意：必须每次动态解析存活窗口，不能捕获初始 win——resize 监听只注册一次
-// （resizeHandlerRegistered 守卫），而窗口可能被关闭销毁并重建；若捕获旧 win，
-// 重建后 resize 事件会打到已销毁窗口，导致尺寸不更新甚至崩溃。
+// Note: the live window must be resolved dynamically every time — the initial win cannot be
+// captured — because the resize listener registers only once
+// (guarded by resizeHandlerRegistered) while the window may be closed, destroyed and
+// rebuilt; with a captured old win, resize events after a rebuild would hit the destroyed
+// window, leaving the size stale or crashing.
 func registerResizeHandler(app *application.App) {
-	// 前端经内联事件 shim 发起的 Events.Emit 会丢弃 payload（仅发事件名），
-	// 因此无法把高度数据回传；窗口高度由 globalWindowW/globalWindowH 固定控制。
-	// 这里仅在该事件到达时对存活窗口做一次保底尺寸设定，确保初始/重建后尺寸正确。
+	// Events.Emit initiated through the inline event shim drops the payload (only the event
+	// name arrives),
+	// so height data can't be sent back; the window height is fixed via
+	// globalWindowW/globalWindowH.
+	// When this event arrives we just apply a guaranteed size to the live window, making sure
+	// the size is right initially/after rebuilds.
 	app.Event.On(globalResizeEvent, func(e *application.CustomEvent) {
 		h := getLiveUpdaterWindow(app)
 		if h == nil {
@@ -288,15 +333,18 @@ func registerResizeHandler(app *application.App) {
 	})
 }
 
-// registerCloseHandler 监听用户主动关闭窗口的框架事件（取消/跳过/稍后提醒），
-// 在回调里真正 Hide 窗口。
+// registerCloseHandler listens for the framework events of user-initiated window closes
+// (cancel/skip/remind later) and actually hides the window in the callback.
 //
-// 为什么不能依赖框架的 handle.Close() 来隐藏：
-//   - BYO 模式下 handle.Close() 已被本包实现为 no-op（见 updaterWindow.Close），
-//     目的是避免 CheckAndInstall 重开 session 时清理旧 session 把当前显示的窗口误藏。
-//   - 因此用户主动关闭窗口必须由本包显式 Hide。点 X 由 WindowClosing → Hide 兜底；
-//     点按钮（user:cancel/skip/remind）经框架 u.closeWindow → handle.Close(no-op)，
-//     这里补 Hide 完成关闭。
+// Why we can't rely on the framework's handle.Close() to hide:
+//   - In BYO mode handle.Close() is implemented as a no-op by this package (see
+//     updaterWindow.Close), to keep CheckAndInstall's old-session cleanup from hiding the
+//     currently shown window by mistake.
+//   - So user-initiated closes must be an explicit Hide by this package. Clicking X is backed
+//     by WindowClosing → Hide;
+//     clicking a button (user:cancel/skip/remind) goes through the framework's u.closeWindow
+//     → handle.Close (no-op),
+//     and the Hide here completes the close.
 func registerCloseHandler(app *application.App) {
 	hide := func(*application.CustomEvent) {
 		h := getLiveUpdaterWindow(app)
@@ -310,12 +358,18 @@ func registerCloseHandler(app *application.App) {
 	app.Event.On(evtUserRemind, hide)
 }
 
-// registerThemeHandler 监听系统外观变更（Wails 官方 events.Common.ThemeChanged，
-// 跨平台由原生实现；main.go 已用 application.Env.IsDarkMode() 作为可信来源派发）。
-// 触发后重建窗口，底色由 recreateNativeWindow 内部按应用 GetTheme() 决定深/浅。
-// 当系统深/浅切换且更新窗口当前可见时，销毁并重建底层窗口，使 BackgroundColour
-// 跟随新外观同步（Wails 的 BackgroundColour 创建时固定、无法热更新，只能重建）。
-// 隐藏或已销毁的窗口跳过——下次 ShowUpdaterWindow 会用最新的系统外观重建。
+// registerThemeHandler listens for system appearance changes (Wails' official
+// events.Common.ThemeChanged,
+// implemented natively per platform; main.go already dispatches using
+// application.Env.IsDarkMode() as the trusted source).
+// On trigger it rebuilds the window; the background color is decided dark/light inside
+// recreateNativeWindow from the app's GetTheme().
+// When the system toggles dark/light and the update window is currently visible, the
+// underlying window is destroyed and rebuilt so BackgroundColour
+// follows the new appearance (Wails' BackgroundColour is fixed at creation and cannot be
+// hot-updated — only rebuilt).
+// Hidden or destroyed windows skip — the next ShowUpdaterWindow rebuilds with the latest
+// system appearance.
 func registerThemeHandler(app *application.App) {
 	app.Event.OnApplicationEvent(events.Common.ThemeChanged, func(*application.ApplicationEvent) {
 		h := getLiveUpdaterWindow(app)
@@ -324,7 +378,7 @@ func registerThemeHandler(app *application.App) {
 		}
 		recreateNativeWindow(app, h, true)
 		h.win.Show()
-		h.win.Show() // 双 Show：与 ShowUpdaterWindow 保持一致
+		h.win.Show() // double Show: consistent with ShowUpdaterWindow
 		h.win.Focus()
 	})
 }

@@ -12,20 +12,22 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// Translator 翻译引擎统一接口
+// Translator is the unified translation-engine interface.
 type Translator interface {
 	Name() string
 	Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error)
 }
 
-// autoSourceSupporter 可选接口：声明引擎是否支持「自动检测源语言」（from=auto）。
-// 未实现该接口的引擎默认视为支持（云端引擎通常支持）；系统翻译（Translation.framework）
-// 因 API 限制必须显式源语言，故显式返回 false。
+// autoSourceSupporter is an optional interface: engines declare whether they support
+// "auto-detect source language" (from=auto). Engines that don't implement it are treated as
+// supporting it by default (cloud engines usually do); system translation (Translation.framework)
+// requires an explicit source language due to API limits, so it returns false explicitly.
 type autoSourceSupporter interface {
 	SupportsAutoSource() bool
 }
 
-// SupportsAutoSource 判断引擎是否支持自动检测源语言；未实现可选接口则视为支持。
+// SupportsAutoSource reports whether the engine supports auto-detecting the source language;
+// engines that don't implement the optional interface are treated as supporting it.
 func SupportsAutoSource(t Translator) bool {
 	if s, ok := t.(autoSourceSupporter); ok {
 		return s.SupportsAutoSource()
@@ -33,9 +35,10 @@ func SupportsAutoSource(t Translator) bool {
 	return true
 }
 
-// ValidateRequired 依据引擎的字段 schema，校验启用/保存时 Required=true 的字段是否已填写。
-// 返回首个缺失的字段信息（LabelKey 供前端转译提示）；全部满足返回 nil。
-// 仅校验 Required 字段；有 default 值的非必填字段即使为空也不报错。
+// ValidateRequired checks, per the engine's field schema, that fields with Required=true are
+// filled in when enabling/saving. Returns the first missing field (LabelKey for the frontend
+// to translate the hint); nil when all are satisfied.
+// Only Required fields are validated; non-required fields with a default value pass even if empty.
 func ValidateRequired(cfg *EngineConfig) *EngineFieldSchema {
 	if cfg == nil {
 		return nil
@@ -53,7 +56,7 @@ func ValidateRequired(cfg *EngineConfig) *EngineFieldSchema {
 	return nil
 }
 
-// valueOfField 按 schema 的 Field 名从 EngineConfig 取对应字段值。
+// valueOfField reads the EngineConfig field matching the schema's Field name.
 func valueOfField(cfg *EngineConfig, field string) string {
 	switch field {
 	case "api_key":
@@ -69,78 +72,89 @@ func valueOfField(cfg *EngineConfig, field string) string {
 	}
 }
 
-// EngineConfig 单个引擎的凭证/配置（唯一来源，settings 包复用此类型，
-// 避免 engine 与 settings 互相 import 造成循环依赖）。
-// ID 为 config.db 主键：0 表示未持久化（前端新增），>0 表示已有行（前端更新/删除以此为依据）。
-// 引擎配置已迁移至 config.db 持久化，不再走 settings.json（故无 mapstructure 标签，仅保留 json 供前端 RPC）。
+// EngineConfig holds one engine's credentials/config (single source of truth; the settings
+// package reuses this type so engine and settings never import each other in a cycle).
+// ID is the config.db primary key: 0 means not yet persisted (newly added by the frontend),
+// >0 means an existing row (frontend updates/deletes key off it).
+// Engine config has moved to config.db persistence, no longer settings.json (hence no
+// mapstructure tags; json tags kept for frontend RPC).
 type EngineConfig struct {
-	ID       int64  `json:"id"`                 // 引擎配置自增主键 ID
-	Engine   string `json:"engine"`             // 引擎标识
-	Enabled  bool   `json:"enabled"`            // 是否已启用
-	APIKey   string `json:"api_key,omitempty"`  // API 令牌 ID（用作鉴权凭据）
-	Secret   string `json:"secret,omitempty"`   // API 令牌密钥（用作签名密钥）
-	Extra    string `json:"extra,omitempty"`    // 额外扩展配置（JSON 字符串）
-	Endpoint string `json:"endpoint,omitempty"` // 自定义接口地址（可选）
-	// HTTPClient 可选注入的全局 HTTP 客户端（带自定义 DNS/代理/日志）。
-	// 由 service 层注入；Gemini 等基于 google API 的引擎必须注入，否则 SDK 会触碰
-	// 被 useragent 包裹的全局 http.DefaultTransport 而 panic。nil 时引擎自建一个
-	// 独立 *http.Transport 的 client 作为兜底。
+	ID       int64  `json:"id"`                 // Auto-increment primary key of the engine config
+	Engine   string `json:"engine"`             // Engine identifier
+	Enabled  bool   `json:"enabled"`            // Whether enabled
+	APIKey   string `json:"api_key,omitempty"`  // API token ID (used as the auth credential)
+	Secret   string `json:"secret,omitempty"`   // API token secret (used as the signing key)
+	Extra    string `json:"extra,omitempty"`    // Extra extension config (JSON string)
+	Endpoint string `json:"endpoint,omitempty"` // Custom endpoint URL (optional)
+	// HTTPClient optionally injects the global HTTP client (with custom DNS/proxy/logging).
+	// Injected by the service layer; engines built on the Google API (Gemini etc.) must get it,
+	// otherwise the SDK touches the useragent-wrapped global http.DefaultTransport and panics.
+	// When nil, the engine falls back to building its own client with an independent
+	// *http.Transport.
 	HTTPClient *http.Client `json:"-"`
 }
 
-// 引擎层公共错误（唯一来源，settings/service 复用，避免 engine 反向 import settings 造成循环依赖）
+// Engine-layer shared errors (single source of truth; settings/service reuse these, avoiding
+// a cycle where engine imports settings)
 var (
 	ErrAPIKey   = fmt.Errorf(i18n.T("err.no_apikey"))
 	ErrNoEngine = fmt.Errorf(i18n.T("err.no_engine"))
 	ErrNoOCR    = fmt.Errorf(i18n.T("err.no_ocr"))
 )
 
-// defaultEngineNames 默认内置、开箱即用的引擎（其余需用户在设置页「添加」启用）。
-// system（系统翻译）/ google 均免 Key，开箱即用；macOS 上额外预置 vision（系统 OCR，
-// 零安装离线），保证 mac 开箱即有可用的 OCR 引擎。
-// deepl 因需要 API Key，不预置默认注入，避免生成「声明启用但缺凭证」的无效引擎；
-// openai / baidu / tencent / youdao / tesseract 同样不预置，供用户在设置页添加。
+// defaultEngineNames lists the engines built in and working out of the box (the rest must be
+// "added" by the user in the settings page). system (system translation) and google are
+// key-free out of the box; macOS additionally presets vision (system OCR, zero-install and
+// offline) so mac always has a working OCR engine from the start.
+// deepl needs an API Key, so it is not preset by default — that would create an invalid
+// "declared enabled but missing credentials" engine; openai / baidu / tencent / youdao /
+// tesseract are likewise not preset and can be added in the settings page.
 var defaultEngineNames = func() map[string]bool {
 	m := map[string]bool{
 		"apple":  true,
 		"google": true,
 	}
-	// 系统 OCR(vision) 仅 macOS 可用，仅在该平台作为默认引擎开箱即用。
+	// System OCR (vision) is macOS-only; it ships as a default engine only on that platform.
 	if runtime.GOOS == "darwin" {
 		m["vision"] = true
 	}
 	return m
 }()
 
-// DefaultEngineConfigs 返回默认引擎配置（唯一来源）。
-// 引擎清单来自 KnownEngines，不再手写；仅取 defaultEngineNames 中的内置引擎，
-// 且按 schema 的 Default 预填真实默认值（如 DeepL 免费版 URL，供用户后续自行添加），
-// 保证落盘默认配置即带真实值而非空。其余引擎（含 deepl）在设置页「可用服务」列表里
-// 默认关闭，供用户添加并填写 Key。
+// DefaultEngineConfigs returns the default engine configs (single source of truth).
+// The engine list comes from KnownEngines, no longer handwritten; only the built-in engines
+// in defaultEngineNames are taken, and fields with a schema Default are pre-filled with real
+// defaults (e.g. the DeepL free-tier URL, ready for the user to add later), so the persisted
+// default config carries real values instead of empty ones. The remaining engines (including
+// deepl) default to off in the settings page's "available services" list, for the user to add
+// and fill in keys.
 func DefaultEngineConfigs() []*EngineConfig {
 	metas := KnownEngines()
 	out := make([]*EngineConfig, 0, len(defaultEngineNames))
 	for _, m := range metas {
-		// 仅内置默认引擎；其余交给用户通过 UI 添加
+		// Only built-in default engines; the rest are left for the user to add via the UI
 		if !defaultEngineNames[m.Name] {
 			continue
 		}
-		// 当前平台不可用的引擎（如 Windows/Linux 上的 apple 系统翻译）不预置，
-		// 避免默认启用一个根本不能用的引擎。用户可在对应平台支持的引擎上手动添加。
+		// Engines unavailable on the current platform (e.g. apple system translation on
+		// Windows/Linux) are not preset — no point defaulting to an engine that can't work.
+		// Users can manually add engines supported on their platform.
 		if !EngineSupported(m.Name) {
 			continue
 		}
 		cfg := &EngineConfig{
 			Engine:  m.Name,
-			Enabled: true, // 默认内置的免 Key 引擎均启用
+			Enabled: true, // Built-in key-free engines are enabled by default
 		}
-		// vision（系统 OCR）的 OCR 专属参数存于 Extra(JSON)：默认开启语言校正 + 60s 超时。
-		// 注意：vision 走 macOS 系统 Vision 框架，语言自动识别，不需要 langs 字段
-		// （langs 仅 tesseract 使用，两者共用 Extra 结构仅为格式统一，vision 忽略 langs）。
+		// vision (system OCR) keeps its OCR-specific params in Extra(JSON): language correction
+		// on by default + 60s timeout.
+		// Note: vision uses the macOS system Vision framework with automatic language detection
+		// and needs no langs field (langs is tesseract-only; both share the Extra struct merely
+		// for format consistency — vision ignores langs).
 		if m.Name == "vision" {
 			cfg.Extra = `{"correct_text":true,"timeout_sec":60}`
 		}
-		// 预填带 Default 的真实值字段（endpoint / 语言码等）
+		// Pre-fill fields with a Default real value (endpoint / language codes etc.)
 		for _, f := range GetEngineSchema(m.Name).Fields {
 			if f.Default != "" {
 				switch f.Field {
@@ -160,40 +174,45 @@ func DefaultEngineConfigs() []*EngineConfig {
 	return out
 }
 
-// 各引擎默认端点（唯一来源）。构造函数回退逻辑与设置页 schema 的 Default 都引用这里，
-// 避免魔法字符串在 deepl.go / openai.go / schema 多处散落、彼此不一致。
+// Default endpoints per engine (single source of truth). Constructor fallback logic and the
+// settings-page schema Defaults both reference these, keeping the magic strings from
+// scattering across deepl.go / openai.go / schema and drifting apart.
 const (
-	// DeepLFreeEndpoint DeepL 免费版默认端点（Pro 版用户需在设置里改为 api.deepl.com）
+	// DeepLFreeEndpoint is the DeepL free-tier default endpoint (Pro users must switch to
+	// api.deepl.com in settings)
 	DeepLFreeEndpoint = "https://api-free.deepl.com/v2/translate"
-	// OpenAIDefaultBaseURL OpenAI 兼容接口默认 base URL（SDK 自动拼 /chat/completions）
+	// OpenAIDefaultBaseURL is the default base URL for the OpenAI-compatible API (the SDK
+	// appends /chat/completions)
 	OpenAIDefaultBaseURL = "https://api.openai.com/v1"
-	// DefaultEndpoint Google 默认公开端点
+	// DefaultEndpoint is Google's default public endpoint
 	DefaultEndpoint = "https://translate.googleapis.com/translate_a/single"
-	// BaiduDefaultEndpoint 百度翻译开放平台默认端点
+	// BaiduDefaultEndpoint is the Baidu Translate open-platform default endpoint
 	BaiduDefaultEndpoint = "https://fanyi-api.baidu.com/api/trans/vip/translate"
-	// TencentDefaultEndpoint 腾讯机器翻译默认端点
+	// TencentDefaultEndpoint is the Tencent Machine Translation default endpoint
 	TencentDefaultEndpoint = "https://tmt.tencentcloudapi.com"
-	// YoudaoDefaultEndpoint 有道智云默认端点
+	// YoudaoDefaultEndpoint is the Youdao Zhiyun default endpoint
 	YoudaoDefaultEndpoint = "https://openapi.youdao.com/api"
-	// AnthropicDefaultBaseURL Anthropic Claude API 默认 base URL（SDK 内部拼 /v1/messages）
+	// AnthropicDefaultBaseURL is the default base URL for the Anthropic Claude API (the SDK
+	// appends /v1/messages internally)
 	AnthropicDefaultBaseURL = "https://api.anthropic.com"
-	// GeminiDefaultEndpoint Gemini API 默认 endpoint（完整 scheme+host，SDK 内部拼 /v1beta/models/...）
+	// GeminiDefaultEndpoint is the Gemini API default endpoint (full scheme+host; the SDK
+	// appends /v1beta/models/... internally)
 	GeminiDefaultEndpoint = "https://generativelanguage.googleapis.com"
 )
 
-// OcrEngine OCR 引擎统一接口
+// OcrEngine is the unified OCR-engine interface.
 type OcrEngine interface {
 	Name() string
 	Recognize(ctx context.Context, req model.OcrRequest) (*model.OcrResult, error)
 }
 
-// Registry 引擎注册表
+// Registry is the engine registry.
 type Registry struct {
 	translators map[string]Translator
 	ocrs        map[string]OcrEngine
 }
 
-// NewRegistry 新建注册表
+// NewRegistry creates a new registry.
 func NewRegistry() *Registry {
 	return &Registry{
 		translators: make(map[string]Translator),
@@ -201,29 +220,29 @@ func NewRegistry() *Registry {
 	}
 }
 
-// RegisterTranslator 注册翻译引擎
+// RegisterTranslator registers a translation engine.
 func (r *Registry) RegisterTranslator(t Translator) {
 	r.translators[t.Name()] = t
 }
 
-// RegisterOcr 注册 OCR 引擎
+// RegisterOcr registers an OCR engine.
 func (r *Registry) RegisterOcr(o OcrEngine) {
 	r.ocrs[o.Name()] = o
 }
 
-// GetTranslator 获取翻译引擎
+// GetTranslator looks up a translation engine.
 func (r *Registry) GetTranslator(name string) (Translator, bool) {
 	t, ok := r.translators[name]
 	return t, ok
 }
 
-// GetOcr 获取 OCR 引擎
+// GetOcr looks up an OCR engine.
 func (r *Registry) GetOcr(name string) (OcrEngine, bool) {
 	o, ok := r.ocrs[name]
 	return o, ok
 }
 
-// TranslatorNames 已注册翻译引擎名列表
+// TranslatorNames lists registered translation-engine names.
 func (r *Registry) TranslatorNames() []string {
 	names := make([]string, 0, len(r.translators))
 	for n := range r.translators {
@@ -232,7 +251,7 @@ func (r *Registry) TranslatorNames() []string {
 	return names
 }
 
-// OcrNames 已注册 OCR 引擎名列表
+// OcrNames lists registered OCR-engine names.
 func (r *Registry) OcrNames() []string {
 	names := make([]string, 0, len(r.ocrs))
 	for n := range r.ocrs {
@@ -241,25 +260,26 @@ func (r *Registry) OcrNames() []string {
 	return names
 }
 
-// EngineKind 引擎种类：翻译 or OCR
+// EngineKind is the engine kind: translation or OCR.
 type EngineKind string
 
 const (
-	// KindTranslator 翻译引擎
+	// KindTranslator is a translation engine.
 	KindTranslator EngineKind = "translate"
-	// KindOCR OCR 引擎
+	// KindOCR is an OCR engine.
 	KindOCR EngineKind = "ocr"
 )
 
-// EngineMeta 引擎元信息（供前端设置页分组展示）
+// EngineMeta is engine metadata (for grouped display in the frontend settings page).
 type EngineMeta struct {
-	Name      string     `json:"name"`      // 引擎展示名
-	Kind      EngineKind `json:"kind"`      // 引擎类型（translate | ocr）
-	Supported bool       `json:"supported"` // 当前平台是否支持（如 apple 仅 darwin）
+	Name      string     `json:"name"`      // Display name
+	Kind      EngineKind `json:"kind"`      // Engine kind (translate | ocr)
+	Supported bool       `json:"supported"` // Whether the current platform supports it (e.g. apple is darwin-only)
 }
 
-// EngineSupported 按当前运行平台判断引擎是否可用（导出供 service 层复用）。
-// apple（macOS 系统翻译）与 vision（macOS 系统 OCR）仅 darwin 支持；其余引擎跨平台可用。
+// EngineSupported reports whether the engine works on the current platform (exported for the
+// service layer to reuse). apple (macOS system translation) and vision (macOS system OCR) are
+// darwin-only; all other engines are cross-platform.
 func EngineSupported(name string) bool {
 	switch name {
 	case "apple", "vision":
@@ -268,12 +288,13 @@ func EngineSupported(name string) bool {
 	return true
 }
 
-// engineSupported 包内别名，保持函数内调用风格一致。
+// engineSupported is an in-package alias keeping call sites stylistically consistent.
 func engineSupported(name string) bool { return EngineSupported(name) }
 
-// KnownEngines 返回全部「已知」引擎（无论是否已注册/启用）的元信息。
-// 用于设置页列出所有可配置的服务，让用户去启用/填写凭证，而不只显示已启用的。
-// 顺序即设置页展示顺序。
+// KnownEngines returns metadata for all "known" engines (registered/enabled or not).
+// Used by the settings page to list every configurable service for the user to enable/fill in
+// credentials, rather than only showing enabled ones.
+// The order is the display order in the settings page.
 func KnownEngines() []EngineMeta {
 	names := []string{
 		"apple",
@@ -299,8 +320,9 @@ func KnownEngines() []EngineMeta {
 	return out
 }
 
-// KindOfEngine 返回引擎种类（tesseract / vision 为 OCR，其余为翻译）。导出供 service 层复用。
-// apple（macOS 系统翻译）归类为翻译。
+// KindOfEngine returns the engine kind (tesseract / vision are OCR, everything else is
+// translation). Exported for the service layer to reuse. apple (macOS system translation)
+// counts as translation.
 func KindOfEngine(name string) EngineKind {
 	switch name {
 	case "tesseract", "vision":
@@ -309,7 +331,8 @@ func KindOfEngine(name string) EngineKind {
 	return KindTranslator
 }
 
-// EngineMap 把引擎配置数组按 engine 名转成 map，供按名访问（如 EngineMap(cfg.Engines)["google"]）。
+// EngineMap converts an engine-config slice into a map keyed by engine name, for name-based
+// access (e.g. EngineMap(cfg.Engines)["google"]).
 func EngineMap(engines []*EngineConfig) map[string]*EngineConfig {
 	out := make(map[string]*EngineConfig, len(engines))
 	for _, e := range engines {
@@ -320,8 +343,9 @@ func EngineMap(engines []*EngineConfig) map[string]*EngineConfig {
 	return out
 }
 
-// AllEngines 返回全部已注册引擎（翻译 + OCR）的元信息，按 kind 归类。
-// 用于设置页「引擎」分组：左列服务名、右列配置，并区分翻译/OCR。
+// AllEngines returns metadata for all registered engines (translation + OCR), grouped by kind.
+// Used by the settings page's "engines" grouping: service names on the left, configs on the
+// right, with translate/OCR distinguished.
 func (r *Registry) AllEngines() []EngineMeta {
 	out := make([]EngineMeta, 0, len(r.translators)+len(r.ocrs))
 	for n := range r.translators {
@@ -333,8 +357,8 @@ func (r *Registry) AllEngines() []EngineMeta {
 	return out
 }
 
-// DefaultOCREngineName 返回第一个已注册的 OCR 引擎名，供无参 OCR 调用（快捷键/前端）使用。
-// 无可用 OCR 引擎时返回空串。
+// DefaultOCREngineName returns the first registered OCR-engine name, for OCR calls without an
+// explicit engine (hotkey/frontend). Returns an empty string when no OCR engine is available.
 func (r *Registry) DefaultOCREngineName() string {
 	for _, m := range r.AllEngines() {
 		if m.Kind == KindOCR {
@@ -344,84 +368,102 @@ func (r *Registry) DefaultOCREngineName() string {
 	return ""
 }
 
-// EngineFieldType 配置字段类型（前端据此渲染不同控件）
+// EngineFieldType is a config-field type (the frontend renders different controls per type).
 type EngineFieldType string
 
 const (
-	// FieldString 普通文本
+	// FieldString is plain text.
 	FieldString EngineFieldType = "string"
-	// FieldSecret 敏感（密码框）
+	// FieldSecret is sensitive (password box).
 	FieldSecret EngineFieldType = "secret"
 )
 
-// FieldWidget 控件形态覆盖。为空时按 Type 默认渲染（string→文本、secret→密码）；
-// 非空时按此值渲染结构化控件，供 OCR 等引擎复用，使「配置项全部声明于 engineSchemas」。
+// FieldWidget overrides the control shape. When empty, rendering follows Type by default
+// (string→text, secret→password); when set, a structured control is rendered instead, shared
+// by OCR and similar engines so "all config items are declared in engineSchemas".
 type FieldWidget string
 
 const (
-	// WidgetOCRLangs OCR 识别语言多选（候选项取 OcrLangsOptions()），值以 "+" 拼写入 Extra.langs
+	// WidgetOCRLangs is an OCR recognition-language multi-select (options from
+	// OcrLangsOptions()); the value is joined with "+" into Extra.langs
 	WidgetOCRLangs FieldWidget = "ocr_langs"
-	// WidgetOCRTimeout OCR 超时（秒），正整数，写入 Extra.timeout_sec
+	// WidgetOCRTimeout is the OCR timeout in seconds (positive integer), written to
+	// Extra.timeout_sec
 	WidgetOCRTimeout FieldWidget = "ocr_timeout"
-	// WidgetOCRCorrect OCR 语言校正开关，写入 Extra.correct_text（仅 vision 语义生效）
+	// WidgetOCRCorrect is the OCR language-correction toggle, written to Extra.correct_text
+	// (only meaningful for vision)
 	WidgetOCRCorrect FieldWidget = "ocr_correct"
-	// WidgetOCRRetry Vision OCR 失败兜底重试次数，正整数，写入 Extra.retry_count（仅 vision 语义生效）
+	// WidgetOCRRetry is the Vision OCR failure-retry count (positive integer), written to
+	// Extra.retry_count (only meaningful for vision)
 	WidgetOCRRetry FieldWidget = "ocr_retry"
-	// WidgetOCRStatus tesseract 安装状态探测卡（含可编辑自定义二进制路径 endpoint），仅 tesseract
+	// WidgetOCRStatus is the tesseract install-status probe card (with an editable custom
+	// binary-path endpoint), tesseract only
 	WidgetOCRStatus FieldWidget = "ocr_status"
-	// WidgetLLMModel LLM 翻译引擎的模型名，独立文本输入，值合并写入 Extra.model
+	// WidgetLLMModel is the LLM translation engine's model name, a standalone text input whose
+	// value is merged into Extra.model
 	WidgetLLMModel FieldWidget = "llm_model"
-	// WidgetLLMTimeout LLM 翻译引擎的单次请求超时（秒），数字输入，值合并写入 Extra.timeout_sec
+	// WidgetLLMTimeout is the LLM translation engine's per-request timeout in seconds, a number
+	// input whose value is merged into Extra.timeout_sec
 	WidgetLLMTimeout FieldWidget = "llm_timeout"
 )
 
-// EngineFieldSchema 描述某个引擎所需的单个配置字段。
-// Field 对应 EngineConfig 的真实字段名（api_key / secret / endpoint / extra），
-// 这样前端渲染时直接读写对应字段，而不是对所有引擎套用同一套万能表单。
+// EngineFieldSchema describes a single config field an engine needs.
+// Field maps to EngineConfig's real field name (api_key / secret / endpoint / extra), so the
+// frontend reads/writes the corresponding field directly instead of forcing every engine
+// through the same one-size-fits-all form.
 type EngineFieldSchema struct {
-	Field          string          `json:"field"`           // 目标字段：api_key / secret / endpoint / extra
-	LabelKey       string          `json:"label_key"`       // i18n key（前端取 settings.engine_field.<name>）
-	PlaceholderKey string          `json:"placeholder_key"` // i18n key（前端取 settings.engine_ph.<name>，可为空）
+	Field          string          `json:"field"`           // Target field: api_key / secret / endpoint / extra
+	LabelKey       string          `json:"label_key"`       // i18n key (frontend reads settings.engine_field.<name>)
+	PlaceholderKey string          `json:"placeholder_key"` // i18n key (frontend reads settings.engine_ph.<name>; may be empty)
 	Type           EngineFieldType `json:"type"`            // string / secret
-	Widget         FieldWidget     `json:"widget"`          // 结构化控件覆盖（ocr_*），空则按 Type 渲染
-	Required       bool            `json:"required"`        // 启用该引擎时是否必填
-	Default        string          `json:"default"`         // 可选 URL/地址等字段的真实默认值，前端在字段为空时预填展示
-	Options        []string        `json:"options"`         // 可选枚举值（如 tesseract 语言码 chi_sim/eng）。非空时前端渲染为多选，值以 "+" 拼接写入对应字段
-	HintKey        string          `json:"hint_key"`        // 可选：字段下方的说明文案 i18n key
+	Widget         FieldWidget     `json:"widget"`          // Structured-control override (ocr_*); empty renders per Type
+	Required       bool            `json:"required"`        // Whether required when enabling the engine
+	Default        string          `json:"default"`         // Real default for optional URL/address fields; the frontend pre-fills the display when empty
+	Options        []string        `json:"options"`         // Optional enum values (e.g. tesseract codes chi_sim/eng). When set, the frontend renders a multi-select whose values are joined with "+" into the field
+	HintKey        string          `json:"hint_key"`        // Optional: i18n key for the hint text below the field
 }
 
-// EngineSchema 某个引擎的全部配置字段（顺序即渲染顺序）。
+// EngineSchema is an engine's full set of config fields (order = render order).
 type EngineSchema struct {
-	// Kind 引擎类型（translate 翻译 / ocr OCR），单一事实源；前端据此区分渲染，
-	// 取代此前依赖 AllEngineItem.kind 的散落判断。
+	// Kind is the engine kind (translate / ocr), single source of truth; the frontend
+	// distinguishes rendering by it, replacing the scattered AllEngineItem.kind checks.
 	Kind EngineKind `json:"kind"`
-	// Builtin 是否为系统内置引擎（如 apple 系统翻译 / vision 系统 OCR），
-	// 无需配置、不可移除。前端据此项统一渲染「系统内置」状态卡，取代逐引擎 hardcode 判断。
+	// Builtin marks a system built-in engine (e.g. apple system translation / vision system
+	// OCR): nothing to configure, cannot be removed. The frontend renders a uniform
+	// "system built-in" status card from this, replacing per-engine hardcoded checks.
 	Builtin bool `json:"builtin"`
-	// Fields 该引擎在前端配置表单中渲染的字段列表（顺序即渲染顺序）。
-	// 每一项对应一个输入框（endpoint / api_key / secret / 语言等），前端据此动态生成表单。
+	// Fields is the list of fields rendered in the frontend config form (order = render
+	// order). Each entry maps to one input (endpoint / api_key / secret / language etc.),
+	// from which the frontend generates the form dynamically.
 	Fields []EngineFieldSchema `json:"fields"`
 }
 
-// engineSchemas 中心化定义每个引擎「真实」需要的字段。前端按此动态渲染，
-// 从而避免对所有引擎套用同一套万能表单（之前那样会显示一堆用不上的乱配字段，
-// 例如 tesseract 也显示 API Key、openai 的 secret/extra 语义不清）。
+// engineSchemas centrally defines the fields each engine "really" needs. The frontend renders
+// dynamically from this, avoiding the old one-size-fits-all form that showed a pile of
+// irrelevant fields for every engine (e.g. tesseract showing an API Key, openai's
+// secret/extra having unclear semantics).
 //
-// 依据各引擎 NewXxx 构造函数的实际取值：
-//   - apple/google：公开端点免 Key（google 可在设置中自定义 endpoint，留空用默认）
-//   - deepl：endpoint 默认免费版端点（可改为 Pro 版）；api_key 必填（免费版也需注册获取）
-//   - openai：api_key + endpoint(作为 Base URL，默认 https://api.openai.com/v1，自动拼 /chat/completions) + extra(作为 model)
-//   - baidu/tencent/youdao：appkey/appid = api_key，密钥 = secret
-//   - tesseract：endpoint(可选 tesseract 二进制路径)；语言码/超时等 OCR 专属参数统一存于 Extra(JSON)
+// Based on what each engine's NewXxx constructor actually reads:
+//   - apple/google: public endpoints, key-free (google's endpoint is customizable in settings;
+//     empty uses the default)
+//   - deepl: endpoint defaults to the free-tier endpoint (switchable to Pro); api_key is
+//     required (the free tier still requires registering for one)
+//   - openai: api_key + endpoint (as Base URL, default https://api.openai.com/v1, the SDK
+//     appends /chat/completions) + extra (as model)
+//   - baidu/tencent/youdao: appkey/appid = api_key, secret key = secret
+//   - tesseract: endpoint (optional tesseract binary path); OCR-specific params like language
+//     codes/timeout live uniformly in Extra(JSON)
 var engineSchemas = map[string]EngineSchema{
-	// apple 为 macOS 系统内置翻译引擎（Translation.framework），无需配置、不可移除。
+	// apple is the macOS built-in translation engine (Translation.framework): nothing to
+	// configure, cannot be removed.
 	"apple": {
 		Kind:    KindTranslator,
 		Builtin: true,
 		Fields:  nil,
 	},
-	// vision 为 macOS 系统内置 OCR 引擎（Vision.framework），无需配置、不可移除。
-	// 其 OCR 参数（语言校正 / 超时）统一声明于此，前端按 schema 顺序渲染，与 tesseract 同源。
+	// vision is the macOS built-in OCR engine (Vision.framework): nothing to configure,
+	// cannot be removed. Its OCR params (language correction / timeout) are declared here so
+	// the frontend renders them in schema order, shared with tesseract.
 	"vision": {
 		Kind:    KindOCR,
 		Builtin: true,
@@ -673,10 +715,11 @@ var engineSchemas = map[string]EngineSchema{
 	},
 	"tesseract": {
 		Kind: KindOCR,
-		// 配置项全部声明于此，顺序即前端渲染顺序（单一事实源）：
-		//   1) ocr_status  安装状态探测卡（含可编辑自定义二进制路径 endpoint）
-		//   2) ocr_langs   识别语言多选（写入 Extra.langs）
-		//   3) ocr_timeout OCR 超时（写入 Extra.timeout_sec）
+		// All config items are declared here; order = frontend render order (single source of
+		// truth):
+		//   1) ocr_status  install-status probe card (with an editable custom binary-path endpoint)
+		//   2) ocr_langs   recognition-language multi-select (written to Extra.langs)
+		//   3) ocr_timeout OCR timeout (written to Extra.timeout_sec)
 		Fields: []EngineFieldSchema{
 			{
 				Field:          "endpoint",
@@ -702,18 +745,21 @@ var engineSchemas = map[string]EngineSchema{
 	},
 }
 
-// ocrLangsOptions OCR 引擎（vision / tesseract）语言码候选项，
-// 供前端 OCR 专属 UI 渲染 langs 多选。与 schema 解耦，由代码唯一维护。
+// ocrLangsOptions lists language-code options for OCR engines (vision / tesseract), used by
+// the frontend's OCR-specific UI to render the langs multi-select. Decoupled from the schema
+// and maintained solely in code.
 var ocrLangsOptions = []string{"chi_sim", "chi_tra", "eng", "jpn", "kor", "fra", "deu", "spa", "rus", "por", "ita"}
 
-// OcrLangsOptions 返回 OCR 引擎语言码候选项（供前端渲染 langs 多选）。
+// OcrLangsOptions returns the OCR-engine language-code options (for the frontend's langs
+// multi-select).
 func OcrLangsOptions() []string {
 	out := make([]string, len(ocrLangsOptions))
 	copy(out, ocrLangsOptions)
 	return out
 }
 
-// GetEngineSchema 返回指定引擎的配置字段 schema；未定义时返回空 schema。
+// GetEngineSchema returns the config-field schema for the given engine; an empty schema when
+// undefined.
 func GetEngineSchema(name string) EngineSchema {
 	if s, ok := engineSchemas[name]; ok {
 		return s
@@ -721,35 +767,42 @@ func GetEngineSchema(name string) EngineSchema {
 	return EngineSchema{}
 }
 
-// ocrExtra OCR 引擎 Extra 的统一 JSON 解析结果。
-// 所有 OCR 引擎（vision / tesseract）共用同一 Extra(JSON) 结构，保证「统一改 JSON」。
-//   - langs:      语言码，如 "chi_sim+eng"（"+" 分隔）。
-//   - timeoutSec: OCR 超时秒数；<=0 回落默认 60。
-//   - correct:    是否开启语言校正；仅 vision 语义生效，tesseract 忽略。nil/true=开启。
-//   - retryCount: Vision OCR 失败兜底重试次数（仅 vision 语义生效，tesseract 忽略）。
-//     该值为「额外重试次数」，不含首次尝试；<=0（或字段缺省）回落默认 2。显式 0 表示关闭重试。
+// ocrExtra is the unified JSON parse result of an OCR engine's Extra.
+// All OCR engines (vision / tesseract) share the same Extra(JSON) structure so the JSON
+// changes in one place.
+//   - langs:      language codes, e.g. "chi_sim+eng" ("+"-separated).
+//   - timeoutSec: OCR timeout in seconds; <=0 falls back to the default 60.
+//   - correct:    whether language correction is on; only meaningful for vision, ignored by
+//     tesseract. nil/true = on.
+//   - retryCount: Vision OCR failure-fallback retry count (only meaningful for vision,
+//     ignored by tesseract). This is the "extra retries" count, excluding the first attempt;
+//     <=0 (or missing field) falls back to the default 2. Explicit 0 disables retries.
 type ocrExtra struct {
-	Langs      string `json:"langs"`        // 语言码（+ 分隔），缺省回落默认
-	TimeoutSec int    `json:"timeout_sec"`  // OCR 超时秒数，<=0 用默认 60
-	Correct    *bool  `json:"correct_text"` // 语言校正（nil/true=开启），仅 vision 生效
-	RetryCount *int   `json:"retry_count"`  // Vision OCR 失败兜底「额外重试」次数（不含首次）；nil=用默认 2，显式 0=关闭
+	Langs      string `json:"langs"`        // Language codes ("+"-separated); missing falls back to the default
+	TimeoutSec int    `json:"timeout_sec"`  // OCR timeout in seconds; <=0 uses the default 60
+	Correct    *bool  `json:"correct_text"` // Language correction (nil/true = on), vision only
+	RetryCount *int   `json:"retry_count"`  // Vision OCR failure-fallback "extra retries" (excluding the first); nil = default 2, explicit 0 = off
 }
 
-// DefaultOCRLangs 各 OCR 引擎的语言码默认（无 Extra 或 Extra 不含 langs 时回落）。
+// DefaultOCRLangs holds per-OCR-engine default language codes (fallback when Extra is absent
+// or lacks langs).
 var DefaultOCRLangs = map[string]string{
 	"vision":    "chi_sim+eng",
 	"tesseract": "chi_sim+eng",
 }
 
-// DefaultOCRTimeoutSec OCR 超时默认值（秒）。
+// DefaultOCRTimeoutSec is the default OCR timeout in seconds.
 const DefaultOCRTimeoutSec = 60
 
-// DefaultOCRRetryCount Vision OCR 失败兜底重试次数默认值。
+// DefaultOCRRetryCount is the default Vision OCR failure-fallback retry count.
 const DefaultOCRRetryCount = 2
 
-// parseOCRExtra 统一解析 OCR 引擎 Extra(JSON)。两引擎共用，保证 extra 格式一致。
-// 兼容旧数据：Extra 为纯字符串语言码（非 JSON）时，整串作为 langs 兜底，超时回落默认。
-// timeoutSec/correct 允许由请求 req 显式覆盖（在各自 Recognize 内处理）。
+// parseOCRExtra parses an OCR engine's Extra(JSON) uniformly. Shared by both engines to keep
+// the extra format consistent.
+// Backward compatible: when Extra is a plain string language code (not JSON), the whole
+// string becomes the langs fallback and the timeout falls back to the default.
+// timeoutSec/correct may be explicitly overridden by the request req (handled in each
+// Recognize).
 func parseOCRExtra(engineName, extra string) ocrExtra {
 	out := ocrExtra{
 		Langs:      DefaultOCRLangs[engineName],
@@ -758,7 +811,7 @@ func parseOCRExtra(engineName, extra string) ocrExtra {
 	if extra == "" {
 		return out
 	}
-	// 优先按 JSON 解析（统一方案）。
+	// Prefer JSON parsing (the unified scheme).
 	var je ocrExtra
 	if err := json.Unmarshal([]byte(extra), &je); err == nil {
 		if je.Langs != "" {
@@ -775,18 +828,21 @@ func parseOCRExtra(engineName, extra string) ocrExtra {
 		}
 		return out
 	}
-	// 兼容旧纯字符串语言码（如 "chi_sim+eng"）。
+	// Backward compat: old plain-string language codes (e.g. "chi_sim+eng").
 	out.Langs = extra
 	return out
 }
 
-// DefaultLLMTimeoutSec LLM 翻译引擎请求超时默认值（秒）。
+// DefaultLLMTimeoutSec is the default LLM translation-engine request timeout in seconds.
 const DefaultLLMTimeoutSec = 30
 
-// cloneHTTPClientWithTimeout 基于 base 克隆一个独立 *http.Client 并设置单次请求超时。
-// 共享的全局 client（network.BuildHTTPClient 返回）不可直接改 Timeout（会相互影响），
-// 故克隆独立实例，使「引擎级超时」同时作用到 HTTP 层（Transport 复用，避免重复建连）。
-// timeoutSec<=0 时回落 DefaultLLMTimeoutSec；base 为 nil 时自建基础 client 兜底。
+// cloneHTTPClientWithTimeout clones an independent *http.Client from base and sets a
+// per-request timeout. The shared global client (from network.BuildHTTPClient) must not have
+// its Timeout mutated directly (it would affect everyone), so an independent instance is
+// cloned, making the "engine-level timeout" reach the HTTP layer too (the Transport is
+// reused, avoiding repeated connection setup).
+// timeoutSec<=0 falls back to DefaultLLMTimeoutSec; a nil base builds a basic client as a
+// fallback.
 func cloneHTTPClientWithTimeout(base *http.Client, timeoutSec int) *http.Client {
 	d := time.Duration(timeoutSec) * time.Second
 	if d <= 0 {
@@ -804,21 +860,23 @@ func cloneHTTPClientWithTimeout(base *http.Client, timeoutSec int) *http.Client 
 	}
 }
 
-// llmExtra LLM 翻译引擎（openai / anthropic / gemini）Extra 的统一 JSON 解析结果。
-// 所有 LLM 引擎共用同一 Extra(JSON) 结构，保证「统一改 JSON」。
+// llmExtra is the unified JSON parse result of LLM translation engines' (openai / anthropic /
+// gemini) Extra. All LLM engines share the same Extra(JSON) structure so the JSON changes in
+// one place.
 type llmExtra struct {
-	Model      string `json:"model"`       // 模型名（如 gpt-4o-mini、claude-3-5-sonnet-20241022、gemini-2.0-flash）
-	TimeoutSec int    `json:"timeout_sec"` // 单次请求超时（秒），<=0 回落 DefaultLLMTimeoutSec
+	Model      string `json:"model"`       // Model name (e.g. gpt-4o-mini, claude-3-5-sonnet-20241022, gemini-2.0-flash)
+	TimeoutSec int    `json:"timeout_sec"` // Per-request timeout in seconds; <=0 falls back to DefaultLLMTimeoutSec
 }
 
-// parseLLMExtra 统一解析 LLM 引擎 Extra(JSON)。
-// 兼容旧数据：Extra 为纯模型名字符串（非 JSON）时，整串作为 model 兜底，超时回落默认。
+// parseLLMExtra parses an LLM engine's Extra(JSON) uniformly.
+// Backward compatible: when Extra is a plain model-name string (not JSON), the whole string
+// becomes the model fallback and the timeout falls back to the default.
 func parseLLMExtra(extra string) llmExtra {
 	out := llmExtra{TimeoutSec: DefaultLLMTimeoutSec}
 	if extra == "" {
 		return out
 	}
-	// 优先按 JSON 解析（统一方案）。
+	// Prefer JSON parsing (the unified scheme).
 	var je llmExtra
 	if err := json.Unmarshal([]byte(extra), &je); err == nil {
 		if je.Model != "" {
@@ -829,7 +887,7 @@ func parseLLMExtra(extra string) llmExtra {
 		}
 		return out
 	}
-	// 兼容旧纯字符串模型名（如 "gpt-4o-mini"）。
+	// Backward compat: old plain-string model names (e.g. "gpt-4o-mini").
 	out.Model = extra
 	return out
 }

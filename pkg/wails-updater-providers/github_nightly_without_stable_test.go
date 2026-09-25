@@ -10,16 +10,19 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// TestGitHubNightlyWithoutStableNeedsUpdate GitHub 源「需要更新」场景（走公开入口）：
-// 已订阅 nightly 渠道（prerelease=true）且线上只有 nightly、没有稳定版时，Check 返回
-// nightly 更新（nightly-x1b2c3）。
-// 注意：GitHub 的 /releases/latest 只返回稳定版（不含预发布），nightly 由 checkNightly
-// 走 /releases 列表筛选 Prerelease==true 获取。
+// TestGitHubNightlyWithoutStableNeedsUpdate: the GitHub source's "update needed" scenario
+// (via the public entries):
+// with the nightly channel subscribed (prerelease=true) and only a nightly online (no stable),
+// Check returns
+// the nightly update (nightly-x1b2c3).
+// Note: GitHub's /releases/latest only returns stable versions (no pre-releases); the nightly
+// is obtained by checkNightly walking the /releases list filtering Prerelease==true.
 func TestGitHubNightlyWithoutStableNeedsUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
 
-	// 发布列表：只有预发布 nightly，无稳定版（订阅 nightly 时由 checkPrerelease 筛选预发布）。
+	// Release list: only a prerelease nightly, no stable (with nightly subscribed,
+	// checkPrerelease filters pre-releases).
 	mux.HandleFunc("/repos/"+testRepo+"/releases", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode([]githubRelease{
 			{
@@ -57,7 +60,7 @@ func TestGitHubNightlyWithoutStableNeedsUpdate(t *testing.T) {
 		GithubRepo:    testRepo,
 		GithubToken:   "test-token",
 		BuildTime:     now.Add(-72 * time.Hour),
-		Prerelease:    true, // 订阅 nightly 渠道
+		Prerelease:    true, // subscribe to the nightly channel
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",
 		GitCommitFile: "GIT_COMMIT",
@@ -66,7 +69,8 @@ func TestGitHubNightlyWithoutStableNeedsUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
-	// 走 Check 编排（公开 Provider 接口）：已订阅 nightly 渠道、且线上无稳定版时，应返回 nightly 更新。
+	// Through the Check orchestration (the public Provider interface): with the nightly
+	// channel subscribed and no stable online, a nightly update should be returned.
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
 	t.Logf("[GitHub] current version (currentVersion=%q, buildTime=%s), needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
@@ -81,8 +85,10 @@ func TestGitHubNightlyWithoutStableNeedsUpdate(t *testing.T) {
 	}
 }
 
-// TestGitHubNightlyWithoutStableNoUpdate GitHub 源「不需要更新」场景（走公开入口）：
-// 已订阅 nightly 渠道，但本地 buildTime 晚于 nightly 发布时间（已是最新），Check 应返回 error。
+// TestGitHubNightlyWithoutStableNoUpdate: the GitHub source's "no update" scenario (via the
+// public entries):
+// the nightly channel is subscribed, but the local buildTime is later than the nightly's
+// publish time (already latest); Check should return an error.
 func TestGitHubNightlyWithoutStableNoUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
@@ -118,7 +124,7 @@ func TestGitHubNightlyWithoutStableNoUpdate(t *testing.T) {
 	mp, err := NewMirrorProvider(&Options{
 		GithubRepo:    testRepo,
 		GithubToken:   "test-token",
-		BuildTime:     now.Add(1 * time.Hour), // 比 nightly 新，已是最新
+		BuildTime:     now.Add(1 * time.Hour), // newer than the nightly; already latest
 		Prerelease:    true,
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",

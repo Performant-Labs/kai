@@ -11,10 +11,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// 通用占位仓库，不写死任何真实业务信息。
+// Generic placeholder repo; no real business info hardcoded.
 const testRepo = "example-org/example-repo"
 
-// redirectClient 把对 api.cnb.cool / github.com 的请求重定向到 mock server。
+// redirectClient redirects requests to api.cnb.cool / github.com to the mock server.
 func redirectClient(srv *httptest.Server) *http.Client {
 	host := strings.TrimPrefix(srv.URL, "http://")
 	return &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -23,8 +23,9 @@ func redirectClient(srv *httptest.Server) *http.Client {
 		u.Host = host
 		r := req.Clone(req.Context())
 		r.URL = &u
-		// 测试专用：URL 由测试代码显式构造（重定向到 mock server），无 SSRF 风险。
-		//nolint:gosec // URL 由测试代码显式构造，非外部输入，无 SSRF 风险。
+		// Test-only: URLs are constructed explicitly by test code (redirected to the mock
+		// server); no SSRF risk.
+		//nolint:gosec // the URL is built explicitly by test code, not external input; no SSRF risk.
 		return http.DefaultClient.Do(r)
 	})}
 }
@@ -33,12 +34,12 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// discardLogger 返回一个静默 logger，避免测试刷屏。
+// discardLogger returns a silent logger so tests don’t flood output.
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// mustServe 启动 mock server 并在测试结束时关闭。
+// mustServe starts the mock server and closes it when the test ends.
 func mustServe(t *testing.T, h http.Handler) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(h)
@@ -46,7 +47,8 @@ func mustServe(t *testing.T, h http.Handler) *httptest.Server {
 	return srv
 }
 
-// safeVersion 安全读取候选版本的版本号，rel 为 nil 时返回 "<no candidate>"。
+// safeVersion safely reads the candidate’s version, returning "<no candidate>" when rel is
+// nil.
 func safeVersion(rel *updater.Release) string {
 	if rel == nil {
 		return "<no candidate>"

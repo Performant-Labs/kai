@@ -20,14 +20,17 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// version 应用版本（由构建注入）
+// version is the app version (injected at build time).
 var version = "dev"
 
-// AppService 应用核心门面（薄 Wrapper）：
-//   - 唯一实现 wails 生命周期三件套（ServiceStartup / ServiceShutdown / ServiceName），
-//     作为全局启动编排的唯一入口（引擎加载、快捷键注册、语言/辅助功能初始化）。
-//   - 持有各 domain 服务与 Wrapper 的引用，做依赖注入的中枢。
-//   - 仅暴露核心 RPC（版本、辅助功能、启动编排）；翻译/历史/配置/窗口等 RPC 由各 Wrapper 负责。
+// AppService is the app's core facade (thin Wrapper):
+//   - The only implementer of the wails lifecycle trio (ServiceStartup / ServiceShutdown /
+//     ServiceName), and the single entry point for the global startup orchestration (engine
+//     loading, hotkey registration, language/accessibility initialization).
+//   - Holds references to the domain services and Wrappers — the hub for dependency
+//     injection.
+//   - Only exposes core RPCs (version, accessibility, startup orchestration);
+//     translation/history/config/window RPCs belong to the individual Wrappers.
 type AppService struct {
 	app          *application.App
 	settingsSvc  *settings.Service
@@ -42,7 +45,8 @@ type AppService struct {
 	log          *slog.Logger
 }
 
-// NewAppService 构造应用核心门面。所有依赖显式注入，消除共享容器。
+// NewAppService constructs the app's core facade. All dependencies are injected explicitly,
+// eliminating the shared container.
 func NewAppService(
 	st *settings.Service,
 	tr *translate.Service,
@@ -72,98 +76,107 @@ func NewAppService(
 	}
 }
 
-// SetApp 在 app 就绪后注入（启动编排阶段）。
+// SetApp injects the app once it is ready (startup orchestration phase).
 func (s *AppService) SetApp(app *application.App) {
 	s.app = app
 }
 
-// SetUserAgent 由前端在窗口启动时调用，把 WebView 的 navigator.userAgent 传入后端，
-// 作为全局 HTTP 请求的默认 User-Agent（经 useragent 包注入到各引擎的 http.Client）。
+// SetUserAgent is called by the frontend at window startup, passing the WebView's
+// navigator.userAgent to the backend as the default User-Agent for global HTTP requests
+// (injected into each engine's http.Client via the useragent package).
 func (s *AppService) SetUserAgent(ua string) {
 	useragent.Set(ua)
 }
 
-// GetVersion 返回应用版本。
+// GetVersion returns the app version.
 func (s *AppService) GetVersion() string {
 	return version
 }
 
-// CheckAccessibility 检查 macOS 辅助功能是否已授权（跨平台：非 darwin 直接返回 true）。
+// CheckAccessibility checks whether macOS accessibility is authorized (cross-platform:
+// non-darwin returns true directly).
 func (s *AppService) CheckAccessibility() bool {
 	return s.isAccessibilityEnabled()
 }
 
-// OpenAccessibilitySettings 打开系统辅助功能设置面板（仅 darwin 生效）。
+// OpenAccessibilitySettings opens the system accessibility settings pane (darwin only).
 func (s *AppService) OpenAccessibilitySettings() {
 	s.openAccessibilitySettings()
 }
 
-// CheckScreenRecording 检查 macOS 屏幕录制是否已授权（截图翻译依赖，跨平台：非 darwin 直接返回 true）。
+// CheckScreenRecording checks whether macOS screen recording is authorized (needed by
+// screenshot translate; cross-platform: non-darwin returns true directly).
 func (s *AppService) CheckScreenRecording() bool {
 	return s.isScreenRecordingEnabled()
 }
 
-// OpenScreenRecordingSettings 弹系统「屏幕录制」授权框（仅 darwin 生效）。
+// OpenScreenRecordingSettings pops the system "Screen Recording" permission dialog (darwin
+// only).
 func (s *AppService) OpenScreenRecordingSettings() {
 	s.openScreenRecordingSettings()
 }
 
-// TODO: 输入监控相关（CheckInputMonitoring / OpenInputMonitoringSettings 导出方法）当前未使用，已注释。
-// // CheckInputMonitoring 检查 macOS 输入监控是否已授权（跨平台：非 darwin 直接返回 true）。
+// TODO: input-monitoring related (CheckInputMonitoring / OpenInputMonitoringSettings exported
+// methods) currently unused, commented out.
+// // CheckInputMonitoring checks whether macOS input monitoring is authorized (cross-platform:
+// non-darwin returns true directly).
 // func (s *AppService) CheckInputMonitoring() bool {
 // 	return s.isInputMonitoringEnabled()
 // }
 //
-// // OpenInputMonitoringSettings 打开系统输入监控设置面板（仅 darwin 生效）。
+// // OpenInputMonitoringSettings opens the system input-monitoring settings pane (darwin only).
 // func (s *AppService) OpenInputMonitoringSettings() {
 // 	s.openInputMonitoringSettings()
 // }
 
-// ServiceName 返回服务名（wails 生命周期三件套之一）。
+// ServiceName returns the service name (part of the wails lifecycle trio).
 func (s *AppService) ServiceName() string {
 	return "AppService"
 }
 
-// ServiceStartup 应用启动编排唯一入口（wails 生命周期三件套之一）。
-// app 已由 main.go 在 application.New 之后通过 SetApp 注入，此处不再从 ctx 取。
+// ServiceStartup is the single entry point for app startup orchestration (part of the wails
+// lifecycle trio). app has already been injected by main.go via SetApp after
+// application.New; it is no longer taken from ctx here.
 func (s *AppService) ServiceStartup(_ context.Context, _ application.ServiceOptions) error {
-	// 把 app 注入所有依赖 app 的 domain 与 Wrapper
+	// Inject app into every domain and Wrapper that depends on it
 	s.translateSvc.SetApp(s.app)
 	s.execKeyCtrl.SetApp(s.app)
 	s.configSvc.SetApp(s.app)
 	s.engineSvc.SetApp(s.app)
 	s.hotkeyMgr.SetApp(s.app)
 
-	// 从 config.db 加载引擎配置并注册到 registry
+	// Load engine config from config.db and register into the registry
 	if err := s.engineSvc.loadEngines(); err != nil {
 		s.log.Error(i18n.T("log.service_load_engine_config_failed"), slog.Any(i18n.T("log.field_error"), err))
 	}
 
-	// 注册全局快捷键（注册键逻辑集中在 HotkeyManager）
+	// Register global hotkeys (key registration logic lives in HotkeyManager)
 	s.hotkeyMgr.Register()
 
-	// 初始化语言
+	// Initialize language
 	i18n.SetLocale(s.settingsSvc.Get().Language)
 
-	// 启动即上报匿名使用统计（首启额外发 app_installed；设备级属性经 Identify 继承）。
-	// dev 构建 / 未配置 key / 用户关闭开关时，analytics 内部自动 no-op。
+	// Report anonymous usage stats right at startup (first launch additionally sends
+	// app_installed; device-level attributes are inherited via Identify).
+	// Dev builds / unconfigured key / user switch off → analytics internally no-ops.
 	if s.settingsSvc != nil && s.settingsSvc.Get() != nil {
 		analytics.AppStarted(
 			buildinfo.Version,
 			s.settingsSvc.Get().Language,
-			"release", // channel：当前统一为 release（prod）；后续如需区分分发渠道在此扩展
+			"release", // channel: uniformly release (prod) for now; extend here if distribution channels need distinguishing later
 			analytics.IsFirstLaunch(),
 		)
 	}
 
-	// 辅助功能授权提示（darwin 下若未授权，复制键/模拟按键不会生效）
+	// Accessibility permission hint (on darwin, without permission the copy key / simulated
+	// keystrokes won't work)
 	if !s.isAccessibilityEnabled() {
 		s.log.Warn(i18n.T("log.service_accessibility_unauthorized"))
 	}
 	return nil
 }
 
-// ServiceShutdown 应用关闭时清理（wails 生命周期三件套之一）。
+// ServiceShutdown cleans up on app shutdown (part of the wails lifecycle trio).
 func (s *AppService) ServiceShutdown() error {
 	if s.hotkeyMgr != nil {
 		s.hotkeyMgr.Unregister()
@@ -171,7 +184,8 @@ func (s *AppService) ServiceShutdown() error {
 	return nil
 }
 
-// emitHotkeysChanged 把当前生效的快捷键清单广播给前端实时展示。
+// emitHotkeysChanged broadcasts the currently active hotkey list to the frontend for live
+// display.
 func (s *AppService) emitHotkeysChanged(active []string) {
 	if s.app == nil {
 		return
@@ -179,17 +193,20 @@ func (s *AppService) emitHotkeysChanged(active []string) {
 	s.app.Event.Emit(events.EventHotkeysChanged, active)
 }
 
-// EmitHotkeysChanged 供外层（快捷键管理器）调用，广播当前生效快捷键清单。
+// EmitHotkeysChanged is for outer callers (the hotkey manager) to broadcast the currently
+// active hotkey list.
 func (s *AppService) EmitHotkeysChanged(active []string) {
 	s.emitHotkeysChanged(active)
 }
 
-// TranslateMulti 批量翻译（委托 translate.Service，供前端 AppService.TranslateMulti 调用）。
+// TranslateMulti batch-translates (delegates to translate.Service, exposed to the frontend as
+// AppService.TranslateMulti).
 func (s *AppService) TranslateMulti(req model.TranslateRequest) (*model.TranslateMultiResult, error) {
 	return s.translateSvc.TranslateMulti(req)
 }
 
-// ScreenshotOCR 截图 OCR（无参，使用默认 OCR 引擎，委托 translate.Service）。
+// ScreenshotOCR is screenshot OCR (no args, uses the default OCR engine, delegates to
+// translate.Service).
 func (s *AppService) ScreenshotOCR() (*model.OcrResult, error) {
 	return s.translateSvc.ScreenshotOCR(s.registry.DefaultOCREngineName())
 }

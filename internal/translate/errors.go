@@ -2,18 +2,20 @@ package translate
 
 import "strings"
 
-// 引擎错误类别（issue #42）：前端按类别映射可操作的本地化文案，
-// 原始错误细节随 TranslateResult.Error 附带，不参与分类。
+// Engine error categories (issue #42): the frontend maps each category to actionable
+// localized copy; the raw error detail travels with TranslateResult.Error and is not part of
+// the classification.
 const (
-	ErrorKindPair    = "pair"    // 语言对不可用（如 macOS 系统翻译未下载该语言对）
-	ErrorKindNetwork = "network" // 网络/端点不可达（超时、DNS、连接拒绝、TLS）
-	ErrorKindAuth    = "auth"    // 认证/授权失败（401/403、无效 API key）
-	ErrorKindEngine  = "engine"  // 其它引擎错误（兜底）
+	ErrorKindPair    = "pair"    // Language pair unavailable (e.g. macOS system translation hasn't downloaded that pair)
+	ErrorKindNetwork = "network" // Network/endpoint unreachable (timeout, DNS, connection refused, TLS)
+	ErrorKindAuth    = "auth"    // Authentication/authorization failure (401/403, invalid API key)
+	ErrorKindEngine  = "engine"  // Other engine errors (fallback)
 )
 
-// ClassifyEngineError 把引擎返回的错误文本归类为面向用户的类别。
-// 只做子串匹配——各类引擎的错误文案不统一，精确解析不现实；
-// 分类错误的代价是多显示一条笼统文案（engine 兜底），可接受。
+// ClassifyEngineError sorts engine-returned error text into a user-facing category.
+// Substring matching only — engine error copy is not standardized, so exact parsing is
+// impractical; the cost of a misclassification is one extra generic message (the engine
+// fallback), which is acceptable.
 func ClassifyEngineError(errText string) string {
 	lower := strings.ToLower(errText)
 	switch {

@@ -12,8 +12,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// TestCNBStableNeedsUpdate CNB 源稳定版「需要更新」场景（走公开入口 NewMirrorProvider + NewUpdaterAssetMatcher）：
-// 本地 1.0.0，线上有 1.2.0（非预发布、非草稿），Check 应返回稳定版更新并命中 updater 包、解析校验和。
+// TestCNBStableNeedsUpdate: the CNB source's stable "update needed" scenario (via the public
+// entries NewMirrorProvider + NewUpdaterAssetMatcher):
+// local 1.0.0, 1.2.0 online (not a prerelease, not a draft); Check should return the stable
+// update, hit the updater package, and parse the checksum.
 func TestCNBStableNeedsUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
@@ -77,8 +79,10 @@ func TestCNBStableNeedsUpdate(t *testing.T) {
 	}
 }
 
-// TestCNBStableNoUpdate CNB 源稳定版「不需要更新」场景（走公开入口 NewMirrorProvider + NewUpdaterAssetMatcher）：
-// 本地已是线上最新 1.2.0，Check 应返回 nil,nil（无可用更新）。
+// TestCNBStableNoUpdate: the CNB source's stable "no update" scenario (via the public entries
+// NewMirrorProvider + NewUpdaterAssetMatcher):
+// local is already the online-latest 1.2.0; Check should return nil,nil (no update
+// available).
 func TestCNBStableNoUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()

@@ -13,60 +13,74 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
-// Options 控制更新器行为，全部由调用方注入。
-// 注意：语言/Locale、主题/Theme、主源/Source、更新窗口名/尺寸/事件名
-// 已提升为「库全局配置」（见下方 var 块与 Set/Get 包函数），不再出现在本结构体；
-// 库内部直接读包级全局，调用方无需逐层传参，运行时切换调用 SetXxx 即可。
+// Options controls updater behavior; everything is injected by the caller.
+// Note: language/Locale, theme/Theme, primary source/Source, and the update window
+// name/size/event names have been promoted to "library-global config" (see the var block and
+// Set/Get package functions below) and no longer appear in this struct;
+// the library reads the package globals directly, so callers don't thread parameters through
+// every layer — at runtime just call SetXxx to switch.
 type Options struct {
-	// CnbRepo CNB 仓库路径（如 your-org/your-repo）。Source 为 SourceCNB/SourceAuto 且
-	// 选中 CNB 时不可为空，否则 NewMirrorProvider 返回错误。
+	// CnbRepo is the CNB repo path (e.g. your-org/your-repo). Required when Source is
+	// SourceCNB/SourceAuto and CNB is selected, otherwise NewMirrorProvider errors.
 	CnbRepo string
-	// GithubRepo GitHub 仓库路径（如 your-org/your-repo）。Source 为 SourceGithub/SourceAuto
-	// 且选中 GitHub 时不可为空，否则 NewMirrorProvider 返回错误。
+	// GithubRepo is the GitHub repo path (e.g. your-org/your-repo). Required when Source is
+	// SourceGithub/SourceAuto and GitHub is selected, otherwise NewMirrorProvider errors.
 	GithubRepo string
-	// GithubToken GitHub 访问令牌（private 仓库或提频所需）。
+	// GithubToken is the GitHub access token (needed for private repos or rate limits).
 	GithubToken string
-	// CnbToken CNB 访问令牌（private 仓库或提频所需）。
+	// CnbToken is the CNB access token (needed for private repos or rate limits).
 	CnbToken string
-	// BuildTime 本机构建时间，用于 nightly 版本时间比较（远端发布时间更新才升级）。
-	// 示例：time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
-	// 或 time.Parse(time.RFC3339, "2026-08-15T12:00:00Z")。
+	// BuildTime is this machine's build time, used for nightly version time comparison
+	// (upgrade only when the remote publish time is newer).
+	// Example: time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	// or time.Parse(time.RFC3339, "2026-08-15T12:00:00Z").
 	BuildTime time.Time
-	// GitCommit 本机构建 git commit，用于 nightly 版本相同 commit 跳过。
+	// GitCommit is this machine's build git commit, used to skip nightlies with the same
+	// commit.
 	GitCommit string
-	// Prerelease 是否允许预发布版本。
+	// Prerelease is whether pre-release versions are allowed.
 	Prerelease bool
-	// AssetMatcher 自定义资源匹配器（可选）。类型为官方 github.AssetMatcher：
-	// func(req updater.CheckRequest, assets []github.ReleaseAsset) int，返回
-	// 命中 asset 的下标，或 -1 表示无匹配。为 nil 时自动使用官方
-	// github.DefaultAssetMatcher（按平台/架构匹配、跳过签名与校验和附带文件）。
-	// 直接复用官方类型，调用方若曾使用官方 github provider 的 matcher 可零改动搬用。
-	// 库在 matcher.go 提供了 NewUpdaterAssetMatcher（仅匹配 updater- 前缀升级文件），
-	// 语言自动取自包全局 GetLocale()，如需启用可显式传入 AssetMatcher: kupdater.NewUpdaterAssetMatcher。
-	// 注意：NewUpdaterAssetMatcher 内部每次匹配都读包全局 GetLocale()，运行时调用
-	// SetLocale 即可动态切换 matcher 日志语言（如宿主语言切换时 main 调用 kupdater.SetLocale）。
+	// AssetMatcher is a custom asset matcher (optional). The type is the official
+	// github.AssetMatcher:
+	// func(req updater.CheckRequest, assets []github.ReleaseAsset) int, returning
+	// the index of the matched asset, or -1 for no match. When nil, the official
+	// github.DefaultAssetMatcher is used automatically (matches by platform/arch, skips
+	// signature and checksum sidecar files).
+	// The official type is reused directly, so a caller with a matcher from the official
+	// github provider can migrate with zero changes.
+	// The library provides NewUpdaterAssetMatcher in matcher.go (matches only the updater-
+	// prefixed upgrade assets);
+	// the language is taken automatically from the package global GetLocale(); to enable it,
+	// pass AssetMatcher: kupdater.NewUpdaterAssetMatcher explicitly.
+	// Note: NewUpdaterAssetMatcher reads the package global GetLocale() on every match, so
+	// calling SetLocale at runtime switches the matcher log language dynamically (e.g. main
+	// calls kupdater.SetLocale when the host language changes).
 	AssetMatcher github.AssetMatcher
-	// ChecksumFile 校验和文件名（用于下载后校验产物完整性）。默认 "SHA256SUMS"。
-	// 内容公式：每行 "<sha256十六进制哈希>  <资产文件名>"，例如：
+	// ChecksumFile is the checksum file name (verifies artifact integrity after download).
+	// Default "SHA256SUMS".
+	// Content format: one line per entry, "<sha256 hex hash>  <asset file name>", e.g.:
 	//   a1b2c3d4...  kai-darwin-amd64.tar.gz
 	//   9f8e7d6c...  kai-windows-amd64.zip
 	ChecksumFile string
-	// GitCommitFile 预发布（Pre-release）版本附带的 git commit 文件名。
-	// 从原来的 SHA256SUMS 中拆出，独立成文件，便于校验预发布版本对应的 commit。
-	// 为空时回退 "GIT_COMMIT"。
-	// 内容公式：单行纯 commit hash（40 位十六进制），例如：
+	// GitCommitFile is the git commit file name attached to pre-release versions.
+	// Split out of the original SHA256SUMS into its own file, making it easy to verify the
+	// commit a pre-release corresponds to.
+	// Falls back to "GIT_COMMIT" when empty.
+	// Content format: a single line with the bare commit hash (40 hex chars), e.g.:
 	//   9f3c1a2b7e4d5c6a8b9c0d1e2f3a4b5c6d7e8f90
 	GitCommitFile string
-	// BuildTimeFile 预发布（Pre-release）版本附带的 build time 文件名。
-	// 从原来的 SHA256SUMS 中拆出，独立成文件，便于校验预发布版本的构建时间。
-	// 为空时回退 "BUILD_TIME"。
-	// 内容公式：单行 RFC3339 时间（UTC），例如：
+	// BuildTimeFile is the build time file name attached to pre-release versions.
+	// Split out of the original SHA256SUMS into its own file, making it easy to verify a
+	// pre-release's build time.
+	// Falls back to "BUILD_TIME" when empty.
+	// Content format: a single RFC3339 time (UTC), e.g.:
 	//   2026-08-15T12:00:00Z
 	BuildTimeFile string
 }
 
-// AssetMatcherOrDefault 返回调用方自定义 AssetMatcher；为 nil 时回退官方
-// github.DefaultAssetMatcher（按平台/架构匹配、跳过签名与校验和附带文件）。
+// AssetMatcherOrDefault returns the caller's custom AssetMatcher; on nil it falls back to
+// the official github.DefaultAssetMatcher (matches by platform/arch, skips signature and
+// checksum sidecar files).
 func (o Options) AssetMatcherOrDefault() github.AssetMatcher {
 	if o.AssetMatcher != nil {
 		return o.AssetMatcher
@@ -74,7 +88,8 @@ func (o Options) AssetMatcherOrDefault() github.AssetMatcher {
 	return github.DefaultAssetMatcher
 }
 
-// ChecksumFileOrDefault 返回校验和文件名；为空时回退 "SHA256SUMS"。
+// ChecksumFileOrDefault returns the checksum file name; falls back to "SHA256SUMS" when
+// empty.
 func (o *Options) ChecksumFileOrDefault() string {
 	if o.ChecksumFile == "" {
 		return "SHA256SUMS"
@@ -82,7 +97,8 @@ func (o *Options) ChecksumFileOrDefault() string {
 	return o.ChecksumFile
 }
 
-// GitCommitFileOrDefault 返回调用方自定义 GitCommitFile；为空时回退 "GIT_COMMIT"。
+// GitCommitFileOrDefault returns the caller’s custom GitCommitFile; falls back to
+// "GIT_COMMIT" when empty.
 func (o Options) GitCommitFileOrDefault() string {
 	if o.GitCommitFile == "" {
 		return "GIT_COMMIT"
@@ -90,7 +106,8 @@ func (o Options) GitCommitFileOrDefault() string {
 	return o.GitCommitFile
 }
 
-// BuildTimeFileOrDefault 返回调用方自定义 BuildTimeFile；为空时回退 "BUILD_TIME"。
+// BuildTimeFileOrDefault returns the caller’s custom BuildTimeFile; falls back to
+// "BUILD_TIME" when empty.
 func (o Options) BuildTimeFileOrDefault() string {
 	if o.BuildTimeFile == "" {
 		return "BUILD_TIME"
@@ -98,54 +115,63 @@ func (o Options) BuildTimeFileOrDefault() string {
 	return o.BuildTimeFile
 }
 
-// ===================== 库全局配置（包级变量） =====================
-// 语言/Locale、主题/Theme、主源/Source、更新窗口名/尺寸/事件名均为「库全局」，
-// 对外通过导出的 Set/Get 包函数读写；库内部（matcher、provider、窗口）直接
-// 读取，无需调用方把这些信息塞进 Options 再逐层传参。运行时切换（跟随系统
-// 语言/外观、用户改源）调用 SetXxx 即可，无需重建 provider。
+// ===================== Library-global config (package vars) =====================
+// Language/Locale, theme/Theme, primary source/Source, and the update window
+// name/size/event names are all "library globals",
+// read/written externally via the exported Set/Get package functions; the library internals
+// (matcher, provider, window) read them
+// directly — callers never stuff these into Options and thread them through layers. Runtime
+// switches (following system language/appearance, the user changing source) just call SetXxx;
+// no provider rebuild needed.
 
 var (
-	globalLocale      Locale = LocaleZhCN             // 当前库全局语言，未设置时回退默认（zh-CN）
-	globalTheme       Theme  = ThemeDark              // 当前库全局主题，未设置时回退默认（dark）
-	globalSource      Source = SourceAuto             // 当前库全局主源偏好（auto 按语言选 CNB/GitHub）
-	globalWindowName         = "updater-window"       // 内置更新窗口名
-	globalWindowW            = 520                    // 内置更新窗口宽（像素，与 JS 侧 resizeToContent 的 WINDOW_WIDTH 一致，避免展开时在 348↔520 间跳变）
-	globalWindowH            = 660                    // 内置更新窗口固定高（像素；Wails 内联 shim 的 Events.Emit 丢弃 payload，无法回传高度数据，故固定高度 + CSS 填满背景）
-	globalResizeEvent        = "wails:updater:resize" // HTML ↔ 窗口 resize 通信事件名
-	globalLogger             = slog.Default()         // 当前库全局日志器，默认 slog.Default()
-	globalClient             = http.DefaultClient     // 当前库全局 HTTP 客户端，默认 http.DefaultClient
+	globalLocale      Locale = LocaleZhCN             // current library-global language; falls back to the default (zh-CN) when unset
+	globalTheme       Theme  = ThemeDark              // current library-global theme; falls back to the default (dark) when unset
+	globalSource      Source = SourceAuto             // current library-global primary source preference (auto picks CNB/GitHub by language)
+	globalWindowName         = "updater-window"       // built-in update window name
+	globalWindowW            = 520                    // built-in update window width (pixels; matches the JS side’s resizeToContent WINDOW_WIDTH so expansion doesn’t jump between 348 and 520)
+	globalWindowH            = 660                    // built-in update window fixed height (pixels; Wails’ inline shim drops Events.Emit payloads so height data can’t be returned — hence fixed height + CSS filling the background)
+	globalResizeEvent        = "wails:updater:resize" // HTML-to-window resize communication event name
+	globalLogger             = slog.Default()         // current library-global logger; defaults to slog.Default()
+	globalClient             = http.DefaultClient     // current library-global HTTP client; defaults to http.DefaultClient
 )
 
-// SetLocale 设置库全局语言；空值归一化为默认（en-US）。
-// 运行时语言切换（如跟随系统/用户设置）调用此函数即可，无需重建 provider。
+// SetLocale sets the library-global language; empty values normalize to the default
+// (en-US).
+// For runtime language switches (e.g. following the system/user settings), just call this —
+// no provider rebuild.
 func SetLocale(locale Locale) { globalLocale = normalizeLocale(string(locale)) }
 
-// GetLocale 返回当前库全局语言（未设置时回退默认 en-US）。
+// GetLocale returns the current library-global language (falls back to the default en-US
+// when unset).
 func GetLocale() Locale { return normalizeLocale(string(globalLocale)) }
 
-// SetTheme 设置库全局主题；空值归一化为默认（light）。
+// SetTheme sets the library-global theme; empty values normalize to the default (light).
 func SetTheme(theme Theme) { globalTheme = normalizeTheme(theme) }
 
-// GetTheme 返回当前库全局主题（未设置时回退默认 light）。
+// GetTheme returns the current library-global theme (falls back to the default light when
+// unset).
 func GetTheme() Theme { return normalizeTheme(globalTheme) }
 
-// SetSource 设置库全局主源偏好（auto/cnb/github）。
+// SetSource sets the library-global primary source preference (auto/cnb/github).
 func SetSource(v Source) { globalSource = normalizeSource(v) }
 
-// GetSource 返回当前库全局主源偏好。
+// GetSource returns the current library-global primary source preference.
 func GetSource() Source { return globalSource }
 
-// SetWindowName 设置内置更新窗口名（一般保持默认，特殊场景覆盖）。
+// SetWindowName sets the built-in update window name (usually left default; overridden in
+// special cases).
 func SetWindowName(name string) {
 	if name != "" {
 		globalWindowName = name
 	}
 }
 
-// GetWindowName 返回内置更新窗口名。
+// GetWindowName returns the built-in update window name.
 func GetWindowName() string { return globalWindowName }
 
-// SetWindowSize 设置内置更新窗口尺寸（宽/高，像素，<=0 忽略）。
+// SetWindowSize sets the built-in update window size (width/height in pixels; <=0
+// ignored).
 func SetWindowSize(w, h int) {
 	if w > 0 {
 		globalWindowW = w
@@ -155,20 +181,20 @@ func SetWindowSize(w, h int) {
 	}
 }
 
-// GetWindowSize 返回内置更新窗口尺寸（宽、高）。
+// GetWindowSize returns the built-in update window size (width, height).
 func GetWindowSize() (int, int) { return globalWindowW, globalWindowH }
 
-// SetResizeEvent 设置内置更新窗口与 HTML 间通信的 resize 事件名。
+// SetResizeEvent sets the resize event name for built-in update window/HTML communication.
 func SetResizeEvent(name string) {
 	if name != "" {
 		globalResizeEvent = name
 	}
 }
 
-// GetResizeEvent 返回内置更新窗口 resize 事件名。
+// GetResizeEvent returns the built-in update window’s resize event name.
 func GetResizeEvent() string { return globalResizeEvent }
 
-// SetLogger 设置库全局日志器；为 nil 时回退 slog.Default()。
+// SetLogger sets the library-global logger; falls back to slog.Default() on nil.
 func SetLogger(lg *slog.Logger) {
 	if lg != nil {
 		globalLogger = lg
@@ -177,10 +203,10 @@ func SetLogger(lg *slog.Logger) {
 	}
 }
 
-// GetLogger 返回当前库全局日志器（默认 slog.Default()）。
+// GetLogger returns the current library-global logger (defaults to slog.Default()).
 func GetLogger() *slog.Logger { return globalLogger }
 
-// SetClient 设置库全局 HTTP 客户端；为 nil 时回退 http.DefaultClient。
+// SetClient sets the library-global HTTP client; falls back to http.DefaultClient on nil.
 func SetClient(c *http.Client) {
 	if c != nil {
 		globalClient = c
@@ -189,38 +215,44 @@ func SetClient(c *http.Client) {
 	}
 }
 
-// GetClient 返回当前库全局 HTTP 客户端（默认 http.DefaultClient）。
+// GetClient returns the current library-global HTTP client (defaults to
+// http.DefaultClient).
 func GetClient() *http.Client { return globalClient }
 
-// MirrorProvider 合并 CNB/GitHub 双源，按全局主源偏好选择主源。
-// 语言/主题/主源均读包级全局（GetLocale/GetTheme/GetSource），不持有这些字段，
-// 因此运行时调用 SetXxx 即可让后续 Check/Download/Window 实时跟随。
+// MirrorProvider merges the CNB/GitHub dual sources, choosing the primary by the global
+// source preference.
+// Language/theme/source are all read from package globals (GetLocale/GetTheme/GetSource) —
+// none are held as fields —
+// so calling SetXxx at runtime makes subsequent Check/Download/Window follow live.
 type MirrorProvider struct {
-	opts    *Options // 调用方注入的配置指针
-	cnbRepo string   // CNB 仓库路径
-	ghRepo  string   // GitHub 仓库路径
+	opts    *Options // caller-injected config pointer
+	cnbRepo string   // CNB repo path
+	ghRepo  string   // GitHub repo path
 
-	cnbProvider    *cnbProvider    // CNB 子源（source=CNB/auto 选中 CNB 时生效）
-	githubProvider *githubProvider // GitHub 子源（source=Github/auto 选中 GitHub 时生效）
+	cnbProvider    *cnbProvider    // CNB sub-source (active when source=CNB/auto selects CNB)
+	githubProvider *githubProvider // GitHub sub-source (active when source=Github/auto selects GitHub)
 
-	buildTime time.Time // 本机构建时间，用于 nightly 时间比较
-	gitCommit string    // 本机 git commit，用于 nightly 同 commit 跳过
+	buildTime time.Time // this machine's build time, for nightly time comparison
+	gitCommit string    // this machine's git commit, for skipping same-commit nightlies
 
-	cnbToken      string              // CNB 访问令牌
-	githubToken   string              // GitHub 访问令牌
-	prerelease    bool                // 是否允许预发布（nightly）
-	assetMatcher  github.AssetMatcher // 资源匹配器（官方类型）
-	checksumFile  string              // 校验和文件名，用于下载后校验产物完整性，默认 SHA256SUMS
-	gitCommitFile string              // 预发布版本附带的 git commit 文件名，默认 GIT_COMMIT
-	buildTimeFile string              // 预发布版本附带的构建时间文件名，默认 BUILD_TIME
+	cnbToken      string              // CNB access token
+	githubToken   string              // GitHub access token
+	prerelease    bool                // whether pre-releases (nightlies) are allowed
+	assetMatcher  github.AssetMatcher // asset matcher (the official type)
+	checksumFile  string              // checksum file name, verifies artifact integrity after download; default SHA256SUMS
+	gitCommitFile string              // git commit file name attached to pre-releases; default GIT_COMMIT
+	buildTimeFile string              // build time file name attached to pre-releases; default BUILD_TIME
 }
 
-// NewMirrorProvider 根据 Options 构造双源更新器。
-// 仓库/令牌/构建信息/matcher 等从 opts 读取；日志器与 HTTP 客户端读包级全局
-// GetLogger/GetClient（调用方构造前以 SetLogger/SetClient 注入）。
+// NewMirrorProvider builds the dual-source updater from Options.
+// Repos/tokens/build info/matcher come from opts; the logger and HTTP client come from the
+// package globals GetLogger/GetClient (injected by the caller via SetLogger/SetClient before
+// construction).
 func NewMirrorProvider(opts *Options) (*MirrorProvider, error) {
-	// 构造期仅校验 source 合法性（不预先定死主源），实际主源在 Check/Download
-	// 时按包全局 GetSource/GetLocale 现算，从而跟随运行时 SetXxx 的修改。
+	// Construction only validates source legality (the primary is not pinned here); the
+	// actual primary is computed at Check/Download
+	// time from the package globals GetSource/GetLocale, so it follows runtime SetXxx
+	// changes.
 	if _, err := decideSource(GetLogger()); err != nil {
 		return nil, err
 	}
@@ -240,15 +272,17 @@ func NewMirrorProvider(opts *Options) (*MirrorProvider, error) {
 		gitCommit:     opts.GitCommit,
 	}
 
-	// source 仅用于构造期选择需要初始化的子源（auto 模式按当前语言选一个初始化，
-	// 另一子源在 Check 时若被选中会按需惰性初始化）。
+	// source is only used at construction to pick which sub-source to initialize (in auto
+	// mode, one is initialized by current language;
+	// the other is lazily initialized on demand during Check if it gets selected).
 	source, _ := decideSource(GetLogger())
 	switch source {
 	case SourceCNB:
 		if opts.CnbRepo == "" {
 			return nil, fmt.Errorf("%s", T("updater_init_repo_empty", map[string]any{"Source": string(SourceCNB)}))
 		}
-		// token 空值检查推迟到 Check 时再做，构造期不拦截（NewMirrorProvider 始终能建出可用 provider）。
+		// Empty-token checks are deferred to Check time — construction doesn't block (so
+		// NewMirrorProvider can always produce a usable provider).
 		m.cnbProvider = &cnbProvider{
 			client:        GetClient(),
 			lg:            GetLogger(),
@@ -283,17 +317,20 @@ func NewMirrorProvider(opts *Options) (*MirrorProvider, error) {
 	return m, nil
 }
 
-// Name 实现 updater.Provider 接口。
+// Name implements the updater.Provider interface.
 func (m *MirrorProvider) Name() string { return "mirror" }
 
-// decideSource 按当前包全局 GetSource/GetLocale 解析实际主源。
-// source=auto/空时按语言选择：中文走 CNB，其他走 GitHub。
+// decideSource resolves the actual primary source from the current package globals
+// GetSource/GetLocale.
+// With source=auto/empty, the choice is by language: Chinese goes to CNB, everything else to
+// GitHub.
 func decideSource(lg *slog.Logger) (Source, error) {
 	cfgSource := GetSource()
 	locale := GetLocale()
 	switch cfgSource {
 	case "", SourceAuto:
-		// 自动模式下按语言选择源：中文走 CNB，其他走 GitHub。
+		// In auto mode the source is picked by language: Chinese goes to CNB, everything
+		// else to GitHub.
 		if locale == LocaleZhCN {
 			lg.Debug(T("updater_source_auto_selected", "Source", string(SourceCNB)))
 			return SourceCNB, nil
@@ -309,9 +346,11 @@ func decideSource(lg *slog.Logger) (Source, error) {
 	}
 }
 
-// resolveSource 运行时按当前包全局 GetSource/GetLocale 解析实际主源，
-// 并惰性初始化对应子源（auto 模式可能切换语言后选中构造期未初始化的子源）。
-// 返回主源与对应子源；src 为 "" 表示解析失败。
+// resolveSource resolves the actual primary source at runtime from the current package
+// globals GetSource/GetLocale,
+// lazily initializing the corresponding sub-source (in auto mode, a language switch may
+// select the sub-source that wasn't initialized at construction).
+// Returns the primary source and its sub-source; src == "" means resolution failed.
 func (m *MirrorProvider) resolveSource() (Source, error) {
 	src, err := decideSource(GetLogger())
 	if err != nil {
@@ -357,8 +396,10 @@ func (m *MirrorProvider) resolveSource() (Source, error) {
 	}
 }
 
-// Check 实现 updater.Provider 接口，按主源分发到对应子源。
-// 主源每次现算（读取包级 GetLocale/GetSource），语言切换后无需重建即可跟随。
+// Check implements the updater.Provider interface, dispatching to the corresponding
+// sub-source by primary source.
+// The primary is computed fresh each time (reading package-level GetLocale/GetSource), so a
+// language switch is followed without rebuilds.
 func (m *MirrorProvider) Check(ctx context.Context, req updater.CheckRequest) (*updater.Release, error) {
 	src, err := m.resolveSource()
 	if err != nil {
@@ -374,8 +415,10 @@ func (m *MirrorProvider) Check(ctx context.Context, req updater.CheckRequest) (*
 	}
 }
 
-// Download 实现 updater.Provider 接口，按主源分发到对应子源。
-// 主源每次现算（读取包级 GetLocale/GetSource），语言切换后无需重建即可跟随。
+// Download implements the updater.Provider interface, dispatching to the corresponding
+// sub-source by primary source.
+// The primary is computed fresh each time (reading package-level GetLocale/GetSource), so a
+// language switch is followed without rebuilds.
 func (m *MirrorProvider) Download(ctx context.Context, rel *updater.Release, dst io.Writer, onProgress func(written, total int64)) error {
 	src, err := m.resolveSource()
 	if err != nil {
@@ -391,7 +434,7 @@ func (m *MirrorProvider) Download(ctx context.Context, rel *updater.Release, dst
 	}
 }
 
-// buildStableRelease 构造稳定版 release（源无关）。
+// buildStableRelease constructs the stable release (source-agnostic).
 func buildStableRelease(rel *updater.Release, tag, name, notes, htmlURL string, publishedAt time.Time, filename string, size int64) (*updater.Release, error) {
 	if tag == "" {
 		return nil, fmt.Errorf("%s", T("updater_err_release_tag_empty"))
@@ -413,8 +456,9 @@ func buildStableRelease(rel *updater.Release, tag, name, notes, htmlURL string, 
 	return rel, nil
 }
 
-// buildNightlyRelease 构造 nightly release（源无关）。
-// installedBuildTime / installedGitCommit 用于判断是否需要更新（比 buildStableRelease 多一层时间/commit 校验）。
+// buildNightlyRelease constructs the nightly release (source-agnostic).
+// installedBuildTime / installedGitCommit support the update-needed decision (one extra
+// time/commit verification layer over buildStableRelease).
 func buildNightlyRelease(installedBuildTime time.Time, installedGitCommit string, rel *updater.Release, tag, name, notes, htmlURL string, publishedAt time.Time, filename string, size int64, remoteCommit string) (*updater.Release, error) {
 	if tag == "" {
 		return nil, fmt.Errorf("%s", T("updater_err_nightly_tag_empty"))
@@ -422,9 +466,12 @@ func buildNightlyRelease(installedBuildTime time.Time, installedGitCommit string
 	if rel == nil {
 		rel = &updater.Release{}
 	}
-	// 注意：是否需要更新的判定（gitCommit 一致 / buildTime 不更新）不在本函数做，
-	// 而是由调用方 checkPrerelease 基于下载的 gitCommitFile / buildTimeFile 判定后返回 nil,nil（up-to-date）。
-	// 本函数只负责构造 Release，仅在缺少必要字段（tag/发布时间）时返回真正的错误。
+	// Note: the update-needed decision (same gitCommit / buildTime not newer) does not happen
+	// here;
+	// the caller's checkPrerelease decides from the downloaded gitCommitFile / buildTimeFile
+	// and returns nil,nil (up-to-date).
+	// This function only constructs the Release, returning a real error only for missing
+	// required fields (tag/publish time).
 	if publishedAt.IsZero() {
 		return nil, fmt.Errorf("%s", T("updater_err_nightly_missing_published_at"))
 	}
@@ -442,12 +489,14 @@ func buildNightlyRelease(installedBuildTime time.Time, installedGitCommit string
 	return rel, nil
 }
 
-// publishedAtGetter 排序泛型约束：只要类型能给出 PublishedAt 字符串即可参与排序。
+// publishedAtGetter is the sort generic constraint: any type that can produce a
+// PublishedAt string can take part in sorting.
 type publishedAtGetter interface {
 	GetPublishedAt() string
 }
 
-// sortReleasesByPublishedAt 按发布时间降序排序（最新在前），CNB 与 GitHub 共用。
+// sortReleasesByPublishedAt sorts by publish time descending (newest first); shared by CNB
+// and GitHub.
 func sortReleasesByPublishedAt[T publishedAtGetter](list []T) {
 	sort.Slice(list, func(i, j int) bool {
 		ti, ei := time.Parse(time.RFC3339, list[i].GetPublishedAt())

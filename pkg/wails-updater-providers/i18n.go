@@ -5,10 +5,12 @@ import (
 	"text/template"
 )
 
-// 内建多语言表：locale -> key -> 模板（模板支持 {{.X}} 占位符）。
-// 不依赖外部 JSON 或项目 i18n，第三方库自包含。
+// Built-in multilingual table: locale -> key -> template (templates support {{.X}}
+// placeholders).
+// No external JSON or project i18n dependency — this third-party library is
+// self-contained.
 var i18nMessages = map[Locale]map[string]string{
-	LocaleZhCN: { //nolint:gosec // 此处含 "token" 字样仅为 i18n 文案，非真实凭证
+	LocaleZhCN: { //nolint:gosec // the word "token" here is i18n copy, not a real credential
 		"updater_check_done":                       "检查更新完成",
 		"updater_check_nightly_channel":            "已订阅 nightly 渠道，预发布与稳定版一起参与比较",
 		"updater_prerelease_no_update":             "预发布与稳定版检查均出错，按官方契约返回错误",
@@ -155,7 +157,7 @@ var i18nMessages = map[Locale]map[string]string{
 		"window_install_update":                    "安装更新",
 		"window_try_again":                         "重试",
 	},
-	LocaleEnUS: { //nolint:gosec // 此处含 "token" 字样仅为 i18n 文案，非真实凭证
+	LocaleEnUS: { //nolint:gosec // the word "token" here is i18n copy, not a real credential
 		"updater_check_done":                       "update check done",
 		"updater_check_nightly_channel":            "subscribed to nightly channel, comparing prerelease and stable together",
 		"updater_prerelease_no_update":             "both prerelease and stable checks failed, returning error per provider contract",
@@ -304,7 +306,7 @@ var i18nMessages = map[Locale]map[string]string{
 	},
 }
 
-// localeAliases 归一化常见别名。
+// localeAliases normalizes common aliases.
 var localeAliases = map[string]string{
 	"zh":      "zh-CN",
 	"zh_cn":   "zh-CN",
@@ -315,12 +317,14 @@ var localeAliases = map[string]string{
 	"chinese": "zh-CN",
 }
 
-// T 返回当前库全局 locale 下 key 的渲染文本。data 支持两种写法：
+// T returns the rendered text for key under the current library-global locale. data accepts
+// two forms:
 //  1. 单个 map[string]any / 结构体作为模板上下文（如 T(key, map[string]any{"Plat": p})）；
-//  2. 平铺键值对（如 T(key, "Plat", p, "Arch", a)），自动组装为 map。
+//  2. flat key-value pairs (e.g. T(key, "Plat", p, "Arch", a)), auto-assembled into a map.
 //
-// locale 已全局化：T 内部直接读 GetLocale()，调用方无需再传。
-// 找不到 key / locale 时回退到 en-US，再回退到原始 key，保证调用方永远拿到非空串。
+// The locale is globalized: T reads GetLocale() internally, so callers pass nothing.
+// A missing key/locale falls back to en-US, then to the raw key — callers always get a
+// non-empty string.
 func T(key string, data ...any) string {
 	loc := GetLocale()
 	table, ok := i18nMessages[loc]
@@ -350,21 +354,26 @@ func T(key string, data ...any) string {
 	return buf.String()
 }
 
-// dataToContext 把 T 的 data 参数规整为模板上下文：
-//   - 单个 map[string]any / 结构体 → 原样作为上下文；
-//   - 偶数个且全部为 string 的平铺键值对 → 组装为 map[string]any；
-//   - 其他（如单个非 map 值，或单个 map 但类型不符）→ 原样透传（交由 text/template 决定）。
+// dataToContext normalizes T's data parameter into a template context:
+//   - a single map[string]any / struct -> used as the context as-is;
+//   - an even count of flat key-value pairs, all string keys -> assembled into
+//     map[string]any;
+//   - anything else (e.g. a single non-map value, or a map with unexpected types) -> passed
+//     through as-is (text/template decides).
 func dataToContext(data []any) any {
 	if len(data) == 1 {
 		if m, ok := data[0].(map[string]any); ok {
 			return m
 		}
-		// 单个结构体或标量也直接作为上下文
+		// A single struct or scalar is likewise used directly as the context
 		return data[0]
 	}
-	// 平铺键值对：键必须是 string，值可以是任意类型（int/string/error 等）。
-	// 不再要求所有值为 string——否则一旦混入 int（如 len(x)）就会退化成只取
-	// 首个元素，导致整个模板上下文错乱、占位符渲染失败回退到原始模板串。
+	// Flat key-value pairs: keys must be string; values may be any type (int/string/error
+	// etc.).
+	// Values are no longer required to all be string — otherwise one stray int (like len(x))
+	// would degrade the conversion to taking only the
+	// first element, scrambling the whole template context and making placeholder rendering
+	// fail back to the raw template string.
 	if len(data)%2 == 0 {
 		m := make(map[string]any, len(data)/2)
 		ok := true
@@ -380,6 +389,6 @@ func dataToContext(data []any) any {
 			return m
 		}
 	}
-	// 退化：取第一个元素当上下文（兼容旧调用方）
+	// Degenerate case: use the first element as the context (compat with older callers)
 	return data[0]
 }

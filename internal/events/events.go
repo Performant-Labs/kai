@@ -2,86 +2,111 @@ package events
 
 import "cnb.cool/dtapp/kai/internal/model"
 
-// 应用事件名称常量，防止拼写错误。
+// App event name constants, preventing typos.
 const (
-	// EventWindowShow 前端呼出窗口，payload: string（"settings" | "main"）
+	// EventWindowShow: the frontend summons a window, payload: string ("settings" | "main")
 	EventWindowShow = "kai:window:show"
 
-	// EventWindowClosing 窗口关闭（原生红 X / 自定义标题栏关闭）被触发时广播，
-	// 各窗口按需清理自身状态（如翻译窗口清空输入与结果）。payload: 窗口名（model.WindowTranslate 等），
-	// 各窗口只处理自身关闭，避免关闭别的窗口误清空。
-	// 与前端 frontend/src/utils/events.ts 的 EventWindowClosing 对齐，是单一真相源。
+	// EventWindowClosing is broadcast when a window close (native red X / custom title-bar
+	// close) is triggered; each window clears its own state as needed (e.g. the translate
+	// window clears input and results). payload: the window name (model.WindowTranslate
+	// etc.); each window only handles its own close, avoiding accidental clearing when a
+	// different window closes.
+	// Aligned with the frontend's EventWindowClosing in frontend/src/utils/events.ts — the
+	// single source of truth.
 	EventWindowClosing = "kai:window:closing"
 
-	// EventLocaleChanged 界面语言变更后广播，payload: LocaleChangedPayload
+	// EventLocaleChanged is broadcast after the UI language changes, payload:
+	// LocaleChangedPayload
 	EventLocaleChanged = "kai:locale:changed"
 
-	// EventThemeChanged 主题变更广播，payload: ThemeChangedPayload
+	// EventThemeChanged is broadcast on theme change, payload: ThemeChangedPayload
 	EventThemeChanged = "kai:theme:changed"
 
-	// EventHotkeysChanged 快捷键重注册完成后广播，payload: []string
+	// EventHotkeysChanged is broadcast after hotkeys re-register, payload: []string
 	EventHotkeysChanged = "kai:hotkeys:changed"
 
-	// EventInputFill 选区回填主窗口输入框，payload: string（选中文本）
+	// EventInputFill backfills the main window input with the selection, payload: string
+	// (the selected text)
 	EventInputFill = "kai:input:fill"
 
-	// EventTranslateResult 多引擎翻译逐个返回结果，payload: model.TranslateResult
+	// EventTranslateResult: multi-engine translations return results one by one, payload:
+	// model.TranslateResult
 	EventTranslateResult = "kai:translate:result"
 
-	// EventWindowScreenshot 快捷键触发截图翻译：后端落盘区域截图后呼出截图窗口准备接收结果。
+	// EventWindowScreenshot: a hotkey triggered screenshot translate; after the backend
+	// persists the region screenshot it summons the screenshot window to receive results.
 	EventWindowScreenshot = "kai:window:screenshot"
 
-	// EventScreenshotOCR 截图翻译流程完成：后端抓取区域→OCR→翻译后，把结果投递给截图窗口。
+	// EventScreenshotOCR: the screenshot translate flow progressed — after the backend
+	// captures the region→OCR→translates, it delivers results to the screenshot window.
 	// payload: ScreenshotResult{Image, Text, Translations, To}
 	EventScreenshotOCR = "kai:screenshot:ocr"
 
-	// EventScreenshotRecapture 前端「重新截图」按钮触发：后端隐藏窗口并重新走一次截图翻译流程。
+	// EventScreenshotRecapture: triggered by the frontend "recapture" button; the backend
+	// hides the window and reruns the screenshot translate flow.
 	EventScreenshotRecapture = "kai:screenshot:recapture"
 
-	// EventScreenshotRetranslate 前端改语言后触发：复用最近一次 OCR 原文，
-	// 跳过截图/OCR 直接用新语言重新翻译并增量推送结果。payload: ScreenshotRetranslatePayload
+	// EventScreenshotRetranslate: triggered after the frontend changes language; reuses the
+	// most recent OCR text, skipping screenshot/OCR, retranslating with the new language and
+	// pushing results incrementally. payload: ScreenshotRetranslatePayload
 	EventScreenshotRetranslate = "kai:screenshot:retranslate"
 
-	// EventEnginesChanged 引擎增删/启停/配置变更后广播，通知所有窗口（尤其翻译窗口）
-	// 重新拉取引擎列表。payload: EngineChangedPayload（变更引擎 ID + 启用态）。
-	// 与前端 frontend/src/utils/events.ts 的 EventEnginesChanged 对齐，是单一真相源。
+	// EventEnginesChanged is broadcast after engines are added/removed/enabled/disabled or
+	// their config changes, notifying all windows (especially the translate window) to
+	// re-fetch the engine list. payload: EngineChangedPayload (changed engine ID + enabled
+	// state).
+	// Aligned with the frontend's EventEnginesChanged in frontend/src/utils/events.ts — the
+	// single source of truth.
 	EventEnginesChanged = "kai:engines:changed"
 
-	// EventAutoClipboardChanged 输入翻译窗口「自动读取剪贴板翻译」开关状态变化后广播。
-	// payload: bool（开启=true / 关闭=false）。设置页据此实时禁用/恢复复制键两个开关。
-	// 与前端 frontend/src/utils/events.ts 的 EventAutoClipboardChanged 对齐，是单一真相源。
+	// EventAutoClipboardChanged is broadcast when the input-translate window's "auto-read
+	// clipboard and translate" switch changes.
+	// payload: bool (on=true / off=false). The settings page uses it to disable/restore the
+	// two copy-key switches live.
+	// Aligned with the frontend's EventAutoClipboardChanged in frontend/src/utils/events.ts —
+	// the single source of truth.
 	EventAutoClipboardChanged = "kai:auto-clipboard:changed"
 )
 
-// 截图/OCR 缓存的 session 标识：区分不同入口，避免互相覆盖。
+// Session identifiers for the screenshot/OCR cache: separating entry points so they never
+// clobber each other.
 const (
-	// ScreenshotSessionScreenshot 截图翻译窗口（含热键/菜单/重新截图按钮，全部投到 ScreenshotWindow）。
+	// ScreenshotSessionScreenshot is the screenshot translate window (hotkey/menu/recapture
+	// button all target ScreenshotWindow).
 	ScreenshotSessionScreenshot = "screenshot"
-	// ScreenshotSessionInput 输入翻译页内的截图 OCR（预留，与截图翻译窗口隔离）。
+	// ScreenshotSessionInput is screenshot OCR within the input translate page (reserved;
+	// isolated from the screenshot translate window).
 	ScreenshotSessionInput = "input"
 )
 
-// LocaleChangedPayload 界面语言变更事件参数。
-// 注意：这里是界面显示语言，与翻译语言（model.Language：auto/zh/en/...）完全是两套体系，不可混用。
-// Mode 为用户配置的界面语言模式（auto / zh-CN / en-US）；
-// Language 为实际生效的界面语言（zh-CN / en-US，auto 时由系统 locale 派生）。
+// LocaleChangedPayload carries the UI language change event.
+// Note: this is the UI display language — an entirely separate system from the translation
+// languages (model.Language: auto/zh/en/...); never mix them.
+// Mode is the user-configured UI language mode (auto / zh-CN / en-US);
+// Language is the actually active UI language (zh-CN / en-US; derived from the system locale
+// when auto).
 type LocaleChangedPayload struct {
-	Mode     string `json:"mode"`     // 界面语言模式：auto | zh-CN | en-US
-	Language string `json:"language"` // 实际生效界面语言：zh-CN | en-US
+	Mode     string `json:"mode"`     // UI language mode: auto | zh-CN | en-US
+	Language string `json:"language"` // Actually active UI language: zh-CN | en-US
 }
 
-// ThemeChangedPayload 主题变更事件参数。
-// Mode 为用户配置模式（取自 model 的 ThemeAuto/ThemeLight/ThemeDark：auto/light/dark）；
-// Theme 为系统真实外观（dark/light，由 Env.IsDarkMode() 派生）。
+// ThemeChangedPayload carries the theme change event.
+// Mode is the user-configured mode (from model's ThemeAuto/ThemeLight/ThemeDark:
+// auto/light/dark);
+// Theme is the real system appearance (dark/light, derived from Env.IsDarkMode()).
 type ThemeChangedPayload struct {
 	Mode  string `json:"mode"`  // settings: auto | light | dark
 	Theme string `json:"theme"` // settings: dark | light
 }
 
-// ScreenshotRetranslatePayload 截图翻译改语言重新翻译事件参数。
-// Session 标识缓存来源（ScreenshotSessionScreenshot / ScreenshotSessionInput），
-// 后端据此取用对应入口最近一次 OCR 原文，避免不同入口互相串。
-// From/To 为目标翻译语言组合（From 允许 Auto），后端复用最近一次 OCR 原文重新翻译。
+// ScreenshotRetranslatePayload carries the screenshot-retranslate-after-language-change
+// event.
+// Session identifies the cache origin (ScreenshotSessionScreenshot /
+// ScreenshotSessionInput); the backend uses it to fetch that entry point's most recent OCR
+// text, keeping different entry points from bleeding into each other.
+// From/To are the target translation language pair (From may be Auto); the backend reuses
+// the most recent OCR text to retranslate.
 type ScreenshotRetranslatePayload struct {
 	Session string         `json:"session"`
 	From    model.Language `json:"from"`

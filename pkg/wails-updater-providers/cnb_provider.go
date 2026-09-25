@@ -14,25 +14,26 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
-// cnbProvider 实现 CNB 源的 updater.Provider（prerelease + stable）。
+// cnbProvider implements the updater.Provider for the CNB source (prerelease + stable).
 type cnbProvider struct {
-	client        *http.Client        // HTTP 客户端（构造期从包全局 GetClient 注入）
-	lg            *slog.Logger        // 日志器（构造期从包全局 GetLogger 注入）
-	repo          string              // CNB 仓库路径
-	assetMatcher  github.AssetMatcher // 资源匹配器（官方类型）
-	checksumFile  string              // 校验和文件名，用于下载后校验产物完整性
-	gitCommitFile string              // 预发布 git commit 文件名
-	buildTimeFile string              // 预发布 build time 文件名
-	token         string              // CNB 访问令牌（Bearer）
-	buildTime     time.Time           // 本机构建时间
-	gitCommit     string              // 本机 git commit
-	prerelease    bool                // 是否订阅 nightly（预发布）渠道
+	client        *http.Client        // HTTP client (injected from the package-global GetClient at construction)
+	lg            *slog.Logger        // logger (injected from the package-global GetLogger at construction)
+	repo          string              // CNB repo path
+	assetMatcher  github.AssetMatcher // asset matcher (the official type)
+	checksumFile  string              // checksum file name, verifies artifact integrity after download
+	gitCommitFile string              // pre-release git commit file name
+	buildTimeFile string              // pre-release build time file name
+	token         string              // CNB access token (Bearer)
+	buildTime     time.Time           // this machine's build time
+	gitCommit     string              // this machine's git commit
+	prerelease    bool                // whether the nightly (pre-release) channel is subscribed
 }
 
-// t 以当前包全局 locale 渲染 i18n 文案的便捷方法。
+// t is a convenience method rendering i18n copy with the current package-global locale.
 func (c *cnbProvider) t(key string, data ...any) string { return T(key, data...) }
 
-// apiRequest 请求 CNB API 接口（列表/详情），带 Accept: application/json 与 Bearer 授权（token 非空时）。
+// apiRequest calls a CNB API endpoint (list/detail) with Accept: application/json and
+// Bearer auth (when token is non-empty).
 func (c *cnbProvider) apiRequest(ctx context.Context, url string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -45,8 +46,10 @@ func (c *cnbProvider) apiRequest(ctx context.Context, url string) (*http.Request
 	return req, nil
 }
 
-// fileRequest 下载 CNB 文件（/releases/download/...），带 Accept: application/octet-stream。
-// 不带 Authorization：CNB 文件端点靠 302 重定向后的时效签名地址授权，带 Bearer 反而返回 400。
+// fileRequest downloads a CNB file (/releases/download/...) with Accept:
+// application/octet-stream.
+// No Authorization header: the CNB file endpoint authorizes via the time-limited signed URL
+// after a 302 redirect; sending Bearer actually returns 400.
 func (c *cnbProvider) fileRequest(ctx context.Context, url string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -56,17 +59,21 @@ func (c *cnbProvider) fileRequest(ctx context.Context, url string) (*http.Reques
 	return req, nil
 }
 
-// Name 实现 updater.Provider 接口，返回 "cnb"。
+// Name implements the updater.Provider interface, returning "cnb".
 func (c *cnbProvider) Name() string { return string(SourceCNB) }
 
-// Check 实现 updater.Provider 接口。
-// 关闭预发布（prerelease=false）：只查稳定版（checkStable 排除预发布，按版本号比较）。
-// 开启预发布（prerelease=true）：取发布时间最新的一条作为候选，按它自身类型判定——
-// 是预发布（tag 含 "-"）则下载 gitCommit/buildTime 比较；是稳定版则按版本号 isNewer 比较。
-// 即"最新版本是什么类型，就用什么方式判定"，不再单独跑稳定版第二路、也不按发布时间择优。
+// Check implements the updater.Provider interface.
+// Prerelease off (prerelease=false): only the stable channel is checked (checkStable excludes
+// pre-releases, comparing version numbers).
+// Prerelease on (prerelease=true): the newest published entry becomes the candidate, judged by
+// its own type —
+// a pre-release (tag contains "-") compares downloaded gitCommit/buildTime; a stable version
+// compares version numbers via isNewer.
+// I.e. "whatever type the latest version is, that's how it's judged" — no separate stable
+// second pass, no picking by publish time.
 func (c *cnbProvider) Check(ctx context.Context, req updater.CheckRequest) (*updater.Release, error) {
 	c.lg.Debug(c.t("updater_start"))
-	// 关闭预发布：只查稳定版（checkStable 本就排除预发布，只看稳定版）。
+	// Prerelease off: only the stable channel (checkStable already excludes pre-releases).
 	if !c.prerelease {
 		rel, err := c.checkStable(ctx, req)
 		if err != nil {
@@ -76,22 +83,25 @@ func (c *cnbProvider) Check(ctx context.Context, req updater.CheckRequest) (*upd
 		return rel, nil
 	}
 
-	// 开启预发布：取最新一条（不分预发布/稳定），按它自身类型判定。
+	// Prerelease on: take the newest entry (pre-release or stable) and judge by its own
+	// type.
 	c.lg.Debug(c.t("updater_check_nightly_channel"))
 	return c.checkPrerelease(ctx, req)
 }
 
-// Download 实现 updater.Provider 接口，复用共用下载逻辑。
+// Download implements the updater.Provider interface, reusing the shared download logic.
 func (c *cnbProvider) Download(ctx context.Context, rel *updater.Release, dst io.Writer, onProgress func(written, total int64)) error {
 	return downloadRelease(ctx, c.lg, c.client, cnbDownloadURL, c.repo, rel, dst, onProgress, "", c.fileRequest)
 }
 
-// fetchChecksum 拉取并解析本源的校验和侧车，复用共用逻辑。
+// fetchChecksum fetches and parses this source’s checksum sidecar, reusing the shared
+// logic.
 func (c *cnbProvider) fetchChecksum(ctx context.Context, downloadURLTpl, repo string, rel *updater.Release, sidecar, directURL string) ([]byte, bool) {
 	return fetchReleaseChecksum(ctx, c.lg, c.client, downloadURLTpl, repo, rel, sidecar, directURL, c.fileRequest)
 }
 
-// checkNightly 检查 CNB 的 nightly（预发布）更新：取最新 tag 比对时间与 commit。
+// checkNightly checks CNB nightly (pre-release) updates: takes the newest tag and compares
+// time and commit.
 func (c *cnbProvider) checkPrerelease(ctx context.Context, req updater.CheckRequest) (*updater.Release, error) {
 	if c.token == "" {
 		c.lg.Debug(c.t("updater_nightly_no_token"))
@@ -127,14 +137,15 @@ func (c *cnbProvider) checkPrerelease(ctx context.Context, req updater.CheckRequ
 		c.lg.Warn(c.t("updater_warn_no_tags"))
 		return nil, fmt.Errorf("%s", c.t("updater_err_no_tags"))
 	}
-	// 开启预发布：取发布时间最新的一条（不分预发布/稳定），按它自身类型判定。
+	// Prerelease on: take the newest published entry (pre-release or stable) and judge by
+	// its own type.
 	sortReleasesByPublishedAt(tagList)
 	newest := tagList[0]
 	tag := strings.TrimPrefix(newest.Name, "v")
 	if tag == "" {
 		tag = newest.Name
 	}
-	// CNB 直接提供 prerelease 布尔字段，以它区分预发布。
+	// CNB provides a prerelease boolean directly; use it to distinguish pre-releases.
 	isPre := newest.Prerelease
 
 	releaseURL := strings.ReplaceAll(strings.ReplaceAll(cnbReleaseTagURL, "{repo}", c.repo), "{tag}", newest.TagName)
@@ -162,17 +173,20 @@ func (c *cnbProvider) checkPrerelease(ctx context.Context, req updater.CheckRequ
 		return nil, fmt.Errorf("%s", c.t("updater_err_nightly_no_published_at"))
 	}
 
-	// 取资源（先按 matcher 找到升级产物文件名，供后续下载/校验使用）。
+	// Get assets (first find the upgrade artifact file name via the matcher, for later
+	// download/verification).
 	assets := cnbReleaseAssetsToReleaseAssets(tagDetail.Assets)
 	idx := c.assetMatcher(req, assets)
 	if idx < 0 || idx >= len(assets) {
-		// 最新一条的升级产物不匹配本机平台/架构：该候选不适用，视为 up-to-date（而非 provider 失败）。
+		// The newest entry’s upgrade artifact doesn’t match this machine’s platform/arch:
+		// the candidate doesn’t apply — treat as up-to-date (not a provider failure).
 		c.lg.Debug(c.t("updater_nightly_no_asset", "Tag", tag, "Platform", req.Platform, "Arch", req.Arch))
 		return nil, nil
 	}
 	filename := tagDetail.Assets[idx].Name
 
-	// 稳定版（最新一条不是预发布）：直接比较版本号，不需要更新则 up-to-date。
+	// Stable (the newest entry is not a pre-release): compare version numbers directly;
+	// no update needed = up-to-date.
 	if !isPre {
 		if req.CurrentVersion != "" && !isNewer(tag, req.CurrentVersion) {
 			c.lg.Debug(c.t("updater_stable_not_newer", "Tag", tag))
@@ -193,7 +207,8 @@ func (c *cnbProvider) checkPrerelease(ctx context.Context, req updater.CheckRequ
 		return out, nil
 	}
 
-	// 预发布（最新一条是预发布）：下载 gitCommit / buildTime，按内容判定是否需要更新。
+	// Pre-release (the newest entry is one): download gitCommit / buildTime and decide from
+	// their content.
 	out := &updater.Release{}
 	out, err = buildNightlyRelease(c.buildTime, c.gitCommit, out, newest.TagName, tag, tagDetail.Body, cnbReleasePageURL(c.repo, tagDetail.TagName), publishedAt, filename, 0, "")
 	if err != nil {
@@ -201,19 +216,21 @@ func (c *cnbProvider) checkPrerelease(ctx context.Context, req updater.CheckRequ
 		return nil, fmt.Errorf("%s", c.t("updater_err_build_release", map[string]any{"Err": err.Error()}))
 	}
 
-	// Pre-release 额外下载 gitCommit / buildTime 两个文件，按内容判定是否需要更新。
+	// Pre-releases additionally download the gitCommit / buildTime files and decide from
+	// their content.
 	remoteCommit, okCommit := fetchGitCommitFile(ctx, c.lg, c.client, cnbDownloadURL, c.repo, out, c.gitCommitFile, "", c.fileRequest)
 	remoteBuildTime, okTime := fetchBuildTimeFile(ctx, c.lg, c.client, cnbDownloadURL, c.repo, out, c.buildTimeFile, "", c.fileRequest)
 	if !okCommit || !okTime {
 		c.lg.Warn(c.t("updater_err_prerelease_meta_missing"), "Tag", tag, "Commit", okCommit, "BuildTime", okTime)
 		return nil, fmt.Errorf("%s", c.t("updater_err_prerelease_meta_missing"))
 	}
-	// 优先比较 gitCommit：相同（兼容短 hash / 完整 hash 前缀匹配）代表不需要更新（nil,nil = up-to-date）。
+	// Compare gitCommit first: equal (short hash / full hash prefix matching) means no
+	// update (nil,nil = up-to-date).
 	if commitEqual(c.gitCommit, remoteCommit) {
 		c.lg.Debug(c.t("updater_err_nightly_same_commit", "Commit", remoteCommit))
 		return nil, nil
 	}
-	// gitCommit 不同：比较 buildTime，本机 < 远程才可更新。
+	// gitCommit differs: compare buildTime; updatable only when local < remote.
 	if c.buildTime.IsZero() {
 		c.lg.Debug(c.t("updater_nightly_no_local_build_time"))
 		return nil, fmt.Errorf("%s", c.t("updater_err_local_build_time_empty"))
@@ -234,7 +251,8 @@ func (c *cnbProvider) checkPrerelease(ctx context.Context, req updater.CheckRequ
 	return out, nil
 }
 
-// checkStable 检查 CNB 的稳定版更新：遍历 tag 找比当前更新的非预发布版本。
+// checkStable checks CNB stable updates: walks the tags for a newer non-prerelease
+// version.
 func (c *cnbProvider) checkStable(ctx context.Context, req updater.CheckRequest) (*updater.Release, error) {
 	if c.token == "" {
 		c.lg.Debug(c.t("updater_nightly_no_token"))
@@ -267,11 +285,11 @@ func (c *cnbProvider) checkStable(ctx context.Context, req updater.CheckRequest)
 	sortReleasesByPublishedAt(tagList)
 
 	for _, item := range tagList {
-		tag := strings.TrimPrefix(item.Name, "v") // 判断/显示沿用 HEAD 原逻辑（基于发布标题去 v）
+		tag := strings.TrimPrefix(item.Name, "v") // judgment/display keeps the HEAD-era logic (strip v from the release title)
 		if tag == "" {
 			tag = item.Name
 		}
-		// 跳过预发布与草稿，只保留稳定版
+		// Skip pre-releases and drafts, keeping stable versions only
 		if item.Prerelease || item.Draft {
 			continue
 		}
@@ -324,16 +342,20 @@ func (c *cnbProvider) checkStable(ctx context.Context, req updater.CheckRequest)
 		return out, nil
 	}
 	c.lg.Debug(c.t("updater_stable_no_asset", "Tag", "", "Platform", req.Platform, "Arch", req.Arch))
-	// 遍历完无更高稳定版 = 已是最新（nil,nil = up-to-date）。开启预发布时本函数作为另一路候选，
-	// 是否采用由 Check 层与 prerelease 候选一起仲裁决定。
+	// No newer stable after the walk = up to date (nil,nil = up-to-date). With prerelease on,
+	// this function is one candidate path;
+	// whether to use it is arbitrated by the Check layer together with the prerelease
+	// candidate.
 	c.lg.Debug(c.t("updater_err_no_stable_matched"))
 	return nil, nil
 }
 
-// cnbReleaseAssetsToReleaseAssets 把 CNB release 资源归一化为官方 github.ReleaseAsset，
-// 以便直接套用官方 AssetMatcher。CNB 的 Size 已为 int64，无需解析。
-// 注意：CNB 下载地址统一用模板拼接（基址 https://cnb.cool，见 cnbDownloadURL），
-// 不走响应里的 browser_download_url，故此处只映射 Name/Size。
+// cnbReleaseAssetsToReleaseAssets normalizes CNB release assets into the official
+// github.ReleaseAsset so the official AssetMatcher applies directly. CNB's Size is already
+// int64 — no parsing.
+// Note: CNB download URLs are uniformly built from templates (base https://cnb.cool, see
+// cnbDownloadURL),
+// not from the response's browser_download_url, so only Name/Size are mapped here.
 func cnbReleaseAssetsToReleaseAssets(atts []cnbReleaseAsset) []github.ReleaseAsset {
 	out := make([]github.ReleaseAsset, 0, len(atts))
 	for _, a := range atts {
@@ -345,8 +367,8 @@ func cnbReleaseAssetsToReleaseAssets(atts []cnbReleaseAsset) []github.ReleaseAss
 	return out
 }
 
-// cnbReleasePageURL 拼接 CNB release 的发布页地址（用于 Metadata 展示/跳转）。
-// 格式：https://cnb.cool/{repo}/-/releases/tags/{tag}
+// cnbReleasePageURL builds the CNB release page URL (for Metadata display/links).
+// Format: https://cnb.cool/{repo}/-/releases/tags/{tag}
 func cnbReleasePageURL(repo, tag string) string {
 	if repo == "" || tag == "" {
 		return ""

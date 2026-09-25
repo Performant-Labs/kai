@@ -11,14 +11,16 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// TestCNBNightlyWithoutStableNeedsUpdate CNB 源「需要更新」场景（走公开入口）：
-// 已订阅 nightly 渠道（prerelease=true）且线上只有 nightly、没有稳定版时，Check 返回
-// nightly 更新（nightly-x1b2c3）。
+// TestCNBNightlyWithoutStableNeedsUpdate: the CNB source's "update needed" scenario (via the
+// public entries):
+// with the nightly channel subscribed (prerelease=true) and only a nightly online (no stable),
+// Check returns
+// the nightly update (nightly-x1b2c3).
 func TestCNBNightlyWithoutStableNeedsUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
 
-	// releases 列表：只有 nightly（Prerelease=true），没有稳定版。
+	// releases list: only a nightly (Prerelease=true), no stable.
 	mux.HandleFunc("/"+testRepo+"/-/releases", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode([]cnbReleaseListItem{
 			{TagName: "nightly-x1b2c3", Name: "nightly", Body: "nightly", Prerelease: true, PublishedAt: now.Add(-1 * time.Hour).Format(time.RFC3339)},
@@ -57,7 +59,7 @@ func TestCNBNightlyWithoutStableNeedsUpdate(t *testing.T) {
 		CnbRepo:       testRepo,
 		CnbToken:      "test-token",
 		BuildTime:     now.Add(-72 * time.Hour),
-		Prerelease:    true, // 订阅 nightly 渠道
+		Prerelease:    true, // subscribe to the nightly channel
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",
 		GitCommitFile: "GIT_COMMIT",
@@ -66,7 +68,8 @@ func TestCNBNightlyWithoutStableNeedsUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
-	// 走 Check 编排（公开 Provider 接口）：已订阅 nightly 渠道、且线上无稳定版时，应返回 nightly 更新。
+	// Through the Check orchestration (the public Provider interface): with the nightly
+	// channel subscribed and no stable online, a nightly update should be returned.
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
 	t.Logf("[CNB] current version (currentVersion=%q, buildTime)=%s, needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
@@ -81,8 +84,10 @@ func TestCNBNightlyWithoutStableNeedsUpdate(t *testing.T) {
 	}
 }
 
-// TestCNBNightlyWithoutStableNoUpdate CNB 源「不需要更新」场景（走公开入口）：
-// 已订阅 nightly 渠道，但本地 buildTime 晚于 nightly 发布时间（已是最新），Check 应返回 nil,nil。
+// TestCNBNightlyWithoutStableNoUpdate: the CNB source's "no update" scenario (via the public
+// entries):
+// the nightly channel is subscribed, but the local buildTime is later than the nightly's
+// publish time (already latest); Check should return nil,nil.
 func TestCNBNightlyWithoutStableNoUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
@@ -119,7 +124,7 @@ func TestCNBNightlyWithoutStableNoUpdate(t *testing.T) {
 	mp, err := NewMirrorProvider(&Options{
 		CnbRepo:       testRepo,
 		CnbToken:      "test-token",
-		BuildTime:     now.Add(1 * time.Hour), // 比 nightly 新，已是最新
+		BuildTime:     now.Add(1 * time.Hour), // newer than the nightly; already latest
 		Prerelease:    true,
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",

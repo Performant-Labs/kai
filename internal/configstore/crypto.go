@@ -18,29 +18,36 @@ import (
 	"cnb.cool/dtapp/kai/internal/i18n"
 )
 
-// 敏感字段（api_key / secret）在落库前用 AES-GCM 加密，读取时解密。
-// 设计目标：即使 config.db 文件被单独复制/泄露，也无法还原明文凭据
-// （密钥派生自本机设备指纹，不在 db 内、也不进代码仓库）。
+// Sensitive fields (api_key / secret) are AES-GCM encrypted before persisting and decrypted
+// on read.
+// Design goal: even if the config.db file alone is copied/leaked, the plaintext credentials
+// cannot be recovered (the key is derived from the local device fingerprint; it is neither in
+// the db nor in the repo).
 //
-// 加密后的密文以 "kai:cipher:" 前缀标记，存入 TEXT 列；旧版明文数据无此前缀，
-// 解密时按前缀判别——既能兼容历史明文，又能避免把已加密数据二次加密。
+// Ciphertext is stored in TEXT columns marked with the "kai:cipher:" prefix; legacy
+// plaintext data has no prefix. Decryption branches on the prefix — both staying compatible
+// with historical plaintext and avoiding double-encrypting already-encrypted data.
 
 const cipherPrefix = "kai:cipher:"
 
-// 固定 salt：让 HKDF 派生稳定且与本应用绑定（非机密，可公开）。
+// Fixed salt: keeps the HKDF derivation stable and bound to this app (not a secret,
+// publicly fine).
 var hkdfSalt = []byte("kai-configstore-aes-key-salt-v1")
 
-// deriveKey 基于设备指纹派生 32 字节 AES-256 密钥（HKDF-SHA256，Extract+Expand）。
-// 优先用 macOS 的 IOPlatformUUID（稳定且唯一），其它平台回退到 hostname+machine-id。
-// 密钥不落库、不进代码仓库，仅在本机由设备指纹实时派生，因此即便 config.db 单独泄露也无法还原明文。
+// deriveKey derives a 32-byte AES-256 key from the device fingerprint (HKDF-SHA256,
+// Extract+Expand).
+// Prefers macOS's IOPlatformUUID (stable and unique); other platforms fall back to
+// hostname+machine-id.
+// The key is never persisted nor committed — it is derived live on this machine from the
+// device fingerprint, so a leaked config.db alone cannot yield the plaintext.
 func deriveKey() ([]byte, error) {
 	secret, err := deviceSecret()
 	if err != nil {
 		return nil, err
 	}
-	// HKDF-Extract：PRK = HMAC-Hash(salt, secret)
+	// HKDF-Extract: PRK = HMAC-Hash(salt, secret)
 	prk := hmacSHA256(hkdfSalt, secret)
-	// HKDF-Expand：OKM = T(1) || T(2) ...，info 固定，输出 32 字节
+	// HKDF-Expand: OKM = T(1) || T(2) ..., fixed info, 32-byte output
 	const info = "kai-config-key"
 	t := make([]byte, 0, 32)
 	block := make([]byte, 32)
@@ -56,19 +63,20 @@ func deriveKey() ([]byte, error) {
 	return key, nil
 }
 
-// hmacSHA256 返回 HMAC-SHA256(secret, msg)。
+// hmacSHA256 returns HMAC-SHA256(secret, msg).
 func hmacSHA256(secret, msg []byte) []byte {
 	h := hmac.New(sha256.New, secret)
 	h.Write(msg)
 	return h.Sum(nil)
 }
 
-// deviceSecret 返回本机稳定指纹。
+// deviceSecret returns this machine's stable fingerprint.
 func deviceSecret() ([]byte, error) {
 	var raw string
 	switch runtime.GOOS {
 	case "darwin":
-		// IOPlatformUUID 在重装系统后仍保持稳定，是理想的设备绑定源。
+		// IOPlatformUUID stays stable even across OS reinstalls — an ideal device-binding
+		// source.
 		out, err := exec.Command("ioreg", "-rd1", "-c", "IOPlatformExpertDevice").
 			Output()
 		if err == nil {
@@ -92,7 +100,7 @@ func deviceSecret() ([]byte, error) {
 		}
 	}
 	if raw == "" {
-		// 回退：hostname（跨平台可用，虽不如 UUID 稳定，但保证不崩溃）。
+		// Fallback: hostname (works cross-platform; less stable than UUID but never crashes).
 		if h, err := exec.Command("hostname").Output(); err == nil {
 			raw = strings.TrimSpace(string(h))
 		}
@@ -103,7 +111,8 @@ func deviceSecret() ([]byte, error) {
 	return []byte(raw), nil
 }
 
-// EncryptSecret 加密敏感字段；空串直接返回空（不加密空值）。
+// EncryptSecret encrypts a sensitive field; an empty string returns empty (no encrypting
+// empty values).
 func EncryptSecret(plain string) (string, error) {
 	if plain == "" {
 		return "", nil
@@ -128,16 +137,18 @@ func EncryptSecret(plain string) (string, error) {
 	return cipherPrefix + base64.StdEncoding.EncodeToString(ct), nil
 }
 
-// DecryptSecret 解密敏感字段。
-//   - 空串返回空；
-//   - 无 cipherPrefix 视为旧版明文，原样返回（兼容迁移前数据）；
-//   - 解密失败（数据损坏或设备变更）返回错误，交由调用方记录日志。
+// DecryptSecret decrypts a sensitive field.
+//   - empty string returns empty;
+//   - without cipherPrefix it is treated as legacy plaintext, returned as-is (compatible with
+//     pre-migration data);
+//   - on decryption failure (corrupted data or device change) an error is returned for the
+//     caller to log.
 func DecryptSecret(stored string) (string, error) {
 	if stored == "" {
 		return "", nil
 	}
 	if !strings.HasPrefix(stored, cipherPrefix) {
-		// 旧版明文数据：保持兼容，直接返回。
+		// Legacy plaintext data: keep compatible, return as-is.
 		return stored, nil
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, cipherPrefix))

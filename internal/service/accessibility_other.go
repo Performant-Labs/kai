@@ -2,27 +2,28 @@
 
 package service
 
-// isAccessibilityEnabled 非 darwin 平台无需授权，恒为真。
+// isAccessibilityEnabled: non-darwin platforms need no permission, always true.
 func (s *AppService) isAccessibilityEnabled() bool {
 	return true
 }
 
-// openAccessibilitySettings 非 darwin 平台为空实现。
+// openAccessibilitySettings is a no-op on non-darwin platforms.
 func (s *AppService) openAccessibilitySettings() {}
 
-// isScreenRecordingEnabled 非 darwin 平台无需授权，恒为真。
+// isScreenRecordingEnabled: non-darwin platforms need no permission, always true.
 func (s *AppService) isScreenRecordingEnabled() bool {
 	return true
 }
 
-// openScreenRecordingSettings 非 darwin 平台为空实现。
+// openScreenRecordingSettings is a no-op on non-darwin platforms.
 func (s *AppService) openScreenRecordingSettings() {}
 
-// TODO: 输入监控相关（isInputMonitoringEnabled / openInputMonitoringSettings 非 darwin 空实现）当前未使用，已注释。
-// // isInputMonitoringEnabled 非 darwin 平台无需授权，恒为真。
+// TODO: input-monitoring related (isInputMonitoringEnabled / openInputMonitoringSettings
+// non-darwin no-ops) currently unused, commented out.
+// // isInputMonitoringEnabled: non-darwin platforms need no permission, always true.
 // func (s *AppService) isInputMonitoringEnabled() bool {
 // 	return true
 // }
 //
-// // openInputMonitoringSettings 非 darwin 平台为空实现。
+// // openInputMonitoringSettings is a no-op on non-darwin platforms.
 // func (s *AppService) openInputMonitoringSettings() {}

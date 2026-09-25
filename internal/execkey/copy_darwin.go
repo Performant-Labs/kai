@@ -12,8 +12,9 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// parseHotkey 在 macOS 上把用户配置的热键字符串解析成 robotgo.KeyTap 所需的 (key, modifiers)。
-// macOS 平台专用别名：Cmd/Command → "cmd", Option → "alt"。
+// parseHotkey parses the user-configured hotkey string into the (key, modifiers) that
+// robotgo.KeyTap needs, on macOS.
+// macOS-specific aliases: Cmd/Command → "cmd", Option → "alt".
 func parseHotkey(s string) (key string, modifiers []string) {
 	for part := range strings.SplitSeq(s, "+") {
 		p := strings.TrimSpace(part)
@@ -33,22 +34,27 @@ func parseHotkey(s string) (key string, modifiers []string) {
 	return key, modifiers
 }
 
-// copySelection 在 macOS 上替用户执行 ExecKeyConfig.Copy 配置的键，把目标 app 的选区写入剪贴板，
-// 并返回剪贴板中的文本。
+// copySelection performs, on behalf of the user, the key configured in ExecKeyConfig.Copy on
+// macOS, writing the target app's selection into the clipboard, and returns the clipboard
+// text.
 //
-// fallback=true 时：若自定义复制键执行失败（解析失败 / 注入失败 / 剪贴板为空），会自动再用
-// 系统默认复制键（Cmd+C）重试一次——即"自定义键没生效就退回到系统原生的复制键"。
-// 该参数由 CopySelection 在开启回退时传入 true（方法内部自行保护/还原用户剪贴板）。
+// With fallback=true: if the custom copy key fails (parse failure / injection failure /
+// empty clipboard), it automatically retries once with the system default copy key (Cmd+C) —
+// i.e. "fall back to the system-native copy key when the custom key didn't take effect".
+// CopySelection passes true here when fallback is enabled (the method itself
+// protects/restores the user's clipboard).
 //
-// 关键约束：robotgo.KeyTap 走 CGEvent，必须在主线程执行，否则 SIGTRAP。Wails3 的
-// GlobalShortcut 回调运行在独立 goroutine（非主线程），故需 application.InvokeSyncWithError
-// 把 KeyTap 调度回主线程执行（与 Windows 的 makc Combo 同一调用结构，便于统一排查）。
-// sleep + readClipboard 仍在当前 goroutine 上执行。
+// Key constraint: robotgo.KeyTap goes through CGEvent and must run on the main thread,
+// otherwise SIGTRAP. Wails3's GlobalShortcut callback runs on its own goroutine (not the
+// main thread), so application.InvokeSyncWithError dispatches the KeyTap back to the main
+// thread (same call structure as Windows' makc Combo, easing unified debugging).
+// sleep + readClipboard still run on the current goroutine.
 func (e *ExecKeyController) copySelection(fallback bool) string {
 	hotkey := e.settingsSvc.Get().ExecKeys.Copy.Key
 	text := e.copyWithHotkey(hotkey)
 
-	// 回退：自定义键没拿到内容，改用系统默认复制键（Cmd+C）再试一次。
+	// Fallback: the custom key got nothing; retry once with the system default copy key
+	// (Cmd+C).
 	if fallback && text == "" {
 		e.log.Warn(i18n.T("log.copykey_fallback_default"),
 			slog.String(i18n.T("log.field_customkey"), hotkey),
@@ -58,9 +64,10 @@ func (e *ExecKeyController) copySelection(fallback bool) string {
 	return text
 }
 
-// copyDefaultKey 直接用 robotgo 真实 API 按下系统默认复制键 Cmd+C，
-// 不经过字符串解析（robotgo 的 KeyTap 接收的就是 key/mods 字符串值）。
-// 仅作为 Fallback 回退路径：自定义复制键未生效时退回到系统原生复制键。
+// copyDefaultKey presses the system default copy key Cmd+C directly via robotgo's real API,
+// without string parsing (robotgo's KeyTap takes key/mods string values anyway).
+// Used only as the Fallback path: when the custom copy key didn't take effect, fall back to
+// the system-native copy key.
 func (e *ExecKeyController) copyDefaultKey() string {
 	comboErr := application.InvokeSyncWithError(func() error {
 		return robotgo.KeyTap("c", "cmd")
@@ -81,8 +88,10 @@ func (e *ExecKeyController) copyDefaultKey() string {
 	return text
 }
 
-// copyWithHotkey 按指定热键字符串执行一次"模拟复制 + 读剪贴板"。
-// 任一环节失败（解析失败 / 注入失败 / 剪贴板为空）都返回空串，由调用方决定是否回退。
+// copyWithHotkey performs one "simulated copy + read clipboard" round with the given hotkey
+// string.
+// Any failure along the way (parse failure / injection failure / empty clipboard) returns an
+// empty string; the caller decides whether to fall back.
 func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 	if strings.TrimSpace(hotkey) == "" {
 		return ""
@@ -107,7 +116,7 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 		slog.Any("modifiers", modifiers),
 		slog.Any("mods", mods),
 	)
-	// 在主线程执行
+	// Run on the main thread
 	comboErr := application.InvokeSyncWithError(func() error {
 		return robotgo.KeyTap(key, mods...)
 	})

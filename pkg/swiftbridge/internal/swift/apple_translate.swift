@@ -1,6 +1,7 @@
 // apple_translate.swift
-// 系统翻译相关 @_cdecl 入口：kai_translate / kai_available_languages。
-// 依赖 bridge_errors.swift（错误码 / Codable / 编码辅助）、bridge_common.swift（detectSourceLanguage）、
+// System translation @_cdecl entries: kai_translate / kai_available_languages.
+// Depends on bridge_errors.swift (error codes / Codable / encoding helpers) and
+// bridge_common.swift (detectSourceLanguage),
 // bridge_log.swift（bridgeFileLog / bridgeLogText）。
 import AppKit
 import ApplicationServices
@@ -10,9 +11,11 @@ import NaturalLanguage
 import Translation
 import Vision
 
-// kai_translate：同步执行一次系统翻译。
-// src/dst 为 BCP-47 语言码（如 "en" / "zh-Hans"）；src 可为空字符串表示自动检测。
-// out 接收 JSON：{"result":"...","from":"..."}（TranslateSuccess）；失败 out 写入 {"code":"...","detail":"..."}（BridgeError）。
+// kai_translate: performs one system translation synchronously.
+// src/dst are BCP-47 codes (e.g. "en" / "zh-Hans"); src may be an empty string for
+// auto-detect.
+// out receives the JSON {"result":"...","from":"..."} (TranslateSuccess); on failure out gets
+// {"code":"...","detail":"..."} (BridgeError).
 @_cdecl("kai_translate")
 public func kai_translate(
   _ src: UnsafePointer<CChar>?,
@@ -29,7 +32,7 @@ public func kai_translate(
 
   guard !inputText.isEmpty else {
     bridgeFileLog(bridgeLogText("translate.empty"), level: BRIDGE_LOG_WARN)
-    // detail: 入参文本长度（已 trim 前），便于 Go 侧排查空传。
+    // detail: the input text length (pre-trim), helping the Go side debug empty inputs.
     return writeCString(
       bridgeErrorJSON(
         code: BRIDGE_ERR_EMPTY_TEXT,
@@ -78,8 +81,10 @@ public func kai_translate(
       let detail =
         "no installed source language for auto-detect\(detectedDesc). \(installedDesc). download the language pack in system settings > general > language & region > translate."
       bridgeFileLog(bridgeLogText("translate.fail", detail), level: BRIDGE_LOG_ERROR)
-      // 返回结构化错误码，由 Go 侧 err.apple_no_source_lang 渲染用户可见文案；
-      // detail 仅作技术细节附在后面（含 Apple 语言标识符，非可翻译文案）。
+      // Returns a structured error code; the Go side's err.apple_no_source_lang renders the
+      // user-visible copy;
+      // detail is appended purely as technical context (including Apple language identifiers —
+      // not translatable copy).
       resultJSON = bridgeErrorJSON(code: BRIDGE_ERR_NO_SOURCE_LANG, detail: detail)
       sema.signal()
       return
@@ -93,8 +98,10 @@ public func kai_translate(
       resultJSON = bridgeEncode(TranslateSuccess(result: resp.targetText, from: from))
       bridgeFileLog(bridgeLogText("translate.done", from, targetCode, resp.targetText.utf8.count))
     } catch {
-      // Apple 系统级翻译错误：统一为 {"code":"apple_translate","detail":...} 结构，
-      // 由 Go 侧 err.apple_translate_engine 渲染，detail 携带系统 localizedDescription。
+      // Apple system-level translation errors: uniformly shaped as
+      // {"code":"apple_translate","detail":...},
+      // rendered by the Go side's err.apple_translate_engine; detail carries the system's
+      // localizedDescription.
       let detail = error.localizedDescription
       resultJSON = bridgeErrorJSON(code: BRIDGE_ERR_APPLE_TRANSLATE, detail: detail)
       bridgeFileLog(bridgeLogText("translate.fail", detail), level: BRIDGE_LOG_ERROR)
@@ -106,8 +113,8 @@ public func kai_translate(
   return writeCString(resultJSON, into: out, cap: out_cap)
 }
 
-// kai_available_languages：通过 LanguageAvailability 查询本机已下载（已安装、可离线翻译）的语言，
-// 返回 {"langs":[...]}。
+// kai_available_languages: queries locally downloaded (installed, offline-translatable)
+// languages via LanguageAvailability, returning {"langs":[...]}.
 @_cdecl("kai_available_languages")
 public func kai_available_languages(
   _ out: UnsafeMutablePointer<CChar>?,

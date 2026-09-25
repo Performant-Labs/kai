@@ -43,9 +43,9 @@ var assets embed.FS
 //go:embed build/trayicon.png
 var trayIcon []byte
 
-// parseBuildTime 把构建时注入的 RFC3339 字符串解析为 time.Time。
-// 本地 dev 构建注入的是 "unknown" 等占位串，解析失败时返回零值，
-// 更新器据此（buildTime.IsZero()）跳过 nightly 比较。
+// parseBuildTime parses the RFC3339 string injected at build time into a time.Time.
+// Dev builds inject placeholder strings like "unknown"; on parse failure it returns the
+// zero value, which the updater uses (buildTime.IsZero()) to skip nightly comparison.
 func parseBuildTime(s string) time.Time {
 	if s == "" {
 		return time.Time{}
@@ -57,8 +57,9 @@ func parseBuildTime(s string) time.Time {
 	return t
 }
 
-// resolveUpdaterLocale 把 settings 里的语言（可能含 auto）解析为第三方库接受的真实取值。
-// auto 由 i18n 当前生效语言决定（项目内已按系统语言解析），非 auto 直接透传。
+// resolveUpdaterLocale resolves the language from settings (may be "auto") to a concrete
+// value accepted by the third-party library. "auto" is resolved via the i18n active locale
+// (already resolved from the system language project-wide); non-auto values pass through.
 func resolveUpdaterLocale(lang string) string {
 	if lang == string(model.LocaleAuto) || lang == "" {
 		return i18n.GetLocale()
@@ -66,8 +67,9 @@ func resolveUpdaterLocale(lang string) string {
 	return lang
 }
 
-// resolveUpdaterTheme 把 settings 里的主题（可能含 auto）解析为第三方库接受的真实取值。
-// auto 用系统真实外观（IsDarkMode）解析为 light/dark；非 auto 直接透传。
+// resolveUpdaterTheme resolves the theme from settings (may be "auto") to a concrete value
+// accepted by the third-party library. "auto" resolves via the real system appearance
+// (IsDarkMode) to light/dark; non-auto values pass through.
 func resolveUpdaterTheme(theme string, app *application.App) string {
 	if theme == string(model.ThemeAuto) || theme == "" {
 		if app != nil && app.Env.IsDarkMode() {
@@ -79,8 +81,9 @@ func resolveUpdaterTheme(theme string, app *application.App) string {
 }
 
 func init() {
-	// 注册自定义事件类型，供后端 emit / 前端监听（对齐 certflow 的 RegisterEvent 模式）。
-	// 必须 emit 的数据类型与注册类型严格一致，否则 Wails3 validateCustomEvent 会 panic。
+	// Register custom event types for backend emit / frontend listeners (mirrors certflow's
+	// RegisterEvent pattern). The emitted payload type must exactly match the registered type,
+	// otherwise Wails3 validateCustomEvent panics.
 	application.RegisterEvent[kevents.LocaleChangedPayload](kevents.EventLocaleChanged)
 	application.RegisterEvent[kevents.ThemeChangedPayload](kevents.EventThemeChanged)
 	application.RegisterEvent[string](kevents.EventWindowShow)
@@ -95,8 +98,9 @@ func init() {
 	application.RegisterEvent[kevents.ScreenshotRetranslatePayload](kevents.EventScreenshotRetranslate)
 }
 
-// formatBuildTime 将构建注入的 UTC RFC3339 时间（如 2006-01-02T15:04:05Z）
-// 解析为本地时区可读格式（2006-01-02 15:04:05）；解析失败则原样返回，空字符串返回"-"。
+// formatBuildTime parses the UTC RFC3339 time injected at build time (e.g. 2006-01-02T15:04:05Z)
+// into a readable local-timezone format (2006-01-02 15:04:05); on parse failure it returns the
+// input unchanged, and an empty string returns "-".
 func formatBuildTime(raw string) string {
 	if raw == "" {
 		return "-"
@@ -109,9 +113,11 @@ func formatBuildTime(raw string) string {
 }
 
 func main() {
-	// ── 阶段一：创建数据目录（最早执行，此时尚不知用户语言，失败文案直接写中文）──
-	// 开发构建（buildinfo.IsDev() 为 true，即 `wails3 dev` / 未注入 VERSION）使用独立的
-	// .kai.dev 目录，与正式版 .kai 隔离，避免开发调试污染正式数据（对齐 certflow）。
+	// ── Phase one: create the data directories (runs earliest; the user language is not yet
+	// known, so failure messages are hardcoded rather than localized) ──
+	// Dev builds (buildinfo.IsDev() is true, i.e. `wails3 dev` / VERSION not injected) use a
+	// separate .kai.dev directory, isolated from the release .kai, so debug data never
+	// pollutes production data (mirrors certflow).
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("failed to get user home directory: %v", err)
@@ -120,45 +126,51 @@ func main() {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		log.Fatalf("failed to create data directory: %v", err)
 	}
-	// 数据库文件（config.db / history.db / httplog.db）统一放在 DataDir 的 data/ 子目录下，
-	// 即 ~/.kai/data/（或 dev 的 ~/.kai.dev/data/）。目录规则由 buildinfo.DBDir 提供。
+	// Database files (config.db / history.db / httplog.db) all live in the data/ subdirectory
+	// of DataDir, i.e. ~/.kai/data/ (or ~/.kai.dev/data/ for dev). buildinfo.DBDir owns the layout.
 	dbDir := buildinfo.DBDir(homeDir)
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
 		log.Fatalf("failed to create database directory: %v", err)
 	}
 
-	// ── 阶段一·五：动态加载 Swift 桥接层（purego 运行时 Dlopen）──
-	// 必须在任何 kai_* 调用（SetLogConfig/SetBridgeLocale/OCR/Translate 等）之前完成。
-	// Init("") 默认加载与本源文件同目录的 libkai_bridge.dylib（开发态位于
-	// pkg/swiftbridge/）；打包进 app bundle 时由 build 脚本拷入并传绝对路径。
-	// 加载失败不致命（仅记录），缺失符号的函数变量保持 nil，调用时在对应包内报错，
-	// 保证非 macOS 或 dylib 缺失环境仍能编译/启动其余功能。
+	// ── Phase one-and-a-half: dynamically load the Swift bridge layer (purego runtime Dlopen) ──
+	// Must complete before any kai_* call (SetLogConfig/SetBridgeLocale/OCR/Translate etc.).
+	// Init("") loads libkai_bridge.dylib from the same directory as this source file by default
+	// (in dev it lives in pkg/swiftbridge/); when packaged into an app bundle the build script
+	// copies it in and passes an absolute path.
+	// Load failure is not fatal (logged only): function variables with missing symbols stay nil
+	// and error out inside their package when called, so the app still compiles and starts its
+	// remaining features on non-macOS or when the dylib is missing.
 	if err := swiftbridge.Init(""); err != nil {
 		log.Printf("WARN: failed to load Swift bridge dynamically (some macOS-only features unavailable): %v", err)
 	}
 
-	// ── 阶段二：获取设置（日志/i18n 依赖它，必须在数据库初始化之前）──
+	// ── Phase two: load settings (logging/i18n depend on it; must run before database init) ──
 	settingsService, err := settings.NewService(dataDir)
 	if err != nil {
 		log.Fatalf("failed to load settings: %v", err)
 	}
-	// 初始化匿名统计（加载设备 ID；是否实际上报由开关 + 构建模式在 Track 时判定）。
+	// Initialize anonymous analytics (loads the device ID; whether anything is actually reported
+	// is decided at Track time by the switch + build mode).
 	analytics.Init(dataDir, settingsService)
 	logCfg := settingsService.Get().Log
 
-	// 更新器 Provider 句柄（初始化段赋值）；运行时语言/主题变更时通过
-	// SetLocale/SetTheme 动态同步，使更新弹窗文案与配色实时跟随。
+	// Updater provider handle (assigned during init); on runtime language/theme changes it is
+	// synced dynamically via SetLocale/SetTheme so the update dialog copy and colors follow live.
 	var updaterProvider *kupdater.MirrorProvider
-	// app 提升为函数级变量，使前置注册的 OnChange 闭包（早于 application.New）可引用。
+	// app is promoted to a function-level variable so the OnChange closures registered above
+	// (before application.New) can reference it.
 	var app *application.App
 
-	// 主日志：按天滚动写 dataDir/logs/kai.log（可随时 tail -f 查看），
-	// 等级/保留天数/压缩全部取自 settings.json 的 log 段，不写死。
+	// Main log: day-rotated writes to dataDir/logs/kai.log (tail -f anytime),
+	// with level/retention days/compression all taken from the log section of settings.json —
+	// nothing hardcoded.
 	logRotator := initLogging(homeDir, logCfg)
 
-	// 全局兜底：捕获主流程及任何 goroutine 中未 recover 的 panic，
-	// 先写 ERROR 日志（确保在 Close 落盘前写入）再关闭日志文件退出，
-	// 避免进程静默消失、无任何痕迹。必须在 initLogging 之后注册。
+	// Global safety net: catches panics not recovered in the main flow or any goroutine.
+	// Writes an ERROR log first (ensuring it lands before Close flushes), then closes the log
+	// file and exits, so the process never disappears silently without a trace.
+	// Must be registered after initLogging.
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error(i18n.T("log.global_panic"), "panic", r)
@@ -169,17 +181,20 @@ func main() {
 	slog.Info(i18n.T("log.app_starting", "Version", buildinfo.Version, "BuildTime", formatBuildTime(buildinfo.BuildTime), "GitCommit", buildinfo.GitCommit))
 	slog.Info(i18n.T("log.data_dir", "Dir", dataDir))
 
-	// 前端日志独立落盘到 dataDir/logs/frontend.log（前端 console / JS 错误经此转发）。
-	// 初始等级/保留天数/压缩同样取自 settings.json 的 log 段；后续由 applyLogConfig 实时同步。
+	// Frontend logs are written separately to dataDir/logs/frontend.log (frontend console /
+	// JS errors are forwarded here). Initial level/retention days/compression also come from
+	// the log section of settings.json; applyLogConfig keeps them in sync from then on.
 	frontendLogFW, err := logutil.NewFrontendWriter(buildinfo.LogDir(homeDir), logutil.ParseLevel(logCfg.Level), logCfg.RetentionDays, logCfg.Compress)
 	if err != nil {
 		log.Printf(i18n.T("log.frontend_log_init_failed"), err)
 	}
 	frontendLogSvc := logutil.NewFrontendLogService(frontendLogFW)
 
-	// ── 阶段三：数据库初始化（必须在阶段二「获取设置」之后，日志/i18n 已就绪）──
-	// 初始化 HTTP 请求日志存储：必须在引擎注册（BuildHTTPClient→WrapTransport）
-	// 之前点火，否则 httplog 未启用、日志层不被包裹，翻译请求不会入库。
+	// ── Phase three: database initialization (must run after phase two "load settings",
+	// once logging/i18n are ready) ──
+	// Initialize the HTTP request log store: must be armed before engine registration
+	// (BuildHTTPClient→WrapTransport), otherwise httplog is not enabled and the logging layer
+	// is not wrapped, so translate requests never reach the store.
 	httpLogCfg := settingsService.Get().HttpLog
 	slog.Info(i18n.T("log.http_log_status"), "enabled", httpLogCfg.Enabled, "retention_days", httpLogCfg.RetentionDays, "dbDir", dbDir)
 	if err := httplogstore.Init(dbDir, httpLogCfg.Enabled); err != nil {
@@ -187,36 +202,41 @@ func main() {
 	} else {
 		slog.Info(i18n.T("log.http_log_initialized"), "enabled", httpLogCfg.Enabled, "db", dbDir+"/httplog.db")
 	}
-	// 启动过期日志定时清理：仅在 enabled 时 Init 已就绪 connDSN，
-	// retention_days<=0 时 StartCleanup 内部直接 return，安全。
+	// Start periodic cleanup of expired logs: Init has connDSN ready only when enabled;
+	// with retention_days<=0 StartCleanup returns immediately — safe.
 	httplogstore.StartCleanup(httpLogCfg.RetentionDays, slog.Default())
 
 	i18n.SetLocale(settingsService.Get().Language)
 
-	// 运行时语言切换：外部/热重载改 settings.json 时，OnChange 同步后端 i18n 语言环境，
-	// 使后端返回的错误/日志文案跟随界面语言变化（与 SaveConfig 内的主动同步互补）。
-	// 同时同步日志等级 / 清理策略（log 段）。
+	// Runtime language switching: when settings.json is changed externally / hot-reloaded,
+	// OnChange syncs the backend i18n locale so backend errors/log copy follow the UI language
+	// (complements the proactive sync inside SaveConfig). Also syncs log level / cleanup policy
+	// (log section).
 	settingsService.OnChange(func(cfg *settings.Settings) {
 		i18n.SetLocale(cfg.Language)
 		applyLogConfig(logRotator, frontendLogSvc, cfg.Log, homeDir)
-		// 语言/主题变更同步到更新器（auto 解析为真实语言/系统外观），刷新后续 Check/Download 文案。
+		// Sync language/theme changes to the updater (auto resolves to the real language/system
+		// appearance), refreshing subsequent Check/Download copy.
 		if updaterProvider != nil {
 			kupdater.SetLocale(kupdater.Locale(resolveUpdaterLocale(cfg.Language)))
-			// 主题变更同步到更新器（auto 解析为系统真实外观 light/dark）。
+			// Sync theme changes to the updater (auto resolves to the real system appearance, light/dark).
 			kupdater.SetTheme(kupdater.Theme(resolveUpdaterTheme(cfg.Theme, app)))
-			// 同步刷新内置更新窗口（库内原地重建窗口以应用最新语言/主题文案）。
+			// Refresh the built-in updater window (the library rebuilds it in place to apply the
+			// latest language/theme copy).
 			kupdater.SetUpdaterLocaleTheme(app)
 		}
 	})
 
-	// 启动即应用一次日志配置（等级/清理策略/压缩可被 settings.json 的 log 段覆盖），
-	// 同时把同一套 LogConfig 同步给 Swift 桥接层，使 kai-bridge.log 与 kai.log 一致。
+	// Apply the log config once at startup (level/cleanup policy/compression may be overridden
+	// by the log section of settings.json), and sync the same LogConfig to the Swift bridge
+	// layer so kai-bridge.log matches kai.log.
 	applyLogConfig(logRotator, frontendLogSvc, settingsService.Get().Log, homeDir)
 
-	// 领域包与薄 Wrapper 的显式依赖注入（取代旧 ServiceContext 大容器）。
-	// 构造时 app 尚未创建，先传 nil 占位，待 application.New 之后由 AppService.SetApp 统一注入。
+	// Explicit dependency injection for domain packages and thin wrappers (replaces the old
+	// ServiceContext mega-container). At construction time app does not exist yet, so nil is
+	// passed as a placeholder; after application.New, AppService.SetApp injects it uniformly.
 	reg := engine.NewRegistry()
-	// 历史库 / 引擎配置库（阶段三：数据库）
+	// History DB / engine config DB (phase three: databases)
 	histDB, err := historystore.Open(filepath.Join(dbDir, "history.db"))
 	if err != nil {
 		log.Fatalf(i18n.T("log.open_history_db_failed"), err)
@@ -230,16 +250,17 @@ func main() {
 	trSvc.SetConfigStore(cfgDB)
 	selSvc := selection.NewService(nil, settingsService)
 
-	// 顶层服务引用（闭包延迟解析，运行时已赋值）
+	// Top-level service references (resolved lazily via closures; assigned by runtime)
 	var appSvc *service.AppService
 	var windowSvc *service.WindowWrapper
-	// 通知服务：封装授权检查与安全发送，复用 Wails 已注册的单例。
+	// Notification service: wraps permission checks and safe sending, reusing the
+	// Wails-registered singleton.
 	var notifySvc *service.NotificationService
 
-	// 执行键：复制键触发后把选区回填主窗口
+	// Exec key: after a copy key fires, the selection is fed back into the main window
 	ekCtrl := execkey.NewExecKeyController(settingsService, nil, selSvc)
 
-	// 快捷键管理器：回调闭包桥接到 domain service
+	// Hotkey manager: callback closures bridged to the domain service
 	hm := hotkey.NewManager(nil, settingsService, ekCtrl,
 		func() application.Window { return translateWindow },
 		func() error { _, err := trSvc.ScreenshotOCR(reg.DefaultOCREngineName()); return err },
@@ -261,9 +282,10 @@ func main() {
 	historySvc := service.NewHistoryWrapper(histDB, cfgDB)
 	translateSvc := service.NewTranslateWrapper(trSvc)
 	appSvc = service.NewAppService(settingsService, trSvc, ekCtrl, hm, reg, histDB, cfgDB, nil)
-	// 必须先初始化 wails notifications 单例（notifications.New 才会给 NotificationService_ 赋值），
-	// 否则它是 nil 指针，传给 application.NewService 后 wails 在反射绑定方法时
-	// 会对 nil 指针调 reflect.Value.Type → panic "reflect.Value.Type on zero Value"。
+	// The wails notifications singleton must be initialized first (notifications.New is what
+	// assigns NotificationService_); otherwise it is a nil pointer and, when passed to
+	// application.NewService, wails calls reflect.Value.Type on the nil pointer during method
+	// binding → panic "reflect.Value.Type on zero Value".
 	notifications.New()
 	notifySvc = service.NewNotificationService(notifications.NotificationService_)
 
@@ -271,59 +293,63 @@ func main() {
 		Name:        "Kai",
 		Description: i18n.T("app.description"),
 		Services: []application.Service{
-			// 核心服务（翻译/OCR/辅助功能/生命周期），集中编排启动
+			// Core services (translate/OCR/accessibility/lifecycle), centrally orchestrating startup
 			application.NewService(appSvc),
-			// 领域薄 Wrapper（前端按领域调用）
+			// Domain thin wrappers (frontend calls per domain)
 			application.NewService(configSvc),
 			application.NewService(engineSvc),
 			application.NewService(historySvc),
 			application.NewService(translateSvc),
 			application.NewService(windowSvc),
-			// 前端日志桥接：接收前端 console / JS 错误，写入 logs/frontend.log
+			// Frontend log bridge: receives frontend console / JS errors, writes logs/frontend.log
 			application.NewService(frontendLogSvc),
-			// 原生桌面通知（封装授权检查的 NotificationService wrapper，macOS 走 UNUserNotificationCenter，
-			// 不再经前端 Web Notification 转发）
+			// Native desktop notifications (NotificationService wrapper with permission checks;
+			// macOS goes through UNUserNotificationCenter, no longer forwarded via frontend
+			// Web Notification)
 			application.NewService(notifySvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
 		Mac: application.MacOptions{
-			// Accessory：agent app，启动即无 Dock 图标、无菜单栏，只在状态栏托盘。
-			// 由 Wails 在 Cocoa 初始化阶段设置，比运行时 HideAppIcon 更早，无闪烁。
+			// Accessory: agent app — no Dock icon and no menu bar from launch, tray only.
+			// Set by Wails during Cocoa initialization, earlier than a runtime HideAppIcon,
+			// so no flicker.
 			ActivationPolicy: application.ActivationPolicyAccessory,
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
-		// 单实例：Wails v3 内置（macOS 用 flock + NSDistributedNotification 通知首个实例）。
-		// 第二次启动时第二个进程会触发 OnSecondInstanceLaunch 并把自身退出，
-		// 由首个实例把主窗口唤到前台，避免多实例争抢数据库/快捷键/托盘。
+		// Single instance: built into Wails v3 (macOS uses flock + NSDistributedNotification to
+		// notify the first instance). On a second launch, the second process triggers
+		// OnSecondInstanceLaunch and exits itself; the first instance brings the main window to
+		// the foreground, avoiding multi-instance contention over the database/hotkeys/tray.
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "cnb.cool.dtapp.kai",
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 				slog.Info(i18n.T("log.single_instance_second_launch"))
-				// Kai 是 Accessory app（无主窗口常驻，仅托盘），第二次启动时把
-				// 已有实例的设置窗口唤到前台（与托盘菜单行为一致）。主线程安全地走 Show/Focus。
+				// Kai is an Accessory app (no persistent main window, tray only); on second launch,
+				// bring the existing instance's settings window to the foreground (same behavior as
+				// the tray menu). Show/Focus is dispatched safely on the main thread.
 				if settingsWindow != nil {
 					settingsWindow.Show().Focus()
 				}
 			},
 		},
 	}
-	// Windows 专属：注入 WebView2 浏览器参数（GPU 兜底，规避偶发 80010108）。
-	// AdditionalBrowserArgs 是 application.Options 的 Windows 专属字段，故由
-	// webview.ApplyOptions 按平台设置（非 Windows 为空操作）。
+	// Windows-specific: inject WebView2 browser arguments (GPU fallback to avoid sporadic 80010108).
+	// AdditionalBrowserArgs is a Windows-only field of application.Options, so webview.ApplyOptions
+	// sets it per platform (a no-op on non-Windows).
 	webview.ApplyOptions(&appOpts)
 	app = application.New(appOpts)
-	appSvc.SetApp(app) // 统一注入 app 到 AppService 内部持有的 domain 与 Wrapper
-	// main.go 侧直接 Bind 的 wrapper 实例（与 AppService 内部不是同一批），
-	// 同样需要 app 才能执行 Event.Emit 广播，故在此逐一注入。
-	ekCtrl.SetApp(app) // 传导 app 到 execKeyCtrl 及其持有的 selection.Service（剪贴板读取依赖）
+	appSvc.SetApp(app) // Inject app uniformly into the domain services and wrappers held inside AppService
+	// Wrapper instances bound directly on the main.go side (a different set from the ones inside
+	// AppService) also need app to run Event.Emit broadcasts, so each is injected here.
+	ekCtrl.SetApp(app) // Propagate app to execKeyCtrl and its selection.Service (clipboard reading depends on it)
 	configSvc.SetApp(app)
 	engineSvc.SetApp(app)
 	windowSvc.SetApp(app)
-	trSvc.SetApp(app) // 传导 app 到 translate.Service，截图 OCR/翻译结果依赖 Event.Emit 广播给前端
+	trSvc.SetApp(app) // Propagate app to translate.Service; screenshot OCR/translate results rely on Event.Emit broadcasts to the frontend
 
-	// 前端通过 runtime.EventsEmit('kai:window:show', 'settings'|'translate') 呼出窗口
+	// Frontend summons windows via runtime.EventsEmit('kai:window:show', 'settings'|'translate')
 	app.Event.On(kevents.EventWindowShow, func(e *application.CustomEvent) {
 		name, _ := e.Data.(string)
 		switch name {
@@ -336,7 +362,8 @@ func main() {
 		}
 	})
 
-	// 前端「重新截图」按钮：隐藏窗口后重新走一次区域截图→OCR→翻译流程。
+	// Frontend "recapture screenshot" button: hides the window, then reruns the
+	// region screenshot→OCR→translate flow.
 	app.Event.On(kevents.EventScreenshotRecapture, func(e *application.CustomEvent) {
 		if screenshotWindow != nil {
 			screenshotWindow.Hide()
@@ -348,7 +375,8 @@ func main() {
 		}()
 	})
 
-	// 前端改语言后触发：复用最近一次 OCR 原文，跳过截图/OCR 直接用新语言重新翻译并增量推送。
+	// Fired after the frontend changes language: reuses the most recent OCR source text,
+	// skipping screenshot/OCR, and retranslates with the new language, pushing incrementally.
 	app.Event.On(kevents.EventScreenshotRetranslate, func(e *application.CustomEvent) {
 		p, ok := e.Data.(kevents.ScreenshotRetranslatePayload)
 		if !ok {
@@ -362,11 +390,13 @@ func main() {
 		}()
 	})
 
-	// 三个常驻窗口（设置 / 翻译 / 截图）原生标题栏基调：
-	// 创建时按“应用内主题”设置，与更新窗口（pkg/wails-updater-providers）保持一致。
-	// beta.15 的 Wails 在 Go/前端 runtime 均无“运行时切换常驻窗口主题”的公开 API，
-	// 故这里只保证“启动时跟随应用内主题”；运行时实时跟随由前端 theme store 尝试调用
-	// window.runtime.Window.SetDarkTheme 等完成（若运行时支持）。
+	// Native title-bar tone for the three persistent windows (settings / translate / screenshot):
+	// set from the "in-app theme" at creation, consistent with the updater window
+	// (pkg/wails-updater-providers). Wails beta.15 has no public API on either the Go or the
+	// frontend runtime for "switch a persistent window's theme at runtime", so this only
+	// guarantees "follow the in-app theme at startup"; live runtime following is attempted by
+	// the frontend theme store via window.runtime.Window.SetDarkTheme etc. (if the runtime
+	// supports it).
 	startupDark := resolveUpdaterTheme(settingsService.Get().Theme, app) == "dark"
 	macAppearance := application.NSAppearanceNameAqua
 	winTheme := application.Light
@@ -375,7 +405,7 @@ func main() {
 		winTheme = application.Dark
 	}
 
-	// 主窗口（设置页作为主界面，启动即显示）
+	// Main window (settings page as the main screen, shown at startup)
 	settingsWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   model.WindowSettings,
 		Title:  i18n.T("window.settings_title"),
@@ -389,7 +419,7 @@ func main() {
 			HiddenOnTaskbar: false,
 			Theme:           winTheme,
 		},
-		// 标题栏 最小化/最大化/关闭按钮
+		// Title bar minimize/maximize/close buttons
 		MinimiseButtonState: application.ButtonHidden,
 		MaximiseButtonState: application.ButtonHidden,
 		CloseButtonState:    application.ButtonEnabled,
@@ -398,11 +428,12 @@ func main() {
 		event.Cancel()
 		settingsWindow.Hide()
 	})
-	// 主窗口启动即显示并居中
+	// Main window shows and centers at startup
 	settingsWindow.Center()
 
-	// 输入翻译窗口：两栏布局（issue #10，锁定决策：永远左右并排）——默认/最小宽度放大，
-	// 不再锁死 420（旧 MaxWidth 移除）；高度交给窗口自身，内容区各自内部滚动。
+	// Input translate window: two-pane layout (issue #10, locked decision: always side by
+	// side) — default/minimum widths enlarged, no longer pinned to 420 (old MaxWidth removed);
+	// height is left to the window itself, with each pane scrolling internally.
 	translateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      model.WindowTranslate,
 		Title:     i18n.T("window.translate_title"),
@@ -418,21 +449,22 @@ func main() {
 			HiddenOnTaskbar: false,
 			Theme:           winTheme,
 		},
-		// 标题栏 最小化/最大化/关闭按钮
+		// Title bar minimize/maximize/close buttons
 		MinimiseButtonState: application.ButtonEnabled,
 		MaximiseButtonState: application.ButtonHidden,
 		CloseButtonState:    application.ButtonEnabled,
 	})
-	// 禁用 Hidden:true 创建，改为创建后即 Hide()，避免 Windows 上
-	// WebView2 controller 延迟创建引发的 80010108 COM 竞态崩溃。
+	// Don't create with Hidden:true; create then Hide() immediately, avoiding the 80010108 COM
+	// race crash on Windows caused by delayed WebView2 controller creation.
 	translateWindow.Hide()
-	// 点红 X = 隐藏窗口（不退出）：用 RegisterHook 在 WindowClosing 的
-	// 销毁 listener 之前 Cancel 掉关闭，并改为 Hide。这样红 X 保留、
-	// 窗口不被销毁，随时可再次 Show。
+	// Red X = hide the window (don't quit): RegisterHook Cancels the close before WindowClosing's
+	// destroy listener and hides instead. This keeps the red X, keeps the window alive, and it
+	// can be Shown again anytime.
 	_ = translateWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
-		// 红 X = 隐藏窗口（不退出）：先广播 kai:window:closing 让前端清空翻译输入/结果，
-		// 再 Hide。窗口不销毁（Svelte 组件仍挂载），下次唤出时是干净状态。
+		// Red X = hide the window (don't quit): first broadcast kai:window:closing so the
+		// frontend clears the translate input/results, then Hide. The window is not destroyed
+		// (Svelte components stay mounted), so the next invocation starts from a clean state.
 		if app != nil {
 			app.Event.Emit(kevents.EventWindowClosing, model.WindowTranslate)
 		}
@@ -440,7 +472,8 @@ func main() {
 	})
 	translateWindow.Center()
 
-	// 截图翻译窗口：左图右译。由截图快捷键/EventScreenshotOCR 呼出。
+	// Screenshot translate window: image on the left, translation on the right.
+	// Summoned by the screenshot hotkey/EventScreenshotOCR.
 	screenshotWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      model.WindowScreenshot,
 		Title:     i18n.T("window.screenshot_title"),
@@ -456,18 +489,22 @@ func main() {
 			HiddenOnTaskbar: false,
 			Theme:           winTheme,
 		},
-		// 标题栏 最小化/最大化/关闭按钮
+		// Title bar minimize/maximize/close buttons
 		MinimiseButtonState: application.ButtonEnabled,
 		MaximiseButtonState: application.ButtonHidden,
 		CloseButtonState:    application.ButtonEnabled,
 	})
-	// 创建即 Hide：完成真实初始化（建 impl + 加载 WebView + 设 Shadow/AlwaysOnTop）后隐藏，
-	// 等效于预建。之后截图路径 Show() 走轻量 orderFront，不再卡 Hidden 状态机。
+	// Hide immediately on creation: real initialization completes (build impl + load WebView +
+	// set Shadow/AlwaysOnTop) and then it is hidden — equivalent to prebuilding. Later the
+	// screenshot path's Show() is a lightweight orderFront and no longer gets stuck in the
+	// Hidden state machine.
 	screenshotWindow.Hide()
 	_ = screenshotWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
-		// 红 X = 隐藏窗口（不退出）：先广播 kai:window:closing 让前端清空截图与译文，
-		// 再 Hide。窗口不销毁（Svelte 组件仍挂载），下次唤出时是干净状态。
+		// Red X = hide the window (don't quit): first broadcast kai:window:closing so the
+		// frontend clears the screenshot and translation, then Hide. The window is not
+		// destroyed (Svelte components stay mounted), so the next invocation starts from a
+		// clean state.
 		if app != nil {
 			app.Event.Emit(kevents.EventWindowClosing, model.WindowScreenshot)
 		}
@@ -475,9 +512,10 @@ func main() {
 	})
 	registerTray(app, hm, configSvc, settingsService)
 
-	// 语言变更后，用最新语言重建托盘菜单文案（托盘为原生，只能后端重建）。
-	// 优先用事件 payload 携带的语言（mode 可能含 auto，由 i18n 解析为具体语言），
-	// 避免依赖配置落盘时序导致菜单仍显示旧语言。
+	// After a language change, rebuild the tray menu copy with the latest language (the tray is
+	// native and can only be rebuilt by the backend). Prefer the language carried in the event
+	// payload (mode may be auto, resolved by i18n to a concrete language), avoiding dependence
+	// on config persistence ordering that would leave the menu showing the old language.
 	app.Event.On(kevents.EventLocaleChanged, func(e *application.CustomEvent) {
 		if e != nil && e.Data != nil {
 			if p, ok := e.Data.(kevents.LocaleChangedPayload); ok {
@@ -486,36 +524,41 @@ func main() {
 				} else if p.Language != "" {
 					i18n.SetLocale(p.Language)
 				}
-				// 同步更新 updater 的库全局语言（包级全局，matcher/窗口直接读取），
-				// 使更新检查日志与弹窗文案跟随语言切换。
+				// Sync the updater library's global language (package-level global, read directly by
+				// matcher/window) so update-check logs and dialog copy follow language switches.
 				kupdater.SetLocale(kupdater.Locale(resolveUpdaterLocale(settingsService.Get().Language)))
-				// 同步刷新内置更新窗口（库内原地重建窗口以应用最新语言文案）。
+				// Refresh the built-in updater window (the library rebuilds it in place to apply
+				// the latest language copy).
 				kupdater.SetUpdaterLocaleTheme(app)
-				// 同步当前界面语言给 Swift 桥接层，使 kai-bridge.log 调试日志跟随切换。
+				// Sync the current UI language to the Swift bridge layer so kai-bridge.log debug
+				// logs follow the switch.
 				engine.SetBridgeLocale(i18n.GetLocale())
 			}
 		}
 		rebuildTrayMenu(app, hm, configSvc, settingsService)
 	})
 
-	// 快捷键启用状态变更（保存后重注册完成会广播）后，重建托盘菜单动态显示对应项。
+	// After hotkey enabled-state changes (broadcast after save + re-registration), rebuild the
+	// tray menu to show the matching items dynamically.
 	app.Event.On(kevents.EventHotkeysChanged, func(e *application.CustomEvent) {
 		rebuildTrayMenu(app, hm, configSvc, settingsService)
 	})
 
-	// 配置自更新功能
+	// App self-update
 	// https://v3.wails.io/guides/updater/
-	// 更新器复用全局 HTTP 客户端（含 UA 注入、代理、自定义 DNS），
-	// 而非自建裸 client，避免丢失全局注入与可观测性。
-	// 更新器作为独立 package（pkg/wails-updater-providers）使用：slog/client 注入。
-	// updater 的 Locale/Theme/Source 不接受 auto（第三方库已移除 auto 取值），
-	// 必须把 settings 里的 auto 解析为真实值：语言取 i18n 当前生效语言，
-	// 主题用系统真实外观（IsDarkMode）解析为 light/dark。这些值写入库全局
-	// （SetLocale/SetTheme/SetSource），库内部（matcher/provider/窗口）直接读取。
+	// The updater reuses the global HTTP client (UA injection, proxy, custom DNS) rather than
+	// building its own bare client, so it keeps the global injections and observability.
+	// The updater lives in its own package (pkg/wails-updater-providers): slog/client injected.
+	// The updater's Locale/Theme/Source do not accept auto (the third-party library removed the
+	// auto values), so settings' auto must be resolved to real values: language from the i18n
+	// active locale, theme from the real system appearance (IsDarkMode) as light/dark. These are
+	// written into the library globals (SetLocale/SetTheme/SetSource), which the library
+	// internals (matcher/provider/window) read directly.
 	updLocale := resolveUpdaterLocale(settingsService.Get().Language)
 	updTheme := resolveUpdaterTheme(settingsService.Get().Theme, app)
 	updClient := network.BuildHTTPClient(*settingsService.Get())
-	// 库全局配置：语言/主题/主源/日志器/HTTP 客户端（一次设置，运行时亦可经 SetXxx 动态切换）。
+	// Library globals: language/theme/primary source/logger/HTTP client (set once; switchable
+	// at runtime via SetXxx).
 	kupdater.SetLogger(slog.Default())
 	kupdater.SetClient(updClient)
 	kupdater.SetLocale(kupdater.Locale(updLocale))
@@ -530,19 +573,23 @@ func main() {
 		GitCommit:   buildinfo.GitCommit,
 		Prerelease:  settingsService.Get().Updater.Prerelease,
 
-		// 自定义资源匹配：仅匹配 updater- 前缀的升级专用压缩包。
-		// matcher 直接读库全局语言，语言切换时只需调用 SetLocale，matcher 闭包自动跟随。
+		// Custom asset matcher: match only the updater- prefixed upgrade archives.
+		// The matcher reads the library global language directly; on language switch just call
+		// SetLocale and the matcher closure follows automatically.
 		AssetMatcher: kupdater.NewUpdaterAssetMatcher()}
 	updaterProvider, err = kupdater.NewMirrorProvider(&updOpts)
 	if err != nil {
 		slog.Error(i18n.T("log.updater_init_failed"), "error", err)
 	} else {
-		// 自带更新窗口（BYO）：由库（wails-updater-providers）自创建并管理窗口，
-		// 在 OpenUpdaterWindow 内监听 wails:updater:resize（HTML 侧 ResizeObserver
-		// 触发）后调 SetSize，实现内容自适应（框架 Builtin 模式的写死常量尺寸不随
-		// notes 内容变化，且 HTML 侧无法直接调 Window.SetSize）。句柄不实现
-		// WindowSizer，框架 transition() 不会用写死常量覆盖我们的尺寸。
-		// 窗口默认 Hidden，启动不弹窗；Close 复用为 Hide，点 x 不销毁实例。
+		// Built-in updater window (BYO): created and managed by the library
+		// (wails-updater-providers) itself; it listens for wails:updater:resize (triggered by
+		// the HTML side's ResizeObserver) and calls SetSize for content-adaptive sizing (the
+		// framework's Builtin mode uses hardcoded constant sizes that don't track the notes
+		// content, and the HTML side cannot call Window.SetSize directly). The handle does not
+		// implement WindowSizer, so the framework's transition() won't overwrite our size with
+		// hardcoded constants.
+		// The window defaults to Hidden and doesn't pop at startup; Close is repurposed as
+		// Hide — clicking x doesn't destroy the instance.
 		winOpt := kupdater.OpenUpdaterWindow(app)
 		if err := app.Updater.Init(updater.Config{
 			CurrentVersion: buildinfo.Version,
@@ -551,20 +598,23 @@ func main() {
 		}); err != nil {
 			slog.Error(i18n.T("log.updater_init_failed"), "error", err)
 		} else {
-			// 更新就绪：打印日志，由用户在托盘菜单选择重启安装。
-			// 运行时回调，语言跟随库全局（已随切换更新），不用构造期快照。
+			// Update ready: log it; the user picks "restart to install" from the tray menu.
+			// Runtime callback: language follows the library global (already updated on switch),
+			// not a construction-time snapshot.
 			app.Event.On(updater.EventUpdateReady, func(e *application.CustomEvent) {
 				slog.Info(i18n.T("log.updater_ready"))
 			})
-			// 启动时静默检查（dev 构建跳过，避免噪音）。
+			// Silent check at startup (skipped on dev builds to avoid noise).
 			if !buildinfo.IsDev() {
 				checkUpdateOnStart(app, notifySvc)
 			}
 		}
 	}
 
-	// 前端匿名统计事件上报：前端 UI 事件（设置页打开、开关切换）经此事件转交 Go 统一上报，
-	// 避免在前端 webview 里加载 posthog-js，前后端共用同一匿名设备 ID。
+	// Frontend anonymous analytics event reporting: frontend UI events (settings page opened,
+	// toggle flipped) are handed to Go via this event for unified reporting, avoiding loading
+	// posthog-js in the frontend webview; frontend and backend share the same anonymous
+	// device ID.
 	app.Event.On("kai:analytics:track", func(e *application.CustomEvent) {
 		m, ok := e.Data.(map[string]any)
 		if !ok {
@@ -578,17 +628,20 @@ func main() {
 		analytics.Track(ev, props)
 	})
 
-	// 应用退出：清理 httplog 资源（停止定时清理 + 关闭数据库），并冲刷统计上报。
+	// App shutdown: clean up httplog resources (stop periodic cleanup + close the database)
+	// and flush analytics reporting.
 	app.OnShutdown(func() {
 		appSvc.ServiceShutdown()
 		analytics.Close()
 	})
 
-	// 系统主题变更（Wails3 官方 events.Common.ThemeChanged，跨平台由原生实现）。
-	// 官方文档要求用 app.Event.OnApplicationEvent 监听系统级事件（非普通 Event.On）。
-	// 回调里用可信的 application.Env.IsDarkMode() 派生真实外观，通过统一的
-	// EventThemeChanged 转发出去（webview 内 matchMedia 在 macOS 不可靠）。
-	// payload 同时带用户配置模式 mode 与系统真实外观 theme，前端一个事件即可处理 auto 跟随。
+	// System theme change (Wails3 official events.Common.ThemeChanged, implemented natively
+	// per platform). The official docs require listening for system-level events via
+	// app.Event.OnApplicationEvent (not a plain Event.On). The callback derives the real
+	// appearance from the trustworthy application.Env.IsDarkMode() and forwards it via the
+	// unified EventThemeChanged (matchMedia inside the webview is unreliable on macOS).
+	// The payload carries both the user-configured mode and the real system appearance theme,
+	// so the frontend can handle auto-following with a single event.
 	app.Event.OnApplicationEvent(events.Common.ThemeChanged, func(event *application.ApplicationEvent) {
 		if configSvc.Theme() == string(model.ThemeAuto) {
 			tray.SetIcon(selectTrayIcon(app))
@@ -597,10 +650,12 @@ func main() {
 		if app != nil && app.Env.IsDarkMode() {
 			sysTheme = model.ThemeDark
 		}
-		// 系统真实外观变更同步到更新器（auto 模式下跟随系统），刷新弹窗配色。
+		// Sync the real system appearance change to the updater (auto mode follows the system),
+		// refreshing dialog colors.
 		if updaterProvider != nil {
 			kupdater.SetTheme(kupdater.Theme(resolveUpdaterTheme(configSvc.Theme(), app)))
-			// 同步刷新内置更新窗口配色（auto 模式下随系统外观变化）。
+			// Refresh the built-in updater window colors (auto mode follows system appearance
+			// changes).
 			kupdater.SetUpdaterLocaleTheme(app)
 		}
 		app.Event.Emit(kevents.EventThemeChanged, kevents.ThemeChangedPayload{
@@ -614,7 +669,7 @@ func main() {
 	}
 }
 
-// 包级窗口/tray 引用，便于语言变更时重建菜单
+// Package-level window/tray references, so menus can be rebuilt on language change
 var (
 	tray             *application.SystemTray
 	translateWindow  application.Window
@@ -622,9 +677,11 @@ var (
 	screenshotWindow application.Window
 )
 
-// showScreenshotWindow 呼出截图翻译窗口并置于前台（红 X 仅隐藏，不销毁）。
-// 与 ShowTranslateWindow 机制一致（service.showAndFocus）：连续两次 Show() 建 impl+真正 show，再 Focus()。
-// 整个序列包在 InvokeAsync 主线程闭包内执行，避免后台 goroutine 直调 Wails 原生窗口方法触发线程问题。
+// showScreenshotWindow summons the screenshot translate window to the foreground (the red X
+// only hides, never destroys). Same mechanism as ShowTranslateWindow (service.showAndFocus):
+// two consecutive Show() calls build the impl + actually show, then Focus().
+// The whole sequence runs inside an InvokeAsync main-thread closure, avoiding thread issues
+// from calling Wails native window methods directly on a background goroutine.
 func showScreenshotWindow() {
 	if screenshotWindow == nil {
 		return
@@ -639,8 +696,9 @@ func showScreenshotWindow() {
 func registerTray(app *application.App, hm *hotkey.Manager, configSvc *service.ConfigWrapper, ss *settings.Service) {
 	tray = app.SystemTray.New()
 	tray.SetIcon(selectTrayIcon(app))
-	// 不要用 AttachWindow：macOS 上点击托盘激活 app 时会连带恢复(settings)等所有窗口。
-	// 改为手动 toggle 主窗口，避免一次性打开全部窗口。
+	// Do NOT use AttachWindow: on macOS, activating the app by clicking the tray also restores
+	// all windows (settings etc.). Toggle the main window manually instead, avoiding opening
+	// every window at once.
 	tray.OnClick(func() {
 		if settingsWindow.IsVisible() {
 			settingsWindow.Hide()
@@ -651,35 +709,43 @@ func registerTray(app *application.App, hm *hotkey.Manager, configSvc *service.C
 	buildTrayMenu(app, hm, configSvc, ss)
 }
 
-// buildTrayMenu 用当前语言构建托盘菜单（语言/快捷键启用状态变更时重建）。
-// 菜单项按配置中对应快捷键的「是否启用」动态显示：仅启用时才加入托盘菜单。
+// buildTrayMenu builds the tray menu in the current language (rebuilt on language/hotkey
+// enabled-state changes). Menu items appear dynamically based on each configured hotkey's
+// "enabled" flag: only enabled items are added to the tray menu.
 func buildTrayMenu(app *application.App, hm *hotkey.Manager, configSvc *service.ConfigWrapper, ss *settings.Service) {
-	// lang 取空串，由 i18n.T 回退到 SetLocale 设置的全局语言（含 auto 解析），
-	// 确保语言广播后即时重建菜单用最新语言，不依赖配置落盘时序。
+	// lang is passed as an empty string so i18n.T falls back to the global locale set by
+	// SetLocale (including auto resolution), ensuring the menu rebuilt right after a language
+	// broadcast uses the latest language, independent of config persistence ordering.
 	trayMenu := app.Menu.New()
-	// 第一项：应用名称 + 当前版本号，禁用状态（不可点击）
+	// First item: app name + current version, disabled (not clickable)
 	trayMenu.Add(i18n.T("app.name_version", "Version", buildinfo.Version)).SetEnabled(false)
-	// 分隔符隔开
+	// Separator
 	trayMenu.AddSeparator()
-	// 根据快捷键启用状态动态添加菜单项：输入翻译 / 截图翻译。
-	// 两项之间按需补分隔符，保持与「设置」之间始终有分隔。
+	// Dynamically add menu items based on hotkey enabled state: input translate / screenshot
+	// translate. Insert separators between them as needed, always keeping one before "Settings".
 	cfg := configSvc.GetConfig()
 	inputEnabled := cfg != nil && cfg.Hotkeys.Input.Enabled
 	screenshotEnabled := cfg != nil && cfg.Hotkeys.Screenshot.Enabled
-	// 始终显示「输入翻译」「截图翻译」两项，但按启用状态决定可点（禁用=置灰）。
-	// 直接隐藏会让用户看不见功能入口，置灰更直观：知道有此功能，只是当前未启用。
+	// Always show "Input Translate" and "Screenshot Translate", but make them clickable per
+	// enabled state (disabled = greyed out). Hiding them outright would hide the feature entry
+	// point; greyed-out is more intuitive: users know the feature exists, it's just not
+	// enabled right now.
 	trayMenu.Add(i18n.T("menu.input_translate")).SetEnabled(inputEnabled).OnClick(func(ctx *application.Context) {
-		// 等效于按下「输入翻译」快捷键：走复制键/系统取词分支并投递输入框。
+		// Equivalent to pressing the "input translate" hotkey: takes the copy-key/system
+		// text-capture branch and delivers to the input box.
 		hm.TriggerInput()
 	})
 	trayMenu.Add(i18n.T("menu.screenshot_translate")).SetEnabled(screenshotEnabled).OnClick(func(ctx *application.Context) {
-		// 等效于按下「截图翻译」快捷键：区域截图→OCR→翻译→呼起截图窗口。
+		// Equivalent to pressing the "screenshot translate" hotkey: region screenshot→OCR→
+		// translate→open the screenshot window.
 		hm.TriggerScreenshot()
 	})
-	// 翻译类菜单项与下方「设置」之间补一个分隔符
+	// Separator between the translate menu items and "Settings" below
 	trayMenu.AddSeparator()
-	// 开机自启开关：紧贴「设置」上方。勾选状态由 Wails Autostart 库当前状态决定，
-	// 点击由框架自动翻转 checked，回调中调库 Enable/Disable（库自身管理持久化）。
+	// Launch-at-login toggle: right above "Settings". Checked state comes from the Wails
+	// Autostart library's current state; clicking lets the framework flip checked automatically
+	// and the callback calls the library's Enable/Disable (the library manages persistence
+	// itself).
 	if enabled, err := app.Autostart.IsEnabled(); err == nil {
 		trayMenu.AddCheckbox(i18n.T("menu.auto_start"), enabled).OnClick(func(ctx *application.Context) {
 			if ctx.IsChecked() {
@@ -693,31 +759,35 @@ func buildTrayMenu(app *application.App, hm *hotkey.Manager, configSvc *service.
 			}
 		})
 	}
-	// 设置，打开设置窗口
+	// Settings, open the settings window
 	trayMenu.Add(i18n.T("menu.settings")).OnClick(func(ctx *application.Context) {
 		settingsWindow.Show().Focus()
 	})
-	// 分隔符隔开
+	// Separator
 	trayMenu.AddSeparator()
-	// 检查更新：弹出内置升级窗口（updater_window.html 模板），用户确认后下载安装，就绪重启生效
+	// Check for updates: opens the built-in upgrade window (updater_window.html template); the
+	// user confirms, it downloads and installs, and applies after the ready restart.
 	trayMenu.Add(i18n.T("menu.check_update")).OnClick(func(ctx *application.Context) {
 		if app.Updater.State() != updater.StateUnconfigured {
-			// BYO 模式下框架不负责显示窗口。Wails 关闭窗口会销毁并移出注册表，
-			// 故不能靠 app.Window.Get 取其句柄 Show；统一走包内 ShowUpdaterWindow
-			// 确保窗口存活/重建后再显示，保证「关闭后再检查更新」仍能弹出。
+			// In BYO mode the framework doesn't show the window. Wails destroys a closed window
+			// and removes it from the registry, so we can't rely on app.Window.Get for its
+			// handle to Show; go through the in-package ShowUpdaterWindow uniformly, ensuring
+			// the window is alive/rebuilt before showing, so "check for updates again after
+			// closing" still pops up.
 			kupdater.ShowUpdaterWindow(app)
 			_ = app.Updater.CheckAndInstall(context.Background())
 		}
 	})
-	// 预发布版更新通道开关：紧贴「检查更新」，切换后写回设置并持久化。
-	// 初始勾选状态读当前配置；点击由 Wails 自动翻转 checked，回调里读新值落盘。
+	// Prerelease update channel toggle: right next to "Check for updates"; toggling writes back
+	// to settings and persists. Initial checked state reads the current config; clicking lets
+	// Wails flip checked automatically, and the callback reads the new value and persists it.
 	trayMenu.AddCheckbox(i18n.T("menu.prerelease"), ss.Get().Updater.Prerelease).OnClick(func(ctx *application.Context) {
 		ss.Get().Updater.Prerelease = ctx.IsChecked()
 		if err := ss.Save(); err != nil {
 			slog.Error(i18n.T("log.save_prerelease_failed"), slog.String("error", err.Error()))
 		}
 	})
-	// 分隔符隔开
+	// Separator
 	trayMenu.AddSeparator()
 	trayMenu.Add(i18n.T("menu.quit")).OnClick(func(ctx *application.Context) {
 		app.Quit()
@@ -726,7 +796,7 @@ func buildTrayMenu(app *application.App, hm *hotkey.Manager, configSvc *service.
 	tray.SetTooltip(i18n.T("menu.tooltip"))
 }
 
-// rebuildTrayMenu 语言/快捷键启用状态变更时重建托盘菜单（动态显示菜单项）
+// rebuildTrayMenu rebuilds the tray menu on language/hotkey enabled-state changes (dynamic menu items)
 func rebuildTrayMenu(app *application.App, hm *hotkey.Manager, configSvc *service.ConfigWrapper, ss *settings.Service) {
 	if translateWindow == nil || settingsWindow == nil {
 		return
@@ -734,16 +804,18 @@ func rebuildTrayMenu(app *application.App, hm *hotkey.Manager, configSvc *servic
 	buildTrayMenu(app, hm, configSvc, ss)
 }
 
-// checkUpdateOnStart 启动后异步检查更新，有更新时发通知（对齐 certflow）。
+// checkUpdateOnStart checks for updates asynchronously after startup and notifies when one is
+// available (mirrors certflow).
 func checkUpdateOnStart(app *application.App, notifySvc *service.NotificationService) {
 	go func() {
-		// 兜底：同点击检查更新，避免 Updater 原生层 panic 拖死主进程。
+		// Safety net: same as clicking "check for updates", preventing an Updater native-layer
+		// panic from taking down the main process.
 		defer func() {
 			if r := recover(); r != nil {
 				slog.Error(i18n.T("log.check_update_panic"), "panic", r)
 			}
 		}()
-		// 生成 1 到 3 分钟之间的随机延迟，对齐 certflow（math/rand 足够）。
+		// Random delay between 1 and 3 minutes, mirroring certflow (math/rand is sufficient).
 		minDuration := 1 * time.Minute
 		maxDuration := 3 * time.Minute
 		randomDuration := minDuration + time.Duration(rand.Intn(int(maxDuration-minDuration)))
@@ -754,10 +826,11 @@ func checkUpdateOnStart(app *application.App, notifySvc *service.NotificationSer
 			return
 		}
 		if rel == nil {
-			return // 没有更新
+			return // No update
 		}
-		// 发送原生桌面通知（Wails notifications service，不经前端转发）。
-		// 授权检查与降级逻辑统一收敛到 service.NotificationService，调用处只关心发什么。
+		// Send a native desktop notification (Wails notifications service, not forwarded via
+		// the frontend). Permission checks and fallback logic are consolidated in
+		// service.NotificationService; callers only care about what to send.
 		notifySvc.Notify(notifications.NotificationOptions{
 			ID:       "kai-update-available",
 			Title:    i18n.T("notification.update_available_title"),
@@ -766,27 +839,31 @@ func checkUpdateOnStart(app *application.App, notifySvc *service.NotificationSer
 	}()
 }
 
-// selectTrayIcon 根据系统暗色状态选择托盘图标。使用 Wails3 Environment API
-// 探测当前外观，跨平台可靠。预留暗色图标分支：补 build/darwin/trayicon_dark.png
-// 并在下方 embed 后即可自动跟随系统暗色。
+// selectTrayIcon picks the tray icon based on the system dark state. Uses the Wails3
+// Environment API to probe the current appearance — reliable cross-platform. A dark icon
+// branch is reserved: add build/darwin/trayicon_dark.png and embed it below to follow the
+// system dark mode automatically.
 func selectTrayIcon(app *application.App) []byte {
-	// 预留暗色图标分支：补 build/darwin/trayicon_dark.png 并在上方 embed 后即可跟随系统暗色。
+	// Reserved dark icon branch: add build/darwin/trayicon_dark.png and embed it above to
+	// follow the system dark mode.
 	// if app != nil && app.Env.IsDarkMode() && len(trayIconDark) > 0 {
 	// 	return trayIconDark
 	// }
 	return trayIcon
 }
 
-// initLogging 将 slog 默认 logger 输出到 dataDir/logs/kai.log（按天滚动），
-// 同时多路写 stderr 方便开发期终端查看。日志等级完全由 settings.json 的 log.level 控制
-// （启动后 applyLogConfig 应用，不做任何 dev/正式的区别覆盖）。
-// 返回 *logutil.Rotator，供设置热更新时动态调整级别 / 清理策略。
+// initLogging points the default slog logger at dataDir/logs/kai.log (day-rotated) while
+// also fanning out to stderr for easy terminal viewing during development. The log level is
+// controlled entirely by settings.json's log.level (applied by applyLogConfig after startup;
+// no dev/release-specific overrides).
+// Returns *logutil.Rotator so settings hot-updates can adjust level / cleanup policy dynamically.
 func initLogging(homeDir string, logCfg settings.LogConfig) *logutil.Rotator {
 	logLevel := logutil.ParseLevel(logCfg.Level)
 	logDir := buildinfo.LogDir(homeDir)
 	rotator, err := logutil.NewRotator(logDir, logLevel, logCfg.RetentionDays, logCfg.Compress)
 	if err != nil {
-		// 目录/文件不可用：降级为仅 stderr，保证应用仍能启动并记录关键日志。
+		// Directory/file unusable: degrade to stderr-only so the app still starts and records
+		// critical logs.
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 		log.Printf(i18n.T("log.rotate_log_init_failed"), err)
 		return rotator
@@ -796,10 +873,12 @@ func initLogging(homeDir string, logCfg settings.LogConfig) *logutil.Rotator {
 	return rotator
 }
 
-// applyLogConfig 依据 settings.LogConfig 动态调整运行日志等级与清理策略。
-// 等级完全由设置文件（settings.json 的 log.level）控制，不做任何 dev/正式的区别覆盖。
-// dataDir 用于把同一套配置（目录 + 等级/保留天数/压缩）同步给 Swift 桥接层，
-// 使 kai-bridge.log、frontend.log 与主应用日志 kai.log 使用相同策略（等级过滤、按天滚动、清理、压缩）。
+// applyLogConfig dynamically adjusts the runtime log level and cleanup policy from
+// settings.LogConfig. The level is controlled entirely by the settings file (settings.json's
+// log.level); no dev/release-specific overrides. dataDir is used to sync the same config
+// (directory + level/retention days/compression) to the Swift bridge layer, so kai-bridge.log
+// and frontend.log follow the same policy as the main app log kai.log (level filtering, day
+// rotation, cleanup, compression).
 func applyLogConfig(r *logutil.Rotator, fl *logutil.FrontendLogService, cfg settings.LogConfig, homeDir string) {
 	if r == nil {
 		return
@@ -810,9 +889,11 @@ func applyLogConfig(r *logutil.Rotator, fl *logutil.FrontendLogService, cfg sett
 	if fl != nil {
 		fl.SetLevel(level)
 	}
-	// 同步给 Swift 桥接层（kai-bridge.log），等级同样来自设置文件。
+	// Sync to the Swift bridge layer (kai-bridge.log); the level likewise comes from the
+	// settings file.
 	engine.SetLogConfig(buildinfo.LogDir(homeDir), cfg.Level, cfg.RetentionDays, cfg.Compress)
-	// 同步当前界面语言，使桥接层调试日志随系统语言切换中/英文。
+	// Sync the current UI language so the bridge layer's debug logs switch between
+	// Chinese/English with the system language.
 	engine.SetBridgeLocale(i18n.GetLocale())
 	slog.Info(i18n.T("log.log_config_applied"), "level", level.String(), "retention_days", cfg.RetentionDays, "compress", cfg.Compress)
 }

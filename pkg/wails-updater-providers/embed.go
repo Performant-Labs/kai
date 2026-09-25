@@ -12,9 +12,12 @@ import (
 //go:embed updater_window.html
 var updaterWindowHTMLRaw string
 
-// Window 返回完整的内置更新窗口配置（HTML 已按当前包全局 locale/theme 注入文案）。
-// 调用方直接把它赋给 updater.Config.Window，无需自行拼装 BuiltinWindow。
-// Options/CSS 留零值，由框架回退到默认外观（小、居中、可缩放）。
+// Window returns the complete built-in update window config (the HTML already has copy
+// injected per the current package-global locale/theme).
+// Callers assign it straight to updater.Config.Window — no need to assemble BuiltinWindow
+// themselves.
+// Options/CSS stay zero-valued so the framework falls back to the default look (small,
+// centered, resizable).
 func (m *MirrorProvider) Window() *updater.BuiltinWindow {
 	return &updater.BuiltinWindow{
 		HTML: renderWindowHTML(nil),
@@ -24,12 +27,18 @@ func (m *MirrorProvider) Window() *updater.BuiltinWindow {
 	}
 }
 
-// renderWindowHTML 把内嵌的 updater_window.html 模板按当前包全局 locale/theme/当前版本注入文案后返回。
-// 配色跟随应用主题 GetTheme()：ThemeDark 注入 "dark"、ThemeLight 注入 "light"（HTML 用
-// body[data-theme="..."] 决定内容区配色），与 recreateNativeWindow 的 BackgroundColour 保持一致。
-// locale/theme 已由 T()/GetTheme() 内部读全局，无需入参（每次渲染实时读，热更新语言/配色）。
-// CurrentVersion 从 app.Updater.CurrentVersion() 读取；app 为 nil 时注入空串。
-// 模板解析或执行失败时回退为原始内嵌 HTML（降级不致命）。
+// renderWindowHTML injects copy into the embedded updater_window.html template per the
+// current package-global locale/theme/current version and returns it.
+// Colors follow the app theme GetTheme(): ThemeDark injects "dark", ThemeLight injects
+// "light" (the HTML uses
+// body[data-theme="..."] to decide content colors), consistent with recreateNativeWindow's
+// BackgroundColour.
+// locale/theme are read from globals inside T()/GetTheme() — no parameters needed (read live
+// on every render, so language/colors hot-update).
+// CurrentVersion is read from app.Updater.CurrentVersion(); a nil app injects an empty
+// string.
+// Template parse/exec failures fall back to the original embedded HTML (a graceful
+// degradation, not fatal).
 func renderWindowHTML(app *application.App) string {
 	theme := GetTheme()
 	tmpl, err := template.New("updaterWindow").Parse(updaterWindowHTMLRaw)
@@ -52,7 +61,7 @@ func renderWindowHTML(app *application.App) string {
 	return sb.String()
 }
 
-// themeHTMLTheme 将 Theme 转为 <body data-theme="..."> 的取值。
+// themeHTMLTheme converts a Theme into the value for <body data-theme="...">.
 // ThemeDark → "dark"；ThemeLight → "light"。
 func themeHTMLTheme(theme Theme) string {
 	if theme == ThemeDark {

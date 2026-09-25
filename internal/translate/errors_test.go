@@ -2,9 +2,11 @@ package translate
 
 import "testing"
 
-// TestClassifyEngineError 验证引擎错误 → 面向用户的类别（issue #42）：
-// pair（语言对不可用）/ network（网络不可达）/ auth（认证失败）/ engine（其它）。
-// 前端按类别映射可操作的本地化文案；原文细节随事件附带，不参与分类。
+// TestClassifyEngineError verifies engine error → user-facing category (issue #42):
+// pair (language pair unavailable) / network (unreachable) / auth (authentication failure) /
+// engine (other).
+// The frontend maps each category to actionable localized copy; the raw detail travels with
+// the event and is not part of the classification.
 func TestClassifyEngineError(t *testing.T) {
 	cases := []struct {
 		name string

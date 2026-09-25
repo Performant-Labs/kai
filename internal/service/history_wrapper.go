@@ -8,31 +8,33 @@ import (
 	"cnb.cool/dtapp/kai/internal/historystore"
 )
 
-// HistoryItem 返回给前端的单条历史（时间转为毫秒时间戳，引擎 ID 转为可读名）。
+// HistoryItem is a single history entry returned to the frontend (time as a millisecond
+// timestamp, engine ID resolved to a readable name).
 type HistoryItem struct {
-	ID        int64  `json:"id"`         // 历史记录自增主键 ID
-	Text      string `json:"text"`       // 原文
-	Result    string `json:"result"`     // 翻译结果
-	FromLang  string `json:"from_lang"`  // 源语言代码
-	ToLang    string `json:"to_lang"`    // 目标语言代码
-	Engine    string `json:"engine"`     // 使用的引擎标识
-	FromOCR   bool   `json:"from_ocr"`   // 是否来自 OCR 识别结果
-	CreatedAt int64  `json:"created_at"` // 创建时间（毫秒时间戳）
+	ID        int64  `json:"id"`         // History record auto-increment primary key
+	Text      string `json:"text"`       // Source text
+	Result    string `json:"result"`     // Translation result
+	FromLang  string `json:"from_lang"`  // Source language code
+	ToLang    string `json:"to_lang"`    // Target language code
+	Engine    string `json:"engine"`     // Engine identifier used
+	FromOCR   bool   `json:"from_ocr"`   // Whether it came from OCR recognition
+	CreatedAt int64  `json:"created_at"` // Creation time (millisecond timestamp)
 }
 
-// HistoryWrapper 翻译历史的薄适配层：持有 historystore.Store + configstore，仅做 RPC 透传与 DTO 转换。
-// 不实现 wails 生命周期三件套。
+// HistoryWrapper is the thin adapter over translation history: holds historystore.Store +
+// configstore, doing only RPC passthrough and DTO conversion.
+// Does not implement the wails lifecycle trio.
 type HistoryWrapper struct {
 	store       *historystore.Store
 	configStore *configstore.Store
 }
 
-// NewHistoryWrapper 构造历史 Wrapper。
+// NewHistoryWrapper constructs the history Wrapper.
 func NewHistoryWrapper(store *historystore.Store, cs *configstore.Store) *HistoryWrapper {
 	return &HistoryWrapper{store: store, configStore: cs}
 }
 
-// GetHistory 分页查询翻译历史。
+// GetHistory queries translation history with pagination.
 func (w *HistoryWrapper) GetHistory(keyword string, offset, limit int) []HistoryItem {
 	if w.store == nil {
 		return nil
@@ -68,7 +70,8 @@ func (w *HistoryWrapper) GetHistory(keyword string, offset, limit int) []History
 	return out
 }
 
-// CountHistory 返回符合关键词的历史总条数，供前端分页计算总页数。
+// CountHistory returns the total history count matching the keyword, for the frontend's page
+// count.
 func (w *HistoryWrapper) CountHistory(keyword string) int64 {
 	if w.store == nil {
 		return 0
@@ -82,14 +85,14 @@ func (w *HistoryWrapper) CountHistory(keyword string) int64 {
 	return n
 }
 
-// DeleteHistory 删除一条历史。
+// DeleteHistory deletes one history entry.
 func (w *HistoryWrapper) DeleteHistory(id int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return w.store.DeleteHistory(ctx, id)
 }
 
-// ClearHistory 清空历史。
+// ClearHistory clears all history.
 func (w *HistoryWrapper) ClearHistory() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

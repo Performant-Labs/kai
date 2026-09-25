@@ -1,4 +1,4 @@
--- engine_id 引用 config.db 的 engines.id（跨库，无 FK 约束）。
+-- engine_id references config.db's engines.id (cross-database, no FK constraint).
 CREATE TABLE IF NOT EXISTS history (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     text       TEXT    NOT NULL,

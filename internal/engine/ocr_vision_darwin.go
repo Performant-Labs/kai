@@ -16,27 +16,33 @@ import (
 	"cnb.cool/dtapp/kai/pkg/swiftbridge"
 )
 
-// VisionOCR 调用 macOS 系统 Vision.framework 做离线 OCR（零安装、无需本机 tesseract）。
-// 通过 purego 运行时动态加载 Swift 桥接动态库（pkg/swiftbridge）。改 Swift 后只需重编
-// internal/swift/build.sh（产 .dylib 并自动复制到 pkg/swiftbridge），运行时 Dlopen 加载即最新，无需重链接。
+// VisionOCR calls macOS's system Vision.framework for offline OCR (zero-install, no local
+// tesseract needed).
+// It loads the Swift bridge dynamic library at runtime via purego (pkg/swiftbridge). After
+// changing Swift code, just rebuild internal/swift/build.sh (produces the .dylib and copies
+// it into pkg/swiftbridge); the runtime Dlopen then loads the latest code, no relinking.
 type VisionOCR struct {
 	name   string
-	config *EngineConfig // 持有所属引擎配置，从 Extra(JSON) 读取 OCR 专属参数
+	config *EngineConfig // Holds the owning engine config; reads OCR-specific params from Extra(JSON)
 }
 
-// NewVisionOCR 构造系统 OCR 引擎。cfg 为 vision 引擎的 EngineConfig（含 Extra 中的 OCR 参数）。
+// NewVisionOCR constructs the system OCR engine. cfg is the vision engine's EngineConfig
+// (containing the OCR params in Extra).
 func NewVisionOCR(cfg *EngineConfig) *VisionOCR {
 	return &VisionOCR{name: "vision", config: cfg}
 }
 
-// Name 引擎名
+// Name returns the engine name.
 func (v *VisionOCR) Name() string { return v.name }
 
-// ocrOptions 解析当前配置与本次请求的参数，得到最终生效的 correct / timeout / retry。
-// 优先级：req 显式覆盖 > 引擎 Extra 配置 > 内置默认(true / 60s / 2)。
-// 复用统一 parseOCRExtra 解析 Extra(JSON)，与 tesseract 保持 extra 格式一致。
-// retry 为「额外重试次数（不含首次尝试）」：Extra 显式设 0 => 关闭重试（仅首次尝试）；
-// Extra 未含该字段(nil) => 回落默认 2; req.RetryCount>0 可显式覆盖。
+// ocrOptions resolves the effective correct / timeout / retry from the current config and
+// this request.
+// Priority: explicit req override > engine Extra config > built-in defaults (true / 60s / 2).
+// Extra(JSON) is parsed with the unified parseOCRExtra, keeping the extra format consistent
+// with tesseract.
+// retry is the "extra retries count (excluding the first attempt)": Extra explicitly 0 =>
+// retries disabled (first attempt only); Extra missing the field (nil) => falls back to the
+// default 2; req.RetryCount>0 overrides explicitly.
 func (v *VisionOCR) ocrOptions(req model.OcrRequest) (correct bool, timeoutSec int, retryCount int) {
 	correct = true
 	timeoutSec = DefaultOCRTimeoutSec
@@ -46,7 +52,7 @@ func (v *VisionOCR) ocrOptions(req model.OcrRequest) (correct bool, timeoutSec i
 		timeoutSec = e.TimeoutSec
 	}
 	if e.RetryCount != nil {
-		retryCount = *e.RetryCount // 允许 0（关闭重试）
+		retryCount = *e.RetryCount // 0 allowed (retries disabled)
 	}
 	if e.Correct != nil {
 		correct = *e.Correct
@@ -63,7 +69,7 @@ func (v *VisionOCR) ocrOptions(req model.OcrRequest) (correct bool, timeoutSec i
 	return
 }
 
-// Recognize 对图片字节做 Vision OCR。
+// Recognize runs Vision OCR on the image bytes.
 func (v *VisionOCR) Recognize(ctx context.Context, req model.OcrRequest) (*model.OcrResult, error) {
 	if len(req.ImageData) == 0 {
 		return nil, ErrEmptyImage
@@ -73,12 +79,13 @@ func (v *VisionOCR) Recognize(ctx context.Context, req model.OcrRequest) (*model
 
 	b64 := base64.StdEncoding.EncodeToString(req.ImageData)
 
-	// dylib 未加载（非 macOS / 缺失 / 路径错）时安全降级，避免 nil 函数指针 panic。
+	// Degrade safely when the dylib isn't loaded (non-macOS / missing / wrong path), avoiding
+	// a nil function-pointer panic.
 	if !swiftbridge.Available() {
 		return nil, fmt.Errorf(i18n.T("err.swiftbridge_unavailable"))
 	}
-	outBuf := make([]byte, 1<<20) // 1MB 输出缓冲，足以容纳大图 OCR 的 region 明细
-	// 调用 Swift 桥接：unsafe.Pointer 为与 C/Swift 交互所必需。
+	outBuf := make([]byte, 1<<20) // 1MB output buffer, enough for region details of large-image OCR
+	// Call the Swift bridge: unsafe.Pointer is required for the C/Swift interop.
 	n := swiftbridge.KaiOCR(b64, unsafe.Pointer(&outBuf[0]), int32(len(outBuf)), boolToInt32(correct), int32(timeoutSec), int32(retryCount)) //nolint:gosec
 	slog.Debug(i18n.T("log.vision_ocr_call"), "n", int(n), "out_cap", len(outBuf), "correct", correct, "timeout", timeoutSec, "retry", retryCount)
 	if n < 0 {
@@ -93,8 +100,10 @@ func (v *VisionOCR) Recognize(ctx context.Context, req model.OcrRequest) (*model
 		return nil, fmt.Errorf("%s: %w", i18n.T("err.vision_ocr_parse"), err)
 	}
 	if resp.Code != "" {
-		// Swift 自定义错误：按错误码走 Go 侧 i18n 渲染用户可见文案，detail 作技术细节。
-		// 已知错误码映射到 err.apple_<code>；未知 code 回退到通用 OCR 引擎错误文案。
+		// Swift custom error: render user-visible copy via Go-side i18n by error code, with
+		// detail as the technical context.
+		// Known codes map to err.apple_<code>; unknown codes fall back to the generic OCR
+		// engine error copy.
 		var msg string
 		switch resp.Code {
 		case swiftbridge.BridgeErrNullImage:
@@ -124,7 +133,7 @@ func (v *VisionOCR) Recognize(ctx context.Context, req model.OcrRequest) (*model
 
 	regions := make([]model.OcrRegion, 0, len(resp.Regions))
 	for _, r := range resp.Regions {
-		// Swift 回传的 box 为 [x, y, w, h]，模型 OcrRegion.Box 约定 [x1,y1,x2,y2]。
+		// Swift returns box as [x, y, w, h]; the model's OcrRegion.Box is [x1,y1,x2,y2].
 		box := r.Box
 		if len(box) == 4 {
 			box = []int{box[0], box[1], box[0] + box[2], box[1] + box[3]}
@@ -140,7 +149,7 @@ func (v *VisionOCR) Recognize(ctx context.Context, req model.OcrRequest) (*model
 	}, nil
 }
 
-// boolToInt32 将 Go bool 转为 C int（1/0），供 purego 的 int32 参数使用。
+// boolToInt32 converts a Go bool to a C int (1/0) for purego's int32 parameters.
 func boolToInt32(b bool) int32 {
 	if b {
 		return 1

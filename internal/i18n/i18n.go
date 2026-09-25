@@ -55,7 +55,7 @@ func localizer() *i18n.Localizer {
 	return i18n.NewLocalizer(bundle, string(locale))
 }
 
-// SetLocale 设置当前语言环境
+// SetLocale sets the current locale.
 func SetLocale(l string) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -67,7 +67,7 @@ func SetLocale(l string) {
 	}
 }
 
-// GetLocale 返回当前语言环境字符串
+// GetLocale returns the current locale string.
 func GetLocale() string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -85,9 +85,11 @@ func T(key string, templateData ...any) string {
 	data := make(map[string]any)
 	for i := 0; i < len(templateData)-1; i += 2 {
 		if k, ok := templateData[i].(string); ok {
-			// 防止传入 nil 接口：go-i18n 渲染模板时会对值做 reflect.Value.Type，
-			// 零值 interface{} 会得到 zero Value 并触发 "reflect.Value.Type on zero Value" panic。
-			// 用空串兜底，既避免 panic，也保证模板 {{.k}} 渲染为占位而非崩溃。
+			// Guard against a nil interface: go-i18n calls reflect.Value.Type on values while
+			// rendering templates; a zero-valued interface{} yields a zero Value and triggers
+			// the "reflect.Value.Type on zero Value" panic.
+			// Falling back to an empty string both avoids the panic and renders {{.k}} as a
+			// placeholder instead of crashing.
 			if templateData[i+1] == nil {
 				data[k] = ""
 				continue
@@ -113,7 +115,7 @@ func T(key string, templateData ...any) string {
 	return msg
 }
 
-// TWithLocale 使用指定语言环境翻译 key
+// TWithLocale translates a key using the given locale.
 func TWithLocale(loc string, key string, templateData ...any) string {
 	mu.Lock()
 	saved := locale
@@ -132,7 +134,7 @@ func TWithLocale(loc string, key string, templateData ...any) string {
 	return result
 }
 
-// ResolveLocale 将前端语言环境转换为后端语言环境
+// ResolveLocale converts a frontend locale into the backend locale.
 func ResolveLocale(loc string) string {
 	if loc == string(EN_US) {
 		return string(EN_US)
@@ -140,12 +142,12 @@ func ResolveLocale(loc string) string {
 	return string(ZH_CN)
 }
 
-// SupportedLocales 返回所有支持的语言环境代码
+// SupportedLocales returns all supported locale codes.
 func SupportedLocales() []string {
 	return []string{string(ZH_CN), string(EN_US)}
 }
 
-// GetCurrentLocale 返回当前语言环境字符串
+// GetCurrentLocale returns the current locale string.
 func GetCurrentLocale() string {
 	mu.RLock()
 	defer mu.RUnlock()

@@ -11,26 +11,29 @@ import (
 	"cnb.cool/dtapp/kai/internal/hotkey"
 )
 
-// ConfigWrapper 负责 UI 配置（语言/主题/默认引擎/热键/TTS/执行键）的持久化与读取，
-// 以及语言/主题的解析与对外查询。引擎配置（Engines）由 EngineWrapper 独立管理。
-// 仅暴露 RPC，不实现 wails 生命周期三件套。
+// ConfigWrapper handles persistence and reads of UI config (language/theme/default
+// engine/hotkeys/TTS/exec keys), plus resolution and external queries of language/theme.
+// Engine config (Engines) is managed independently by EngineWrapper.
+// Only exposes RPCs — none of the wails lifecycle trio.
 type ConfigWrapper struct {
 	settingsSvc *settings.Service
 	app         *application.App
 	hotkeyMgr   *hotkey.Manager
 }
 
-// NewConfigWrapper 构造配置 Wrapper。app 与 hotkeyMgr 允许在启动编排后注入。
+// NewConfigWrapper constructs the config Wrapper. app and hotkeyMgr may be injected after
+// the startup orchestration.
 func NewConfigWrapper(st *settings.Service, app *application.App, hm *hotkey.Manager) *ConfigWrapper {
 	return &ConfigWrapper{settingsSvc: st, app: app, hotkeyMgr: hm}
 }
 
-// SetApp 在 app 就绪后注入。
+// SetApp injects the app once it is ready.
 func (w *ConfigWrapper) SetApp(app *application.App) {
 	w.app = app
 }
 
-// Theme 返回用户配置的主题（auto/light/dark，未配置回退 auto）。
+// Theme returns the user-configured theme (auto/light/dark, falling back to auto when
+// unconfigured).
 func (w *ConfigWrapper) Theme() string {
 	if w.settingsSvc.Get() == nil {
 		return string(model.ThemeAuto)
@@ -38,7 +41,7 @@ func (w *ConfigWrapper) Theme() string {
 	return w.settingsSvc.Get().Theme
 }
 
-// GetTheme 返回当前主题配置（可能含 auto）。
+// GetTheme returns the current theme config (may contain auto).
 func (w *ConfigWrapper) GetTheme() string {
 	if w.settingsSvc.Get() == nil || w.settingsSvc.Get().Theme == "" {
 		return string(model.ThemeAuto)
@@ -46,9 +49,10 @@ func (w *ConfigWrapper) GetTheme() string {
 	return w.settingsSvc.Get().Theme
 }
 
-// GetSystemTheme 返回当前系统外观解析后的实际主题（dark/light）。
-// Wails webview 内的 matchMedia('prefers-color-scheme') 在 macOS 上可能不可靠，
-// 因此由后端通过 application.Env.IsDarkMode() 提供唯一可信来源。
+// GetSystemTheme returns the actual theme (dark/light) resolved from the current system
+// appearance.
+// matchMedia('prefers-color-scheme') inside the Wails webview may be unreliable on macOS, so
+// the backend provides the single trusted source via application.Env.IsDarkMode().
 func (w *ConfigWrapper) GetSystemTheme() string {
 	if w.app != nil && w.app.Env.IsDarkMode() {
 		return string(model.ThemeDark)
@@ -56,7 +60,7 @@ func (w *ConfigWrapper) GetSystemTheme() string {
 	return string(model.ThemeLight)
 }
 
-// SetTheme 持久化主题配置。
+// SetTheme persists the theme config.
 func (w *ConfigWrapper) SetTheme(theme string) error {
 	cfg := w.settingsSvc.Get()
 	if cfg == nil {
@@ -75,7 +79,7 @@ func (w *ConfigWrapper) SetTheme(theme string) error {
 	return nil
 }
 
-// SaveConfig 持久化 UI 配置到 settings.json；语言/主题变更会全局同步。
+// SaveConfig persists UI config to settings.json; language/theme changes sync globally.
 func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	cur := w.settingsSvc.Get()
 	if cur == nil {
@@ -97,7 +101,7 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	if err := w.settingsSvc.Save(); err != nil {
 		return err
 	}
-	// 热键配置同步后直接重注册，保证保存即生效
+	// After hotkey config sync, re-register directly so saving takes effect immediately
 	if w.hotkeyMgr != nil {
 		w.hotkeyMgr.Register()
 	}
@@ -121,13 +125,13 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	return nil
 }
 
-// NamedItem 带展示名的条目（供前端下拉/列表使用）。
+// NamedItem is an entry with a display name (for frontend dropdowns/lists).
 type NamedItem struct {
-	Value string `json:"value"` // 选项值（标识）
-	Name  string `json:"name"`  // 选项展示名
+	Value string `json:"value"` // Option value (identifier)
+	Name  string `json:"name"`  // Option display name
 }
 
-// GetLanguages 返回支持的语言 (value=code, name=展示名)。
+// GetLanguages returns the supported languages (value=code, name=display name).
 func (w *ConfigWrapper) GetLanguages(lang string) []NamedItem {
 	codes := model.AllLanguages()
 	items := make([]NamedItem, 0, len(codes))
@@ -137,7 +141,7 @@ func (w *ConfigWrapper) GetLanguages(lang string) []NamedItem {
 	return items
 }
 
-// GetConfig 返回当前配置指针。
+// GetConfig returns the current config pointer.
 func (w *ConfigWrapper) GetConfig() *settings.Settings {
 	return w.settingsSvc.Get()
 }

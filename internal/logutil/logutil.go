@@ -1,5 +1,7 @@
-// Package logutil 提供应用运行日志的初始化、按天滚动、压缩与过期清理能力。
-// 日志等级、保留天数、压缩开关由 settings.LogConfig 驱动，可在 settings.json 热更新。
+// Package logutil provides app runtime-log initialization, day rotation, compression and
+// expiry cleanup.
+// Level, retention days and the compression switch are driven by settings.LogConfig and can
+// be hot-updated via settings.json.
 package logutil
 
 import (
@@ -17,7 +19,7 @@ import (
 	"cnb.cool/dtapp/kai/internal/i18n"
 )
 
-// ParseLevel 解析等级字符串为 slog.Level，非法值回退 info。
+// ParseLevel parses a level string into slog.Level; invalid values fall back to info.
 func ParseLevel(s string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "debug":
@@ -31,7 +33,8 @@ func ParseLevel(s string) slog.Level {
 	}
 }
 
-// Rotator 管理按天滚动的日志文件，并向外提供一个可动态调整级别的 slog.Handler。
+// Rotator manages day-rotated log files and exposes a slog.Handler whose level can be
+// adjusted dynamically.
 type Rotator struct {
 	mu          sync.Mutex
 	dir         string
@@ -43,7 +46,8 @@ type Rotator struct {
 	compress    bool
 }
 
-// NewRotator 创建 Rotator，立即滚动一次（若当前 kai.log 非当天则归档），并打开当日日志文件。
+// NewRotator creates a Rotator, rotates once immediately (archiving kai.log when it is not
+// today’s), and opens today’s log file.
 func NewRotator(dir string, level slog.Level, retention int, compress bool) (*Rotator, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("%s: %w", i18n.T("err.logutil_create_dir"), err)
@@ -60,10 +64,11 @@ func NewRotator(dir string, level slog.Level, retention int, compress bool) (*Ro
 	return r, nil
 }
 
-// Handler 返回 slog.Handler，调用方据此构建 slog.Logger 并 SetDefault。
+// Handler returns the slog.Handler; callers build a slog.Logger from it and SetDefault.
 func (r *Rotator) Handler() slog.Handler { return r.handler }
 
-// Close 关闭底层日志文件句柄（panic 兜底最后落盘用），幂等。
+// Close closes the underlying log file handle (used for the panic handler’s final flush);
+// idempotent.
 func (r *Rotator) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -75,7 +80,7 @@ func (r *Rotator) Close() error {
 	return nil
 }
 
-// SetLevel 动态调整日志级别（热更新）。
+// SetLevel adjusts the log level dynamically (hot update).
 func (r *Rotator) SetLevel(level slog.Level) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -83,34 +88,35 @@ func (r *Rotator) SetLevel(level slog.Level) {
 	r.rebuildHandler()
 }
 
-// UpdateRetention 动态调整保留天数与压缩开关（热更新）。
+// UpdateRetention adjusts retention days and the compression switch dynamically (hot
+// update).
 func (r *Rotator) UpdateRetention(retention int, compress bool) {
 	r.mu.Lock()
 	r.retention = retention
 	r.compress = compress
 	r.mu.Unlock()
-	// 立即触发一次清理，使修改即时生效。
+	// Trigger one cleanup immediately so the change takes effect right away.
 	r.cleanup()
 }
 
-// dayFile 返回指定日期对应的归档日志文件名（不含扩展名）。
+// dayFile returns the archived log file name for the given date (without extension).
 func (r *Rotator) dayFile(t time.Time) string {
 	return fmt.Sprintf("kai-%s.log", t.Format("2006-01-02"))
 }
 
-// rotateIfNeeded 若当前 kai.log 不属于今天，则将其重命名为 kai-YYYY-MM-DD.log（并按需压缩），
-// 再新建当日 kai.log 并重建 handler。
+// rotateIfNeeded renames a kai.log that is not from today to kai-YYYY-MM-DD.log (compressing
+// as needed), then creates a fresh kai.log for today and rebuilds the handler.
 func (r *Rotator) rotateIfNeeded() error {
 	today := time.Now().Format("2006-01-02")
 	current := filepath.Join(r.dir, "kai.log")
 
-	// 若已存在 kai.log 且不是今天（按 mtime 日期判定），归档旧文件。
+	// If kai.log exists and is not from today (judged by mtime date), archive the old file.
 	if info, err := os.Stat(current); err == nil {
 		modDay := info.ModTime().Format("2006-01-02")
 		if modDay != today {
 			archiveName := r.dayFile(info.ModTime())
 			archivePath := filepath.Join(r.dir, archiveName)
-			// 避免同日多次启动覆盖：加序号后缀。
+			// Avoid overwriting on multiple same-day launches: append a sequence suffix.
 			archivePath = uniquePath(archivePath)
 			if err := os.Rename(current, archivePath); err != nil {
 				return fmt.Errorf("%s: %w", i18n.T("err.logutil_archive_old"), err)
@@ -136,13 +142,14 @@ func (r *Rotator) rotateIfNeeded() error {
 	return nil
 }
 
-// rebuildHandler 用当前级别与 writer 重建 handler。
+// rebuildHandler rebuilds the handler with the current level and writer.
 func (r *Rotator) rebuildHandler() {
 	w := io.MultiWriter(r.file, os.Stderr)
 	r.handler = slog.NewTextHandler(w, &slog.HandlerOptions{Level: r.level})
 }
 
-// cleanup 删除超过 retention 天的归档日志文件（kai-YYYY-MM-DD.log 或 .gz）。
+// cleanup deletes archived log files older than retention days (kai-YYYY-MM-DD.log or
+// .gz).
 func (r *Rotator) cleanup() {
 	r.mu.Lock()
 	retention := r.retention
@@ -166,7 +173,7 @@ func (r *Rotator) cleanup() {
 		if !strings.HasPrefix(name, "kai-") || (!strings.HasSuffix(name, ".log") && !strings.HasSuffix(name, ".log.gz")) {
 			continue
 		}
-		// 解析日期前缀 kai-2006-01-02
+		// Parse the date prefix kai-2006-01-02
 		base := strings.TrimSuffix(strings.TrimSuffix(name, ".gz"), ".log")
 		day, err := time.Parse("2006-01-02", strings.TrimPrefix(base, "kai-"))
 		if err != nil {
@@ -183,7 +190,8 @@ func (r *Rotator) cleanup() {
 	_ = compress
 }
 
-// uniquePath 若 path 已存在，则在中段插入 .N 避免覆盖（kai-2026-08-12.1.log）。
+// uniquePath inserts .N into the middle of path when it already exists, avoiding overwrite
+// (kai-2026-08-12.1.log).
 func uniquePath(path string) string {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return path
@@ -198,7 +206,7 @@ func uniquePath(path string) string {
 	}
 }
 
-// gzipFile 将 src 压缩为 dst，dst 存在则覆盖。
+// gzipFile compresses src into dst, overwriting dst if it exists.
 func gzipFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -217,8 +225,8 @@ func gzipFile(src, dst string) error {
 	return gw.Close()
 }
 
-// FrontendWriter 是一个独立写入 logs/frontend.log 的 slog.Handler 容器。
-// 前端 console 日志与 JS 错误经此落盘，与主应用日志（kai.log）分离。
+// FrontendWriter is a standalone slog.Handler container writing logs/frontend.log.
+// Frontend console logs and JS errors land here, separate from the main app log (kai.log).
 type FrontendWriter struct {
 	mu    sync.Mutex
 	dir   string
@@ -227,7 +235,8 @@ type FrontendWriter struct {
 	level slog.Level
 }
 
-// NewFrontendWriter 创建前端日志写入器（按天滚动 + 过期清理，沿用主日志策略）。
+// NewFrontendWriter creates the frontend log writer (day rotation + expiry cleanup,
+// following the main log policy).
 func NewFrontendWriter(dir string, level slog.Level, retention int, compress bool) (*FrontendWriter, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("%s: %w", i18n.T("err.logutil_create_dir"), err)
@@ -239,7 +248,7 @@ func NewFrontendWriter(dir string, level slog.Level, retention int, compress boo
 	return fw, nil
 }
 
-// rotateIfNeeded 前端日志按天滚动（frontend.log -> frontend-YYYY-MM-DD.log）。
+// rotateIfNeeded day-rotates the frontend log (frontend.log -> frontend-YYYY-MM-DD.log).
 func (fw *FrontendWriter) rotateIfNeeded() error {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
@@ -266,7 +275,8 @@ func (fw *FrontendWriter) rotateIfNeeded() error {
 	return nil
 }
 
-// Write 实现 io.Writer：复用 logutil 的滚动清理逻辑（与 Rotator 共享压缩/清理）。
+// Write implements io.Writer: reusing logutil’s rotation/cleanup logic (sharing
+// compression/cleanup with Rotator).
 func (fw *FrontendWriter) Write(p []byte) (int, error) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
@@ -276,25 +286,26 @@ func (fw *FrontendWriter) Write(p []byte) (int, error) {
 	return fw.file.Write(p)
 }
 
-// Handler 返回供 slog 使用的 handler。
+// Handler returns the handler for slog use.
 func (fw *FrontendWriter) Handler() slog.Handler {
 	return slog.NewTextHandler(fw, &slog.HandlerOptions{Level: fw.level})
 }
 
-// SetLevel 动态调整前端日志级别。
+// SetLevel adjusts the frontend log level dynamically.
 func (fw *FrontendWriter) SetLevel(level slog.Level) {
 	fw.mu.Lock()
 	fw.level = level
 	fw.mu.Unlock()
 }
 
-// FrontendLogService 是供前端调用的 Go 绑定服务：接收前端日志/错误并写入 frontend.log。
+// FrontendLogService is the Go binding service the frontend calls: it receives frontend
+// logs/errors and writes them to frontend.log.
 type FrontendLogService struct {
 	logger *slog.Logger
 	fw     *FrontendWriter
 }
 
-// NewFrontendLogService 创建前端日志服务。
+// NewFrontendLogService creates the frontend log service.
 func NewFrontendLogService(fw *FrontendWriter) *FrontendLogService {
 	return &FrontendLogService{
 		logger: slog.New(fw.Handler()),
@@ -302,7 +313,8 @@ func NewFrontendLogService(fw *FrontendWriter) *FrontendLogService {
 	}
 }
 
-// FrontendLog 由前端调用：level 取值 debug/info/warn/error，msg 为日志文本。
+// FrontendLog is called by the frontend: level is debug/info/warn/error, msg is the log
+// text.
 func (s *FrontendLogService) FrontendLog(level, msg string) {
 	switch ParseLevel(level) {
 	case slog.LevelDebug:
@@ -316,7 +328,7 @@ func (s *FrontendLogService) FrontendLog(level, msg string) {
 	}
 }
 
-// SetLevel 同步前端日志级别（由 applyLogConfig 调用）。
+// SetLevel syncs the frontend log level (called by applyLogConfig).
 func (s *FrontendLogService) SetLevel(level slog.Level) {
 	s.fw.SetLevel(level)
 	s.logger = slog.New(s.fw.Handler())

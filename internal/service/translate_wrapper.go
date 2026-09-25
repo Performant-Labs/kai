@@ -5,13 +5,14 @@ import (
 	"cnb.cool/dtapp/kai/internal/translate"
 )
 
-// TranslateWrapper 翻译 / OCR 的薄适配层：持有 translate.Service，仅做 RPC 透传。
-// 不实现 wails 生命周期三件套（启动编排统一由 AppService 负责）。
+// TranslateWrapper is the thin adapter over translation / OCR: holds translate.Service,
+// doing only RPC passthrough.
+// Does not implement the wails lifecycle trio (startup orchestration is AppService's job).
 type TranslateWrapper struct {
 	svc *translate.Service
 }
 
-// NewTranslateWrapper 构造翻译 Wrapper。
+// NewTranslateWrapper constructs the translate Wrapper.
 func NewTranslateWrapper(svc *translate.Service) *TranslateWrapper {
 	return &TranslateWrapper{svc: svc}
 }
@@ -32,8 +33,10 @@ func (w *TranslateWrapper) ScreenshotOCR(engineName string) (*model.OcrResult, e
 	return w.svc.ScreenshotOCR(engineName)
 }
 
-// ScreenshotTranslate 截图翻译主流程：区域截图→系统 OCR→多引擎翻译→投递到截图窗口。
-// session 标识缓存来源（events.ScreenshotSessionScreenshot / ScreenshotSessionInput）。
+// ScreenshotTranslate is the main screenshot-translate flow: region screenshot→system
+// OCR→multi-engine translation→delivered to the screenshot window.
+// session identifies the cache origin (events.ScreenshotSessionScreenshot /
+// ScreenshotSessionInput).
 func (w *TranslateWrapper) ScreenshotTranslate(session string) (*model.ScreenshotResult, error) {
 	return w.svc.ScreenshotTranslate(session)
 }

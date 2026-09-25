@@ -10,22 +10,23 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// issue #7（Tester 角色，RED）：google 引擎必须尊重 cfg.Endpoint，
-// 留空时回退到当前默认端点 DefaultEndpoint；请求打到真实 loopback
-// httptest.Server（无 client/transport mock），gtx 形响应解出
-// TranslateResult.From。
+// issue #7 (Tester role, RED): the google engine must honor cfg.Endpoint, falling back to
+// the current default endpoint DefaultEndpoint when left empty; requests hit a real loopback
+// httptest.Server (no client/transport mocks), and the gtx-shaped response decodes into
+// TranslateResult.From.
 
-// gtxFixture 是一条 Google /translate_a/single?client=gtx 响应形，匹配
-// googleResponse.UnmarshalJSON 的读取契约：
+// gtxFixture is a Google /translate_a/single?client=gtx response shape matching the read
+// contract of googleResponse.UnmarshalJSON:
 //
-//	根[0] = 翻译段数组，每段 [dst, src, null, null, N]，dst 在 [0]；
-//	根[2] = 检测出的源语言（detectedLang）。
+//	root[0] = translation-segment array, each segment [dst, src, null, null, N] with dst at [0];
+//	root[2] = the detected source language (detectedLang).
 //
-// 译文 = 各段 dst 拼接 = "Hello world!"。
+// The translation = all segments' dst concatenated = "Hello world!".
 const gtxFixture = `[[["Hello","Bonjour","","","0"],[" world!","le monde","","","1"]],null,"en"]`
 
-// startGtxServer 起一个 loopback httptest.Server，把收到的 query 参数记进
-// got（*url.Values），并回 gtx 形响应（detected lang = "en"，译文 "Hello world!"）。
+// startGtxServer starts a loopback httptest.Server that records the received query params
+// into got (*url.Values) and replies with a gtx-shaped response (detected lang = "en",
+// translation "Hello world!").
 func startGtxServer(t *testing.T, got *url.Values) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,11 +48,11 @@ func startGtxServer(t *testing.T, got *url.Values) *httptest.Server {
 	return srv
 }
 
-// TestGoogleHonorsConfiguredEndpoint：cfg.Endpoint 指向 loopback 时，
-// NewGoogle 必须用它构造引擎，Translate 的真实请求打到该 server
-// （若引擎忽略 endpoint，请求会去 https://translate.googleapis.com，
-// 而 loopback 收不到 → 断言失败）。TranslateResult.From 必须来自
-// gtx 响应的检测语言 "en"。
+// TestGoogleHonorsConfiguredEndpoint: when cfg.Endpoint points at the loopback, NewGoogle
+// must build the engine with it and Translate's real request must hit that server (if the
+// engine ignored the endpoint, the request would go to https://translate.googleapis.com and
+// the loopback would see nothing → the assertion fails). TranslateResult.From must come from
+// the gtx response's detected language "en".
 func TestGoogleHonorsConfiguredEndpoint(t *testing.T) {
 	var got url.Values
 	srv := startGtxServer(t, &got)
@@ -96,12 +97,12 @@ func TestGoogleHonorsConfiguredEndpoint(t *testing.T) {
 	}
 }
 
-// TestGoogleEmptyEndpointFallsBackToDefault：cfg.Endpoint 留空时，
-// NewGoogle 必须回退到当前默认端点（engine.DefaultEndpoint）。
-// 这里不发起真实请求（那需要外网），只验证回退后的引擎内部
-// endpoint 与 DefaultEndpoint 一致。
+// TestGoogleEmptyEndpointFallsBackToDefault: when cfg.Endpoint is left empty, NewGoogle must
+// fall back to the current default endpoint (engine.DefaultEndpoint).
+// No real request is made here (that would need internet); the test only verifies the
+// fallback engine's internal endpoint equals DefaultEndpoint.
 func TestGoogleEmptyEndpointFallsBackToDefault(t *testing.T) {
-	// 空 Endpoint：cfg.Endpoint == ""，NewGoogle 必须回退到 DefaultEndpoint。
+	// Empty Endpoint: cfg.Endpoint == ""; NewGoogle must fall back to DefaultEndpoint.
 	cfg := &EngineConfig{}
 	tr := NewGoogle(cfg.Endpoint, http.DefaultClient)
 	g, ok := tr.(*googleTranslator)
@@ -113,9 +114,9 @@ func TestGoogleEmptyEndpointFallsBackToDefault(t *testing.T) {
 	}
 }
 
-// TestGoogleZHCodeNormalisation：gtx 端点对 "zh" 的稳定性要求，
-// googleLang 必须把 zh / zh-CN / zh_CN 统一成 zh-CN 发到 sl。
-// 通过 loopback 捕获真实请求参数验证（不走 transport mock）。
+// TestGoogleZHCodeNormalisation: the gtx endpoint's stability requirement around "zh" —
+// googleLang must normalize zh / zh-CN / zh_CN into zh-CN for the sl parameter.
+// Verified by capturing the real request params on the loopback (no transport mock).
 func TestGoogleZHCodeNormalisation(t *testing.T) {
 	for _, from := range []model.Language{model.ZH} {
 		t.Run(string(from), func(t *testing.T) {

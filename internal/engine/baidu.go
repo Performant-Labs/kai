@@ -16,8 +16,8 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// baiduTranslator 百度翻译引擎（需 appid + key）。
-// 配置：APIKey=appid，Secret=密钥。
+// baiduTranslator is the Baidu Translate engine (needs appid + key).
+// Config: APIKey=appid, Secret=secret key.
 type baiduTranslator struct {
 	appID    string
 	appKey   string
@@ -25,7 +25,7 @@ type baiduTranslator struct {
 	client   *http.Client
 }
 
-// NewBaidu 创建百度翻译引擎。
+// NewBaidu creates the Baidu Translate engine.
 func NewBaidu(cfg *EngineConfig, client *http.Client) Translator {
 	ep := cfg.Endpoint
 	if ep == "" {

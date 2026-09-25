@@ -15,163 +15,191 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// Settings 应用设置（仅界面偏好，引擎配置在 config.db 独立存储，不在此）。
+// Settings is the app settings (UI preferences only; engine config is stored independently
+// in config.db, not here).
 type Settings struct {
-	// Language 界面语言：auto / zh-CN / en-US（auto 由系统语言解析）。
-	// 注意：这是应用界面显示语言，与翻译语言（model.Language：auto/zh/en/...）是两套独立体系，切勿混用。
+	// Language is the UI language: auto / zh-CN / en-US (auto resolves from the system
+	// language).
+	// Note: this is the app's display language — separate from the translation languages
+	// (model.Language: auto/zh/en/...). Two independent systems; never mix them.
 	Language string `json:"language" mapstructure:"language"`
-	// Theme 界面主题：auto / light / dark（auto 跟随系统外观）。
+	// Theme is the UI theme: auto / light / dark (auto follows the system appearance).
 	Theme string `json:"theme" mapstructure:"theme"`
-	// DefaultTo 翻译默认目标语言（如 zh / en）。
+	// DefaultTo is the default translation target language (e.g. zh / en).
 	DefaultTo string `json:"default_to" mapstructure:"default_to"`
-	// DefaultFrom 翻译默认源语言（auto 表示自动检测）。
+	// DefaultFrom is the default translation source language (auto = auto-detect).
 	DefaultFrom string `json:"default_from" mapstructure:"default_from"`
-	// DefaultEngine 主（默认）翻译引擎标识（引擎 name，如 "google"；空串表示未设置）。
-	// 未设置 / 指向不存在或已禁用的引擎时，解析回退到第一个已启用的翻译引擎。
+	// DefaultEngine is the primary (default) translation engine identifier (an engine name
+	// like "google"; an empty string means unset).
+	// When unset / pointing at a missing or disabled engine, resolution falls back to the
+	// first enabled translation engine.
 	DefaultEngine string `json:"default_engine" mapstructure:"default_engine"`
-	// Hotkeys 注册类全局快捷键（用户按下即触发动作）。
+	// Hotkeys are registration-type global hotkeys (fired when the user presses them).
 	Hotkeys RegisteredHotkeyConfig `json:"hotkeys" mapstructure:"hotkeys"`
-	// ExecKeys 执行类快捷键（程序主动模拟按下，用于完成动作）。
+	// ExecKeys are execution-type hotkeys (the program actively simulates pressing them to
+	// perform an action).
 	ExecKeys ExecKeyConfig `json:"execkeys" mapstructure:"execkeys"`
-	// AutoClipboard 输入翻译窗口「自动读取剪贴板并翻译」开关。开启时前端轮询系统剪贴板，
-	// 内容变化即填入输入框翻译；同时自动关闭复制键（避免双重触发），原复制键状态存 CopyKeySnapshot。
+	// AutoClipboard is the input-translate window's "auto-read clipboard and translate"
+	// switch. When on, the frontend polls the system clipboard and fills + translates the
+	// input on change; it also automatically disables the copy key (avoiding double
+	// triggering), snapshotting its prior state in CopyKeySnapshot.
 	AutoClipboard bool `json:"auto_clipboard" mapstructure:"auto_clipboard"`
-	// CopyKeySnapshot 开启 AutoClipboard 时记录的复制键原状态（enabled/fallback），
-	// 关闭 AutoClipboard 时据此恢复；未开启时为 nil。
+	// CopyKeySnapshot records the copy key's prior state (enabled/fallback) when
+	// AutoClipboard is switched on, restoring from it when AutoClipboard is switched off;
+	// nil when never enabled.
 	CopyKeySnapshot *ExecKeyEntry `json:"copy_key_snapshot" mapstructure:"copy_key_snapshot"`
-	// TTS 语音合成配置。
+	// TTS is the text-to-speech config.
 	TTS TTSConfig `json:"tts" mapstructure:"tts"`
-	// HttpLog HTTP 请求日志配置（暂不同步到前端 UI）。
+	// HttpLog is the HTTP request-log config (not yet synced to the frontend UI).
 	HttpLog HttpLogConfig `json:"http_log" mapstructure:"http_log"`
-	// Log 应用运行日志配置（等级 / 清理 / 压缩）。
+	// Log is the app runtime-log config (level / cleanup / compression).
 	Log LogConfig `json:"log" mapstructure:"log"`
-	// Proxy 网络代理配置（暂不同步到前端 UI）。
+	// Proxy is the network-proxy config (not yet synced to the frontend UI).
 	Proxy ProxyConfig `json:"proxy" mapstructure:"proxy"`
-	// Updater 自动更新配置（仅用户可决策项，token/provider 由代码固定）。
+	// Updater is the auto-update config (only user-decidable items; token/provider are fixed
+	// in code).
 	Updater UpdaterConfig `json:"updater" mapstructure:"updater"`
-	// AnalyticsEnabled 匿名使用统计开关（默认关闭，opt-in）。开启后不初始化 PostHog client、不上报任何数据。
-	// 配置文件与前端 UI 共用此字段（Go 读 settings.json，前端经 GetConfig/SaveConfig 读写）。
+	// AnalyticsEnabled is the anonymous usage-stats switch (off by default, opt-in). When
+	// off, the PostHog client is never initialized and nothing is reported.
+	// Both the config file and the frontend UI share this field (Go reads settings.json; the
+	// frontend reads/writes via GetConfig/SaveConfig).
 	AnalyticsEnabled bool `json:"analytics_enabled" mapstructure:"analytics_enabled"`
-	// AnalyticsInstalled 是否已发送过 app_installed（首装事件仅上报一次）。
+	// AnalyticsInstalled records whether app_installed was already sent (first-install event
+	// reported once).
 	AnalyticsInstalled bool `json:"analytics_installed" mapstructure:"analytics_installed"`
-	// DNSConfigs 自定义 DNS 解析配置列表。
+	// DNSConfigs is the custom DNS resolver config list.
 	DNSConfigs []DNSConfig `json:"dns_configs" mapstructure:"dns_configs"`
-	// Path 配置文件路径（不持久化到文件，json:"-"）。
+	// Path is the config file path (not persisted; json:"-").
 	Path string `json:"-"`
 }
 
-// HotkeyEntry 单个注册类快捷键：既保存按键组合，也保存启用状态。
-// 之前结构只存按键字符串、缺少逐项启用状态；现拆为 Key（按键，空串表示未设置）
-// 与 Enabled（是否启用）。未启用或 Key 为空都不注册。
+// HotkeyEntry is a single registration-type hotkey: stores both the key combination and its
+// enabled state.
+// The previous struct stored only the key string with no per-item enabled state; it is now
+// split into Key (the combination; empty string = unset) and Enabled. Unset Key or disabled
+// means never registered.
 type HotkeyEntry struct {
-	// Key 按键组合，空串表示未设置。
+	// Key is the key combination; an empty string means unset.
 	Key string `json:"key" mapstructure:"key"`
-	// Enabled 是否启用该快捷键。
+	// Enabled is whether this hotkey is enabled.
 	Enabled bool `json:"enabled" mapstructure:"enabled"`
 }
 
-// RegisteredHotkeyConfig 注册类全局快捷键（均通过 mgr.Register 监听，用户按下即触发动作）。
-// 每个快捷键是 HotkeyEntry，含按键与启用状态。
+// RegisteredHotkeyConfig holds registration-type global hotkeys (all listened to via
+// mgr.Register; fired when the user presses them).
+// Each hotkey is a HotkeyEntry with key and enabled state.
 type RegisteredHotkeyConfig struct {
-	// Input 唤起主窗口快捷键（核心功能，默认启用）。
+	// Input is the summon-main-window hotkey (core feature, enabled by default).
 	Input HotkeyEntry `json:"input" mapstructure:"input"`
-	// Screenshot 截图翻译快捷键。
+	// Screenshot is the screenshot-translate hotkey.
 	Screenshot HotkeyEntry `json:"screenshot" mapstructure:"screenshot"`
 }
 
-// ExecKeyEntry 单个执行类快捷键：程序主动模拟按下的键 + 是否启用。
+// ExecKeyEntry is a single execution-type hotkey: the key the program actively simulates
+// pressing + whether it is enabled.
 type ExecKeyEntry struct {
-	// Key 程序主动模拟按下的按键组合。
+	// Key is the key combination the program actively simulates pressing.
 	Key string `json:"key" mapstructure:"key"`
-	// Enabled 是否启用该执行键。
+	// Enabled is whether this exec key is enabled.
 	Enabled bool `json:"enabled" mapstructure:"enabled"`
-	// Fallback 模拟复制失败（剪贴板为空 / 注入失败）时，是否回退使用系统默认复制键重试。
-	// 开启后：若自定义复制键未生效，自动再用系统原生复制键（macOS Cmd+C / 其他 Ctrl+C）
-	// 执行一次，而不是放弃复制。
+	// Fallback: when simulated copy fails (empty clipboard / injection failure), whether to
+	// retry with the system default copy key.
+	// When on: if the custom copy key didn't take effect, automatically run the system-native
+	// copy key once (macOS Cmd+C / elsewhere Ctrl+C) instead of giving up on copying.
 	Fallback bool `json:"fallback" mapstructure:"fallback"`
 }
 
-// ExecKeyConfig 执行类快捷键：程序主动用 robotgo 模拟按下这些键来完成动作，
-// 不参与 mgr.Register 注册（它们是"被按下的键"，不是"被监听的键"）。
+// ExecKeyConfig holds execution-type hotkeys: the program actively simulates pressing these
+// keys via robotgo to perform actions.
+// They are not part of mgr.Register (they are "pressed keys", not "listened-for keys").
 type ExecKeyConfig struct {
-	// Copy 复制键：程序模拟按下它完成系统复制（如 macOS Cmd+C）后读剪贴板翻译。
+	// Copy is the copy key: the program simulates pressing it to perform the system copy
+	// (e.g. macOS Cmd+C), then reads the clipboard to translate.
 	Copy ExecKeyEntry `json:"copy" mapstructure:"copy"`
 }
 
-// TTSConfig 语音合成配置
+// TTSConfig is the text-to-speech config.
 type TTSConfig struct {
-	// Engine TTS 引擎标识（如 system）。
+	// Engine is the TTS engine identifier (e.g. system).
 	Engine string `json:"engine" mapstructure:"engine"`
-	// Speed 语速倍率，1.0 为正常语速。
+	// Speed is the speech-rate multiplier; 1.0 is normal speed.
 	Speed float64 `json:"speed" mapstructure:"speed"`
 }
 
-// HttpLogConfig HTTP 请求日志配置（暂不同步到前端 UI）。
+// HttpLogConfig is the HTTP request-log config (not yet synced to the frontend UI).
 type HttpLogConfig struct {
-	// Enabled 是否开启 HTTP 请求日志。
+	// Enabled is whether HTTP request logging is on.
 	Enabled bool `json:"enabled" mapstructure:"enabled"`
-	// RetentionDays 日志保留天数。
+	// RetentionDays is the log retention in days.
 	RetentionDays int `json:"retention_days" mapstructure:"retention_days"`
 }
 
-// LogConfig 应用运行日志配置（仅写 settings.json，由 main 的日志模块消费，不直接同步前端 UI）。
-// 等级支持 debug / info / warn / error；清理策略基于按天滚动的日志文件。
+// LogConfig is the app runtime-log config (written only to settings.json, consumed by main's
+// logging module; not synced directly to the frontend UI).
+// Level supports debug / info / warn / error; cleanup policy is based on day-rotated log
+// files.
 type LogConfig struct {
-	// Level 日志等级：debug / info / warn / error（空串或非法定值回退 info）。
+	// Level is the log level: debug / info / warn / error (empty or invalid falls back to
+	// info).
 	Level string `json:"level" mapstructure:"level"`
-	// RetentionDays 日志文件保留天数（<=0 表示不清理）。
+	// RetentionDays is how many days to keep log files (<=0 = never clean up).
 	RetentionDays int `json:"retention_days" mapstructure:"retention_days"`
-	// Compress 是否将过期的旧日志文件压缩为 .gz（保留天数内有效）。
+	// Compress is whether expired old log files are compressed to .gz (within the retention
+	// window).
 	Compress bool `json:"compress" mapstructure:"compress"`
 }
 
-// DNSConfig DNS 解析配置
+// DNSConfig is a DNS resolver config.
 type DNSConfig struct {
-	// Enabled 是否启用该 DNS 配置。
+	// Enabled is whether this DNS config is active.
 	Enabled bool `json:"enabled" mapstructure:"enabled"`
-	// Servers DNS 服务器地址列表。
+	// Servers is the list of DNS server addresses.
 	Servers []string `json:"servers" mapstructure:"servers"`
 }
 
-// ProxyConfig 网络代理配置（暂不同步到前端 UI）。
+// ProxyConfig is the network-proxy config (not yet synced to the frontend UI).
 type ProxyConfig struct {
-	// Enabled 是否启用代理。
+	// Enabled is whether the proxy is on.
 	Enabled bool `json:"enabled" mapstructure:"enabled"`
-	// Protocol 代理协议：http / https / socks5。
+	// Protocol is the proxy protocol: http / https / socks5.
 	Protocol string `json:"protocol" mapstructure:"protocol"`
-	// Host 代理主机地址。
+	// Host is the proxy host address.
 	Host string `json:"host" mapstructure:"host"`
-	// Port 代理端口。
+	// Port is the proxy port.
 	Port int `json:"port" mapstructure:"port"`
-	// Username 代理认证用户名（可选）。
+	// Username is the proxy auth username (optional).
 	Username string `json:"username" mapstructure:"username"`
-	// Password 代理认证密码（可选）。
+	// Password is the proxy auth password (optional).
 	Password string `json:"password" mapstructure:"password"`
 }
 
-// UpdaterConfig 自动更新相关配置（仅 Prerelease / Source 这类用户可决策项；
-// token / provider / 资源匹配规则由 main.go 代码固定，不在此配置）。
+// UpdaterConfig holds auto-update config (only user-decidable items like Prerelease /
+// Source; token / provider / asset-matching rules are fixed in main.go's code, not
+// configured here).
 type UpdaterConfig struct {
-	// Prerelease 是否允许检测预发布版（pre-release）更新。
-	// 开启后：检查更新时会把 GitHub 仓库的 pre-release 版本也纳入候选。
+	// Prerelease is whether pre-release updates may be detected.
+	// When on: update checks include the GitHub repo's pre-release versions as candidates.
 	Prerelease bool `json:"prerelease" mapstructure:"prerelease"`
-	// Source 指定更新检测源：空 / "github" / "cnb"。
-	//   - 空（默认）：沿用当前逻辑，按界面语言自动选源（英文走 GitHub，中文走 CNB）。
-	//   - "github"：强制只走官方 GitHub（含 SHA256SUMS 校验）。
-	//   - "cnb"：强制只走 CNB 镜像（需 cnbToken，匿名 401 / 网络不可达即视为「无更新」）。
-	// 注意：仅影响「检测 / 下载源」选择，不影响 updater 自身的安装行为。
+	// Source selects the update-check source: empty / "github" / "cnb".
+	//   - empty (default): current logic — auto-pick per UI language (English → GitHub,
+	//     Chinese → CNB).
+	//   - "github": force official GitHub only (with SHA256SUMS verification).
+	//   - "cnb": force the CNB mirror only (needs cnbToken; anonymous 401 / unreachable
+	//     network is treated as "no update").
+	// Note: only affects the "check / download source" choice, not the updater's own install
+	// behavior.
 	Source string `json:"source" mapstructure:"source"`
 }
 
-// 更新源取值常量（与 UpdaterConfig.Source 对应）。
+// Update source value constants (matching UpdaterConfig.Source).
 const (
-	// UpdaterSourceGitHub 强制使用官方 GitHub 源。
+	// UpdaterSourceGitHub forces the official GitHub source.
 	UpdaterSourceGitHub = "github"
-	// UpdaterSourceCNB 强制使用 CNB 镜像源。
+	// UpdaterSourceCNB forces the CNB mirror source.
 	UpdaterSourceCNB = "cnb"
 )
 
-// DefaultSettings 返回默认设置指针
+// DefaultSettings returns the default settings pointer
 func DefaultSettings() *Settings {
 	return &Settings{
 		Language:    string(model.LocaleAuto),
@@ -179,8 +207,9 @@ func DefaultSettings() *Settings {
 		DefaultTo:   string(model.ZH),
 		DefaultFrom: string(model.Auto),
 		Hotkeys: RegisteredHotkeyConfig{
-			// Input 唤起主窗口：默认按键 Alt+A 并启用。
-			// Screenshot：默认关闭，由用户在设置页开启并绑定按键。
+			// Input (summon main window): defaults to Alt+A and enabled.
+			// Screenshot: off by default; the user enables and binds a key in the settings
+			// page.
 			Input:      HotkeyEntry{Key: "Alt+A", Enabled: true},
 			Screenshot: HotkeyEntry{Key: "Alt+S", Enabled: false},
 		},
@@ -192,15 +221,17 @@ func DefaultSettings() *Settings {
 		Log:     LogConfig{Level: "info", RetentionDays: 30, Compress: true},
 		Proxy:   ProxyConfig{Enabled: false, Protocol: "http", Port: 8080},
 		Updater: UpdaterConfig{Prerelease: true},
-		// 匿名统计默认关闭（隐私优先，opt-in）；用户可在设置页主动开启。
-		// dev 构建与未配置 key 时即便开启也不会实际上报。
+		// Anonymous analytics defaults to off (privacy first, opt-in); users can enable it in
+		// the settings page.
+		// Dev builds and unconfigured keys never report even when enabled.
 		AnalyticsEnabled: false,
 	}
 }
 
-// defaultCopyHotkey 返回复制键的默认值，按系统区分：
-// macOS 默认 Cmd+C（系统原生复制键），其他平台默认 Ctrl+C。
-// 区分系统的逻辑放在配置文件（这里），代码执行层只按用户配置 (ExecKeys.Copy) 解析模拟，不写死平台键。
+// defaultCopyHotkey returns the copy key's default, per OS:
+// macOS defaults to Cmd+C (the system-native copy key), other platforms to Ctrl+C.
+// The per-OS decision lives in config (here); the execution layer only resolves the
+// simulation from the user config (ExecKeys.Copy) — no hardcoded platform keys.
 func defaultCopyHotkey() string {
 	if runtime.GOOS == "darwin" {
 		return "Cmd+C"
@@ -208,20 +239,21 @@ func defaultCopyHotkey() string {
 	return "Ctrl+C"
 }
 
-// OnChangeFunc 配置文件变更回调（热重载）
+// OnChangeFunc is a config-change callback (hot reload).
 type OnChangeFunc func(newCfg *Settings)
 
-// Service 配置服务（参考 certflow 的 viper Service 模式）
+// Service is the settings service (modeled on certflow's viper Service pattern)
 type Service struct {
 	mu       sync.RWMutex
 	cfg      *Settings
 	v        *viper.Viper
 	filePath string
 	onChange OnChangeFunc
-	saving   bool // 标记正在保存，避免触发自身回调
+	saving   bool // Marks a save in progress, avoiding re-triggering our own callback
 }
 
-// NewService 创建配置服务：建目录、读/写默认、监听文件变更。
+// NewService creates the settings service: creates directories, reads/writes defaults, and
+// watches for file changes.
 func NewService(dataDir string) (*Service, error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -241,7 +273,7 @@ func NewService(dataDir string) (*Service, error) {
 	s.setDefaults()
 
 	if err := v.ReadInConfig(); err != nil {
-		// 首次运行：写默认配置
+		// First run: write default config
 		if os.IsNotExist(err) {
 			if err := s.writeConfig(); err != nil {
 				return nil, fmt.Errorf("failed to write default settings: %w", err)
@@ -256,7 +288,8 @@ func NewService(dataDir string) (*Service, error) {
 	}
 	s.cfg.Path = filePath
 
-	// 启动后重新保存，确保磁盘配置与内存一致（缺失的默认值补回、多余的由写盘覆盖）
+	// Re-save after startup so disk config matches memory (missing defaults are backfilled;
+	// extras are overwritten by the write)
 	if err := s.writeConfig(); err != nil {
 		return nil, fmt.Errorf("failed to write settings: %w", err)
 	}
@@ -265,7 +298,7 @@ func NewService(dataDir string) (*Service, error) {
 	return s, nil
 }
 
-// setDefaults 把默认值写入 viper（字段缺失时回退）
+// setDefaults writes defaults into viper (fallback for missing fields)
 func (s *Service) setDefaults() {
 	def := DefaultSettings()
 	s.v.SetDefault("language", def.Language)
@@ -283,7 +316,7 @@ func (s *Service) setDefaults() {
 	s.v.SetDefault("analytics_enabled", def.AnalyticsEnabled)
 }
 
-// startWatching 监听配置文件变更（防抖 500ms）
+// startWatching watches the config file for changes (500ms debounce)
 func (s *Service) startWatching() {
 	var (
 		debounceTimer *time.Timer
@@ -324,16 +357,17 @@ func (s *Service) startWatching() {
 	s.v.WatchConfig()
 }
 
-// OnChange 注册配置变更回调
+// OnChange registers a config-change callback
 func (s *Service) OnChange(fn OnChangeFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.onChange = fn
 }
 
-// writeConfig 用全新 viper 实例只写当前 cfg 的字段，写回配置文件，
-// 从而清理掉已废弃、残留在文件里的旧 key（避免 v.WriteConfig 把旧 key 一并写回）。
-// 标记 saving 防自触发热重载。
+// writeConfig writes only the current cfg's fields back to the config file using a fresh
+// viper instance, thereby cleaning out deprecated keys lingering in the file (avoiding
+// v.WriteConfig writing old keys back wholesale).
+// Marks saving to prevent self-triggering the hot reload.
 func (s *Service) writeConfig() error {
 	s.saving = true
 	defer func() { s.saving = false }()
@@ -360,14 +394,15 @@ func (s *Service) writeConfig() error {
 	return w.WriteConfigAs(s.filePath)
 }
 
-// Save 持久化配置
+// Save persists the config
 func (s *Service) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.writeConfig()
 }
 
-// Get 返回当前配置（调用方只读，勿修改返回的指针内容）
+// Get returns the current config (read-only for callers — do not mutate the returned
+// pointer)
 func (s *Service) Get() *Settings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

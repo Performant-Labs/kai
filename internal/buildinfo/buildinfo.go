@@ -1,14 +1,17 @@
-// Package buildinfo 暴露可通过 -ldflags -X 覆盖的构建期变量，并负责运行期目录规则与模式判断。
+// Package buildinfo exposes build-time variables overridable via -ldflags -X, and owns the
+// runtime directory rules and mode detection.
 //
-// 所有构建期注入变量（版本号 / 构建时间 / 开发标志 / 升级 token）集中在本包，
-// 由 CI 通过 -ldflags -X cnb.cool/dtapp/kai/internal/buildinfo.xxx 注入，避免分散到 main 包。
-// 应用数据目录（数据根 / 数据库子目录 / 日志子目录）的拼接规则也集中在本包，
-// 由 DataDir / DBDir / LogDir 提供，main 及其余代码只调用、不自行拼接。
+// All build-time injected variables (version / build time / dev flag / updater tokens) are
+// centralized in this package, injected by CI via
+// -ldflags -X cnb.cool/dtapp/kai/internal/buildinfo.xxx so they never scatter into main.
+// The app data directory rules (data root / database subdir / logs subdir) are also
+// centralized here, provided by DataDir / DBDir / LogDir; main and all other code only call
+// them and never concatenate paths themselves.
 package buildinfo
 
 import "path/filepath"
 
-// 以下变量由打包时注入：
+// The variables below are injected at packaging time:
 //
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.Version=1.0.0
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.BuildTime=2026-08-06T12:00:00Z
@@ -20,24 +23,29 @@ import "path/filepath"
 var (
 	Version   = "dev"
 	BuildTime = "unknown"
-	// Dev 标志："true" 走 ~/.kai.dev/，"false" 走 ~/.kai/。
+	// Dev flag: "true" uses ~/.kai.dev/, "false" uses ~/.kai/.
 	Dev = "true"
-	// 升级相关 token（GitHub 源 / CNB 镜像源）。本地 dev 未注入则为空，不影响运行。
+	// Updater-related tokens (GitHub source / CNB mirror source). Empty when not injected
+	// in local dev; does not affect running.
 	GithubToken = ""
 	CnbToken    = ""
-	// GitCommit 构建时注入的提交哈希（CI 通过 -ldflags 注入，本地为空）。
+	// GitCommit is the commit hash injected at build time (injected by CI via -ldflags;
+	// empty locally).
 	GitCommit = ""
-	// PosthogToken PostHog 项目公开 Token（客户端侧可接受暴露，用作 SDK 上报鉴权）。
-	// 本地 dev 未注入则为空；analytics 包会据此 + 非 dev 构建 + 用户开关共同决定是否上报。
+	// PosthogToken is the PostHog project's public token (client-side exposure is
+	// acceptable; used as SDK reporting auth).
+	// Empty when not injected in local dev; the analytics package combines this + non-dev
+	// build + the user switch to decide whether to report.
 	PosthogToken = ""
-	// PosthogProjectID PostHog 项目 ID（仅作元数据/分组标识，不参与 SDK 鉴权；可为空）。
+	// PosthogProjectID is the PostHog project ID (metadata/grouping only, not part of SDK
+	// auth; may be empty).
 	PosthogProjectID = ""
 )
 
-// IsDev 是否为开发模式
+// IsDev reports whether this is a dev build
 func IsDev() bool { return Dev == "true" || Dev == "1" }
 
-// DataHome 返回数据根目录名（按模式切换，不含 home 前缀）
+// DataHome returns the data root directory name (switches by mode; no home prefix)
 func DataHome() string {
 	if IsDev() {
 		return ".kai.dev"
@@ -45,17 +53,19 @@ func DataHome() string {
 	return ".kai"
 }
 
-// DataDir 返回应用数据根目录：~/{.kai|.kai.dev}
+// DataDir returns the app data root: ~/{.kai|.kai.dev}
 func DataDir(homeDir string) string {
 	return filepath.Join(homeDir, DataHome())
 }
 
-// DBDir 返回数据库存放目录：DataDir 下的 data/ 子目录（config.db / history.db / httplog.db）
+// DBDir returns the database directory: the data/ subdir under DataDir (config.db /
+// history.db / httplog.db)
 func DBDir(homeDir string) string {
 	return filepath.Join(DataDir(homeDir), "data")
 }
 
-// LogDir 返回日志存放目录：DataDir 下的 logs/ 子目录（kai.log / frontend.log / kai-bridge.log）
+// LogDir returns the logs directory: the logs/ subdir under DataDir (kai.log /
+// frontend.log / kai-bridge.log)
 func LogDir(homeDir string) string {
 	return filepath.Join(DataDir(homeDir), "logs")
 }

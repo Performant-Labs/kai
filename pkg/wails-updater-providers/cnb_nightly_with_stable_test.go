@@ -11,14 +11,17 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// TestCNBNightlyWithStableNeedsUpdate CNB 源「需要更新」场景（走公开入口）：
-// 已订阅 nightly 渠道（prerelease=true）且线上同时存在稳定版与 nightly 时，Check 应返回
-// nightly（nightly-x1b2c3），而非被稳定版覆盖。验证 nightly 是优先渠道，且更新只从 nightly 自身判定。
+// TestCNBNightlyWithStableNeedsUpdate: the CNB source's "update needed" scenario (via the
+// public entries):
+// with the nightly channel subscribed (prerelease=true) and both a stable version and a
+// nightly online, Check should return
+// the nightly (nightly-x1b2c3), not get overridden by the stable. Verifies nightly is the
+// priority channel and the update is judged from the nightly itself.
 func TestCNBNightlyWithStableNeedsUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
 
-	// releases 列表：稳定版 + nightly 都在（nightly 最新）。
+	// releases list: both a stable and a nightly (the nightly newest).
 	mux.HandleFunc("/"+testRepo+"/-/releases", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode([]cnbReleaseListItem{
 			{TagName: "nightly-x1b2c3", Name: "nightly", Body: "nightly", Prerelease: true, PublishedAt: now.Add(-1 * time.Hour).Format(time.RFC3339)},
@@ -59,7 +62,7 @@ func TestCNBNightlyWithStableNeedsUpdate(t *testing.T) {
 		CnbRepo:       testRepo,
 		CnbToken:      "test-token",
 		BuildTime:     now.Add(-72 * time.Hour),
-		Prerelease:    true, // 订阅 nightly 渠道
+		Prerelease:    true, // subscribe to the nightly channel
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",
 		GitCommitFile: "GIT_COMMIT",
@@ -82,8 +85,10 @@ func TestCNBNightlyWithStableNeedsUpdate(t *testing.T) {
 	}
 }
 
-// TestCNBNightlyWithStableNoUpdate CNB 源「不需要更新」场景（走公开入口）：
-// 已订阅 nightly 渠道，且 nightly 本机已是最新（buildTime 晚于 nightly），Check 应返回 nil,nil。
+// TestCNBNightlyWithStableNoUpdate: the CNB source's "no update" scenario (via the public
+// entries):
+// the nightly channel is subscribed and the local nightly is already latest (buildTime later
+// than the nightly); Check should return nil,nil.
 func TestCNBNightlyWithStableNoUpdate(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
@@ -121,7 +126,7 @@ func TestCNBNightlyWithStableNoUpdate(t *testing.T) {
 	mp, err := NewMirrorProvider(&Options{
 		CnbRepo:       testRepo,
 		CnbToken:      "test-token",
-		BuildTime:     now.Add(1 * time.Hour), // 比 nightly 与 stable 都新
+		BuildTime:     now.Add(1 * time.Hour), // newer than both the nightly and stable
 		Prerelease:    true,
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",
@@ -142,11 +147,16 @@ func TestCNBNightlyWithStableNoUpdate(t *testing.T) {
 	}
 }
 
-// TestCNBNightlyWithStableNoStableFallbackOnLatest CNB 源「开启预发布时稳定版一起参与」守护（走公开入口）：
-// 订阅 nightly，但 nightly 发布时间不比本机 buildTime 新（本机更新），
-// nightly 判定为不需要更新（nil,nil）；此时稳定版 1.2.0 比本机新且资产匹配，
-// 按"两个版本一起参与"语义，Check 应返回稳定版 1.2.0 候选（而非 up-to-date）。
-// 守护"开启预发布即仍纳入稳定版"语义：若改回只看预发布丢弃 stable，此处会变红。
+// TestCNBNightlyWithStableNoStableFallbackOnLatest: guard for the CNB source's "with
+// prerelease on, stable also competes" (via the public entries):
+// nightly is subscribed, but the nightly's publish time is not newer than the local buildTime
+// (local is newer),
+// so the nightly is judged no-update (nil,nil); the stable 1.2.0 is newer than local with
+// matching assets,
+// so under the "both versions compete" semantics Check should return the stable 1.2.0
+// candidate (not up-to-date).
+// Guards the "with prerelease on, stable still participates" semantics: switching back to
+// prerelease-only (dropping stable) turns this red.
 func TestCNBNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
@@ -187,7 +197,7 @@ func TestCNBNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 	mp, err := NewMirrorProvider(&Options{
 		CnbRepo:       testRepo,
 		CnbToken:      "test-token",
-		BuildTime:     now.Add(1 * time.Hour), // 本机 buildTime 晚于 nightly 发布时间，nightly 判定为不需要更新
+		BuildTime:     now.Add(1 * time.Hour), // local buildTime later than the nightly’s publish time; nightly judged no-update
 		Prerelease:    true,
 		AssetMatcher:  NewUpdaterAssetMatcher(),
 		ChecksumFile:  "SHA256SUMS",
@@ -197,8 +207,10 @@ func TestCNBNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
-	// 开启预发布：取最新一条 = nightly-x1b2c3（预发布），本机 buildTime 晚于其发布时间 → 判定不需要更新。
-	// 新逻辑按"最新一条类型"判定，不回退到第二路稳定版：nightly 不需要更新即 up-to-date。
+	// Prerelease on: the newest entry = nightly-x1b2c3 (a pre-release); local buildTime is
+	// later than its publish time → judged no-update.
+	// The new logic judges by "the newest entry's type" and does not fall back to the stable
+	// second pass: the nightly needs no update, so it's up-to-date.
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
 	t.Logf("[CNB] current version (currentVersion=%q, buildTime)=%s, needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
@@ -210,10 +222,14 @@ func TestCNBNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 	}
 }
 
-// TestCNBNightlyWithStableNoStableFallbackOnAssetMiss CNB 源「开启预发布时稳定版一起参与」守护（走公开入口）：
-// 订阅 nightly，但 nightly 最新 tag 的资产不匹配本平台（只有 windows/amd64），checkPrerelease 失败；
-// 此时稳定版 1.2.0 资产匹配 darwin/arm64 且比本机新，按"两个版本一起参与"语义应返回稳定版 1.2.0。
-// 守护"开启预发布时 nightly 失败仍纳入稳定版"语义。
+// TestCNBNightlyWithStableNoStableFallbackOnAssetMiss: guard for the CNB source's "with
+// prerelease on, stable also competes" (via the public entries):
+// nightly is subscribed, but the nightly's newest tag has no assets matching this platform
+// (windows/amd64 only), so checkPrerelease fails;
+// the stable 1.2.0's assets match darwin/arm64 and are newer than local, so under the "both
+// versions compete" semantics it should return stable 1.2.0.
+// Guards the "with prerelease on, a nightly failure still lets stable participate"
+// semantics.
 func TestCNBNightlyWithStableNoStableFallbackOnAssetMiss(t *testing.T) {
 	now := time.Now()
 	mux := http.NewServeMux()
@@ -264,8 +280,10 @@ func TestCNBNightlyWithStableNoStableFallbackOnAssetMiss(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
-	// 开启预发布：取最新一条 = night-x1（预发布），但其资产仅 windows 不匹配本机 darwin → 该候选不可用。
-	// 新逻辑按"最新一条类型"判定，不回退到第二路稳定版 1.2.0：无可用候选即 up-to-date。
+	// Prerelease on: the newest entry = night-x1 (a pre-release), but its assets are
+	// windows-only and don't match the local darwin → that candidate is unusable.
+	// The new logic judges by "the newest entry's type" and does not fall back to the stable
+	// 1.2.0 second pass: no usable candidate = up-to-date.
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
 	t.Logf("[CNB] current version (currentVersion=%q, buildTime)=%s, needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))

@@ -1,64 +1,70 @@
 package wails_updater_providers
 
-// ===================== CNB 源 =====================
+// ===================== CNB source =====================
 
-// cnbReleaseListItem CNB releases 列表项（对应 CNB API 的 api.Release 元素）。
+// cnbReleaseListItem is one CNB releases list item (corresponding to the CNB API's
+// api.Release element).
 type cnbReleaseListItem struct {
-	TagName     string            `json:"tag_name"`     // 版本标签（可能带 v 前缀）
-	Name        string            `json:"name"`         // 发布标题
-	Body        string            `json:"body"`         // 发布说明（描述）
-	Prerelease  bool              `json:"prerelease"`   // 是否为预发布
-	Draft       bool              `json:"draft"`        // 是否为草稿
-	PublishedAt string            `json:"published_at"` // 发布时间（RFC3339）
-	CreatedAt   string            `json:"created_at"`   // 创建时间（RFC3339）
-	IsLatest    bool              `json:"is_latest"`    // 是否为最新
-	Assets      []cnbReleaseAsset `json:"assets"`       // 资源列表
+	TagName     string            `json:"tag_name"`     // Version tag (may carry a v prefix)
+	Name        string            `json:"name"`         // Release title
+	Body        string            `json:"body"`         // Release notes (description)
+	Prerelease  bool              `json:"prerelease"`   // Whether pre-release
+	Draft       bool              `json:"draft"`        // Whether draft
+	PublishedAt string            `json:"published_at"` // Publish time (RFC3339)
+	CreatedAt   string            `json:"created_at"`   // Creation time (RFC3339)
+	IsLatest    bool              `json:"is_latest"`    // Whether latest
+	Assets      []cnbReleaseAsset `json:"assets"`       // Asset list
 }
 
-// GetPublishedAt 实现 publishedAtGetter 接口，供泛型排序函数使用。
+// GetPublishedAt implements the publishedAtGetter interface for the generic sort helper.
 func (r cnbReleaseListItem) GetPublishedAt() string { return r.PublishedAt }
 
-// cnbReleaseTagDetail CNB 单个 release 详情（GetReleaseByTag 响应）。
-// 与 GitHub 详情的差异：CNB 额外返回 ID / TagCommitish 字段，GitHub 无。
+// cnbReleaseTagDetail is the detail of one CNB release (GetReleaseByTag response).
+// Difference from the GitHub detail: CNB additionally returns ID / TagCommitish; GitHub does
+// not.
 type cnbReleaseTagDetail struct {
-	ID           string            `json:"id"`            // CNB 专属：release 唯一 ID（GitHub 无，API 以字符串返回）
-	TagName      string            `json:"tag_name"`      // 版本标签
-	TagCommitish string            `json:"tag_commitish"` // CNB 专属：关联提交（GitHub 用 target_commitish）
-	Name         string            `json:"name"`          // 发布标题
-	Body         string            `json:"body"`          // 发布说明
-	Prerelease   bool              `json:"prerelease"`    // 是否为预发布
-	PublishedAt  string            `json:"published_at"`  // 发布时间（RFC3339）
-	Assets       []cnbReleaseAsset `json:"assets"`        // 资源列表
+	ID           string            `json:"id"`            // CNB-only: unique release ID (absent on GitHub; the API returns it as a string)
+	TagName      string            `json:"tag_name"`      // Version tag
+	TagCommitish string            `json:"tag_commitish"` // CNB-only: associated commit (GitHub uses target_commitish)
+	Name         string            `json:"name"`          // Release title
+	Body         string            `json:"body"`          // Release notes
+	Prerelease   bool              `json:"prerelease"`    // Whether pre-release
+	PublishedAt  string            `json:"published_at"`  // Publish time (RFC3339)
+	Assets       []cnbReleaseAsset `json:"assets"`        // Asset list
 }
 
-// cnbReleaseAsset CNB release 的单个资源（升级产物候选，CNB 专属内部类型）。
-// 注意：CNB 与 GitHub 的资源字段（name/size）表面一致，但分属两个独立 API，
-// 保留各自类型以避免日后两源响应结构分化时互相污染。
+// cnbReleaseAsset is one CNB release asset (an upgrade artifact candidate; CNB-specific
+// internal type).
+// Note: CNB and GitHub asset fields (name/size) look identical but belong to two independent
+// APIs;
+// keeping separate types avoids cross-contamination if the two sources' response structures
+// diverge later.
 type cnbReleaseAsset struct {
-	Name string `json:"name"` // 文件名
-	Size int64  `json:"size"` // 文件大小
+	Name string `json:"name"` // File name
+	Size int64  `json:"size"` // File size
 }
 
-// ===================== GitHub 源 =====================
+// ===================== GitHub source =====================
 
-// githubRelease GitHub release 响应（对应 GitHub API 的 release 对象）。
+// githubRelease is the GitHub release response (corresponding to the GitHub API's release
+// object).
 type githubRelease struct {
-	TagName         string        `json:"tag_name"`         // 版本标签
-	TargetCommitish string        `json:"target_commitish"` // 目标提交（用于 nightly 同 commit 跳过）
-	Name            string        `json:"name"`             // 发布标题
-	Body            string        `json:"body"`             // 发布说明
-	Draft           bool          `json:"draft"`            // 是否为草稿
-	Prerelease      bool          `json:"prerelease"`       // 是否为预发布
-	HTMLURL         string        `json:"html_url"`         // 发布页地址
-	PublishedAt     string        `json:"published_at"`     // 发布时间（RFC3339）
-	Assets          []githubAsset `json:"assets"`           // 资源列表
+	TagName         string        `json:"tag_name"`         // Version tag
+	TargetCommitish string        `json:"target_commitish"` // Target commit (for skipping same-commit nightlies)
+	Name            string        `json:"name"`             // Release title
+	Body            string        `json:"body"`             // Release notes
+	Draft           bool          `json:"draft"`            // Whether draft
+	Prerelease      bool          `json:"prerelease"`       // Whether pre-release
+	HTMLURL         string        `json:"html_url"`         // Release page URL
+	PublishedAt     string        `json:"published_at"`     // Publish time (RFC3339)
+	Assets          []githubAsset `json:"assets"`           // Asset list
 }
 
-// GetPublishedAt 实现 publishedAtGetter 接口，供泛型排序函数使用。
+// GetPublishedAt implements the publishedAtGetter interface for the generic sort helper.
 func (r githubRelease) GetPublishedAt() string { return r.PublishedAt }
 
-// githubAsset GitHub release 的单个资源。
+// githubAsset is one GitHub release asset.
 type githubAsset struct {
-	Name string `json:"name"` // 文件名
-	Size int64  `json:"size"` // 文件大小
+	Name string `json:"name"` // File name
+	Size int64  `json:"size"` // File size
 }

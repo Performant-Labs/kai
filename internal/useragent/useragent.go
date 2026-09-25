@@ -1,6 +1,8 @@
-// Package useragent 维护全局 User-Agent（由前端启动时传入 WebView 的 navigator.userAgent），
-// 并提供注入 UA 的 RoundTripper：请求未显式设置 User-Agent 时自动补上全局 UA。
-// 已显式设置 UA 的请求（如各云 SDK 自带 UA、monitor/scanner 的 CertFlow/1.0）不受影响。
+// Package useragent maintains the global User-Agent (passed by the frontend at startup from
+// the WebView's navigator.userAgent) and provides a UA-injecting RoundTripper: requests
+// without an explicit User-Agent automatically get the global one.
+// Requests that already set a UA (e.g. cloud SDKs' own UA, monitor/scanner's CertFlow/1.0)
+// are untouched.
 package useragent
 
 import (
@@ -13,26 +15,30 @@ var (
 	ua string
 )
 
-// Set 设置全局 User-Agent（应用启动时由前端经 MonitorService.SetUserAgent 传入）。
+// Set sets the global User-Agent (passed by the frontend at app startup via
+// MonitorService.SetUserAgent).
 func Set(v string) {
 	mu.Lock()
 	ua = v
 	mu.Unlock()
 }
 
-// Get 返回当前全局 User-Agent；未设置时返回空串（此时不注入，走 Go 默认 UA）。
+// Get returns the current global User-Agent; an empty string when unset (nothing injected,
+// Go's default UA applies).
 func Get() string {
 	mu.RLock()
 	defer mu.RUnlock()
 	return ua
 }
 
-// Transport 在请求未显式设置 User-Agent 时注入全局 UA 的 RoundTripper。
+// Transport is a RoundTripper injecting the global UA when a request has no explicit
+// User-Agent.
 type Transport struct {
 	Base http.RoundTripper
 }
 
-// RoundTrip 实现 http.RoundTripper。按约定不修改原请求，注入时 Clone 一份。
+// RoundTrip implements http.RoundTripper. Per convention it never mutates the original
+// request; on injection it Clones one.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	base := t.Base
 	if base == nil {
@@ -47,8 +53,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return base.RoundTrip(req)
 }
 
-// Wrap 把 base 包裹为注入全局 UA 的 RoundTripper；base 已是 *Transport 时原样返回避免重复包裹
-// （即使重复包裹也无副作用：内层看到 UA 已设置不会覆盖）。
+// Wrap wraps base into a RoundTripper injecting the global UA; if base is already a
+// *Transport it is returned as-is to avoid double wrapping
+// (double wrapping would be harmless anyway: the inner layer sees UA set and won't
+// override).
 func Wrap(base http.RoundTripper) http.RoundTripper {
 	if t, ok := base.(*Transport); ok {
 		return t

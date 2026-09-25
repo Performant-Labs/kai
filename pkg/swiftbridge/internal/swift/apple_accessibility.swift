@@ -1,6 +1,8 @@
 // apple_accessibility.swift
-// 辅助功能 / 屏幕录制授权查询与引导、选区锚点读取、主屏分辨率读取。
-// 依赖 bridge_common.swift（writeCString）、bridge_log.swift（bridgeFileLog / bridgeLogText）。
+// Accessibility / screen-recording permission queries and guidance, selection anchor
+// reading, primary screen size reading.
+// Depends on bridge_common.swift (writeCString) and bridge_log.swift (bridgeFileLog /
+// bridgeLogText).
 import AppKit
 import ApplicationServices
 import CoreGraphics
@@ -9,8 +11,8 @@ import NaturalLanguage
 import Translation
 import Vision
 
-// kai_accessibility_enabled：查询辅助功能是否已授权。
-// out 接收 "true"/"false"。
+// kai_accessibility_enabled: queries whether accessibility is granted.
+// out receives "true"/"false".
 @_cdecl("kai_accessibility_enabled")
 public func kai_accessibility_enabled(
   _ out: UnsafeMutablePointer<CChar>?,
@@ -21,15 +23,16 @@ public func kai_accessibility_enabled(
   return writeCString(enabled ? "true" : "false", into: out, cap: out_cap)
 }
 
-// kai_accessibility_request：弹出系统授权框，并尝试打开系统设置 > 隐私与安全 > 辅助功能 面板。
-// 返回 0 表示成功发起（仅代表"已请求"，不等于已授权）。
+// kai_accessibility_request: pops the system permission dialog and tries to open System
+// Settings > Privacy & Security > Accessibility.
+// A 0 return means the request was initiated ("requested" only — not the same as granted).
 @_cdecl("kai_accessibility_request")
 public func kai_accessibility_request() -> Int32 {
   bridgeFileLog(bridgeLogText("a11y.request"))
-  // 触发系统授权弹窗（异步请求，首次会弹框）。
+  // Triggers the system permission dialog (async request; pops on first use).
   let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
   _ = AXIsProcessTrustedWithOptions(opts)
-  // 额外打开设置面板，便于用户立即勾选。
+  // Additionally opens the settings pane so the user can tick the box right away.
   if #available(macOS 13.0, *) {
     if let url = URL(
       string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
@@ -41,8 +44,8 @@ public func kai_accessibility_request() -> Int32 {
   return 0
 }
 
-// kai_screenrecording_enabled：查询屏幕录制是否已授权。
-// out 接收 "true"/"false"。
+// kai_screenrecording_enabled: queries whether screen recording is granted.
+// out receives "true"/"false".
 @_cdecl("kai_screenrecording_enabled")
 public func kai_screenrecording_enabled(
   _ out: UnsafeMutablePointer<CChar>?,
@@ -53,8 +56,9 @@ public func kai_screenrecording_enabled(
   return writeCString(enabled ? "true" : "false", into: out, cap: out_cap)
 }
 
-// kai_screenrecording_request：打开系统设置 > 隐私与安全 > 屏幕录制 面板。
-// 返回 0 表示成功打开。
+// kai_screenrecording_request: opens System Settings > Privacy & Security > Screen
+// Recording.
+// A 0 return means the pane opened successfully.
 @_cdecl("kai_screenrecording_request")
 public func kai_screenrecording_request() -> Int32 {
   bridgeFileLog(bridgeLogText("screen.request"))
@@ -67,15 +71,16 @@ public func kai_screenrecording_request() -> Int32 {
   return 0
 }
 
-// kai_selection_point：读取当前鼠标位置，返回 {"x":0,"y":0}（屏幕坐标，左下角为原点）。
+// kai_selection_point: reads the current mouse position, returning {"x":0,"y":0} (screen
+// coordinates, origin bottom-left).
 @_cdecl("kai_selection_point")
 public func kai_selection_point(
   _ out: UnsafeMutablePointer<CChar>?,
   _ out_cap: Int32
 ) -> Int32 {
-  let loc = NSEvent.mouseLocation  // 左上角为原点的 Cocoa 坐标
+  let loc = NSEvent.mouseLocation  // Cocoa coordinates, origin top-left
   let h = NSScreen.screens.first?.frame.height ?? 0
-  let point = SelectionPoint(x: Double(loc.x), y: Double(h - loc.y))  // 转换为左下角原点
+  let point = SelectionPoint(x: Double(loc.x), y: Double(h - loc.y))  // converted to a bottom-left origin
   let json = bridgeEncode(point)
   bridgeFileLog(
     bridgeLogText(
@@ -84,7 +89,7 @@ public func kai_selection_point(
   return writeCString(json, into: out, cap: out_cap)
 }
 
-// kai_screen_size：返回主屏分辨率 {"w":0,"h":0}（逻辑点）。
+// kai_screen_size: returns the primary screen size {"w":0,"h":0} (logical points).
 @_cdecl("kai_screen_size")
 public func kai_screen_size(
   _ out: UnsafeMutablePointer<CChar>?,
@@ -99,18 +104,23 @@ public func kai_screen_size(
   return writeCString(json, into: out, cap: out_cap)
 }
 
-// 说明：选区文本读取（AXUIElement 取 AXSelectedText）之前在 kai_selected_text 实现，
-// 对多数 App 取值失败（返回 empty / deadlock），实际由 Go 端 engine.CaptureRegion + OCR 完成，
-// 故该入口已禁用，保留注释以免误用：
+// Note: selection text reading (AXUIElement's AXSelectedText) used to live in
+// kai_selected_text;
+// it failed on most apps (empty returns / deadlocks), and the Go side's engine.CaptureRegion
+// + OCR actually handles it,
+// so that entry is disabled; the comment is kept to prevent misuse:
 //   // @_cdecl("kai_selected_text")
 //   // public func kai_selected_text(...) -> Int32 { ... AXUIElementCopyAttributeValue(AXValue(...)) ... }
 //
-// 输入监控授权（Input Monitoring）检测：用 EventTap 创建失败判定未授权。
-// 之前在 kai_input_monitoring 实现，但事件点击转发由 Go 端 hotkey 处理，Swift 不再负责，
-// 仅保留查询能力，逻辑见 detectSourceLanguage 同模块的注释示例。
+// Input Monitoring permission detection: judged unauthorized when EventTap creation fails.
+// Used to live in kai_input_monitoring, but event click forwarding is handled by the Go
+// side's hotkey — Swift is no longer responsible;
+// only the query capability is kept; see the commented example in the detectSourceLanguage
+// module.
 
-// kai_input_monitoring_enabled：检测输入监控是否已授权（创建 CGEvent.tap 失败即未授权）。
-// out 接收 "true"/"false"。
+// kai_input_monitoring_enabled: detects whether Input Monitoring is granted (a failed
+// CGEvent.tap creation means unauthorized).
+// out receives "true"/"false".
 @_cdecl("kai_input_monitoring_enabled")
 public func kai_input_monitoring_enabled(
   _ out: UnsafeMutablePointer<CChar>?,

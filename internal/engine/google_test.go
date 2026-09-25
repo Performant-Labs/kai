@@ -10,9 +10,12 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// TestGoogleEndpointOverrideAndDetectedLang 验证（issue #11 自动检测的前置契约）：
-// 1) endpoint 覆盖生效——请求打到测试服务器（真实 HTTP 回环，无 transport 拦截）；
-// 2) gtx 响应第 2 元素（检测源语言）被写入 TranslateResult.From。
+// TestGoogleEndpointOverrideAndDetectedLang verifies (the precondition contract for issue
+// #11 auto-detection):
+//  1. the endpoint override takes effect — requests hit the test server (real HTTP loopback,
+//     no transport interception);
+//  2. element 2 of the gtx response (detected source language) is written into
+//     TranslateResult.From.
 func TestGoogleEndpointOverrideAndDetectedLang(t *testing.T) {
 	var gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +26,8 @@ func TestGoogleEndpointOverrideAndDetectedLang(t *testing.T) {
 		if !strings.Contains(r.URL.RawQuery, "sl=auto") {
 			t.Errorf("expected sl=auto, got %q", r.URL.RawQuery)
 		}
-		// gtx 形状：[[["dst","src",null,null,N]], null, "检测源语言"]——检测语言在根索引 2。
+		// gtx shape: [[["dst","src",null,null,N]], null, "detected language"] — the detected
+		// language sits at root index 2.
 		_, _ = w.Write([]byte(`[[["Hola","Hello",null,null,1]],null,"es"]`))
 	}))
 	defer srv.Close()

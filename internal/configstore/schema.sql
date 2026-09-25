@@ -1,4 +1,5 @@
--- engines.id 是主键，history.engine_id 跨库引用此 id（跨库无 FK 约束）。
+-- engines.id is the primary key; history.engine_id references this id across databases (no
+-- FK constraint across databases).
 CREATE TABLE IF NOT EXISTS engines (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     engine   TEXT    NOT NULL UNIQUE,

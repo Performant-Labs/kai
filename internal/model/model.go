@@ -1,135 +1,147 @@
 package model
 
-// Language 语言代码（ISO 639-1 或引擎自定义）
+// Language is a language code (ISO 639-1 or engine-specific)
 type Language string
 
-// Locale 界面语言，与翻译语言 Language 是完全不同的场景，使用独立类型。
-// 值是 BCP 47 区域码（zh-CN/en-US/auto），仅用于后端 i18n 与前端界面语言切换，
-// 不要与翻译语言 Language（zh/en/...）混用或互转。
+// Locale is the UI language — a completely different concern from the translation Language;
+// it uses its own type.
+// Values are BCP 47 region codes (zh-CN/en-US/auto), used only for backend i18n and the
+// frontend UI language switch.
+// Never mix with or convert to/from the translation Language (zh/en/...).
 type Locale string
 
 const (
-	LocaleAuto Locale = "auto"  // 界面语言自动跟随系统
-	LocaleZHCN Locale = "zh-CN" // 界面中文
-	LocaleENUS Locale = "en-US" // 界面英文
+	LocaleAuto Locale = "auto"  // UI language follows the system
+	LocaleZHCN Locale = "zh-CN" // UI in Chinese
+	LocaleENUS Locale = "en-US" // UI in English
 )
 
-// Theme 界面主题，仅用于外观切换，值为 auto/light/dark。
+// Theme is the UI theme, used only for appearance switching; values are auto/light/dark.
 type Theme string
 
 const (
-	ThemeAuto  Theme = "auto"  // 跟随系统
-	ThemeLight Theme = "light" // 浅色
-	ThemeDark  Theme = "dark"  // 深色
+	ThemeAuto  Theme = "auto"  // Follow the system
+	ThemeLight Theme = "light" // Light
+	ThemeDark  Theme = "dark"  // Dark
 )
 
-// 翻译语言码（Translate Language）：用于翻译请求/结果、引擎调用、历史记录。
-// 值是翻译引擎约定的短码（如 zh/en/ja），与界面语言完全无关，切勿与下方界面 locale 混用。
+// Translation language codes (Translate Language): used for translation requests/results,
+// engine calls, and history records.
+// Values are the short codes translation engines expect (e.g. zh/en/ja), completely
+// unrelated to the UI language — never mix with the UI locale below.
 const (
-	Auto Language = "auto" // 自动检测源语言
-	ZH   Language = "zh"   // 中文
-	EN   Language = "en"   // 英语
-	JA   Language = "ja"   // 日语
-	KO   Language = "ko"   // 韩语
-	FR   Language = "fr"   // 法语
-	DE   Language = "de"   // 德语
-	ES   Language = "es"   // 西班牙语
-	RU   Language = "ru"   // 俄语
+	Auto Language = "auto" // Auto-detect source language
+	ZH   Language = "zh"   // Chinese
+	EN   Language = "en"   // English
+	JA   Language = "ja"   // Japanese
+	KO   Language = "ko"   // Korean
+	FR   Language = "fr"   // French
+	DE   Language = "de"   // German
+	ES   Language = "es"   // Spanish
+	RU   Language = "ru"   // Russian
 )
 
-// allLanguages 全部支持的语言（含 Auto），顺序即前端下拉展示顺序。
+// allLanguages lists all supported languages (including Auto); the order is the frontend
+// dropdown display order.
 var allLanguages = []Language{Auto, ZH, EN, JA, KO, FR, DE, ES, RU}
 
-// AllLanguages 返回全部支持的语言常量切片（含 Auto）。
-// 供配置层派生下拉选项，避免在各处硬编码语言码列表。
+// AllLanguages returns the slice of all supported language constants (including Auto).
+// Lets the config layer derive dropdown options, avoiding hardcoded language-code lists
+// everywhere.
 func AllLanguages() []Language {
 	out := make([]Language, len(allLanguages))
 	copy(out, allLanguages)
 	return out
 }
 
-// TranslateRequest 统一翻译请求
+// TranslateRequest is the unified translation request
 type TranslateRequest struct {
-	Text       string   `json:"text"`   // 待翻译原文
-	From       Language `json:"from"`   // 源语言（auto 为自动检测）
-	To         Language `json:"to"`     // 目标语言
-	EngineName string   `json:"engine"` // 指定翻译引擎标识
+	Text       string   `json:"text"`   // Source text to translate
+	From       Language `json:"from"`   // Source language (auto = auto-detect)
+	To         Language `json:"to"`     // Target language
+	EngineName string   `json:"engine"` // Translation engine identifier to use
 }
 
-// TranslateResult 单条翻译结果
+// TranslateResult is a single translation result
 type TranslateResult struct {
-	Engine    string     `json:"engine"`               // 翻译引擎标识
-	From      Language   `json:"from"`                 // 实际识别出的源语言
-	To        Language   `json:"to"`                   // 目标语言
-	Text      string     `json:"text"`                 // 原文
-	Result    string     `json:"result"`               // 译文
-	Phonetic  string     `json:"phonetic"`             // 发音/音标
-	Dict      []DictItem `json:"dict"`                 // 词典释义明细
-	FromOCR   bool       `json:"from_ocr"`             // 是否来自 OCR 识别结果
-	Error     string     `json:"error,omitempty"`      // 引擎失败时的原始错误（issue #42；成功时为空）
-	ErrorKind string     `json:"error_kind,omitempty"` // 引擎失败类别（pair/network/auth/engine，issue #42）
+	Engine    string     `json:"engine"`               // Translation engine identifier
+	From      Language   `json:"from"`                 // The actually detected source language
+	To        Language   `json:"to"`                   // Target language
+	Text      string     `json:"text"`                 // Source text
+	Result    string     `json:"result"`               // Translation
+	Phonetic  string     `json:"phonetic"`             // Pronunciation/phonetics
+	Dict      []DictItem `json:"dict"`                 // Dictionary detail entries
+	FromOCR   bool       `json:"from_ocr"`             // Whether it came from OCR recognition
+	Error     string     `json:"error,omitempty"`      // Raw engine error on failure (issue #42; empty on success)
+	ErrorKind string     `json:"error_kind,omitempty"` // Engine failure category (pair/network/auth/engine, issue #42)
 }
 
-// DictItem 词典条目
+// DictItem is a dictionary entry
 type DictItem struct {
-	Word    string `json:"word"`    // 单词
-	Pos     string `json:"pos"`     // 词性（如 n./v.）
-	Explain string `json:"explain"` // 释义
+	Word    string `json:"word"`    // Word
+	Pos     string `json:"pos"`     // Part of speech (e.g. n./v.)
+	Explain string `json:"explain"` // Definition
 }
 
-// OcrRequest OCR 请求
+// OcrRequest is an OCR request
 type OcrRequest struct {
-	ImageData []byte `json:"-"`      // 图片二进制数据（不序列化）
-	Engine    string `json:"engine"` // 指定 OCR 引擎标识
-	// CorrectText Vision 的 usesLanguageCorrection（语言校正）。
-	// true=开启（更准确，默认）；false=关闭（更快、偶发卡死概率更低，但准确率略降）。
-	// 指针类型以便区分"未设置"与"false"，未设置时引擎用默认值 true。
+	ImageData []byte `json:"-"`      // Image binary data (not serialized)
+	Engine    string `json:"engine"` // OCR engine identifier to use
+	// CorrectText is Vision's usesLanguageCorrection (language correction).
+	// true = on (more accurate, the default); false = off (faster, lower chance of sporadic
+	// hangs, slightly less accurate).
+	// A pointer so "unset" can be distinguished from "false"; when unset, engines use the
+	// default true.
 	CorrectText *bool `json:"correct_text,omitempty"`
-	// TimeoutSec Vision OCR 超时秒数。<=0 时引擎用各自默认值（vision 默认 60s）。
+	// TimeoutSec is the Vision OCR timeout in seconds. <=0 lets engines use their own
+	// defaults (vision defaults to 60s).
 	TimeoutSec int `json:"timeout_sec,omitempty"`
-	// RetryCount Vision OCR 失败兜底重试次数（针对 CRImageReaderError 类瞬拒）。
-	// <=0 时引擎用默认值 2（仅 vision 语义生效）。
+	// RetryCount is the Vision OCR failure-fallback retry count (for transient rejections
+	// like CRImageReaderError).
+	// <=0 lets engines use the default 2 (only meaningful for vision).
 	RetryCount int `json:"retry_count,omitempty"`
 }
 
-// OcrResult OCR 结果
+// OcrResult is an OCR result
 type OcrResult struct {
-	Engine  string      `json:"engine"`  // OCR 引擎标识
-	Text    string      `json:"text"`    // 识别出的全部文本
-	Regions []OcrRegion `json:"regions"` // 各文字区域明细
+	Engine  string      `json:"engine"`  // OCR engine identifier
+	Text    string      `json:"text"`    // All recognized text
+	Regions []OcrRegion `json:"regions"` // Per-region details
 }
 
-// OcrRegion 单个文字区域
+// OcrRegion is a single text region
 type OcrRegion struct {
-	Text string  `json:"text"` // 区域文本
-	Conf float64 `json:"conf"` // 识别置信度
-	Box  []int   `json:"box"`  // 区域包围盒坐标 [x1,y1,x2,y2]
+	Text string  `json:"text"` // Region text
+	Conf float64 `json:"conf"` // Recognition confidence
+	Box  []int   `json:"box"`  // Region bounding box [x1,y1,x2,y2]
 }
 
-// TranslateMultiResult 多引擎并行翻译的启动确认，Count 为已启动的引擎数。
-// 实际结果通过事件 EventTranslateResult 逐个流式推送到前端。
+// TranslateMultiResult confirms the start of a multi-engine parallel translation; Count is
+// the number of engines started.
+// Actual results stream to the frontend one by one via the EventTranslateResult event.
 type TranslateMultiResult struct {
-	Count   int               `json:"count"`   // 已启动的引擎数
-	Results []TranslateResult `json:"results"` // 初始结果集合（含引擎占位）
+	Count   int               `json:"count"`   // Number of engines started
+	Results []TranslateResult `json:"results"` // Initial result set (including engine placeholders)
 }
 
-// HistoryItem 翻译历史条目
+// HistoryItem is a translation history entry
 type HistoryItem struct {
-	ID        int64    `json:"id"`         // 历史记录自增主键 ID
-	Text      string   `json:"text"`       // 原文
-	Result    string   `json:"result"`     // 译文
-	From      Language `json:"from"`       // 源语言
-	To        Language `json:"to"`         // 目标语言
-	Engine    string   `json:"engine"`     // 使用的引擎标识
-	FromOCR   bool     `json:"from_ocr"`   // 是否来自 OCR 识别结果
-	CreatedAt int64    `json:"created_at"` // 创建时间（毫秒时间戳）
+	ID        int64    `json:"id"`         // History record auto-increment primary key
+	Text      string   `json:"text"`       // Source text
+	Result    string   `json:"result"`     // Translation
+	From      Language `json:"from"`       // Source language
+	To        Language `json:"to"`         // Target language
+	Engine    string   `json:"engine"`     // Engine identifier used
+	FromOCR   bool     `json:"from_ocr"`   // Whether it came from OCR recognition
+	CreatedAt int64    `json:"created_at"` // Creation time (millisecond timestamp)
 }
 
-// ScreenshotResult 截图翻译完整结果，通过 EventScreenshotOCR 推送到截图窗口。
+// ScreenshotResult is the full screenshot translate result, pushed to the screenshot
+// window via EventScreenshotOCR.
 type ScreenshotResult struct {
-	Image        string            `json:"image"`        // 区域截图 PNG 的 base64 data URL（前端直接 <img>）
-	Text         string            `json:"text"`         // OCR 识别出的原文
-	Translations []TranslateResult `json:"translations"` // 各引擎译文
-	To           Language          `json:"to"`           // 目标语言
-	Error        string            `json:"error"`        // 流程失败原因（非空时前端停止转圈并展示错误）
+	Image        string            `json:"image"`        // Region screenshot PNG as a base64 data URL (frontend renders <img> directly)
+	Text         string            `json:"text"`         // Source text recognized by OCR
+	Translations []TranslateResult `json:"translations"` // Per-engine translations
+	To           Language          `json:"to"`           // Target language
+	Error        string            `json:"error"`        // Flow failure reason (when non-empty the frontend stops spinning and shows the error)
 }

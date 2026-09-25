@@ -17,39 +17,45 @@ import (
 	"cnb.cool/dtapp/kai/pkg/swiftbridge"
 )
 
-// appleTranslator 调用 macOS 系统自带翻译（Translation.framework）。
-// 通过 purego 运行时动态加载 Swift 桥接动态库（pkg/swiftbridge），免 API Key、无需辅助功能授权，
-// 是开箱即用的本地离线翻译后端。改 Swift 后只需重编 internal/swift/build.sh（产 .dylib 并自动复制到 pkg/swiftbridge），
-// 运行时 Dlopen 加载到的即是最新代码，无需重新链接主二进制。
+// appleTranslator calls macOS's built-in system translation (Translation.framework).
+// It loads the Swift bridge dynamic library at runtime via purego (pkg/swiftbridge),
+// needs no API key and no accessibility permission, and is the out-of-the-box local offline
+// translation backend. After changing Swift code, just rebuild internal/swift/build.sh
+// (produces the .dylib and copies it into pkg/swiftbridge); the runtime Dlopen then picks up
+// the latest code with no need to relink the main binary.
 type appleTranslator struct{}
 
-// NewApple 创建系统翻译引擎。
+// NewApple creates the system translation engine.
 func NewApple() Translator {
 	return &appleTranslator{}
 }
 
 func (s *appleTranslator) Name() string { return "apple" }
 
-// SetLogConfig 将日志配置（目录 + LogConfig 的等级/保留天数/压缩）同步给 Swift 桥接层，
-// 使其 kai-bridge.log 与主应用日志（kai.log）使用同一套策略（等级过滤、按天滚动、保留天数、压缩）。
-// dir 为空则跳过；level 为 debug/info/warn/error（非法值由 Swift 侧回退 info）；
-// retentionDays <=0 表示仅按天滚动、不清理；compress 决定过期归档是否压缩为 .gz。
+// SetLogConfig syncs the log config (directory + LogConfig level/retention days/compression)
+// to the Swift bridge layer, so its kai-bridge.log follows the same policy as the main app
+// log (kai.log): level filtering, day rotation, retention days, compression.
+// An empty dir skips; level is debug/info/warn/error (invalid values fall back to info on the
+// Swift side); retentionDays <=0 means day-rotation only, no cleanup; compress decides
+// whether expired archives are compressed to .gz.
 func SetLogConfig(dir, level string, retentionDays int, compress bool) {
 	if dir == "" {
 		return
 	}
-	// dylib 未加载（非 macOS / 缺失 / 路径错）时安全跳过，避免 nil 函数指针 panic。
+	// Skip safely when the dylib isn't loaded (non-macOS / missing / wrong path), avoiding a
+	// nil function-pointer panic.
 	if !swiftbridge.Available() {
 		return
 	}
-	// 安全转换 int -> int32：超出 int32 范围时截断至最大值，避免溢出（gosec G115）。
+	// Safe int -> int32 conversion: clamp to the max on int32 overflow (gosec G115).
 	days := min(retentionDays, math.MaxInt32)
-	swiftbridge.KaiSetLogConfig(dir, level, int32(days), compress) //nolint:gosec // 溢出已在上方显式兜底
+	swiftbridge.KaiSetLogConfig(dir, level, int32(days), compress) //nolint:gosec // overflow is explicitly clamped above
 }
 
-// SetBridgeLocale 将当前界面语言同步给 Swift 桥接层，使其 kai-bridge.log 调试日志
-// 随系统语言切换中/英文。locale 形如 "zh-CN" / "en-US"，以 "en" 开头视为英文。
-// 空串则跳过（保持 Swift 侧默认 zh）。
+// SetBridgeLocale syncs the current UI language to the Swift bridge layer so its
+// kai-bridge.log debug logs switch between Chinese/English with the system language.
+// locale looks like "zh-CN" / "en-US"; anything starting with "en" is treated as English.
+// An empty string skips (keeping the Swift-side default of zh).
 func SetBridgeLocale(locale string) {
 	if locale == "" {
 		return
@@ -60,13 +66,14 @@ func SetBridgeLocale(locale string) {
 	swiftbridge.KaiSetLocale(locale)
 }
 
-// SupportsAutoSource 系统翻译（Translation.framework）支持自动检测源语言：
-// from=auto 时 Go 传空串给 Swift，Swift 侧用 NaturalLanguage 自动识别并约束到已安装列表。
+// SupportsAutoSource: system translation (Translation.framework) supports auto-detecting the
+// source language. With from=auto, Go passes an empty string to Swift, which uses
+// NaturalLanguage to detect the language and constrain it to the installed list.
 func (s *appleTranslator) SupportsAutoSource() bool { return true }
 
-// Translate 通过 Translation.framework 完成翻译。
-// src 为 "auto"（或空）时，由 Swift 侧用 NaturalLanguage 自动检测源语言并约束到本机已安装列表；
-// 目标语言必须显式指定。
+// Translate performs the translation via Translation.framework.
+// When src is "auto" (or empty), Swift auto-detects the source language with NaturalLanguage,
+// constrained to the locally installed list; the target language must be explicit.
 func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
@@ -74,24 +81,26 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	}
 	sl := normalizeLang(string(req.From))
 	tl := normalizeLang(string(req.To))
-	// sl == "" 表示自动检测源语言，交由 Swift 处理；非空则必须显式指定。
+	// sl == "" means auto-detect the source language, delegated to Swift; non-empty requires
+	// an explicit source.
 	if tl == "auto" || tl == "" {
 		return nil, fmt.Errorf(i18n.T("err.apple_need_target"))
 	}
 
 	slog.Debug(i18n.T("log.apple_translate_invoke"), "from", sl, "to", tl, "text_len", len(text))
 
-	outBuf := make([]byte, 1<<16) // 64KB 输出缓冲，足以容纳长文本译文 + JSON 包装
+	outBuf := make([]byte, 1<<16) // 64KB output buffer, enough for a long translation + JSON wrapping
 	if !swiftbridge.Available() {
 		return nil, fmt.Errorf(i18n.T("err.swiftbridge_unavailable"))
 	}
-	n := swiftbridge.KaiTranslate(sl, tl, text, unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // 与 Swift 交互所必需，缓冲区由 Go 侧分配
+	n := swiftbridge.KaiTranslate(sl, tl, text, unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // required for the Swift interop; buffer is allocated on the Go side
 	if n < 0 {
 		slog.Error(i18n.T("err.apple_translate_buffer"), "from", sl, "to", tl, "text_len", len(text))
 		return nil, fmt.Errorf(i18n.T("err.apple_translate_buffer"))
 	}
 
-	// 裁剪 Swift 写入时可能附带的一个结尾 \0（C 字符串习惯），避免 JSON 解析报 \x00 错误。
+	// Trim the trailing \0 Swift may have written (C-string convention), avoiding a \x00
+	// error during JSON parsing.
 	payload := bytes.TrimRight(outBuf[:n], "\x00")
 	var tr swiftbridge.TranslateSuccess
 	if err := json.Unmarshal(payload, &tr); err != nil {
@@ -99,9 +108,10 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 		return nil, fmt.Errorf("%s: %w", i18n.T("err.apple_translate_parse"), err)
 	}
 	if tr.Code != "" {
-		// Swift 自定义错误：按错误码走 Go 侧 i18n 渲染用户可见文案，detail 作技术细节。
-		// 已知错误码映射到 err.apple_<code>；未知 code 回退到通用引擎错误文案，
-		// 避免向用户暴露原始 key 字符串。
+		// Swift custom error: render user-visible copy via Go-side i18n by error code, with
+		// detail as the technical context.
+		// Known codes map to err.apple_<code>; unknown codes fall back to the generic engine
+		// error copy, never exposing the raw key string to the user.
 		var msg string
 		switch tr.Code {
 		case swiftbridge.BridgeErrEmptyText:
@@ -137,22 +147,24 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	}, nil
 }
 
-// AvailableLanguages 返回系统已安装语言包的语言码列表（BCP-47）。
-// 供前端语言选择器等场景使用；失败返回错误。
+// AvailableLanguages returns the language codes (BCP-47) of the system's installed language
+// packs. For use by the frontend language picker etc.; returns an error on failure.
 func AvailableLanguages() ([]string, error) {
 	slog.Debug(i18n.T("log.apple_query_langs"))
 	if !swiftbridge.Available() {
 		return nil, fmt.Errorf(i18n.T("err.swiftbridge_unavailable"))
 	}
 	outBuf := make([]byte, 1<<16)
-	n := swiftbridge.KaiAvailableLanguages(unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // 与 Swift 交互所必需，缓冲区由 Go 侧分配
+	n := swiftbridge.KaiAvailableLanguages(unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // required for the Swift interop; buffer is allocated on the Go side
 	if n < 0 {
 		slog.Error(i18n.T("err.apple_lang_buffer"))
 		return nil, fmt.Errorf(i18n.T("err.apple_lang_buffer"))
 	}
-	// 裁剪 Swift 写入时可能附带的一个结尾 \0（C 字符串习惯），避免 JSON 解析报 \x00 错误。
+	// Trim the trailing \0 Swift may have written (C-string convention), avoiding a \x00
+	// error during JSON parsing.
 	payload := bytes.TrimRight(outBuf[:n], "\x00")
-	// Swift 返回 {"langs":[...]}，langs 为本机已安装（已下载、可离线翻译）的语言标识符。
+	// Swift returns {"langs":[...]} where langs are the locally installed (downloaded,
+	// offline-translatable) language identifiers.
 	var resp swiftbridge.AvailableLanguages
 	if err := json.Unmarshal(payload, &resp); err != nil {
 		slog.Error(i18n.T("err.apple_lang_parse"), "raw", string(payload), "error", err)
@@ -162,7 +174,8 @@ func AvailableLanguages() ([]string, error) {
 	return resp.Langs, nil
 }
 
-// coalesceLang 当 Swift 未回传源语言时回退到 "auto"（表示自动检测）。
+// coalesceLang falls back to "auto" (meaning auto-detect) when Swift didn't return a source
+// language.
 func coalesceLang(got, fallback string) string {
 	if got == "" {
 		if fallback == "" {
@@ -173,8 +186,9 @@ func coalesceLang(got, fallback string) string {
 	return got
 }
 
-// normalizeLang 把内部语言码映射为 Translation.framework 接受的 BCP-47 码。
-// "auto" / "" 映射为空串，让 Swift 侧走 NaturalLanguage 自动检测分支。
+// normalizeLang maps internal language codes to the BCP-47 codes Translation.framework
+// accepts. "auto" / "" map to an empty string, routing Swift to its NaturalLanguage
+// auto-detect branch.
 func normalizeLang(code string) string {
 	switch code {
 	case "zh", "zh-CN", "zh_CN":

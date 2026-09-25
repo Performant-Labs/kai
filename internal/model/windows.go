@@ -1,12 +1,12 @@
 package model
 
-// 应用窗口名称常量，集中管理防止裸字符串拼写错误。
-// 与 internal/events（事件名）分离，避免职责混淆。
+// App window name constants, centralized to prevent raw-string typos.
+// Kept separate from internal/events (event names) to avoid muddled responsibilities.
 const (
-	// WindowTranslate 输入翻译窗口（mainWindow，/translate.html）
+	// WindowTranslate is the input translate window (mainWindow, /translate.html)
 	WindowTranslate = "translate"
-	// WindowSettings 设置窗口（/settings.html）
+	// WindowSettings is the settings window (/settings.html)
 	WindowSettings = "settings"
-	// WindowScreenshot 截图翻译窗口（/screenshot.html）
+	// WindowScreenshot is the screenshot translate window (/screenshot.html)
 	WindowScreenshot = "screenshot"
 )

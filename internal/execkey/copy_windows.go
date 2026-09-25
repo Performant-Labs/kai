@@ -15,11 +15,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Windows 复制键：使用 makc（No-cgo 跨平台输入库，底层走 purego 调 user32.dll），
-// 保持 CGO_ENABLED=0 与 Windows CI 一致。macOS 仍走 copy_darwin.go 的 robotgo，
-// 本文件仅在 Windows 编译（按后缀分离）。剪贴板读取复用 Wails 的 application.App。
+// Windows copy key: uses makc (a no-cgo cross-platform input library calling user32.dll via
+// purego under the hood), keeping CGO_ENABLED=0 consistent with Windows CI. macOS keeps
+// copy_darwin.go's robotgo; this file compiles on Windows only (separated by suffix).
+// Clipboard reading reuses Wails' application.App.
 
-// copyClient 缓存 makc 客户端，避免每次按键都 Open/Close。
+// copyClient caches the makc client, avoiding Open/Close on every keypress.
 var copyClient *makc.Client
 
 func getCopyClient() (*makc.Client, error) {
@@ -34,9 +35,11 @@ func getCopyClient() (*makc.Client, error) {
 	return copyClient, nil
 }
 
-// parseHotkey 在 Windows 上把用户配置的热键字符串解析为 makc.Key 列表。
-// 支持 "ctrl+c" / "ctrl+shift+c" / "alt+x" 等形式；Windows 无 Command 键（忽略 cmd）。
-// 解析失败（含未知键名）时返回 error，调用方跳过模拟。
+// parseHotkey parses the user-configured hotkey string into a list of makc.Key on Windows.
+// Supports forms like "ctrl+c" / "ctrl+shift+c" / "alt+x"; Windows has no Command key (cmd
+// is ignored).
+// Returns an error on parse failure (including unknown key names); the caller skips the
+// simulation.
 func parseHotkey(s string) ([]makc.Key, error) {
 	parts := strings.Split(s, "+")
 	keys := make([]makc.Key, 0, len(parts))
@@ -44,7 +47,7 @@ func parseHotkey(s string) ([]makc.Key, error) {
 		name := strings.TrimSpace(strings.ToLower(p))
 		switch name {
 		case "cmd", "command", "win", "super":
-			// Windows 无对应键，跳过不报错
+			// No Windows equivalent key; skip without error
 			continue
 		}
 		k, err := makc.ParseKey(name)
@@ -59,18 +62,23 @@ func parseHotkey(s string) ([]makc.Key, error) {
 	return keys, nil
 }
 
-// attachToForeground 把当前线程（Kai 的调用线程）附着到前台窗口的线程，
-// 让随后经 SendInput 注入的 Ctrl+C 能可靠地交给前台目标 app 处理。
+// attachToForeground attaches the current thread (Kai's calling thread) to the foreground
+// window's thread, so the subsequently injected Ctrl+C (via SendInput) is reliably handed to
+// the foreground target app.
 //
-// 背景：Windows 有 foreground lock timeout 机制——当一个非前台进程通过
-// SendInput 投递输入时，系统可能把输入"排队"而暂不交给前台窗口，导致目标 app
-// 偶发没收到复制键、剪贴板读到空（"有时成功有时失败"）。AttachThreadInput 把输入
-// 线程与前景线程挂接后，SendInput 的输入会直接进入前台窗口的消息队列，规避该节流。
+// Background: Windows has a foreground lock timeout mechanism — when a non-foreground
+// process delivers input via SendInput, the system may "queue" the input without handing it
+// to the foreground window, so the target app sporadically never receives the copy key and
+// the clipboard reads empty ("sometimes works, sometimes not"). With AttachThreadInput
+// linking the input thread to the foreground thread, SendInput's input enters the foreground
+// window's message queue directly, bypassing that throttling.
 //
-// 调用方必须保证在注入后调用返回的 restore() 解除挂接，否则会破坏输入路由、造成
-// 系统级卡顿。若无可附着的前景窗口（如桌面）或调用失败，返回 no-op 的 restore。
+// The caller must invoke the returned restore() after injecting to detach, otherwise input
+// routing breaks and system-wide stutter can result. When there is no attachable foreground
+// window (e.g. the desktop) or the call fails, a no-op restore is returned.
 //
-// golang.org/x/sys/windows 未导出 AttachThreadInput，这里用 LazyProc 直调 user32。
+// golang.org/x/sys/windows does not export AttachThreadInput; LazyProc calls user32
+// directly here.
 func attachToForeground() (restore func()) {
 	noOp := func() {}
 	fg := windows.GetForegroundWindow()
@@ -85,10 +93,10 @@ func attachToForeground() (restore func()) {
 
 	user32 := windows.NewLazySystemDLL("user32.dll")
 	attachProc := user32.NewProc("AttachThreadInput")
-	// 仅在尚未附着时挂接，避免重复 Attach 报错。
+	// Attach only when not already attached, avoiding duplicate-attach errors.
 	r, _, err := attachProc.Call(uintptr(selfThread), uintptr(fgThread), 1)
 	if r == 0 {
-		// 附着失败（例如已被占用），放弃，不破坏后续流程。
+		// Attach failed (e.g. already claimed); give up without breaking the flow.
 		slog.Debug(i18n.T("log.copykey_attach_failed"),
 			slog.String(i18n.T("log.field_error"), errNoop(err)))
 		return noOp
@@ -98,7 +106,7 @@ func attachToForeground() (restore func()) {
 	}
 }
 
-// errNoop 把可能为 nil 的 error 安全转成字符串，方便 Debug 记录。
+// errNoop safely converts a possibly-nil error into a string for Debug logging.
 func errNoop(err error) string {
 	if err == nil {
 		return ""
@@ -106,19 +114,25 @@ func errNoop(err error) string {
 	return err.Error()
 }
 
-// copySelection 在 Windows 上替用户执行 ExecKeyConfig.Copy 配置的键（默认 Ctrl+C），
+// copySelection performs, on behalf of the user, the key configured in ExecKeyConfig.Copy on
+// Windows (default Ctrl+C),
 //
-// fallback=true 时：若自定义复制键执行失败（解析失败 / 注入失败 / 剪贴板为空），会自动再用
-// 系统默认复制键（Ctrl+C）重试一次——即"自定义键没生效就退回到系统原生的复制键"。
-// 该参数由 CopySelection 在开启回退时传入 true（方法内部自行保护/还原用户剪贴板）。
+// With fallback=true: if the custom copy key fails (parse failure / injection failure /
+// empty clipboard), it automatically retries once with the system default copy key (Ctrl+C) —
+// i.e. "fall back to the system-native copy key when the custom key didn't take effect".
+// CopySelection passes true here when fallback is enabled (the method itself
+// protects/restores the user's clipboard).
 //
-// 实现：用 makc 的 Keyboard.Combo 经 user32.SendInput 注入组合键（底层 purego，零 CGO）。
-// makc 自带 Windows SendInput 后端，无需 robotgo（robotgo 需 CGO，与 Windows CI 冲突）。
+// Implementation: makc's Keyboard.Combo injects the combination via user32.SendInput (purego
+// underneath, zero CGO).
+// makc ships its own Windows SendInput backend — no robotgo (robotgo needs CGO, which
+// conflicts with Windows CI).
 func (e *ExecKeyController) copySelection(fallback bool) string {
 	hotkey := e.settingsSvc.Get().ExecKeys.Copy.Key
 	text := e.copyWithHotkey(hotkey)
 
-	// 回退：自定义键没拿到内容，改用系统默认复制键（Ctrl+C）再试一次。
+	// Fallback: the custom key got nothing; retry once with the system default copy key
+	// (Ctrl+C).
 	if fallback && text == "" {
 		e.log.Warn(i18n.T("log.copykey_fallback_default"),
 			slog.String(i18n.T("log.field_customkey"), hotkey),
@@ -128,9 +142,9 @@ func (e *ExecKeyController) copySelection(fallback bool) string {
 	return text
 }
 
-// copyDefaultKey 直接用 makc 真实枚举键按下系统默认复制键 Ctrl+C，
-// 不经过 ParseKey 字符串解析。仅作为 Fallback 回退路径：自定义复制键未生效时
-// 退回到系统原生复制键。
+// copyDefaultKey presses the system default copy key Ctrl+C directly with makc's real enum
+// keys, without ParseKey string parsing. Used only as the Fallback path: when the custom
+// copy key didn't take effect, fall back to the system-native copy key.
 func (e *ExecKeyController) copyDefaultKey() string {
 	client, err := getCopyClient()
 	if err != nil {
@@ -144,7 +158,8 @@ func (e *ExecKeyController) copyDefaultKey() string {
 	}
 
 	comboErr := application.InvokeSyncWithError(func() error {
-		// 注入前把 Kai 线程附着到前台目标线程，规避 foreground lock 导致的偶发失效。
+		// Attach Kai's thread to the foreground target thread before injecting, avoiding the
+		// sporadic failures caused by the foreground lock.
 		defer attachToForeground()()
 		ctx, cancel := context.WithTimeout(parentCtx, 2*time.Second)
 		defer cancel()
@@ -166,8 +181,10 @@ func (e *ExecKeyController) copyDefaultKey() string {
 	return text
 }
 
-// copyWithHotkey 按指定热键字符串执行一次"模拟复制 + 读剪贴板"。
-// 任一环节失败（解析失败 / 注入失败 / 剪贴板为空）都返回空串，由调用方决定是否回退。
+// copyWithHotkey performs one "simulated copy + read clipboard" round with the given hotkey
+// string.
+// Any failure along the way (parse failure / injection failure / empty clipboard) returns an
+// empty string; the caller decides whether to fall back.
 func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 	if strings.TrimSpace(hotkey) == "" {
 		return ""
@@ -186,7 +203,8 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 		return ""
 	}
 
-	// ctx 用 app 生命周期 context（app 退出即取消），再叠加 2s 超时作保护。
+	// ctx uses the app lifecycle context (canceled when the app exits), plus a 2s timeout as
+	// protection.
 	parentCtx := context.Background()
 	if e.app != nil {
 		parentCtx = e.app.Context()
@@ -196,9 +214,10 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 		slog.String(i18n.T("log.field_key"), hotkey),
 		slog.Any("keys", keys),
 	)
-	// 在主线程执行
+	// Run on the main thread
 	comboErr := application.InvokeSyncWithError(func() error {
-		// 注入前把 Kai 线程附着到前台目标线程，规避 foreground lock 导致的偶发失效。
+		// Attach Kai's thread to the foreground target thread before injecting, avoiding the
+		// sporadic failures caused by the foreground lock.
 		defer attachToForeground()()
 		ctx, cancel := context.WithTimeout(parentCtx, 2*time.Second)
 		defer cancel()

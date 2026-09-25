@@ -1,13 +1,13 @@
-// Package httplogstore 提供 HTTP 请求日志的持久化存储。
-// 职责：独立的 SQLite 日志库（httplog.db）的全生命周期管理——
-// 建库/迁移、Transport 包裹（http_log RoundTripper）、异步入库、
-// 定时清理过期日志、关闭。
+// Package httplogstore provides persistent storage for HTTP request logs.
+// Responsibilities: full lifecycle management of the separate SQLite log database
+// (httplog.db) — creation/migration, Transport wrapping (the http_log RoundTripper),
+// asynchronous inserts, periodic cleanup of expired logs, and shutdown.
 //
-// 约束：httplog.db 为 append-only，仅 INSERT 走常驻连接；DELETE
-// 由 Cleanup 用临时连接执行，不阻塞写入。
+// Constraint: httplog.db is append-only — only INSERTs use the persistent connection;
+// DELETEs run on a temporary connection in Cleanup, never blocking writes.
 //
-// 设计：包级自包含——Init/Close/WrapTransport 均无需外部传 *sql.DB，
-// 调用方只需关心启停，不接触数据库细节。
+// Design: package-level self-containment — Init/Close/WrapTransport never need an external
+// *sql.DB; callers only care about start/stop and never touch database details.
 package httplogstore
 
 import (
@@ -34,7 +34,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// 包级状态（自包含，不暴露给调用方）
+// Package-level state (self-contained, not exposed to callers)
 // ---------------------------------------------------------------------------
 
 var (
@@ -46,12 +46,13 @@ var (
 )
 
 // ---------------------------------------------------------------------------
-// Unicode 解码
+// Unicode decoding
 // ---------------------------------------------------------------------------
 
-// decodeUnicodeEscapes 检测字节序列中是否包含 \uXXXX 转义序列，如有则解码为正常文本。
-// 支持普通 BMP 字符和代理对（如 \uD83D\uDE00 → 😀）。
-// 若不含转义序列则原样返回，避免无谓的替换开销。
+// decodeUnicodeEscapes detects \uXXXX escape sequences in the bytes and decodes them into
+// normal text when present.
+// Supports ordinary BMP characters and surrogate pairs (e.g. \uD83D\uDE00 → 😀).
+// Without escape sequences it returns the input unchanged, avoiding needless replace work.
 func decodeUnicodeEscapes(b []byte) []byte {
 	if !bytes.Contains(b, []byte(`\u`)) {
 		return b
@@ -75,7 +76,7 @@ func decodeUnicodeEscapes(b []byte) []byte {
 			remaining = remaining[idx+6:]
 			continue
 		}
-		// 高代理 (0xD800-0xDBFF)：检查是否为代理对
+		// High surrogate (0xD800-0xDBFF): check for a surrogate pair
 		if code >= 0xD800 && code <= 0xDBFF && idx+12 <= len(remaining) &&
 			bytes.Equal(remaining[idx+6:idx+8], []byte(`\u`)) {
 			code2, err2 := strconv.ParseUint(string(remaining[idx+8:idx+12]), 16, 16)
@@ -93,7 +94,7 @@ func decodeUnicodeEscapes(b []byte) []byte {
 }
 
 // ---------------------------------------------------------------------------
-// 嵌入资源
+// Embedded resources
 // ---------------------------------------------------------------------------
 
 //go:embed schema.sql
@@ -103,12 +104,12 @@ var schemaSQL string
 var migrationSQL string
 
 // ---------------------------------------------------------------------------
-// Init / Close（包级自包含）
+// Init / Close (package-level self-containment)
 // ---------------------------------------------------------------------------
 
-// Init 初始化 HTTP 请求日志存储。仅 httpLogEnabled 为 true 时打开 DB、
-// 建表/迁移、并全局接管 http.DefaultTransport。
-// 重复调用安全（sync.Once）；httpLogEnabled=false 时为 no-op。
+// Init initializes the HTTP request-log store. Only when httpLogEnabled is true does it
+// open the DB, create tables/migrate, and take over http.DefaultTransport globally.
+// Safe to call repeatedly (sync.Once); a no-op when httpLogEnabled=false.
 func Init(dataDir string, httpLogEnabled bool) error {
 	var initErr error
 	once.Do(func() {
@@ -130,13 +131,13 @@ func Init(dataDir string, httpLogEnabled bool) error {
 			initErr = fmt.Errorf(i18n.T("err.httplog_pragma"), err, err)
 			return
 		}
-		// 执行建表 DDL
+		// Run the table-creation DDL
 		if _, err := c.ExecContext(context.Background(), schemaSQL); err != nil {
 			c.Close()
 			initErr = fmt.Errorf(i18n.T("err.httplog_create_schema"), err, err)
 			return
 		}
-		// 执行迁移脚本
+		// Run the migration script
 		for stmt := range strings.SplitSeq(migrationSQL, ";") {
 			stmt = strings.TrimSpace(stmt)
 			if stmt == "" {
@@ -153,16 +154,17 @@ func Init(dataDir string, httpLogEnabled bool) error {
 		mu.Lock()
 		conn = c
 		mu.Unlock()
-		// 全局接管 http.DefaultTransport（使第三方库的裸 http.Get 等也记录日志）
+		// Take over http.DefaultTransport globally (so bare http.Get calls from third-party
+		// libraries get logged too)
 		http.DefaultTransport = WrapTransport(http.DefaultTransport)
 		http.DefaultClient = &http.Client{Transport: http.DefaultTransport}
 	})
 	return initErr
 }
 
-// Close 关闭日志数据库连接并停止定时清理 goroutine。
+// Close closes the log database connection and stops the periodic cleanup goroutine.
 func Close() error {
-	// 先停止清理 goroutine
+	// Stop the cleanup goroutine first
 	mu.Lock()
 	if cleanupDone != nil {
 		close(cleanupDone)
@@ -178,11 +180,13 @@ func Close() error {
 }
 
 // ---------------------------------------------------------------------------
-// Transport 包裹
+// Transport wrapping
 // ---------------------------------------------------------------------------
 
-// WrapTransport 将 base RoundTripper 包裹为带 HTTP 请求日志记录的 RoundTripper，最外层注入全局 User-Agent。
-// base 为 nil 时回退 http.DefaultTransport；httplog 未启用时直接返回 useragent 包裹的 base。
+// WrapTransport wraps the base RoundTripper into one with HTTP request logging, injecting
+// the global User-Agent at the outermost layer.
+// A nil base falls back to http.DefaultTransport; when httplog is disabled, the
+// useragent-wrapped base is returned directly.
 func WrapTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
@@ -196,7 +200,8 @@ func WrapTransport(base http.RoundTripper) http.RoundTripper {
 	return useragent.Wrap(http_log.NewLoggingRoundTripper(base, &entLogSaver{}, nil))
 }
 
-// WrapClient 用 WrapTransport 包裹 client 的 Transport，返回新的 *http.Client。
+// WrapClient wraps the client's Transport with WrapTransport, returning a new
+// *http.Client.
 func WrapClient(client *http.Client) *http.Client {
 	if client == nil {
 		client = &http.Client{}
@@ -214,14 +219,15 @@ func WrapClient(client *http.Client) *http.Client {
 }
 
 // ---------------------------------------------------------------------------
-// 日志处理器（实现 http_log.LogHandler）
+// Log handler (implements http_log.LogHandler)
 // ---------------------------------------------------------------------------
 
-// entLogSaver 实现 http_log.LogHandler 接口，将 HTTP 请求日志写入 httplog.db。
-// 无状态——通过包级 conn 读写，不存 db 字段。
+// entLogSaver implements the http_log.LogHandler interface, writing HTTP request logs into
+// httplog.db.
+// Stateless — reads/writes through the package-level conn; no db field.
 type entLogSaver struct{}
 
-// HandleLog 将 HTTP 请求日志数据写入 http_log 表。
+// HandleLog writes HTTP request log data into the http_log table.
 func (s *entLogSaver) HandleLog(ctx context.Context, data *http_log.LogData) error {
 	if data == nil {
 		return nil
@@ -246,7 +252,7 @@ func (s *entLogSaver) HandleLog(ctx context.Context, data *http_log.LogData) err
 		PluginVersion:     nullableStr(data.PluginVersion),
 	}
 
-	// 请求/响应头序列化为 JSON 文本
+	// Request/response headers serialized as JSON text
 	if data.RequestHeaders != nil {
 		if b, err := json.Marshal(data.RequestHeaders); err == nil {
 			s := string(b)
@@ -259,7 +265,7 @@ func (s *entLogSaver) HandleLog(ctx context.Context, data *http_log.LogData) err
 			params.ResponseHeaders = &s
 		}
 	}
-	// 请求/响应体仅在非空时写入
+	// Request/response bodies written only when non-empty
 	if len(data.RequestBody) > 0 {
 		params.RequestBody = decodeUnicodeEscapes(data.RequestBody)
 	}
@@ -274,10 +280,10 @@ func (s *entLogSaver) HandleLog(ctx context.Context, data *http_log.LogData) err
 }
 
 // ---------------------------------------------------------------------------
-// 辅助函数
+// Helpers
 // ---------------------------------------------------------------------------
 
-// nullableStr 将 Go 字符串转为 *string（空字符串视为 NULL）。
+// nullableStr converts a Go string into a *string (empty string treated as NULL).
 func nullableStr(s string) *string {
 	if s == "" {
 		return nil
@@ -285,7 +291,7 @@ func nullableStr(s string) *string {
 	return &s
 }
 
-// nullableInt64 将 int64 转为 *int64（零值视为 NULL）。
+// nullableInt64 converts an int64 into a *int64 (zero treated as NULL).
 func nullableInt64(v int64) *int64 {
 	if v == 0 {
 		return nil
@@ -294,12 +300,13 @@ func nullableInt64(v int64) *int64 {
 }
 
 // ---------------------------------------------------------------------------
-// 清理
+// Cleanup
 // ---------------------------------------------------------------------------
 
-// Cleanup 删除早于 retentionDays 天前的 HTTP 请求日志（基于 created_at）。
-// retentionDays <= 0 时表示不清理，直接返回。
-// 使用临时建立的独立连接执行 DELETE，不影响常驻 append-only 连接。
+// Cleanup deletes HTTP request logs older than retentionDays days (based on created_at).
+// retentionDays <= 0 means no cleanup; return immediately.
+// The DELETE runs on a temporary independent connection, never touching the persistent
+// append-only connection.
 func Cleanup(retentionDays int) (int, error) {
 	if retentionDays <= 0 {
 		return 0, nil
@@ -323,8 +330,8 @@ func Cleanup(retentionDays int) (int, error) {
 	return int(n), nil
 }
 
-// StartCleanup 启动定时清理 goroutine，每 1 小时清理一次过期日志。
-// goroutine 在 Close() 时自动停止。
+// StartCleanup starts the periodic cleanup goroutine, purging expired logs every hour.
+// The goroutine stops automatically on Close().
 func StartCleanup(retentionDays int, logger *slog.Logger) {
 	if retentionDays <= 0 {
 		return

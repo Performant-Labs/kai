@@ -15,15 +15,18 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// gitCommitRe 校验 GIT_COMMIT 文件内容：单行十六进制 commit hash（短 hash 或完整 40 位均可）。
-// CI 与本地均使用 `git rev-parse --short HEAD`（默认 7 位短 hash），比较按字符串相等，
-// 因此只校验"是合法的十六进制 hash"，不强制 40 位。
+// gitCommitRe validates GIT_COMMIT file content: a single line hex commit hash (short or
+// full 40 chars).
+// Both CI and local use `git rev-parse --short HEAD` (7-char short hash by default) and
+// compare by string equality,
+// so this only validates "a legal hex hash" — 40 chars not enforced.
 var gitCommitRe = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 
-// commitEqual 判断本机 git commit 与远端 git commit 是否指向同一提交。
-// 两端可能一端是短 hash（如 CI 的 `git rev-parse --short HEAD` 默认 7 位）、
-// 另一端是完整 40 位 hash，因此采用"前缀匹配"而非纯字符串相等：
-// 较短者是对较长者的前缀（或两者完全相同）即视为同一提交，避免误判为"不同"而强制更新。
+// commitEqual decides whether the local and remote git commits point at the same commit.
+// One side may be a short hash (e.g. CI's `git rev-parse --short HEAD`, 7 chars by default)
+// and the other a full 40-char hash, so "prefix matching" is used instead of plain equality:
+// if the shorter is a prefix of the longer (or they are identical), it is the same commit —
+// avoiding a false "different" verdict that would force an update.
 func commitEqual(local, remote string) bool {
 	if local == "" || remote == "" {
 		return false
@@ -34,13 +37,15 @@ func commitEqual(local, remote string) bool {
 	return strings.HasPrefix(local, remote)
 }
 
-// sha256Re 校验 SHA256SUMS 侧车中挑出的哈希：64 位十六进制。
+// sha256Re validates a hash picked from the SHA256SUMS sidecar: 64 hex chars.
 var sha256Re = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
-// 下载地址模板：{repo} 在运行时替换为实际仓库路径（如 example-org/example-repo），
-// {tag} 用版本号（tag_name），{file} 为资源文件名。
-// CNB 公开下载基址为 https://cnb.cool（与响应 browser_download_url 同源，无需鉴权）；
-// GitHub 公开下载基址为 https://github.com。两者均用模板拼接。
+// Download URL templates: {repo} is replaced at runtime with the actual repo path (e.g.
+// example-org/example-repo),
+// {tag} with the version (tag_name), and {file} with the asset file name.
+// CNB's public download base is https://cnb.cool (same origin as the response's
+// browser_download_url; no auth needed);
+// GitHub's public download base is https://github.com. Both are built from templates.
 const (
 	cnbDownloadURL    = "https://cnb.cool/{repo}/-/releases/download/{tag}/{file}"
 	ghDownloadURL     = "https://github.com/{repo}/releases/download/{tag}/{file}"
@@ -50,18 +55,22 @@ const (
 	ghReleasesList    = "https://api.github.com/repos/{repo}/releases?per_page=100"
 )
 
-// buildURL 用模板渲染下载地址：{tag} -> tag，{file} -> file。
+// buildURL renders a download URL from the template: {tag} -> tag, {file} -> file.
 func buildURL(tpl, tag, file string) string {
 	u := strings.ReplaceAll(tpl, "{tag}", tag)
 	u = strings.ReplaceAll(u, "{file}", file)
 	return u
 }
 
-// downloadRelease 共用下载逻辑：下载 release 的升级产物到 dst，通过 onProgress 回报进度。
-// 优先使用 directURL（资源真实下载地址，如 CNB 的 browser_download_url）；
-// directURL 为空时回退到 downloadURLTpl + repo + version + filename 的模板拼接（GitHub 路径）。
-// 请求由调用方通过 newReq 在「发起前」构造好（CNB 在此带上 Accept 等头，GitHub 用普通 GET），
-// 本函数只负责执行请求、读 body 与回报进度，不直接 new 请求。
+// downloadRelease is the shared download logic: downloads the release's upgrade artifact to
+// dst, reporting progress via onProgress.
+// Prefers directURL (the asset's real download URL, e.g. CNB's browser_download_url);
+// when directURL is empty it falls back to template-joining downloadURLTpl + repo + version +
+// filename (the GitHub path).
+// The caller pre-builds the request via newReq before issuing (CNB attaches Accept etc.;
+// GitHub uses a plain GET),
+// and this function only executes the request, reads the body and reports progress — it never
+// news a request itself.
 func downloadRelease(ctx context.Context, lg *slog.Logger, client *http.Client, downloadURLTpl, repo string, rel *updater.Release, dst io.Writer, onProgress func(written, total int64), directURL string, newReq func(ctx context.Context, url string) (*http.Request, error)) error {
 	filename := rel.Artifact.Filename
 	if filename == "" {
@@ -121,9 +130,11 @@ func downloadRelease(ctx context.Context, lg *slog.Logger, client *http.Client, 
 	return nil
 }
 
-// fetchReleaseChecksum 共用校验和获取逻辑：下载 SHA256SUMS 侧车，解析出
-// 目标文件的哈希。返回 (哈希字节, 是否找到)。directURL 非空时优先作为侧车真实地址，
-// 否则回退模板拼接。
+// fetchReleaseChecksum is the shared checksum fetch logic: downloads the SHA256SUMS sidecar
+// and parses out
+// the target file's hash. Returns (hash bytes, found). When directURL is non-empty it is
+// preferred as the sidecar's real address,
+// otherwise a template join is used.
 func fetchReleaseChecksum(ctx context.Context, lg *slog.Logger, client *http.Client, downloadURLTpl, repo string, rel *updater.Release, sidecar, directURL string, newReq func(ctx context.Context, url string) (*http.Request, error)) ([]byte, bool) {
 	checksumURL := directURL
 	if checksumURL == "" {
@@ -186,8 +197,9 @@ func fetchReleaseChecksum(ctx context.Context, lg *slog.Logger, client *http.Cli
 	return nil, false
 }
 
-// fetchGitCommitFile 下载预发布附带的 git commit 文件（GIT_COMMIT），
-// 校验为单行 40 位十六进制 hash 后返回。文件不存在、下载失败或内容非法时返回 ("", false)。
+// fetchGitCommitFile downloads the pre-release's git commit file (GIT_COMMIT),
+// validates it as a single-line 40-char hex hash and returns it. Returns ("", false) when the
+// file is missing, the download fails, or the content is invalid.
 func fetchGitCommitFile(ctx context.Context, lg *slog.Logger, client *http.Client, downloadURLTpl, repo string, rel *updater.Release, filename, directURL string, newReq func(ctx context.Context, url string) (*http.Request, error)) (string, bool) {
 	url := directURL
 	if url == "" {
@@ -223,8 +235,9 @@ func fetchGitCommitFile(ctx context.Context, lg *slog.Logger, client *http.Clien
 	return commit, true
 }
 
-// fetchBuildTimeFile 下载预发布附带的构建时间文件（BUILD_TIME），
-// 解析为 RFC3339 时间后返回。文件不存在、下载失败或解析失败时返回 (time.Time{}, false)。
+// fetchBuildTimeFile downloads the pre-release's build time file (BUILD_TIME),
+// parses it as an RFC3339 time and returns it. Returns (time.Time{}, false) when the file is
+// missing, the download fails, or parsing fails.
 func fetchBuildTimeFile(ctx context.Context, lg *slog.Logger, client *http.Client, downloadURLTpl, repo string, rel *updater.Release, filename, directURL string, newReq func(ctx context.Context, url string) (*http.Request, error)) (time.Time, bool) {
 	url := directURL
 	if url == "" {
@@ -261,7 +274,8 @@ func fetchBuildTimeFile(ctx context.Context, lg *slog.Logger, client *http.Clien
 	return parsed, true
 }
 
-// isNewer 基于版本字符串比较：remote 与 current 不同则视为有更新。
+// isNewer compares version strings: any difference between remote and current counts as an
+// update.
 func isNewer(remote, current string) bool {
 	if remote == "" {
 		return false

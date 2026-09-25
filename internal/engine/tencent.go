@@ -17,8 +17,9 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// tencentTranslator 腾讯机器翻译（TMT）引擎，需 SecretId + SecretKey。
-// 配置：APIKey=SecretId，Secret=SecretKey。
+// tencentTranslator is the Tencent Machine Translation (TMT) engine, needing SecretId +
+// SecretKey.
+// Config: APIKey=SecretId, Secret=SecretKey.
 type tencentTranslator struct {
 	secretID  string
 	secretKey string
@@ -26,7 +27,7 @@ type tencentTranslator struct {
 	client    *http.Client
 }
 
-// NewTencent 创建腾讯翻译引擎。
+// NewTencent creates the Tencent translation engine.
 func NewTencent(cfg *EngineConfig, client *http.Client) Translator {
 	ep := cfg.Endpoint
 	if ep == "" {
@@ -85,20 +86,20 @@ type tencentResponse struct {
 	} `json:"Response"`
 }
 
-// hmacSHA256 计算 HMAC-SHA256 并返回 hex 字符串
+// hmacSHA256 computes HMAC-SHA256 and returns the hex string.
 func hmacSHA256(key []byte, data string) string {
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(data))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// sha256Hex 计算 SHA256 hex
+// sha256Hex computes the SHA256 hex digest.
 func sha256Hex(data string) string {
 	sum := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(sum[:])
 }
 
-// signTencent 按 TC3-HMAC-SHA256 规范生成 Authorization 头。
+// signTencent builds the Authorization header per the TC3-HMAC-SHA256 spec.
 func signTencent(secretID, secretKey, payload, timestamp, date string) string {
 	service := "tmt"
 	host := "tmt.tencentcloudapi.com"

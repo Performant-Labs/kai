@@ -12,25 +12,27 @@ import (
 	genai "google.golang.org/genai"
 )
 
-// geminiTranslator 是 Google Gemini 翻译引擎，基于官方 google.golang.org/genai SDK 实现。
+// geminiTranslator is the Google Gemini translation engine, built on the official
+// google.golang.org/genai SDK.
 type geminiTranslator struct {
 	client  *genai.Client
 	model   string
 	timeout time.Duration
 }
 
-// NewGemini 由引擎配置构造 Gemini 引擎。
-// 通过 ClientConfig 同时传入 APIKey 与全局 HTTPClient：新版 SDK 会正确把密钥注入到
-// 自定义 HTTPClient 的请求中（旧版 SDK 在自定义 HTTPClient 下会丢失密钥，导致
-// "API key is required"）。必须注入全局 client（cfg.HTTPClient 由 service 层提供），
-// 否则返回错误——不使用裸直连，避免丢失项目的 DNS/代理/日志网络策略。
+// NewGemini constructs the Gemini engine from the engine config.
+// ClientConfig receives both APIKey and the global HTTPClient: the new SDK correctly injects
+// the key into requests made by the custom HTTPClient (the old SDK dropped the key with a
+// custom HTTPClient, causing "API key is required"). The global client must be injected
+// (cfg.HTTPClient comes from the service layer), otherwise an error is returned — no bare
+// direct connections, preserving the project's DNS/proxy/logging network policy.
 func NewGemini(cfg *EngineConfig) (*geminiTranslator, error) {
 	ex := parseLLMExtra(cfg.Extra)
 	if cfg.HTTPClient == nil {
 		return nil, fmt.Errorf(i18n.T("err.gemini_uninitialized"))
 	}
-	// 克隆为带引擎级超时的独立实例（超时同步到 HTTP 层），避免直接改共享全局
-	// client 的 Timeout 相互影响。
+	// Clone into an independent instance with the engine-level timeout (synced to the HTTP
+	// layer), rather than mutating the shared global client's Timeout directly.
 	httpClient := cloneHTTPClientWithTimeout(cfg.HTTPClient, ex.TimeoutSec)
 
 	cc := &genai.ClientConfig{
@@ -38,7 +40,8 @@ func NewGemini(cfg *EngineConfig) (*geminiTranslator, error) {
 		Backend:    genai.BackendGeminiAPI,
 		HTTPClient: httpClient,
 	}
-	// 仅在用户显式配置了非默认 Base URL 时覆盖（Endpoint 存完整 Base URL）。
+	// Only override when the user explicitly configured a non-default Base URL (Endpoint
+	// stores the full Base URL).
 	if cfg.Endpoint != "" && cfg.Endpoint != GeminiDefaultEndpoint {
 		cc.HTTPOptions.BaseURL = cfg.Endpoint
 	}
@@ -59,14 +62,14 @@ func NewGemini(cfg *EngineConfig) (*geminiTranslator, error) {
 	}, nil
 }
 
-// Name 返回引擎标识。
+// Name returns the engine identifier.
 func (e *geminiTranslator) Name() string { return "gemini" }
 
 func (e *geminiTranslator) translate(ctx context.Context, text, from, to string) (string, error) {
 	if e.model == "" {
 		return "", fmt.Errorf(i18n.T("err.gemini_model_required"))
 	}
-	// 引擎级请求超时（默认 30s，可由 Extra.timeout_sec 配置）。
+	// Engine-level request timeout (default 30s, configurable via Extra.timeout_sec).
 	if e.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, e.timeout)

@@ -11,13 +11,16 @@ import (
 	"cnb.cool/dtapp/kai/pkg/swiftbridge"
 )
 
-// TODO(2026-08-11): selectedTextViaBridge 已禁用。它仅被 point_darwin.go 的 currentSelectionOSA
-// 使用，而 currentSelectionOSA 已改为返回空串（见 point_darwin.go）。其下游 Swift 符号
-// kai_selected_text 已同步注释禁用。若日后恢复 Swift 取词，取消本函数注释、恢复 cgo 声明
-// 与 Swift 端 @_cdecl 即可。
+// TODO(2026-08-11): selectedTextViaBridge is disabled. It was used only by point_darwin.go's
+// currentSelectionOSA, which now returns an empty string (see point_darwin.go). Its
+// downstream Swift symbol kai_selected_text is likewise commented out. To restore Swift text
+// capture later, uncomment this function and restore the cgo declaration and the Swift-side
+// @_cdecl.
 //
-// selectedTextViaBridge 通过 Swift 桥接层（AXUIElement）读取前台 app 当前选区文本。
-// 失败或无选区返回空串；bufSize 为接收缓冲区容量。
+// selectedTextViaBridge reads the foreground app's current selection text via the Swift
+// bridge layer (AXUIElement).
+// Returns an empty string on failure or no selection; bufSize is the receiving buffer
+// capacity.
 // func selectedTextViaBridge(bufSize int) string {
 // 	if bufSize <= 0 {
 // 		bufSize = 4096
@@ -29,13 +32,14 @@ import (
 // 		return ""
 // 	}
 // 	text := string(buf[:n])
-// 	slog.Info(i18n.T("log.selection_read"), slog.Int("长度", len([]rune(text))), slog.Bool("有内容", text != ""))
+// 	slog.Info(i18n.T("log.selection_read"), slog.Int("length", len([]rune(text))), slog.Bool("hasContent", text != ""))
 // 	return text
 // }
 
-// accessibilityEnabledViaBridge 仅查询辅助功能授权状态（供坐标定位前探活），不读取选区。
+// accessibilityEnabledViaBridge only queries the accessibility permission state (a liveness
+// probe before coordinate positioning); it reads no selection.
 func accessibilityEnabledViaBridge() bool {
-	// dylib 未加载时安全降级：视为未授权（不 panic）。
+	// Degrade safely when the dylib isn’t loaded: treat as not authorized (no panic).
 	if !swiftbridge.Available() {
 		slog.Warn(i18n.T("log.swiftbridge_unavailable"))
 		return false
@@ -45,18 +49,20 @@ func accessibilityEnabledViaBridge() bool {
 	return enabled
 }
 
-// isAccessibilityEnabled 检查 macOS 辅助功能是否已授权当前二进制（经 Swift 桥接）。
+// isAccessibilityEnabled checks whether macOS accessibility is granted to the current
+// binary (via the Swift bridge).
 func isAccessibilityEnabled() bool {
 	return accessibilityEnabledViaBridge()
 }
 
-// selectionPointViaBridge 通过 Swift 桥接读取前台 app 窗口锚点（JSON {x,y}）。
+// selectionPointViaBridge reads the foreground app window anchor via the Swift bridge
+// (JSON {x,y}).
 func selectionPointViaBridge() (x, y int) {
 	if !swiftbridge.Available() {
 		return 0, 0
 	}
 	buf := make([]byte, 128)
-	// 调用 Swift 桥接：unsafe.Pointer 为与 C/Swift 交互所必需。
+	// Call the Swift bridge: unsafe.Pointer is required for the C/Swift interop.
 	n := swiftbridge.KaiSelectionPoint(unsafe.Pointer(&buf[0]), int32(len(buf))) //nolint:gosec
 	if n <= 0 {
 		return 0, 0
@@ -69,13 +75,13 @@ func selectionPointViaBridge() (x, y int) {
 	return 0, 0
 }
 
-// screenSizeViaBridge 通过 Swift 桥接读取主屏分辨率（JSON {w,h}）。
+// screenSizeViaBridge reads the primary screen resolution via the Swift bridge (JSON {w,h}).
 func screenSizeViaBridge() (w, h float64) {
 	if !swiftbridge.Available() {
 		return 0, 0
 	}
 	buf := make([]byte, 128)
-	// 调用 Swift 桥接：unsafe.Pointer 为与 C/Swift 交互所必需。
+	// Call the Swift bridge: unsafe.Pointer is required for the C/Swift interop.
 	n := swiftbridge.KaiScreenSize(unsafe.Pointer(&buf[0]), int32(len(buf))) //nolint:gosec
 	if n <= 0 {
 		return 0, 0

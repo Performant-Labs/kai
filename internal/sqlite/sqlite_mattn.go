@@ -8,12 +8,13 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// mattn/go-sqlite3 在导入时已通过自身 init() 将驱动注册为 "sqlite3"，
-// 因此本文件无需手动注册；只需提供与 modernc 同名的 BuildDSN 即可切换。
+// mattn/go-sqlite3 registers the driver as "sqlite3" via its own init() on import, so this
+// file needs no manual registration; it only provides a BuildDSN named like modernc's so the
+// driver can be switched.
 
-// BuildDSN 构造 mattn/go-sqlite3（CGO）的连接串。
-// mattn 使用 _foreign_keys / _journal_mode / _busy_timeout 查询参数语法，
-// 与 modernc 的 _pragma= 语法不互通。
+// BuildDSN builds the connection string for mattn/go-sqlite3 (CGO).
+// mattn uses the _foreign_keys / _journal_mode / _busy_timeout query-parameter syntax, which
+// is not interchangeable with modernc's _pragma= syntax.
 func BuildDSN(path string) string {
 	return fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000", path)
 }

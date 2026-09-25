@@ -8,23 +8,26 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// VisionOCR 非 macOS 平台的占位类型。系统 OCR（Vision.framework）仅 macOS 可用，
-// 其它平台应使用 tesseract（NewTesseractOCR，需本机 tesseract 依赖）。
+// VisionOCR is a placeholder type for non-macOS platforms. System OCR (Vision.framework) is
+// macOS-only; other platforms should use tesseract (NewTesseractOCR, which needs a local
+// tesseract dependency).
 type VisionOCR struct{}
 
-// NewVisionOCR 构造系统 OCR 引擎。仅 darwin 平台有真实实现（需传入 cfg 读取 OCR 参数），
-// 此占位供 engine_wrapper.go 在 Windows/Linux 下编译通过（签名与 darwin 版保持一致），
-// cfg 在本平台不使用（VisionOCR 在 Windows/Linux 不会被注册）。
+// NewVisionOCR constructs the system OCR engine. Only the darwin platform has the real
+// implementation (taking cfg to read the OCR params); this placeholder lets engine_wrapper.go
+// compile on Windows/Linux (signature kept consistent with the darwin version). cfg is unused
+// on this platform (VisionOCR is never registered on Windows/Linux).
 func NewVisionOCR(cfg *EngineConfig) *VisionOCR {
 	return nil
 }
 
-// Name 引擎名
+// Name returns the engine name.
 func (v *VisionOCR) Name() string { return "vision" }
 
-// Recognize 非 macOS 平台的占位实现。Vision.framework 仅 macOS 可用，
-// 且 engine_wrapper.go 仅在 darwin 下注册 VisionOCR，故本方法在 Windows/Linux
-// 上永远不会被调用。返回空结果而非错误，仅用于满足 OcrEngine 接口签名。
+// Recognize is the placeholder implementation for non-macOS platforms. Vision.framework is
+// macOS-only, and engine_wrapper.go only registers VisionOCR on darwin, so this method is
+// never called on Windows/Linux. Returns an empty result rather than an error, purely to
+// satisfy the OcrEngine interface signature.
 func (v *VisionOCR) Recognize(_ context.Context, _ model.OcrRequest) (*model.OcrResult, error) {
 	return &model.OcrResult{}, nil
 }

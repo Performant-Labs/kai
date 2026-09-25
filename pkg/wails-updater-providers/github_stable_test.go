@@ -11,8 +11,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// TestGitHubStableNeedsUpdate GitHub 源稳定版「需要更新」场景（走公开入口 NewMirrorProvider + NewUpdaterAssetMatcher）：
-// 本地 1.0.0，/releases/latest 返回 1.2.0，Check 应返回稳定版更新并命中 updater 包、解析校验和。
+// TestGitHubStableNeedsUpdate: the GitHub source's stable "update needed" scenario (via the
+// public entries NewMirrorProvider + NewUpdaterAssetMatcher):
+// local 1.0.0, /releases/latest returns 1.2.0; Check should return the stable update, hit the
+// updater package, and parse the checksum.
 func TestGitHubStableNeedsUpdate(t *testing.T) {
 	mux := http.NewServeMux()
 
@@ -70,8 +72,10 @@ func TestGitHubStableNeedsUpdate(t *testing.T) {
 	}
 }
 
-// TestGitHubStableNoUpdate GitHub 源稳定版「不需要更新」场景（走公开入口 NewMirrorProvider + NewUpdaterAssetMatcher）：
-// 本地已是线上最新 1.2.0，Check 应返回 error（无可用更新）。
+// TestGitHubStableNoUpdate: the GitHub source's stable "no update" scenario (via the public
+// entries NewMirrorProvider + NewUpdaterAssetMatcher):
+// local is already the online-latest 1.2.0; Check should return an error (no update
+// available).
 func TestGitHubStableNoUpdate(t *testing.T) {
 	mux := http.NewServeMux()
 

@@ -12,12 +12,14 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// issue #7（Tester 角色，RED）：pkg 测试必须走真实 loopback HTTP
-// （httptest.Server + 真实 *http.Client），复用 testhelper_test.go 的
-// redirectClient（host 改写后仍走 http.DefaultClient 真实网络栈），
-// 不另建 client/transport mock；server 侧捕获 query 参数与 Authorization 头。
+// issue #7 (Tester role, RED): pkg tests must go through real loopback HTTP
+// (httptest.Server + a real *http.Client), reusing testhelper_test.go's
+// redirectClient (after host rewriting it still goes through http.DefaultClient's real
+// network stack),
+// with no separate client/transport mocks; the server side captures query params and the
+// Authorization header.
 
-// cnbReleaseFixture 是一条 CNB release tag detail 响应形。
+// cnbReleaseFixture is one CNB release tag detail response shape.
 func cnbReleaseFixture(tag string) cnbReleaseTagDetail {
 	return cnbReleaseTagDetail{
 		TagName: tag,
@@ -28,12 +30,13 @@ func cnbReleaseFixture(tag string) cnbReleaseTagDetail {
 	}
 }
 
-// startCNBLoopback 起一个真实 loopback httptest.Server，按路径回放 CNB release API：
-//   - GET /{repo}/-/releases          → tag 列表（稳定版 v2.0.0 + 更新后的 nightly）
+// startCNBLoopback starts a real loopback httptest.Server, replaying the CNB release API by
+// path:
+//   - GET /{repo}/-/releases          → tag list (stable v2.0.0 + a newer nightly)
 //   - GET /{repo}/-/releases/tags/... → tag detail（assets: updater-linux-amd64.tar.gz）
-//   - GET /{repo}/-/releases/download/{tag}/SHA256SUMS → 校验和侧车
+//   - GET /{repo}/-/releases/download/{tag}/SHA256SUMS → the checksum sidecar
 //
-// 收到的请求（path/query/Authorization 头）记进 hits 供断言。
+// Received requests (path/query/Authorization header) are recorded into hits for assertions.
 type cnbHits struct {
 	t       *testing.T
 	paths   []string
@@ -84,11 +87,12 @@ func startCNBLoopback(t *testing.T, now time.Time) (*httptest.Server, *cnbHits) 
 	return srv, hits
 }
 
-// TestLoopbackCNBReceivesRealRequests issue #7：widen 后的
-// go test ./internal/... ./pkg/... 覆盖 pkg/wails-updater-providers 时，
-// 测试必须通过真实 loopback HTTP 打 CNB API（不 mock client/transport），
-// 捕获 /releases?page=1 与 Bearer 头；Check 必须返回 v2.0.0 更新。
-// 若 provider 改走别的 client/URL，loopback 收不到请求 → 断言失败（RED）。
+// TestLoopbackCNBReceivesRealRequests issue #7: once the widened
+// go test ./internal/... ./pkg/... covers pkg/wails-updater-providers,
+// tests must hit the CNB API over real loopback HTTP (no client/transport mocks),
+// capturing /releases?page=1 and the Bearer header; Check must return the v2.0.0 update.
+// If the provider switches to a different client/URL, the loopback sees nothing → the
+// assertion fails (RED).
 func TestLoopbackCNBReceivesRealRequests(t *testing.T) {
 	now := time.Now()
 	srv, hits := startCNBLoopback(t, now)

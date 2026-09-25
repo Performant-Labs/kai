@@ -1,10 +1,12 @@
--- httplog 库迁移脚本（专门迁移文件，与 schema.sql 分离）
--- 仅用于「历史库兼容」：给已存在的 http_log 表追加新列 / 新索引。
--- 建表本身在 schema.sql，本文件只放 ALTER / 额外索引。
--- 注意：SQLite 不支持 `ADD COLUMN IF NOT EXISTS`，故重复的 ALTER 会报
--- "duplicate column" 错误。运行时 (httplog.go 的 Migrate) 会忽略
--- 该错误以保证幂等——二次启动 / 已迁移过的库直接跳过，不会报错。
--- 将来新增列时，在此追加一行 ALTER TABLE 即可，无需改动 Go 代码。
+-- httplog database migration script (a dedicated migration file, separate from schema.sql)
+-- Used only for "store compatibility": appending new columns / indexes to the existing
+-- http_log table.
+-- Table creation itself lives in schema.sql; this file only holds ALTERs / extra indexes.
+-- Note: SQLite has no `ADD COLUMN IF NOT EXISTS`, so a repeated ALTER reports a
+-- "duplicate column" error. At runtime (httplog.go's Migrate) that error is ignored to stay
+-- idempotent — a second launch / already-migrated store simply skips, without error.
+-- When adding new columns later, append one ALTER TABLE line here — no Go code changes.
 
--- 示例（当前 schema 与建表语句一致，暂无缺列；保留格式供后续扩展）：
+-- Example (current schema matches the CREATE TABLE; no missing columns yet; format kept for
+-- future extensions):
 -- ALTER TABLE http_log ADD COLUMN new_field TEXT DEFAULT '';
