@@ -48,7 +48,7 @@ func TestGitHubStableNeedsUpdate(t *testing.T) {
 		ChecksumFile: "SHA256SUMS",
 	})
 	if err != nil {
-		t.Fatalf("NewMirrorProvider 构造失败: %v", err)
+		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
 
 	rel, err := mp.Check(context.Background(), updater.CheckRequest{
@@ -57,16 +57,16 @@ func TestGitHubStableNeedsUpdate(t *testing.T) {
 		CurrentVersion: "1.0.0",
 	})
 	if err != nil {
-		t.Fatalf("需要更新时 Check 应返回更新，却失败: %v", err)
+		t.Fatalf("Check should return an update when one is available, got error: %v", err)
 	}
 	if rel.Version != "v1.2.0" {
-		t.Fatalf("期望选中 v1.2.0，实际 %s", rel.Version)
+		t.Fatalf("expected v1.2.0, got %s", rel.Version)
 	}
 	if rel.Artifact.Filename != "updater-darwin-arm64.zip" {
-		t.Fatalf("期望选中 updater-darwin-arm64.zip，实际 %s", rel.Artifact.Filename)
+		t.Fatalf("expected asset updater-darwin-arm64.zip, got %s", rel.Artifact.Filename)
 	}
 	if rel.Verification == nil || hex.EncodeToString(rel.Verification.Digest) != "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890" {
-		t.Fatalf("校验和未正确解析: %+v", rel.Verification)
+		t.Fatalf("checksum not parsed correctly: %+v", rel.Verification)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestGitHubStableNoUpdate(t *testing.T) {
 		ChecksumFile: "SHA256SUMS",
 	})
 	if err != nil {
-		t.Fatalf("NewMirrorProvider 构造失败: %v", err)
+		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
 
 	rel, err := mp.Check(context.Background(), updater.CheckRequest{
@@ -110,9 +110,9 @@ func TestGitHubStableNoUpdate(t *testing.T) {
 		CurrentVersion: "1.2.0",
 	})
 	if err != nil {
-		t.Fatalf("当前已是最新（1.2.0）时 Check 应返回 nil,nil 表示 up-to-date，却报错: %v", err)
+		t.Fatalf("Check should return nil, nil (up-to-date) when current is already 1.2.0, got error: %v", err)
 	}
 	if rel != nil {
-		t.Fatalf("已是最新时不应返回 release，却返回 %s", rel.Version)
+		t.Fatalf("should not return a release when up-to-date, got %s", rel.Version)
 	}
 }

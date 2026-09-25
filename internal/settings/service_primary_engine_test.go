@@ -30,9 +30,9 @@ func TestDefaultEngineConfigRoundtrip(t *testing.T) {
 	// 新实例重新读盘：default_engine 必须从 settings.json 往返回来。
 	svc2, err := NewService(dir)
 	if err != nil {
-		t.Fatalf("第二次 NewService: %v", err)
+		t.Fatalf("second NewService: %v", err)
 	}
 	if got := svc2.Get().DefaultEngine; got != "google" {
-		t.Fatalf("default_engine 落盘往返失败：期望 %q，得到 %q（settings 服务未持久化 default_engine）", "google", got)
+		t.Fatalf("default_engine disk roundtrip failed: want %q, got %q (settings service did not persist default_engine)", "google", got)
 	}
 }

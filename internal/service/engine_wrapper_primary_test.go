@@ -35,7 +35,7 @@ import (
 // GetAllEngines 不暴露给解析器），实现时由 PrimaryTranslateEngine 自行按
 // configstore 的 enabled 列解析（GetEngines 的 id 顺序语义保持不变）。
 
-const gtxPrimaryFixture = `[[["Hello","你好","","","0"]],null,"en"]`
+const gtxPrimaryFixture = `[[["Hello","Bonjour","","","0"]],null,"en"]`
 
 // setupPrimaryEnv 在 t.TempDir 内搭真实 configstore + settings + registry，
 // 按指定引擎行建库并注册。返回 (store, svc, wrapper, cleanup)。
@@ -92,7 +92,7 @@ func TestPrimaryTranslateEngineFallbackInvalidName(t *testing.T) {
 	}
 
 	if got := w.PrimaryTranslateEngine(); got != "google" {
-		t.Fatalf("非法 default_engine 应回退到第一个 enabled 的 translate 引擎 google，实际 %q（PrimaryTranslateEngine 未实现该回退规则）", got)
+		t.Fatalf("invalid default_engine should fall back to the first enabled translate engine google, got %q (PrimaryTranslateEngine missing this fallback)", got)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestPrimaryTranslateEngineFallsBackWhenPrimaryDisabled(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 	if got := w.PrimaryTranslateEngine(); got != "google" {
-		t.Fatalf("enabled 的 primary 应被解析为 google，实际 %q", got)
+		t.Fatalf("enabled primary should resolve to google, got %q", got)
 	}
 
 	// 通过 configstore 真实路径把 primary（google）禁用。
@@ -131,7 +131,7 @@ func TestPrimaryTranslateEngineFallsBackWhenPrimaryDisabled(t *testing.T) {
 
 	// 解析必须重新回退：deepl 是列表里下一个（id 顺序）enabled 的 translate 引擎。
 	if got := w.PrimaryTranslateEngine(); got != "deepl" {
-		t.Fatalf("primary 被禁用后应重新解析到 deepl，实际 %q（禁用未触发回退）", got)
+		t.Fatalf("disabled primary should re-resolve to deepl, got %q (disabling did not trigger fallback)", got)
 	}
 }
 
@@ -151,6 +151,6 @@ func TestPrimaryTranslateEngineUnsetFallsBackToFirstEnabled(t *testing.T) {
 
 	// deepl 在 id 顺序里排第一且 enabled；google 第二。未设置 primary -> deepl。
 	if got := w.PrimaryTranslateEngine(); got != "deepl" {
-		t.Fatalf("未设置 default_engine 应回退到第一个 enabled 的 translate 引擎 deepl，实际 %q", got)
+		t.Fatalf("unset default_engine should fall back to the first enabled translate engine deepl, got %q", got)
 	}
 }

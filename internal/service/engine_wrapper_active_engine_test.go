@@ -68,7 +68,7 @@ func TestActiveTranslateEngineLastUsedWins(t *testing.T) {
 
 	// last-used = deepl（enabled）-> 应胜出，即使 primary 是 google。
 	if got := w.ActiveTranslateEngine("deepl"); got != "deepl" {
-		t.Fatalf("last-used deepl 在 enabled translate 引擎中时应解析为 deepl，实际 %q（ActiveTranslateEngine 未实现 last-used 优先层）", got)
+		t.Fatalf("last-used deepl should resolve to deepl when among enabled translate engines, got %q (ActiveTranslateEngine missing the last-used precedence layer)", got)
 	}
 }
 
@@ -100,7 +100,7 @@ func TestActiveTranslateEngineLastUsedDisabledFallsBackToPrimary(t *testing.T) {
 	}
 
 	if got := w.ActiveTranslateEngine("google"); got != "deepl" {
-		t.Fatalf("last-used 被禁用后应回退到 primary deepl，实际 %q（disabled 的 last-used 未被跳过）", got)
+		t.Fatalf("disabled last-used should fall back to primary deepl, got %q (disabled last-used not skipped)", got)
 	}
 }
 
@@ -123,7 +123,7 @@ func TestActiveTranslateEngineAllInvalidFallsBackToFirstEnabled(t *testing.T) {
 
 	// deepl 在 id 顺序里第一且 enabled；last-used 与 primary 都非法 -> deepl。
 	if got := w.ActiveTranslateEngine("nosuchengine2"); got != "deepl" {
-		t.Fatalf("last-used 与 primary 都非法时应回退到第一个 enabled 的 translate 引擎 deepl，实际 %q", got)
+		t.Fatalf("when both last-used and primary are invalid, should fall back to the first enabled translate engine deepl, got %q", got)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestActiveTranslateEngineAllEmptyReturnsEmpty(t *testing.T) {
 	})
 
 	if got := w.ActiveTranslateEngine(""); got != "" {
-		t.Fatalf("last-used 与 default_engine 都未设置且无 enabled 翻译引擎时应解析为 \"\"，实际 %q", got)
+		t.Fatalf("should resolve to \"\" when last-used and default_engine are unset and no translate engine is enabled, got %q", got)
 	}
 }
 
@@ -165,7 +165,7 @@ func TestActiveTranslateEngineFirstEnabledIsIDOrder(t *testing.T) {
 	}
 
 	if got := w.ActiveTranslateEngine(""); got != "deepl" {
-		t.Fatalf("未设置 last-used/primary 时应按 configstore id 顺序取第一个 enabled 引擎 deepl，实际 %q（疑似按字母序或 primary 优先解析）", got)
+		t.Fatalf("with last-used/primary unset, should pick the first enabled engine by configstore id order (deepl), got %q (looks like alphabetical order or primary precedence)", got)
 	}
 }
 
@@ -188,6 +188,6 @@ func TestActiveTranslateEngineLastUsedNotEnabledFallsBackToPrimary(t *testing.T)
 	}
 
 	if got := w.ActiveTranslateEngine("openai"); got != "google" {
-		t.Fatalf("last-used 指向未启用引擎时应回退到 primary google，实际 %q（疑似把 Supported 当 enabled 用）", got)
+		t.Fatalf("last-used pointing at a disabled engine should fall back to primary google, got %q (looks like Supported used as enabled)", got)
 	}
 }

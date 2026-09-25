@@ -88,19 +88,19 @@ func TestGitHubNightlyWithStableNeedsUpdate(t *testing.T) {
 		BuildTimeFile: "BUILD_TIME",
 	})
 	if err != nil {
-		t.Fatalf("NewMirrorProvider 构造失败: %v", err)
+		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
-	t.Logf("[GitHub] 当前版本(currentVersion=%q, buildTime=%s), 需要更新=%v, 候选版本=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
+	t.Logf("[GitHub] current version (currentVersion=%q, buildTime=%s), needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
 	if err != nil {
-		t.Fatalf("已订阅 nightly 且存在稳定版时 Check 应返回 nightly 更新，却失败: %v", err)
+		t.Fatalf("Check should return the nightly update when nightly is subscribed and a stable exists, got error: %v", err)
 	}
 	if rel.Version != "nightly-x1b2c3" {
-		t.Fatalf("期望 nightly 版本 nightly-x1b2c3，实际 %s", rel.Version)
+		t.Fatalf("expected nightly version nightly-x1b2c3, got %s", rel.Version)
 	}
 	if rel.Artifact.Filename != "updater-darwin-arm64.zip" {
-		t.Fatalf("期望选中 updater-darwin-arm64.zip，实际 %s", rel.Artifact.Filename)
+		t.Fatalf("expected asset updater-darwin-arm64.zip, got %s", rel.Artifact.Filename)
 	}
 }
 
@@ -161,16 +161,16 @@ func TestGitHubNightlyWithStableNoUpdate(t *testing.T) {
 		BuildTimeFile: "BUILD_TIME",
 	})
 	if err != nil {
-		t.Fatalf("NewMirrorProvider 构造失败: %v", err)
+		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
-	t.Logf("[GitHub] 当前版本(currentVersion=%q, buildTime=%s), 需要更新=%v, 候选版本=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
+	t.Logf("[GitHub] current version (currentVersion=%q, buildTime=%s), needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
 	if err != nil {
-		t.Fatalf("nightly 与稳定版都已是最新时 Check 应返回 nil,nil 表示 up-to-date，却报错: %v", err)
+		t.Fatalf("Check should return nil, nil (up-to-date) when both nightly and stable are latest, got error: %v", err)
 	}
 	if rel != nil {
-		t.Fatalf("已是最新时不应返回 release，却返回 %s", rel.Version)
+		t.Fatalf("should not return a release when up-to-date, got %s", rel.Version)
 	}
 }
 
@@ -235,18 +235,18 @@ func TestGitHubNightlyWithStableNoStableFallbackOnLatest(t *testing.T) {
 		BuildTimeFile: "BUILD_TIME",
 	})
 	if err != nil {
-		t.Fatalf("NewMirrorProvider 构造失败: %v", err)
+		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
 	// 开启预发布：取最新一条 = nightly-x1b2c3（预发布），本机 buildTime 晚于其发布时间 → 判定不需要更新。
 	// 新逻辑按"最新一条类型"判定，不回退到第二路稳定版：nightly 不需要更新即 up-to-date。
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
-	t.Logf("[GitHub] 当前版本(currentVersion=%q, buildTime=%s), 需要更新=%v, 候选版本=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
+	t.Logf("[GitHub] current version (currentVersion=%q, buildTime=%s), needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
 	if err != nil {
-		t.Fatalf("nightly 不需要更新时 Check 应返回 up-to-date(nil,nil) 而非报错: %v", err)
+		t.Fatalf("Check should return up-to-date (nil, nil) when nightly needs no update, got error: %v", err)
 	}
 	if rel != nil {
-		t.Fatalf("最新一条 nightly 不需要更新时 Check 应返回 nil（不回退稳定版），却返回 %s", rel.Version)
+		t.Fatalf("Check should return nil (no stable fallback) when the latest nightly needs no update, got %s", rel.Version)
 	}
 }
 
@@ -292,16 +292,16 @@ func TestGitHubNightlyWithStableNoStableFallbackOnError(t *testing.T) {
 		BuildTimeFile: "BUILD_TIME",
 	})
 	if err != nil {
-		t.Fatalf("NewMirrorProvider 构造失败: %v", err)
+		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
 	// 开启预发布：取最新一条走 /releases 列表端点，该端点 500 → 整体报错，不回退到 /releases/latest 稳定版。
 	req := updater.CheckRequest{Platform: "darwin", Arch: "arm64", CurrentVersion: "1.1.0"}
 	rel, err := mp.Check(context.Background(), req)
-	t.Logf("[GitHub] 当前版本(currentVersion=%q, buildTime=%s), 需要更新=%v, 候选版本=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
+	t.Logf("[GitHub] current version (currentVersion=%q, buildTime=%s), needsUpdate=%v, candidate=%s", req.CurrentVersion, mp.buildTime.Format(time.RFC3339), rel != nil, safeVersion(rel))
 	if err == nil {
-		t.Fatalf("nightly 通道(/releases)出错时 Check 应返回错误（不回退稳定版），却返回 rel=%v", rel)
+		t.Fatalf("Check should return an error (no stable fallback) when the nightly channel (/releases) fails, got rel=%v", rel)
 	}
 	if rel != nil {
-		t.Fatalf("出错时应返回 nil rel，却返回 %s", rel.Version)
+		t.Fatalf("expected nil rel on error, got %s", rel.Version)
 	}
 }

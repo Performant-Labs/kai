@@ -73,30 +73,30 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-describe('activeEngineFor（消费 #8 resolvePrimaryEngine + 防御性回退）', () => {
-  it('last-used 在 enabled translate 引擎中时胜出（覆盖 primary）', () => {
+describe('activeEngineFor (consumes #8 resolvePrimaryEngine + defensive fallback)', () => {
+  it('last-used wins when among enabled translate engines (overrides primary)', () => {
     window.localStorage.setItem(LAST_USED_KEY, JSON.stringify('deepl'));
     expect(activeEngineFor(LAST_USED_KEY, 'google', ENGINES)).toBe('deepl');
   });
 
-  it('last-used 引擎被禁用时回退到 primary', () => {
+  it('falls back to primary when the last-used engine is disabled', () => {
     window.localStorage.setItem(LAST_USED_KEY, JSON.stringify('google'));
     expect(activeEngineFor(LAST_USED_KEY, 'deepl', GOOGLE_DISABLED)).toBe('deepl');
   });
 
-  it('last-used 与 primary 都非法时回退到第一个 enabled 的 translate 引擎', () => {
+  it('falls back to the first enabled translate engine when last-used and primary are both invalid', () => {
     expect(activeEngineFor(LAST_USED_KEY, 'nosuchengine', ENGINES)).toBe('google');
   });
 
-  it('都没有时回退到第一个 enabled 的 translate 引擎（id 顺序）', () => {
+  it('falls back to the first enabled translate engine when neither is set (id order)', () => {
     expect(activeEngineFor(LAST_USED_KEY, '', ENGINES)).toBe('google');
   });
 
-  it('primary 指向 ocr 引擎时不算有效 primary', () => {
+  it('an ocr engine is not a valid primary', () => {
     expect(activeEngineFor(LAST_USED_KEY, 'tesseract', [...ENGINES, OCR_ENGINE])).toBe('google');
   });
 
-  it('防御性回退：resolvePrimaryEngine 返回 "" 但有 enabled 引擎时，取第一个 enabled（select 不悬空）', () => {
+  it('defensive fallback: takes the first enabled engine when resolvePrimaryEngine returns "" (select never dangles)', () => {
     // 让 #8 镜像返回 ''：localStorage 里 last-used 是损坏/非法值且 primary 为空、
     // 同时构造一个 resolvePrimaryEngine 会落到 '' 的引擎列表不可能存在
     // （有 enabled 引擎时它必返回第一个）——因此该防御分支只对「resolve 返回 ''
@@ -107,70 +107,70 @@ describe('activeEngineFor（消费 #8 resolvePrimaryEngine + 防御性回退）'
   });
 });
 
-describe('statusDot / statusDots（pending / done / failed 派生自真实 fan-out 信号）', () => {
-  it('loading 且尚无该引擎结果 -> pending', () => {
+describe('statusDot / statusDots (pending / done / failed derived from real fan-out signals)', () => {
+  it('loading with no result for the engine -> pending', () => {
     expect(statusDot('google', {}, true)).toBe('pending');
     expect(statusDot('deepl', {}, true)).toBe('pending');
   });
 
-  it('非空 result -> done（loading 与否都成立：结果到了就是 done）', () => {
-    const results: Record<string, PaneResult> = { google: { result: '你好' } };
+  it('non-empty result -> done (holds with or without loading: result arrived means done)', () => {
+    const results: Record<string, PaneResult> = { google: { result: 'hola' } };
     expect(statusDot('google', results, true)).toBe('done');
     expect(statusDot('google', results, false)).toBe('done');
   });
 
-  it('空串 result 不算 done：!loading 且无可用结果 -> failed', () => {
+  it('empty-string result is not done: !loading and no usable result -> failed', () => {
     expect(statusDot('google', { google: { result: '' } }, false)).toBe('failed');
   });
 
-  it('!loading 且该引擎缺席（失败引擎后端不发事件）-> failed', () => {
+  it('!loading and the engine is absent (backend emits no event for failed engines) -> failed', () => {
     const results: Record<string, PaneResult> = { deepl: { result: 'hallo' } };
     expect(statusDot('google', results, false)).toBe('failed');
   });
 
-  it('loading 时缺席引擎仍是 pending（15 s 回退前）', () => {
+  it('absent engine stays pending while loading (before the 15 s fallback)', () => {
     const results: Record<string, PaneResult> = { deepl: { result: 'hallo' } };
     expect(statusDot('google', results, true)).toBe('pending');
   });
 
-  it('case 1：多引擎 fan-out 中一个失败、兄弟引擎成功（翻 loading=false）-> 失败 dot 立即 failed', () => {
+  it('case 1: one engine fails while a sibling succeeds in a multi-engine fan-out (loading=false) -> failed dot immediately failed', () => {
     const results: Record<string, PaneResult> = { deepl: { result: 'hallo' } };
     const dots = statusDots(ENGINES, results, false);
     expect(dots.google).toBe('failed');
     expect(dots.deepl).toBe('done');
   });
 
-  it('case 2：唯一引擎失败时，15 s 回退前 loading 仍为 true -> dot 为 pending', () => {
+  it('case 2: the only engine fails; loading stays true before the 15 s fallback -> dot stays pending', () => {
     const sole = [ENGINES[0]];
     const dots = statusDots(sole, {}, true);
     expect(dots.google).toBe('pending');
   });
 
-  it('statusDots 只覆盖 enabled 的 translate 引擎（ocr / 禁用引擎不出 dot）', () => {
+  it('statusDots only covers enabled translate engines (ocr / disabled engines get no dot)', () => {
     const all = [...ENGINES, OCR_ENGINE];
     const dots = statusDots(all, {}, true);
     expect(Object.keys(dots).sort()).toEqual(['deepl', 'google']);
   });
 
-  it('anyPending：存在无结果引擎 -> true（15 s 回退谓词：任一 pending 即维持 loading）', () => {
+  it('anyPending: an engine without a result -> true (15 s fallback predicate: any pending keeps loading)', () => {
     expect(anyPending(ENGINES, {}, true)).toBe(true);
     expect(anyPending(ENGINES, { google: { result: 'x' } }, true)).toBe(true);
   });
 
-  it('anyPending：所有引擎都有非空结果 -> false（回退不再翻 loading）', () => {
+  it('anyPending: all engines have non-empty results -> false (fallback no longer flips loading)', () => {
     expect(anyPending(ENGINES, { google: { result: 'x' }, deepl: { result: 'y' } }, false)).toBe(
       false,
     );
   });
 });
 
-describe('resetEdits（切换引擎丢弃上一引擎的手工编辑）', () => {
-  it('丢弃 previous 的编辑；next 从其存储 result 开始（无 per-engine 编辑记忆）', () => {
+describe('resetEdits (switching engines drops the previous engine manual edits)', () => {
+  it('drops previous edits; next starts from its stored result (no per-engine edit memory)', () => {
     const results: Record<string, PaneResult> = {
-      google: { result: '你好' },
+      google: { result: 'hola' },
       deepl: { result: 'hallo' },
     };
-    const edited = new Map<string, string>([['google', '手工改过的文本']]);
+    const edited = new Map<string, string>([['google', 'manually edited text']]);
     const next = resetEdits(edited, 'google', 'deepl', results);
     // google 的编辑被丢弃。
     expect(next.get('google')).toBeUndefined();
@@ -179,7 +179,7 @@ describe('resetEdits（切换引擎丢弃上一引擎的手工编辑）', () => 
     expect(next.get('deepl') ?? results['deepl']?.result).toBe('hallo');
   });
 
-  it('不修改传入的旧 map（返回新 Map）', () => {
+  it('does not mutate the passed-in map (returns a new Map)', () => {
     const results: Record<string, PaneResult> = { google: { result: 'a' }, deepl: { result: 'b' } };
     const edited = new Map<string, string>([['google', 'edit']]);
     const before = new Map(edited);
@@ -187,16 +187,16 @@ describe('resetEdits（切换引擎丢弃上一引擎的手工编辑）', () => 
     expect(edited).toEqual(before);
   });
 
-  it('previous === next（同引擎重选）也按切换处理：该引擎的编辑被清空、回到存储 result', () => {
-    const results: Record<string, PaneResult> = { google: { result: '你好' } };
-    const edited = new Map<string, string>([['google', '改过']]);
+  it('previous === next (same engine re-selected) is still treated as a switch: its edits are cleared, back to the stored result', () => {
+    const results: Record<string, PaneResult> = { google: { result: 'hola' } };
+    const edited = new Map<string, string>([['google', 'edited']]);
     const next = resetEdits(edited, 'google', 'google', results);
     expect(next.get('google')).toBeUndefined();
   });
 });
 
 // issue #42：失败载荷的面向用户文案（kind → 本地化 key，原始细节附带）。
-describe('failureMessage（#42 失败原因可见化）', () => {
+describe('failureMessage (#42 surfacing failure reasons)', () => {
   const t = (key: string) => {
     const dict: Record<string, string> = {
       'translate.failed': 'Translation failed',

@@ -19,7 +19,7 @@ func TestClassifyEngineError(t *testing.T) {
 		{"tls handshake", `tls: handshake failure`, "network"},
 		{"bad key", `401 Unauthorized: Invalid API key`, "auth"},
 		{"forbidden quota", `403 Forbidden`, "auth"},
-		{"generic engine error", `引擎返回错误`, "engine"},
+		{"generic engine error", `some unexpected engine failure`, "engine"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

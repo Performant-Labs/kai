@@ -105,7 +105,7 @@ func TestLoopbackCNBReceivesRealRequests(t *testing.T) {
 		ChecksumFile: "SHA256SUMS",
 	})
 	if err != nil {
-		t.Fatalf("NewMirrorProvider 构造失败: %v", err)
+		t.Fatalf("failed to construct NewMirrorProvider: %v", err)
 	}
 
 	rel, err := mp.Check(context.Background(), updater.CheckRequest{
@@ -114,24 +114,24 @@ func TestLoopbackCNBReceivesRealRequests(t *testing.T) {
 		CurrentVersion: "1.0.0",
 	})
 	if err != nil {
-		t.Fatalf("Check 应返回更新，却失败: %v", err)
+		t.Fatalf("Check should return an update, got error: %v", err)
 	}
 	if len(hits.paths) == 0 {
-		t.Fatal("loopback server 未收到任何请求：provider 没有走注入的 HTTP client（client/transport 被 mock 或换源）")
+		t.Fatal("loopback server received no requests: provider did not use the injected HTTP client (client/transport mocked or source switched)")
 	}
 	if hits.paths[0] != "/"+testRepo+"/-/releases" {
-		t.Errorf("首个请求 path 应为 /%s/-/releases，实际 %q", testRepo, hits.paths[0])
+		t.Errorf("first request path should be /%s/-/releases, got %q", testRepo, hits.paths[0])
 	}
 	if hits.authors[0] != "Bearer loopback-token" {
-		t.Errorf("releases 请求应带 Bearer 授权头，实际 %q", hits.authors[0])
+		t.Errorf("releases request should carry a Bearer auth header, got %q", hits.authors[0])
 	}
 	if rel == nil {
-		t.Fatal("需要更新时应返回 release")
+		t.Fatal("should return a release when an update is available")
 	}
 	if rel.Version != "v2.0.0" {
-		t.Errorf("应选中稳定版 v2.0.0，实际 %s", rel.Version)
+		t.Errorf("should select stable v2.0.0, got %s", rel.Version)
 	}
 	if rel.Artifact.Filename != "updater-linux-amd64.tar.gz" {
-		t.Errorf("应命中 updater-linux-amd64.tar.gz，实际 %s", rel.Artifact.Filename)
+		t.Errorf("should hit updater-linux-amd64.tar.gz, got %s", rel.Artifact.Filename)
 	}
 }

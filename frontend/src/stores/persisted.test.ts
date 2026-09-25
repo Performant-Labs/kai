@@ -22,8 +22,8 @@ beforeEach(() => {
   window.localStorage.removeItem(pinKey('translate'));
 });
 
-describe('persisted store（jsdom + 真实 localStorage）', () => {
-  it('localStorage 无值时回退 initial', () => {
+describe('persisted store (jsdom + real localStorage)', () => {
+  it('falls back to initial when localStorage has no value', () => {
     const s = persisted<number>(KEY, 42);
     let got = 0;
     const unsub = s.subscribe((v) => (got = v));
@@ -31,7 +31,7 @@ describe('persisted store（jsdom + 真实 localStorage）', () => {
     unsub();
   });
 
-  it('初始化时从 localStorage 读回上次持久化的值', () => {
+  it('reads back the last persisted value from localStorage on init', () => {
     // 模拟「上次运行」写入
     window.localStorage.setItem(KEY, JSON.stringify(7));
     const s = persisted<number>(KEY, 42);
@@ -41,7 +41,7 @@ describe('persisted store（jsdom + 真实 localStorage）', () => {
     unsub();
   });
 
-  it('set 后 localStorage 同步更新，新 store 能读回', () => {
+  it('syncs localStorage on set; a new store reads the value back', () => {
     const s1 = persisted<number>(KEY, 1);
     s1.set(99);
     // 新 store 用同 key 重新初始化 → 应读到 99 而非 initial 1
@@ -53,7 +53,7 @@ describe('persisted store（jsdom + 真实 localStorage）', () => {
     unsub();
   });
 
-  it('localStorage 值损坏（非法 JSON）时回退 initial', () => {
+  it('falls back to initial when the localStorage value is corrupt (invalid JSON)', () => {
     window.localStorage.setItem(KEY, '{not-json');
     const s = persisted<number>(KEY, 5);
     let got = 0;
@@ -62,7 +62,7 @@ describe('persisted store（jsdom + 真实 localStorage）', () => {
     unsub();
   });
 
-  it('pinKey 按窗口名生成独立 key', () => {
+  it('pinKey generates a distinct key per window name', () => {
     expect(pinKey('translate')).toBe('kai:translate:pinned');
     expect(pinKey('settings')).toBe('kai:settings:pinned');
     expect(pinKey('translate')).not.toBe(pinKey('settings'));

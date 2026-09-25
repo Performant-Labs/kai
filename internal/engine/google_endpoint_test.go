@@ -22,7 +22,7 @@ import (
 //	根[2] = 检测出的源语言（detectedLang）。
 //
 // 译文 = 各段 dst 拼接 = "Hello world!"。
-const gtxFixture = `[[["Hello","你好","","","0"],[" world!","世界!","","","1"]],null,"en"]`
+const gtxFixture = `[[["Hello","Bonjour","","","0"],[" world!","le monde","","","1"]],null,"en"]`
 
 // startGtxServer 起一个 loopback httptest.Server，把收到的 query 参数记进
 // got（*url.Values），并回 gtx 形响应（detected lang = "en"，译文 "Hello world!"）。
@@ -59,40 +59,40 @@ func TestGoogleHonorsConfiguredEndpoint(t *testing.T) {
 	cfg := &EngineConfig{Endpoint: srv.URL}
 	tr := NewGoogle(cfg.Endpoint, http.DefaultClient)
 	if tr == nil {
-		t.Fatal("NewGoogle 返回 nil")
+		t.Fatal("NewGoogle returned nil")
 	}
 
 	res, err := tr.Translate(context.Background(), model.TranslateRequest{
-		Text: "你好世界",
+		Text: "Bonjour le monde",
 		From: model.Auto,
 		To:   model.EN,
 	})
 	if err != nil {
-		t.Fatalf("Translate 失败（引擎可能未尊重 cfg.Endpoint，请求没打到 loopback）: %v", err)
+		t.Fatalf("Translate failed (engine may not honor cfg.Endpoint; request never reached the loopback): %v", err)
 	}
 	if got == nil {
-		t.Fatal("loopback server 未收到任何请求：引擎没有使用 cfg.Endpoint")
+		t.Fatal("loopback server received no requests: engine did not use cfg.Endpoint")
 	}
 	if q := got.Get("sl"); q != "auto" {
-		t.Errorf("gtx 请求 sl 应为 auto（auto 源语言），实际 %q", q)
+		t.Errorf("gtx request sl should be auto (source language auto), got %q", q)
 	}
 	if q := got.Get("tl"); q != "en" {
-		t.Errorf("gtx 请求 tl 应为 en，实际 %q", q)
+		t.Errorf("gtx request tl should be en, got %q", q)
 	}
-	if q := got.Get("q"); q != "你好世界" {
-		t.Errorf("gtx 请求 q 应为原文，实际 %q", q)
+	if q := got.Get("q"); q != "Bonjour le monde" {
+		t.Errorf("gtx request q should echo the source text, got %q", q)
 	}
 	if res.From != model.EN {
-		t.Errorf("TranslateResult.From 应取自 gtx 响应的检测语言 en，实际 %q", res.From)
+		t.Errorf("TranslateResult.From should come from the gtx response's detected language en, got %q", res.From)
 	}
 	if res.Result != "Hello world!" {
-		t.Errorf("译文应为 Hello world!，实际 %q", res.Result)
+		t.Errorf("translated text should be Hello world!, got %q", res.Result)
 	}
 	if res.Engine != "google" {
-		t.Errorf("Engine 应为 google，实际 %q", res.Engine)
+		t.Errorf("Engine should be google, got %q", res.Engine)
 	}
 	if res.To != model.EN {
-		t.Errorf("To 应保持请求的 en，实际 %q", res.To)
+		t.Errorf("To should stay the requested en, got %q", res.To)
 	}
 }
 
@@ -106,10 +106,10 @@ func TestGoogleEmptyEndpointFallsBackToDefault(t *testing.T) {
 	tr := NewGoogle(cfg.Endpoint, http.DefaultClient)
 	g, ok := tr.(*googleTranslator)
 	if !ok {
-		t.Fatalf("NewGoogle 应返回 *googleTranslator，实际 %T", tr)
+		t.Fatalf("NewGoogle should return *googleTranslator, got %T", tr)
 	}
 	if g.endpoint != DefaultEndpoint {
-		t.Errorf("空 cfg.Endpoint 应回退到默认端点 %s，实际 %q", DefaultEndpoint, g.endpoint)
+		t.Errorf("empty cfg.Endpoint should fall back to default endpoint %s, got %q", DefaultEndpoint, g.endpoint)
 	}
 }
 
@@ -128,13 +128,13 @@ func TestGoogleZHCodeNormalisation(t *testing.T) {
 				From: from,
 				To:   model.EN,
 			}); err != nil {
-				t.Fatalf("Translate 失败: %v", err)
+				t.Fatalf("Translate failed: %v", err)
 			}
 			if got == nil {
-				t.Fatal("loopback server 未收到请求")
+				t.Fatal("loopback server received no requests")
 			}
 			if q := got.Get("sl"); q != "zh-CN" {
-				t.Errorf("sl 应归一化为 zh-CN，实际 %q", q)
+				t.Errorf("sl should be normalized to zh-CN, got %q", q)
 			}
 		})
 	}

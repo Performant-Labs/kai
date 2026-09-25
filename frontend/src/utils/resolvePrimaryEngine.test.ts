@@ -61,38 +61,38 @@ beforeEach(() => {
   window.localStorage.removeItem(LAST_USED_KEY);
 });
 
-describe('resolvePrimaryEngine（last-used ?? primary ?? first-enabled，真实 localStorage）', () => {
-  it('last-used 在 enabled translate 引擎中时胜出', () => {
+describe('resolvePrimaryEngine (last-used ?? primary ?? first-enabled, real localStorage)', () => {
+  it('last-used wins when it is among enabled translate engines', () => {
     // 真实写入 localStorage（persisted store 的写入路径同形）。
     window.localStorage.setItem(LAST_USED_KEY, JSON.stringify('deepl'));
     expect(resolvePrimaryEngine(LAST_USED_KEY, 'google', ENGINES)).toBe('deepl');
   });
 
-  it('last-used 引擎被禁用时回退到 primary', () => {
+  it('falls back to primary when the last-used engine is disabled', () => {
     window.localStorage.setItem(LAST_USED_KEY, JSON.stringify('google'));
     // google 已禁用（与 Go 侧 test c 同一列表状态），primary 仍是 deepl。
     expect(resolvePrimaryEngine(LAST_USED_KEY, 'deepl', ENGINES_GOOGLE_DISABLED)).toBe('deepl');
   });
 
-  it('primary 非法（不在列表中）时回退到第一个 enabled 的 translate 引擎', () => {
+  it('falls back to the first enabled translate engine when primary is invalid (not in the list)', () => {
     expect(resolvePrimaryEngine(LAST_USED_KEY, 'nosuchengine', ENGINES)).toBe('google');
   });
 
-  it('last-used 与 primary 都未设置时回退到第一个 enabled 的 translate 引擎', () => {
+  it('falls back to the first enabled translate engine when last-used and primary are both unset', () => {
     expect(resolvePrimaryEngine(LAST_USED_KEY, '', ENGINES)).toBe('google');
   });
 
-  it('primary 指向 ocr 引擎时不算有效 primary，回退 first-enabled', () => {
+  it('an ocr engine is not a valid primary; falls back to first-enabled', () => {
     const withOcr = [...ENGINES, ocrItem];
     expect(resolvePrimaryEngine(LAST_USED_KEY, 'tesseract', withOcr)).toBe('google');
   });
 
-  it('没有任何 enabled 的 translate 引擎时返回空串', () => {
+  it('returns an empty string when no translate engine is enabled', () => {
     const noneEnabled = ENGINES.map((e) => ({ ...e, enabled: false }));
     expect(resolvePrimaryEngine(LAST_USED_KEY, '', noneEnabled)).toBe('');
   });
 
-  it('读取真实 localStorage：空串 last-used 不覆盖 primary', () => {
+  it('reads real localStorage: an empty-string last-used does not override primary', () => {
     // 真实读回（模拟 persisted store 从 localStorage 初始化的路径）。
     window.localStorage.setItem(LAST_USED_KEY, JSON.stringify(''));
     expect(resolvePrimaryEngine(LAST_USED_KEY, 'deepl', ENGINES)).toBe('deepl');

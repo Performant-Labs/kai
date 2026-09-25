@@ -6,7 +6,7 @@ import (
 )
 
 func TestEncryptDecryptRoundtrip(t *testing.T) {
-	cases := []string{"", "sk-1234567890abcdef", "appid|secret-key", "包含中文的密钥/特殊字符!@#"}
+	cases := []string{"", "sk-1234567890abcdef", "appid|secret-key", "pässwörd/secret!@#€"}
 	for _, plain := range cases {
 		enc, err := EncryptSecret(plain)
 		if err != nil {
@@ -14,22 +14,22 @@ func TestEncryptDecryptRoundtrip(t *testing.T) {
 		}
 		if plain == "" {
 			if enc != "" {
-				t.Fatalf("空串应返回空，得到 %q", enc)
+				t.Fatalf("empty input should return empty, got %q", enc)
 			}
 			continue
 		}
 		if enc == plain {
-			t.Fatalf("密文不应等于明文: %q", enc)
+			t.Fatalf("ciphertext should not equal plaintext: %q", enc)
 		}
 		if !strings.HasPrefix(enc, cipherPrefix) {
-			t.Fatalf("密文应带前缀: %q", enc)
+			t.Fatalf("ciphertext should carry the prefix: %q", enc)
 		}
 		dec, err := DecryptSecret(enc)
 		if err != nil {
 			t.Fatalf("decrypt: %v", err)
 		}
 		if dec != plain {
-			t.Fatalf("往返不一致: 期望 %q 得到 %q", plain, dec)
+			t.Fatalf("roundtrip mismatch: want %q got %q", plain, dec)
 		}
 	}
 }
@@ -42,7 +42,7 @@ func TestDecryptLegacyPlaintext(t *testing.T) {
 		t.Fatalf("decrypt legacy: %v", err)
 	}
 	if dec != plain {
-		t.Fatalf("legacy 应原样返回，得到 %q", dec)
+		t.Fatalf("legacy data should be returned as-is, got %q", dec)
 	}
 }
 
@@ -56,11 +56,11 @@ func TestDeriveKeyStable(t *testing.T) {
 		t.Fatalf("deriveKey: %v", err)
 	}
 	if len(k1) != 32 {
-		t.Fatalf("密钥长度应为 32，得到 %d", len(k1))
+		t.Fatalf("derived key length should be 32, got %d", len(k1))
 	}
 	for i := range k1 {
 		if k1[i] != k2[i] {
-			t.Fatalf("同一设备派生密钥应稳定")
+			t.Fatalf("derived key should be stable on the same device")
 		}
 	}
 }

@@ -114,17 +114,17 @@ func main() {
 	// .kai.dev 目录，与正式版 .kai 隔离，避免开发调试污染正式数据（对齐 certflow）。
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("获取用户主目录失败: %v", err)
+		log.Fatalf("failed to get user home directory: %v", err)
 	}
 	dataDir := buildinfo.DataDir(homeDir)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		log.Fatalf("创建数据目录失败: %v", err)
+		log.Fatalf("failed to create data directory: %v", err)
 	}
 	// 数据库文件（config.db / history.db / httplog.db）统一放在 DataDir 的 data/ 子目录下，
 	// 即 ~/.kai/data/（或 dev 的 ~/.kai.dev/data/）。目录规则由 buildinfo.DBDir 提供。
 	dbDir := buildinfo.DBDir(homeDir)
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
-		log.Fatalf("创建数据库目录失败: %v", err)
+		log.Fatalf("failed to create database directory: %v", err)
 	}
 
 	// ── 阶段一·五：动态加载 Swift 桥接层（purego 运行时 Dlopen）──
@@ -134,13 +134,13 @@ func main() {
 	// 加载失败不致命（仅记录），缺失符号的函数变量保持 nil，调用时在对应包内报错，
 	// 保证非 macOS 或 dylib 缺失环境仍能编译/启动其余功能。
 	if err := swiftbridge.Init(""); err != nil {
-		log.Printf("WARN: Swift 桥接层动态加载失败（部分 macOS 专属功能不可用）: %v", err)
+		log.Printf("WARN: failed to load Swift bridge dynamically (some macOS-only features unavailable): %v", err)
 	}
 
 	// ── 阶段二：获取设置（日志/i18n 依赖它，必须在数据库初始化之前）──
 	settingsService, err := settings.NewService(dataDir)
 	if err != nil {
-		log.Fatalf("加载设置失败: %v", err)
+		log.Fatalf("failed to load settings: %v", err)
 	}
 	// 初始化匿名统计（加载设备 ID；是否实际上报由开关 + 构建模式在 Track 时判定）。
 	analytics.Init(dataDir, settingsService)

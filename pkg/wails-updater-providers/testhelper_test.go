@@ -46,10 +46,10 @@ func mustServe(t *testing.T, h http.Handler) *httptest.Server {
 	return srv
 }
 
-// safeVersion 安全读取候选版本的版本号，rel 为 nil 时返回 "<无候选>"。
+// safeVersion 安全读取候选版本的版本号，rel 为 nil 时返回 "<no candidate>"。
 func safeVersion(rel *updater.Release) string {
 	if rel == nil {
-		return "<无候选>"
+		return "<no candidate>"
 	}
 	return rel.Version
 }
