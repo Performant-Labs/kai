@@ -10,7 +10,19 @@
   import { Window, Clipboard } from '@wailsio/runtime';
 
   // 置顶状态持久化到 localStorage，重开窗口后保留。
-  const pinnedStore = persisted<boolean>(pinKey('translate'), false);
+  // #39：默认置顶（modal 语义）——工作窗口在显式 Hide（快捷键切换 / 红 X / 托盘）之前
+  // 保持浮在其它应用之上，不再因失焦沉底「消失」。🧷 按钮语义不变：作为解除置顶的开关。
+  const PIN_MODAL_MIGRATION_KEY = 'kai:translate:pinnedModalDefault';
+  const pinnedStore = persisted<boolean>(pinKey('translate'), true);
+  // 一次性迁移：老用户在旧默认（false）下已被 subscribe 静默写入 false，构造默认翻转
+  // 对他们无效——检测到「存了 false 且未见迁移标记」即重置为置顶并落标记。迁移后
+  // 再解除置顶的用户（flag 已在）永远被尊重。
+  if (typeof localStorage !== 'undefined' && !localStorage.getItem(PIN_MODAL_MIGRATION_KEY)) {
+    if (localStorage.getItem(pinKey('translate')) === JSON.stringify(false)) {
+      pinnedStore.set(true);
+    }
+    localStorage.setItem(PIN_MODAL_MIGRATION_KEY, '1');
+  }
   let pinned = $derived($pinnedStore);
   async function togglePin() {
     const next = !pinned;
