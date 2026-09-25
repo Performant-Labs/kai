@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import SpanText from './SpanText.svelte';
   import { t, langName, engineName } from '../i18n';
   import { rootStyle } from '../stores/theme';
   import { currentLang } from '../stores/ui';
@@ -124,6 +125,25 @@
     window.addEventListener('mouseup', up);
   }
 
+  // 词级 span 渲染（issue #11 基础工作）：两栏的文本以 SpanText（hover 高亮 span）展示，
+  // 编辑仍走 textarea。规则：栏内文本非空且未处于编辑态 → 展示 span 层；点击 span 层
+  // 切回 textarea（词级点击本身刻意无行为，字典/备选是 #18）。空文本恒为 textarea
+  // （占位符可见、可直接输入）。
+  let editingSource = $state(true);
+  let editingResult = $state(false);
+  let sourceEl = $state<HTMLTextAreaElement | null>(null);
+  let resultEl = $state<HTMLTextAreaElement | null>(null);
+
+  function enterSourceEdit() {
+    editingSource = true;
+    tick().then(() => sourceEl?.focus());
+  }
+
+  function enterResultEdit() {
+    editingResult = true;
+    tick().then(() => resultEl?.focus());
+  }
+
   // 翻译中走马灯：动态省略号（. → .. → ... → .... 循环）
   let dotCount = $state(0);
   $effect(() => {
@@ -180,6 +200,7 @@
     setLastUsedEngine(name);
     // 切换引擎：丢弃上一个引擎的手工编辑，新引擎从它自己的存储结果起步。
     edited = resetEdits(edited, activeEngine, name, results);
+    editingResult = false;
   }
 
   onMount(() => {
@@ -316,6 +337,7 @@
     results = {};
     // 新一轮 fan-out 从空白开始：上一批的编辑结果对新一轮无意义，一并丢弃。
     edited = new Map();
+    editingResult = false;
     try {
       // 多引擎并发由后端按已开启引擎并行，不依赖单个 engine；
       // bindings 生成的 TranslateRequest.engine 为必填，传空串以满足类型（后端忽略）。
@@ -361,6 +383,7 @@
     input = '';
     results = {};
     edited = new Map();
+    editingResult = false;
   }
 </script>
 
@@ -477,10 +500,23 @@
             </button>
           </div>
         </div>
-        <textarea
-          class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
-          bind:value={input}
-          placeholder={t('translate.placeholder')}></textarea>
+        {#if input === '' || editingSource}
+          <textarea
+            bind:this={sourceEl}
+            class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
+            bind:value={input}
+            onfocus={() => (editingSource = true)}
+            onblur={() => (editingSource = false)}
+            placeholder={t('translate.placeholder')}></textarea>
+        {:else}
+          <!-- 非编辑态：词级 span 渲染（hover 高亮，无点击行为——#18） -->
+          <div
+            class="min-h-0 flex-1 cursor-text overflow-y-auto p-4 text-base leading-relaxed"
+            onclick={enterSourceEdit}
+          >
+            <SpanText text={input} />
+          </div>
+        {/if}
         <div class="u-border-t flex items-center justify-between px-3 py-2">
           <button class="u-btn u-btn--ghost u-no-drag px-3 py-1.5 text-sm" onclick={clearInput}>
             {t('translate.clearInput')}
@@ -651,11 +687,23 @@
                   <span class="u-muted text-xs">{activeResult.phonetic}</span>
                 {/if}
               </div>
-              <textarea
-                class="min-h-[120px] resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
-                value={activeDisplay}
-                onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
-                placeholder={t('translate.noResult')}></textarea>
+              {#if editingResult || activeDisplay === ''}
+                <textarea
+                  bind:this={resultEl}
+                  class="min-h-[120px] resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
+                  value={activeDisplay}
+                  onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
+                  onblur={() => (editingResult = false)}
+                  placeholder={t('translate.noResult')}></textarea>
+              {:else}
+                <!-- 非编辑态：词级 span 渲染（hover 高亮）；点击进入编辑（#9 的可编辑语义保留） -->
+                <div
+                  class="min-h-[120px] cursor-text text-base leading-relaxed"
+                  onclick={enterResultEdit}
+                >
+                  <SpanText text={activeDisplay} />
+                </div>
+              {/if}
             </div>
           {:else}
             <!-- 活动引擎失败（缺席于 results 且 loading 已解除）或引擎返回空结果：失败态（设计 §5）。
