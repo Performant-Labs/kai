@@ -13,9 +13,13 @@
 // NODE_OPTIONS=--localstorage-file=$HOME/.kai-localstorage.json，让 Node 的原生
 // getter 返回真实 Storage（vitest 原样保留它，window===globalThis 故测试直接命中）。
 // 本地开发跑 `make test-frontend` 前也需同样 export，否则 Node 26 上必挂。
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // issue #52: lang.ts / i18n import the generated model enum via @bindings (a plain,
+  // runtime-light TS file), so unit tests need the same alias vite.config.ts declares.
+  resolve: { alias: { '@bindings': resolve(__dirname, 'bindings') } },
   test: {
     environment: 'jsdom',
     // 给 jsdom 一个 origin：否则部分 web 全局初始化需要窗口 origin。

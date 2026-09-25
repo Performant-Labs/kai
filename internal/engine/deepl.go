@@ -37,32 +37,26 @@ func NewDeepL(cfg *EngineConfig, client *http.Client) Translator {
 // Name returns the engine identifier.
 func (d *deeplTranslator) Name() string { return "deepl" }
 
-// deeplLang maps internal language codes to the uppercase codes DeepL accepts (ZH/EN/...).
-// DeepL doesn't support auto; returning an empty string lets DeepL auto-detect the source.
+// deeplLang maps a SOURCE language to the uppercase code DeepL accepts (ZH/EN/...), a lookup
+// into the language capability registry (dialects alias to their base, so es-MX / pt-BR / pt-PT
+// are sent as ES / PT). DeepL doesn't support auto; returning an empty string lets DeepL
+// auto-detect the source.
 func deeplLang(code string) string {
-	switch strings.ToLower(code) {
-	case "zh", "zh-cn", "zh_cn":
-		return "ZH"
-	case "en":
-		return "EN"
-	case "ja":
-		return "JA"
-	case "ko":
-		return "KO"
-	case "fr":
-		return "FR"
-	case "de":
-		return "DE"
-	case "es":
-		return "ES"
-	case "ru":
-		return "RU"
-	case "auto", "":
+	if isAuto(code) {
 		return "" // auto-detect
-	default:
-		// Already a DeepL-style uppercase code; return as-is
-		return strings.ToUpper(code)
 	}
+	// Unrecognized codes: already a DeepL-style code; uppercase it as before.
+	return sourceCode("deepl", code, strings.ToUpper)
+}
+
+// deeplTarget maps a TARGET language to its DeepL code. Exact match only: a dialect the registry
+// does not list for deepl (es-MX) is refused, never sent as its base language. An empty result
+// means "no target given" (the caller applies the default).
+func deeplTarget(code string) (string, error) {
+	if isAuto(code) {
+		return "", nil
+	}
+	return targetCode("deepl", code, strings.ToUpper)
 }
 
 type deeplResponse struct {
@@ -79,7 +73,10 @@ func (d *deeplTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	}
 	form := url.Values{}
 	form.Set("text", req.Text)
-	tl := deeplLang(string(req.To))
+	tl, err := deeplTarget(string(req.To))
+	if err != nil {
+		return nil, err
+	}
 	if tl == "" {
 		tl = "ZH"
 	}
@@ -113,13 +110,14 @@ func (d *deeplTranslator) Translate(ctx context.Context, req model.TranslateRequ
 		return nil, fmt.Errorf(i18n.T("err.deepl_api_error"), msg, msg)
 	}
 
-	src := dr.Translations[0].DetectedSourceLanguage
-	if src == "" {
-		src = strings.ToLower(string(req.From))
+	// DeepL reports its detection upper-cased (ES, PT, ...); without one, echo the request language.
+	from := model.Language(strings.ToLower(dr.Translations[0].DetectedSourceLanguage))
+	if from == "" {
+		from = echoLanguage(req.From)
 	}
 	return &model.TranslateResult{
 		Engine: "deepl",
-		From:   model.Language(strings.ToLower(src)),
+		From:   from,
 		To:     req.To,
 		Text:   req.Text,
 		Result: dr.Translations[0].Text,

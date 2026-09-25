@@ -97,6 +97,7 @@
     type DotState,
   } from '../utils/resultPane.ts';
   import { detectedSourceLabel } from '../utils/detectedLang.ts';
+  import { isTargetDisabled } from '../utils/targetCapability.ts';
   import {
     GetLanguages,
     GetConfig,
@@ -457,7 +458,13 @@
         aria-label={t('translate.to')}
       >
         {#each targetLanguages as l}
-          <option value={l.value}>{langName(l.value)}</option>
+          <!-- issue #52: a target no enabled engine can translate into is shown disabled;
+               the capability comes from the backend (allEngines[].target_languages), never a
+               frontend map. The source select above is never gated (every engine accepts every
+               source). -->
+          <option value={l.value} disabled={isTargetDisabled(allEngines, l.value)}>
+            {langName(l.value)}
+          </option>
         {/each}
       </select>
     </div>

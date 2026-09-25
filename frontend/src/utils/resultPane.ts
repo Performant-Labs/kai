@@ -60,8 +60,12 @@ export function failureMessage(
   return `${t(key)} — ${result.error}`;
 }
 
-/** 「enabled 的 translate 引擎」谓词：kind=translate 且 enabled 且平台支持。 */
-function isEnabledTranslate(e: PaneEngine): boolean {
+/**
+ * 「enabled 的 translate 引擎」谓词：kind=translate 且 enabled 且平台支持。
+ * Exported so the target-language capability gating (issue #52, utils/targetCapability.ts)
+ * shares this one definition instead of restating it.
+ */
+export function isEnabledTranslate(e: Pick<PaneEngine, 'kind' | 'enabled' | 'supported'>): boolean {
   return e.kind === 'translate' && e.enabled && e.supported;
 }
 

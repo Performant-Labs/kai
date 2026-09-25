@@ -1,6 +1,8 @@
 package model
 
-// Language is a language code (ISO 639-1 or engine-specific)
+import "strings"
+
+// Language is a language code (ISO 639-1, or a BCP 47 dialect tag such as es-MX)
 type Language string
 
 // Locale is the UI language — a completely different concern from the translation Language;
@@ -27,30 +29,97 @@ const (
 
 // Translation language codes (Translate Language): used for translation requests/results,
 // engine calls, and history records.
-// Values are the short codes translation engines expect (e.g. zh/en/ja), completely
-// unrelated to the UI language — never mix with the UI locale below.
+// Values are the short codes translation engines expect (e.g. zh/en/ja) or, for dialect
+// variants, BCP 47 tags (es-MX/pt-BR/pt-PT), completely unrelated to the UI language — never
+// mix with the UI locale above.
 const (
-	Auto Language = "auto" // Auto-detect source language
-	ZH   Language = "zh"   // Chinese
-	EN   Language = "en"   // English
-	JA   Language = "ja"   // Japanese
-	KO   Language = "ko"   // Korean
-	FR   Language = "fr"   // French
-	DE   Language = "de"   // German
-	ES   Language = "es"   // Spanish
-	RU   Language = "ru"   // Russian
+	Auto Language = "auto"  // Auto-detect source language
+	ZH   Language = "zh"    // Chinese
+	EN   Language = "en"    // English
+	JA   Language = "ja"    // Japanese
+	KO   Language = "ko"    // Korean
+	FR   Language = "fr"    // French
+	DE   Language = "de"    // German
+	ES   Language = "es"    // Spanish (recognized base of the Spanish dialects; not selectable)
+	ESMX Language = "es-MX" // Spanish (Mexico)
+	PT   Language = "pt"    // Portuguese (recognized base of the Portuguese dialects; not selectable)
+	PTBR Language = "pt-BR" // Portuguese (Brazil)
+	PTPT Language = "pt-PT" // Portuguese (Portugal)
+	RU   Language = "ru"    // Russian
 )
 
-// allLanguages lists all supported languages (including Auto); the order is the frontend
-// dropdown display order.
-var allLanguages = []Language{Auto, ZH, EN, JA, KO, FR, DE, ES, RU}
+// allLanguages is the RECOGNIZED set (including Auto): every value the app understands, i.e.
+// what engines and detection may emit and what has a display name. Dialect variants sit right
+// after their base so language families stay adjacent (…, ES, ESMX, PT, PTBR, PTPT, RU).
+// Recognized is a superset of selectable: see selectableExcluded.
+var allLanguages = []Language{Auto, ZH, EN, JA, KO, FR, DE, ES, ESMX, PT, PTBR, PTPT, RU}
 
-// AllLanguages returns the slice of all supported language constants (including Auto).
-// Lets the config layer derive dropdown options, avoiding hardcoded language-code lists
-// everywhere.
+// selectableExcluded lists recognized languages that are NOT offered in the language
+// dropdowns: the bare bases of a dialect family. Detection emits them on every auto send and
+// they anchor alias normalization (Language.Base), but the user picks a concrete dialect.
+var selectableExcluded = map[Language]bool{ES: true, PT: true}
+
+// languageBase is the alias table: dialect → base language. Keys are lower-cased BCP 47 tags
+// (Language.Base matches case-insensitively). es-419 (Latin American Spanish) is an alias only:
+// it is deliberately not a recognized Language of its own.
+var languageBase = map[string]Language{
+	"es-mx":  ES,
+	"es-419": ES,
+	"pt-br":  PT,
+	"pt-pt":  PT,
+}
+
+// Base returns the base language of a dialect variant (es-MX/es-419 → es, pt-BR/pt-PT → pt);
+// every other language, including the bases themselves, maps to itself.
+//
+// The alias serves the SOURCE side only: engine source codes and detection normalization, so an
+// engine lacking a dialect still accepts text written in it. It must never be used to degrade a
+// TARGET — an engine without a dialect target has to refuse it, not quietly serve the base.
+func (l Language) Base() Language {
+	if b, ok := languageBase[strings.ToLower(strings.ReplaceAll(string(l), "_", "-"))]; ok {
+		return b
+	}
+	return l
+}
+
+// SelectableOr returns l unless it is a recognized language that is not selectable (bare es /
+// pt); that is replaced by the first selectable variant of its family (es → es-MX,
+// pt → pt-BR), or by fallback when the family offers none. Codes outside the recognized set are
+// returned unchanged and stay the engines' business, as before.
+// It is the read-path coercion for persisted choices that predate the dialect variants.
+func (l Language) SelectableOr(fallback Language) Language {
+	if !selectableExcluded[l] {
+		return l
+	}
+	for _, s := range SelectableLanguages() {
+		if s.Base() == l {
+			return s
+		}
+	}
+	return fallback
+}
+
+// AllLanguages returns the RECOGNIZED languages (including Auto), in display order — a
+// superset of SelectableLanguages. Use it wherever a value must be understood (detection,
+// alias bases, display names, engine capability decisions); use SelectableLanguages for
+// anything a user picks.
 func AllLanguages() []Language {
 	out := make([]Language, len(allLanguages))
 	copy(out, allLanguages)
+	return out
+}
+
+// SelectableLanguages returns the languages offered in the source/target dropdowns (including
+// Auto), in the same order as AllLanguages minus the non-selectable bases (bare es / pt). It
+// lets the config layer derive dropdown options, avoiding hardcoded language-code lists
+// everywhere.
+func SelectableLanguages() []Language {
+	out := make([]Language, 0, len(allLanguages))
+	for _, l := range allLanguages {
+		if !selectableExcluded[l] {
+			out = append(out, l)
+		}
+	}
 	return out
 }
 

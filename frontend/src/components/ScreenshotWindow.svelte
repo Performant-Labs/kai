@@ -8,6 +8,7 @@
     EventScreenshotRecapture,
     EventScreenshotRetranslate,
     EventWindowClosing,
+    EventEnginesChanged,
     ScreenshotSessionScreenshot,
   } from '../utils/events';
   import { WindowScreenshot } from '../constants/window';
@@ -22,8 +23,11 @@
     ScreenshotResult,
     TranslateResult,
   } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
+  import type { AllEngineItem } from '@bindings/cnb.cool/dtapp/kai/internal/service/models.ts';
   import type { ScreenshotRetranslatePayload } from '../utils/events';
   import { GetConfig } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
+  import { GetAllEngines } from '@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts';
+  import { isTargetDisabled } from '../utils/targetCapability.ts';
   import { persisted, pinKey } from '../stores/persisted';
 
   // 置顶状态持久化到 localStorage，与输入翻译窗口（pinKey('translate')）相互独立的记忆。
@@ -51,6 +55,20 @@
   // 改语言后前端带防抖 emit EventScreenshotRetranslate，后端复用上次 OCR 原文直接重翻（跳过截图/OCR）。
   let fromLang = $state<TranslateLang>(TRANSLATE_LANG.Auto);
   let toLang = $state<TranslateLang>(TRANSLATE_LANG.EN);
+
+  // issue #52: per-engine target capability (backend-owned: AllEngineItem.target_languages),
+  // used to disable the target options no enabled engine can translate into. Reloaded when
+  // engines are added / removed / toggled in the settings while this window lives on hidden.
+  let allEngines = $state<AllEngineItem[]>([]);
+  async function loadCapability() {
+    try {
+      allEngines = (await GetAllEngines()) ?? [];
+    } catch (e) {
+      // Fail open: without capability data nothing is disabled (see isTargetDisabled).
+      console.error(t('log.loadEngineListFailed'), e);
+      allEngines = [];
+    }
+  }
 
   // 从设置读取默认源/目标语言，作为语言条初始展示值。
   async function loadDefaults() {
@@ -225,6 +243,10 @@
 
   onMount(async () => {
     console.debug(t('log.screenshotLogMounted'));
+    loadCapability();
+    const offEngines = onEvent(EventEnginesChanged, () => {
+      loadCapability();
+    });
     loadDefaults().then(() => {
       // loadDefaults 设定初始值后，下一拍再允许语言变更触发重翻，避免初始设定误触发。
       setTimeout(() => {
@@ -245,6 +267,7 @@
     return () => {
       off();
       offClosing();
+      offEngines();
     };
   });
 </script>
@@ -364,7 +387,9 @@
               onchange={(e) => (toLang = e.currentTarget.value as TranslateLang)}
             >
               {#each TARGET_TRANSLATE_LANGS as l}
-                <option value={l}>{langName(l)}</option>
+                <!-- issue #52: disabled when no enabled engine can translate into it (backend
+                     capability, not a frontend map); the source select is never gated. -->
+                <option value={l} disabled={isTargetDisabled(allEngines, l)}>{langName(l)}</option>
               {/each}
             </select>
           </div>

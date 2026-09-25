@@ -43,29 +43,22 @@ func NewYoudao(cfg *EngineConfig, client *http.Client) Translator {
 
 func (y *youdaoTranslator) Name() string { return "youdao" }
 
+// youdaoLang maps a SOURCE language to Youdao's code (a lookup into the language capability
+// registry; dialects alias to their base).
 func youdaoLang(code string) string {
-	switch strings.ToLower(code) {
-	case "zh", "zh-cn", "zh_cn":
-		return "zh-CHS"
-	case "en":
-		return "en"
-	case "ja":
-		return "ja"
-	case "ko":
-		return "ko"
-	case "fr":
-		return "fr"
-	case "de":
-		return "de"
-	case "es":
-		return "es"
-	case "ru":
-		return "ru"
-	case "auto", "":
+	if isAuto(code) {
 		return "auto"
-	default:
-		return strings.ToLower(code)
 	}
+	return sourceCode("youdao", code, strings.ToLower)
+}
+
+// youdaoTarget maps a TARGET language to Youdao's code. Exact match only: the dialects are not
+// offered by Youdao and are refused, never sent as their base language.
+func youdaoTarget(code string) (string, error) {
+	if isAuto(code) {
+		return "auto", nil
+	}
+	return targetCode("youdao", code, strings.ToLower)
 }
 
 type youdaoResponse struct {
@@ -78,6 +71,10 @@ type youdaoResponse struct {
 func (y *youdaoTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
 	if y.appKey == "" || y.appSec == "" {
 		return nil, ErrAPIKey
+	}
+	to, err := youdaoTarget(string(req.To))
+	if err != nil {
+		return nil, err
 	}
 	salt := strconv.Itoa(rand.Intn(1<<31) + 1)
 	curtime := strconv.FormatInt(time.Now().Unix(), 10)
@@ -95,7 +92,7 @@ func (y *youdaoTranslator) Translate(ctx context.Context, req model.TranslateReq
 	form := url.Values{}
 	form.Set("q", q)
 	form.Set("from", youdaoLang(string(req.From)))
-	form.Set("to", youdaoLang(string(req.To)))
+	form.Set("to", to)
 	form.Set("appKey", y.appKey)
 	form.Set("salt", salt)
 	form.Set("sign", sign)
@@ -125,13 +122,13 @@ func (y *youdaoTranslator) Translate(ctx context.Context, req model.TranslateReq
 	if len(yr.Translation) == 0 {
 		return nil, fmt.Errorf(i18n.T("err.youdao_empty_result"))
 	}
-	src := yr.L
-	if src == "" {
-		src = strings.ToLower(string(req.From))
+	from := model.Language(yr.L)
+	if from == "" {
+		from = echoLanguage(req.From)
 	}
 	return &model.TranslateResult{
 		Engine: "youdao",
-		From:   model.Language(src),
+		From:   from,
 		To:     req.To,
 		Text:   req.Text,
 		Result: yr.Translation[0],

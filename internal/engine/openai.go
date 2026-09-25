@@ -154,33 +154,23 @@ func (o *openaiTranslator) Translate(ctx context.Context, req model.TranslateReq
 }
 
 // srcName/dstName convert internal language codes into natural-language names LLMs understand
-// better (via i18n, following the UI language).
+// better (via i18n, following the UI language). Every recognized language is named — dialects
+// included ("Spanish (Mexico)") — through the same "lang.<code>" keys; they are what tells the
+// model which dialect to read or write, so nothing collapses to the auto label or a bare code.
+// Codes outside the recognized set pass through as they are.
+//
+// srcName is the source-side phrasing: "" / auto is the auto-detect label.
 func srcName(code string) string {
-	switch code {
-	case "zh", "zh-cn":
-		return i18n.T("lang.zh")
-	case "en":
-		return i18n.T("lang.en")
-	case "ja":
-		return i18n.T("lang.ja")
-	case "ko":
-		return i18n.T("lang.ko")
-	default:
+	if isAuto(code) {
 		return i18n.T("lang.auto")
 	}
+	return dstName(code)
 }
 
+// dstName is the target-side phrasing (also the shared name lookup).
 func dstName(code string) string {
-	switch code {
-	case "zh", "zh-cn":
-		return i18n.T("lang.zh")
-	case "en":
-		return i18n.T("lang.en")
-	case "ja":
-		return i18n.T("lang.ja")
-	case "ko":
-		return i18n.T("lang.ko")
-	default:
-		return code
+	if l, ok := resolveLanguage(code); ok {
+		return languageLabel(l)
 	}
+	return code
 }

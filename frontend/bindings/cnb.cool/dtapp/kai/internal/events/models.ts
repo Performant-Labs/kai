@@ -6,28 +6,33 @@
 import * as model$0 from "../model/models.js";
 
 /**
- * LocaleChangedPayload 界面语言变更事件参数。
- * 注意：这里是界面显示语言，与翻译语言（model.Language：auto/zh/en/...）完全是两套体系，不可混用。
- * Mode 为用户配置的界面语言模式（auto / zh-CN / en-US）；
- * Language 为实际生效的界面语言（zh-CN / en-US，auto 时由系统 locale 派生）。
+ * LocaleChangedPayload carries the UI language change event.
+ * Note: this is the UI display language — an entirely separate system from the translation
+ * languages (model.Language: auto/zh/en/...); never mix them.
+ * Mode is the user-configured UI language mode (auto / zh-CN / en-US);
+ * Language is the actually active UI language (zh-CN / en-US; derived from the system locale
+ * when auto).
  */
 export interface LocaleChangedPayload {
     /**
-     * 界面语言模式：auto | zh-CN | en-US
+     * UI language mode: auto | zh-CN | en-US
      */
     "mode": string;
 
     /**
-     * 实际生效界面语言：zh-CN | en-US
+     * Actually active UI language: zh-CN | en-US
      */
     "language": string;
 }
 
 /**
- * ScreenshotRetranslatePayload 截图翻译改语言重新翻译事件参数。
- * Session 标识缓存来源（ScreenshotSessionScreenshot / ScreenshotSessionInput），
- * 后端据此取用对应入口最近一次 OCR 原文，避免不同入口互相串。
- * From/To 为目标翻译语言组合（From 允许 Auto），后端复用最近一次 OCR 原文重新翻译。
+ * ScreenshotRetranslatePayload carries the screenshot-retranslate-after-language-change
+ * event.
+ * Session identifies the cache origin (ScreenshotSessionScreenshot /
+ * ScreenshotSessionInput); the backend uses it to fetch that entry point's most recent OCR
+ * text, keeping different entry points from bleeding into each other.
+ * From/To are the target translation language pair (From may be Auto); the backend reuses
+ * the most recent OCR text to retranslate.
  */
 export interface ScreenshotRetranslatePayload {
     "session": string;
@@ -36,9 +41,10 @@ export interface ScreenshotRetranslatePayload {
 }
 
 /**
- * ThemeChangedPayload 主题变更事件参数。
- * Mode 为用户配置模式（取自 model 的 ThemeAuto/ThemeLight/ThemeDark：auto/light/dark）；
- * Theme 为系统真实外观（dark/light，由 Env.IsDarkMode() 派生）。
+ * ThemeChangedPayload carries the theme change event.
+ * Mode is the user-configured mode (from model's ThemeAuto/ThemeLight/ThemeDark:
+ * auto/light/dark);
+ * Theme is the real system appearance (dark/light, derived from Env.IsDarkMode()).
  */
 export interface ThemeChangedPayload {
     /**

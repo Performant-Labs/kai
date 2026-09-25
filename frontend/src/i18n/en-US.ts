@@ -264,9 +264,13 @@ export const en: Dict = {
     fr: 'French',
     de: 'German',
     es: 'Spanish',
+    // Dialect variants (issue #52). The bare es / pt above stay: detection labels them.
+    'es-MX': 'Spanish (Mexico)',
     ru: 'Russian',
     it: 'Italian',
     pt: 'Portuguese',
+    'pt-BR': 'Portuguese (Brazil)',
+    'pt-PT': 'Portuguese (Portugal)',
     ar: 'Arabic',
     th: 'Thai',
     vi: 'Vietnamese',

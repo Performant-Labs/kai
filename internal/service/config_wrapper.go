@@ -131,9 +131,10 @@ type NamedItem struct {
 	Name  string `json:"name"`  // Option display name
 }
 
-// GetLanguages returns the supported languages (value=code, name=display name).
+// GetLanguages returns the languages the source/target dropdowns offer (value=code,
+// name=display name): the SELECTABLE set — the recognized bare bases es / pt are left out.
 func (w *ConfigWrapper) GetLanguages(lang string) []NamedItem {
-	codes := model.AllLanguages()
+	codes := model.SelectableLanguages()
 	items := make([]NamedItem, 0, len(codes))
 	for _, c := range codes {
 		items = append(items, NamedItem{Value: string(c), Name: string(c)})

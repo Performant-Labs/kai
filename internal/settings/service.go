@@ -228,6 +228,17 @@ func DefaultSettings() *Settings {
 	}
 }
 
+// normalizeLanguages coerces persisted language choices that predate the dialect variants
+// (issue #52): bare es / pt are recognized but no longer selectable, so a stored default_to of
+// "es" would match no option in the dropdowns. A bare base becomes the first selectable variant
+// of its family (es → es-MX, pt → pt-BR); on the source side that is lossless, since every
+// engine aliases a variant source to its base. Anything else, unknown codes included, is left
+// untouched.
+func (c *Settings) normalizeLanguages() {
+	c.DefaultFrom = string(model.Language(c.DefaultFrom).SelectableOr(model.Auto))
+	c.DefaultTo = string(model.Language(c.DefaultTo).SelectableOr(model.ZH))
+}
+
 // defaultCopyHotkey returns the copy key's default, per OS:
 // macOS defaults to Cmd+C (the system-native copy key), other platforms to Ctrl+C.
 // The per-OS decision lives in config (here); the execution layer only resolves the
@@ -287,6 +298,7 @@ func NewService(dataDir string) (*Service, error) {
 		return nil, fmt.Errorf("failed to parse settings: %w", err)
 	}
 	s.cfg.Path = filePath
+	s.cfg.normalizeLanguages()
 
 	// Re-save after startup so disk config matches memory (missing defaults are backfilled;
 	// extras are overwritten by the write)
@@ -344,6 +356,7 @@ func (s *Service) startWatching() {
 				return
 			}
 			s.cfg.Path = s.filePath
+			s.cfg.normalizeLanguages()
 
 			if s.onChange != nil {
 				cb := s.onChange

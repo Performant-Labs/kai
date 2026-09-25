@@ -80,7 +80,10 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 		return nil, fmt.Errorf(i18n.T("err.empty_text"))
 	}
 	sl := normalizeLang(string(req.From))
-	tl := normalizeLang(string(req.To))
+	tl, err := normalizeTarget(string(req.To))
+	if err != nil {
+		return nil, err
+	}
 	// sl == "" means auto-detect the source language, delegated to Swift; non-empty requires
 	// an explicit source.
 	if tl == "auto" || tl == "" {
@@ -186,18 +189,30 @@ func coalesceLang(got, fallback string) string {
 	return got
 }
 
-// normalizeLang maps internal language codes to the BCP-47 codes Translation.framework
-// accepts. "auto" / "" map to an empty string, routing Swift to its NaturalLanguage
-// auto-detect branch.
+// normalizeLang maps a SOURCE language to the BCP-47 code Translation.framework accepts (a
+// lookup into the language capability registry; dialects alias to their base). "auto" / ""
+// map to an empty string, routing Swift to its NaturalLanguage auto-detect branch.
 func normalizeLang(code string) string {
 	switch code {
-	case "zh", "zh-CN", "zh_CN":
-		return "zh-Hans"
 	case "zh-TW", "zh_Hant", "zh-Hant":
 		return "zh-Hant"
-	case "auto", "":
-		return ""
-	default:
-		return code
 	}
+	if isAuto(code) {
+		return ""
+	}
+	return sourceCode("apple", code, identity)
+}
+
+// normalizeTarget maps a TARGET language to its Translation.framework code. Exact match only: a
+// dialect the registry does not list for apple is refused, never sent as its base language.
+// An empty result means no target was given (the caller reports err.apple_need_target).
+func normalizeTarget(code string) (string, error) {
+	switch code {
+	case "zh-TW", "zh_Hant", "zh-Hant":
+		return "zh-Hant", nil
+	}
+	if isAuto(code) {
+		return "", nil
+	}
+	return targetCode("apple", code, identity)
 }

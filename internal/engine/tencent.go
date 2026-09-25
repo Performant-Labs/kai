@@ -43,29 +43,22 @@ func NewTencent(cfg *EngineConfig, client *http.Client) Translator {
 
 func (t *tencentTranslator) Name() string { return "tencent" }
 
+// tencentLang maps a SOURCE language to Tencent's code (a lookup into the language capability
+// registry; dialects alias to their base).
 func tencentLang(code string) string {
-	switch strings.ToLower(code) {
-	case "zh", "zh-cn", "zh_cn":
-		return "zh"
-	case "en":
-		return "en"
-	case "ja":
-		return "ja"
-	case "ko":
-		return "ko"
-	case "fr":
-		return "fr"
-	case "de":
-		return "de"
-	case "es":
-		return "es"
-	case "ru":
-		return "ru"
-	case "auto", "":
+	if isAuto(code) {
 		return "auto"
-	default:
-		return strings.ToLower(code)
 	}
+	return sourceCode("tencent", code, strings.ToLower)
+}
+
+// tencentTarget maps a TARGET language to Tencent's code. Exact match only: the dialects are not
+// offered by Tencent and are refused, never sent as their base language.
+func tencentTarget(code string) (string, error) {
+	if isAuto(code) {
+		return "auto", nil
+	}
+	return targetCode("tencent", code, strings.ToLower)
 }
 
 type tencentRequest struct {
@@ -140,10 +133,14 @@ func (t *tencentTranslator) Translate(ctx context.Context, req model.TranslateRe
 	if t.secretID == "" || t.secretKey == "" {
 		return nil, ErrAPIKey
 	}
+	target, err := tencentTarget(string(req.To))
+	if err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(tencentRequest{
 		SourceText: req.Text,
 		Source:     tencentLang(string(req.From)),
-		Target:     tencentLang(string(req.To)),
+		Target:     target,
 		ProjectId:  0,
 	})
 	if err != nil {
@@ -180,13 +177,13 @@ func (t *tencentTranslator) Translate(ctx context.Context, req model.TranslateRe
 	if tr.Response.Error != nil {
 		return nil, fmt.Errorf(i18n.T("err.tencent_api_error"), tr.Response.Error.Code, tr.Response.Error.Message, tr.Response.Error.Code, tr.Response.Error.Message)
 	}
-	src := tr.Response.Source
-	if src == "" {
-		src = strings.ToLower(string(req.From))
+	from := model.Language(tr.Response.Source)
+	if from == "" {
+		from = echoLanguage(req.From)
 	}
 	return &model.TranslateResult{
 		Engine: "tencent",
-		From:   model.Language(src),
+		From:   from,
 		To:     req.To,
 		Text:   req.Text,
 		Result: tr.Response.TargetText,

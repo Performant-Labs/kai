@@ -65,6 +65,7 @@
   "err.logutil_open_file": "打开日志文件失败",
   "err.logutil_open_frontend": "打开前端日志失败",
   "err.empty_text": "待翻译文本为空",
+  "err.engine_unsupported_target": "{{.engine}} 不支持将{{.lang}}作为目标语言",
   "err.apple_need_target": "系统翻译需要显式指定目标语言",
   "err.apple_no_source_lang": "系统翻译自动检测失败：本机未安装可用的源语言包",
   "err.apple_empty_text": "待翻译文本为空",

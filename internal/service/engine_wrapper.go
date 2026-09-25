@@ -15,6 +15,7 @@ import (
 	"cnb.cool/dtapp/kai/internal/events"
 	"cnb.cool/dtapp/kai/internal/hotkey"
 	"cnb.cool/dtapp/kai/internal/i18n"
+	"cnb.cool/dtapp/kai/internal/model"
 	"cnb.cool/dtapp/kai/internal/network"
 	"cnb.cool/dtapp/kai/internal/settings"
 )
@@ -310,17 +311,25 @@ func (w *EngineWrapper) GetAllEngines() []AllEngineItem {
 		if kind == "" {
 			kind = string(engine.KindTranslator)
 		}
+		// Target-language capability comes from the engine's language registry (issue #52), the
+		// backend-owned source of truth the frontend gates its target dropdowns on. Engines
+		// without one (OCR) get an empty list: [] on the wire, never null.
+		targets := engine.SupportedTargets(e.Engine)
+		if targets == nil {
+			targets = []model.Language{}
+		}
 		// System built-in engines (vision system OCR / apple system translation) are persisted;
 		// mark them builtin uniformly here: cannot be deleted, but the switch can be toggled
 		// (participates in OCR single-select / translation default).
 		items = append(items, AllEngineItem{
-			ID:        e.ID,
-			Value:     e.Engine,
-			Name:      e.Engine,
-			Kind:      kind,
-			Enabled:   e.Enabled != 0,
-			Supported: engine.EngineSupported(e.Engine),
-			Builtin:   builtinEngine[e.Engine],
+			ID:              e.ID,
+			Value:           e.Engine,
+			Name:            e.Engine,
+			Kind:            kind,
+			Enabled:         e.Enabled != 0,
+			Supported:       engine.EngineSupported(e.Engine),
+			Builtin:         builtinEngine[e.Engine],
+			TargetLanguages: targets,
 		})
 	}
 	return items
@@ -569,4 +578,9 @@ type AllEngineItem struct {
 	Enabled   bool   `json:"enabled"`   // Whether enabled
 	Supported bool   `json:"supported"` // Whether the current platform supports it
 	Builtin   bool   `json:"builtin"`   // System built-in config-free engine (e.g. vision system OCR); cannot be deleted, but the switch can be toggled
+	// TargetLanguages lists the selectable languages this engine can translate INTO (the
+	// backend language capability registry, engine.SupportedTargets); the frontend disables every
+	// other target option instead of keeping its own map. Empty for OCR engines. Source support
+	// is not listed: every engine accepts every recognized source (variants alias to their base).
+	TargetLanguages []model.Language `json:"target_languages"`
 }

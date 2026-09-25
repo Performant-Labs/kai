@@ -41,29 +41,23 @@ func NewBaidu(cfg *EngineConfig, client *http.Client) Translator {
 
 func (b *baiduTranslator) Name() string { return "baidu" }
 
+// baiduLang maps a SOURCE language to Baidu's code (a lookup into the language capability
+// registry; dialects alias to their base, so es-MX → spa and pt-BR → pt, never a case-mangled
+// pt-br).
 func baiduLang(code string) string {
-	switch strings.ToLower(code) {
-	case "zh", "zh-cn", "zh_cn":
-		return "zh"
-	case "en":
-		return "en"
-	case "ja":
-		return "jp"
-	case "ko":
-		return "kor"
-	case "fr":
-		return "fra"
-	case "de":
-		return "de"
-	case "es":
-		return "spa"
-	case "ru":
-		return "ru"
-	case "auto", "":
+	if isAuto(code) {
 		return "auto"
-	default:
-		return strings.ToLower(code)
 	}
+	return sourceCode("baidu", code, strings.ToLower)
+}
+
+// baiduTarget maps a TARGET language to Baidu's code. Exact match only: the dialects are not
+// offered by Baidu and are refused, never sent as their base language.
+func baiduTarget(code string) (string, error) {
+	if isAuto(code) {
+		return "auto", nil
+	}
+	return targetCode("baidu", code, strings.ToLower)
 }
 
 type baiduResponse struct {
@@ -81,6 +75,10 @@ func (b *baiduTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	if b.appID == "" || b.appKey == "" {
 		return nil, ErrAPIKey
 	}
+	to, err := baiduTarget(string(req.To))
+	if err != nil {
+		return nil, err
+	}
 	salt := fmt.Sprintf("%d", time.Now().UnixNano())
 	signRaw := b.appID + req.Text + salt + b.appKey
 	sum := md5.Sum([]byte(signRaw))
@@ -89,7 +87,7 @@ func (b *baiduTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	form := url.Values{}
 	form.Set("q", req.Text)
 	form.Set("from", baiduLang(string(req.From)))
-	form.Set("to", baiduLang(string(req.To)))
+	form.Set("to", to)
 	form.Set("appid", b.appID)
 	form.Set("salt", salt)
 	form.Set("sign", sign)
@@ -117,13 +115,13 @@ func (b *baiduTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	if len(br.TransResult) == 0 {
 		return nil, fmt.Errorf(i18n.T("err.baidu_empty_result"), string(body), string(body))
 	}
-	src := br.From
-	if src == "" {
-		src = strings.ToLower(string(req.From))
+	from := model.Language(br.From)
+	if from == "" {
+		from = echoLanguage(req.From)
 	}
 	return &model.TranslateResult{
 		Engine: "baidu",
-		From:   model.Language(src),
+		From:   from,
 		To:     req.To,
 		Text:   req.Text,
 		Result: br.TransResult[0].Dst,

@@ -65,6 +65,7 @@
   "err.logutil_open_file": "failed to open log file",
   "err.logutil_open_frontend": "failed to open frontend log",
   "err.empty_text": "text to translate is empty",
+  "err.engine_unsupported_target": "{{.engine}} does not support {{.lang}} as a target language",
   "err.apple_need_target": "system translator requires explicit target language",
   "err.apple_no_source_lang": "system translation auto-detect failed: no installed source language pack available",
   "err.apple_empty_text": "translation text is empty",

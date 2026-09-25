@@ -16,17 +16,23 @@ import (
 // Google's key-free public translation endpoint (the web gtx interface).
 const googleEndpoint = "https://translate.googleapis.com/translate_a/single"
 
-// googleLang maps internal language codes to the codes the Google gtx endpoint accepts.
-// gtx also works with "zh", but "zh-CN" is more reliable, so the mapping is uniform.
+// googleLang maps a SOURCE language to the code the Google gtx endpoint accepts (a lookup into
+// the language capability registry; dialects alias to their base). gtx also works with "zh",
+// but "zh-CN" is more reliable, so the registry records that.
 func googleLang(code string) string {
-	switch code {
-	case "zh", "zh-CN", "zh_CN":
-		return "zh-CN"
-	case "auto", "":
+	if isAuto(code) {
 		return "auto"
-	default:
-		return code
 	}
+	return sourceCode("google", code, identity)
+}
+
+// googleTarget maps a TARGET language to its gtx code. Exact match only: a dialect the
+// registry does not list for google is refused, never sent as its base language.
+func googleTarget(code string) (string, error) {
+	if isAuto(code) {
+		return "auto", nil
+	}
+	return targetCode("google", code, identity)
 }
 
 // googleTranslator is the Google translation engine (key-free).
@@ -54,7 +60,10 @@ func (g *googleTranslator) Translate(ctx context.Context, req model.TranslateReq
 		return nil, fmt.Errorf(i18n.T("err.empty_text"))
 	}
 	sl := googleLang(string(req.From))
-	tl := googleLang(string(req.To))
+	tl, err := googleTarget(string(req.To))
+	if err != nil {
+		return nil, err
+	}
 	if tl == "auto" || tl == "" {
 		tl = "zh-CN"
 	}

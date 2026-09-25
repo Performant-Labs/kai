@@ -253,9 +253,13 @@ export const zh = {
     fr: '法语',
     de: '德语',
     es: '西班牙语',
+    // Dialect variants (issue #52). The bare es / pt above stay: detection labels them.
+    'es-MX': '西班牙语（墨西哥）',
     ru: '俄语',
     it: '意大利语',
     pt: '葡萄牙语',
+    'pt-BR': '葡萄牙语（巴西）',
+    'pt-PT': '葡萄牙语（葡萄牙）',
     ar: '阿拉伯语',
     th: '泰语',
     vi: '越南语',
