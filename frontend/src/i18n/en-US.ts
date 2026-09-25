@@ -50,6 +50,7 @@ export const en: Dict = {
     from: 'From',
     to: 'To',
     swap: 'Swap languages',
+    detected: ' (detected)',
     copy: 'Copy',
     result: 'Result',
     noResult: 'No result yet',

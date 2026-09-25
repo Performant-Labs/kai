@@ -83,6 +83,7 @@
     resetEdits,
     type DotState,
   } from '../utils/resultPane.ts';
+  import { detectedSourceLabel } from '../utils/detectedLang.ts';
   import {
     GetLanguages,
     GetConfig,
@@ -189,6 +190,19 @@
   // 故 activeEngines 非空时必非空（select 永不指向 nothing）。
   const firstEnabledName = $derived(activeEngines[0]?.value ?? '');
   const selectValue = $derived(activeEngine || firstEnabledName);
+  // 自动检测反馈（issue #11）：源语言为 auto 且活动引擎已返回结果时，
+  // 语言条的 auto 选项显示「English (detected)」式标签；固定语言时不覆盖。
+  const detectedFrom = $derived(String(activeResult?.from ?? ''));
+  function fromOptionLabel(value: string): string {
+    const label = detectedSourceLabel(
+      value,
+      TRANSLATE_LANG.Auto,
+      detectedFrom,
+      langName,
+      t('translate.detected'),
+    );
+    return label ?? langName(value);
+  }
   // 结果区手工编辑（按引擎名聚合）：切换引擎 / 重新翻译 / 清空输入时整体丢弃，
   // 新引擎一律从它自己的存储结果起步（无 per-engine 编辑记忆，设计 §3）。
   let edited = $state<Map<string, string>>(new Map());
@@ -398,7 +412,7 @@
         aria-label={t('translate.from')}
       >
         {#each languages as l}
-          <option value={l.value}>{langName(l.value)}</option>
+          <option value={l.value}>{fromOptionLabel(l.value)}</option>
         {/each}
       </select>
 

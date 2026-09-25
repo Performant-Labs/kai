@@ -47,6 +47,7 @@ export const zh = {
     from: '源语言',
     to: '目标语言',
     swap: '交换语言',
+    detected: '（已检测）',
     copy: '复制',
     result: '翻译结果',
     noResult: '暂无结果',

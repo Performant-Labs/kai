@@ -31,7 +31,7 @@ import * as $models from "./models.js";
  * 均无 -> ""。
  * lastUsed 是前端 localStorage（kai:translate:lastEngine）持久化的上次使用引擎；
  * 空串等价于 PrimaryTranslateEngine（退化情形）。
- * 解析规则与 PrimaryTranslateEngine 共用 resolveActiveTranslateEngine（不重复实现
+ * 解析规则与 PrimaryTranslateEngine 共用 activeTranslateEngine（不重复实现
  * enabled/translate/supported 过滤）；「已启用」同样取自 configstore 的 enabled 列。
  */
 export function ActiveTranslateEngine(lastUsed: string): $CancellablePromise<string> {
