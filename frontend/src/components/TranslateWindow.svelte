@@ -93,6 +93,7 @@
     statusDots,
     anyPending,
     resetEdits,
+    failureMessage,
     type DotState,
   } from '../utils/resultPane.ts';
   import { detectedSourceLabel } from '../utils/detectedLang.ts';

@@ -202,6 +202,18 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 			if err != nil {
 				slog.Error(i18n.T("log.translate_multi_engine_failed"), slog.String("engine", name), slog.Any("error", err))
 				analytics.Error("translate_failed", map[string]any{"engine": name})
+				// issue #42：失败不再静默丢弃——以 Error/ErrorKind 载荷推送同一事件，
+				// 前端据此显示 per-engine 失败原因（分类见 ClassifyEngineError）。
+				// From 置空：失败载荷不声明「检测出的源语言」，避免自动检测标签误用。
+				if s.app != nil {
+					s.app.Event.Emit(events.EventTranslateResult, model.TranslateResult{
+						Engine:    name,
+						To:        req.To,
+						Text:      req.Text,
+						Error:     err.Error(),
+						ErrorKind: ClassifyEngineError(err.Error()),
+					})
+				}
 				return
 			}
 			s.saveHistory(res)

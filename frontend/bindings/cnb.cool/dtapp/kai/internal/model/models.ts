@@ -261,4 +261,14 @@ export interface TranslateResult {
      * 是否来自 OCR 识别结果
      */
     "from_ocr": boolean;
+
+    /**
+     * 引擎失败时的原始错误（issue #42；成功时为空）
+     */
+    "error"?: string;
+
+    /**
+     * 引擎失败类别（pair/network/auth/engine，issue #42）
+     */
+    "error_kind"?: string;
 }

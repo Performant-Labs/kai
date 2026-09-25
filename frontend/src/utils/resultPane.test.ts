@@ -29,6 +29,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
+  failureMessage,
   activeEngineFor,
   statusDot,
   statusDots,
@@ -191,5 +192,47 @@ describe('resetEdits（切换引擎丢弃上一引擎的手工编辑）', () => 
     const edited = new Map<string, string>([['google', '改过']]);
     const next = resetEdits(edited, 'google', 'google', results);
     expect(next.get('google')).toBeUndefined();
+  });
+});
+
+// issue #42：失败载荷的面向用户文案（kind → 本地化 key，原始细节附带）。
+describe('failureMessage（#42 失败原因可见化）', () => {
+  const t = (key: string) => {
+    const dict: Record<string, string> = {
+      'translate.failed': 'Translation failed',
+      'translate.failedPair': 'Language pair unavailable',
+      'translate.failedNetwork': 'Engine unreachable — check network or proxy',
+      'translate.failedAuth': 'Check the API key',
+    };
+    return dict[key] ?? key;
+  };
+
+  it('maps pair kind to the actionable message, detail appended', () => {
+    expect(
+      failureMessage({ engine: 'apple', error: 'Unable to Translate', errorKind: 'pair' }, t),
+    ).toBe('Language pair unavailable — Unable to Translate');
+  });
+
+  it('maps network kind to the reachability message', () => {
+    expect(
+      failureMessage({ engine: 'google', error: 'dial tcp: refused', errorKind: 'network' }, t),
+    ).toBe('Engine unreachable — check network or proxy — dial tcp: refused');
+  });
+
+  it('maps auth kind to the key message', () => {
+    expect(failureMessage({ engine: 'gpt', error: '401', errorKind: 'auth' }, t)).toBe(
+      'Check the API key — 401',
+    );
+  });
+
+  it('falls back to the generic message for unknown kinds', () => {
+    expect(failureMessage({ engine: 'x', error: 'boom', errorKind: 'engine' }, t)).toBe(
+      'Translation failed — boom',
+    );
+  });
+
+  it('returns the generic message with no detail for null/absent results', () => {
+    expect(failureMessage(null, t)).toBe('Translation failed');
+    expect(failureMessage({ engine: 'x' }, t)).toBe('Translation failed');
   });
 });

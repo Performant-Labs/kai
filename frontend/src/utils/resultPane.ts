@@ -32,8 +32,33 @@ export type PaneResult = {
   engine?: string;
   result?: string;
   phonetic?: string;
+  /** issue #42：失败载荷的原始错误与类别（pair/network/auth/engine）；成功时缺席。 */
+  error?: string;
+  errorKind?: string;
   [key: string]: unknown;
 };
+
+/**
+ * 失败载荷的面向用户文案（issue #42）：kind → 本地化 key（pair/network/auth 有
+ * 可操作文案，其余回退 translate.failed），原始错误细节以「 — 」附于其后。
+ * 纯函数：t（i18n 取词）由调用方注入。
+ */
+export function failureMessage(
+  result: PaneResult | null | undefined,
+  t: (key: string) => string,
+): string {
+  const generic = t('translate.failed');
+  if (!result?.error) return generic;
+  const key =
+    result.errorKind === 'pair'
+      ? 'translate.failedPair'
+      : result.errorKind === 'network'
+        ? 'translate.failedNetwork'
+        : result.errorKind === 'auth'
+          ? 'translate.failedAuth'
+          : 'translate.failed';
+  return `${t(key)} — ${result.error}`;
+}
 
 /** 「enabled 的 translate 引擎」谓词：kind=translate 且 enabled 且平台支持。 */
 function isEnabledTranslate(e: PaneEngine): boolean {
@@ -72,7 +97,11 @@ export type DotState = 'pending' | 'done' | 'failed';
  * 单个引擎的 dot 状态：done（非空结果）> pending（loading 且无结果）> failed
  * （!loading 且无结果——失败引擎缺席于 results）。
  */
-export function statusDot(engine: string, results: Record<string, PaneResult>, loading: boolean): DotState {
+export function statusDot(
+  engine: string,
+  results: Record<string, PaneResult>,
+  loading: boolean,
+): DotState {
   if (results[engine]?.result) return 'done';
   if (loading) return 'pending';
   return 'failed';

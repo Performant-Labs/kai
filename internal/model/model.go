@@ -58,14 +58,16 @@ type TranslateRequest struct {
 
 // TranslateResult 单条翻译结果
 type TranslateResult struct {
-	Engine   string     `json:"engine"`   // 翻译引擎标识
-	From     Language   `json:"from"`     // 实际识别出的源语言
-	To       Language   `json:"to"`       // 目标语言
-	Text     string     `json:"text"`     // 原文
-	Result   string     `json:"result"`   // 译文
-	Phonetic string     `json:"phonetic"` // 发音/音标
-	Dict     []DictItem `json:"dict"`     // 词典释义明细
-	FromOCR  bool       `json:"from_ocr"` // 是否来自 OCR 识别结果
+	Engine    string     `json:"engine"`               // 翻译引擎标识
+	From      Language   `json:"from"`                 // 实际识别出的源语言
+	To        Language   `json:"to"`                   // 目标语言
+	Text      string     `json:"text"`                 // 原文
+	Result    string     `json:"result"`               // 译文
+	Phonetic  string     `json:"phonetic"`             // 发音/音标
+	Dict      []DictItem `json:"dict"`                 // 词典释义明细
+	FromOCR   bool       `json:"from_ocr"`             // 是否来自 OCR 识别结果
+	Error     string     `json:"error,omitempty"`      // 引擎失败时的原始错误（issue #42；成功时为空）
+	ErrorKind string     `json:"error_kind,omitempty"` // 引擎失败类别（pair/network/auth/engine，issue #42）
 }
 
 // DictItem 词典条目

@@ -51,6 +51,10 @@ export const en: Dict = {
     to: 'To',
     swap: 'Swap languages',
     detected: ' (detected)',
+    failedPair:
+      'Language pair unavailable — add it in System Settings > General > Language & Region',
+    failedNetwork: 'Engine unreachable — check your network or proxy settings',
+    failedAuth: "Authentication failed — check this engine's API key",
     copy: 'Copy',
     result: 'Result',
     noResult: 'No result yet',
