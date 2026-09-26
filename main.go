@@ -21,6 +21,7 @@ import (
 	"cnb.cool/dtapp/kai/internal/hotkey"
 	"cnb.cool/dtapp/kai/internal/httplogstore"
 	"cnb.cool/dtapp/kai/internal/i18n"
+	"cnb.cool/dtapp/kai/internal/langpref"
 	"cnb.cool/dtapp/kai/internal/logutil"
 	"cnb.cool/dtapp/kai/internal/model"
 	"cnb.cool/dtapp/kai/internal/network"
@@ -248,6 +249,13 @@ func main() {
 
 	trSvc := translate.NewService(reg, histDB, settingsService, nil)
 	trSvc.SetConfigStore(cfgDB)
+	// Language-variant preferences (issue #53): one process-wide, in-memory store shared by
+	// both translate windows. The translate service qualifies detected languages through it, the
+	// LangPrefWrapper below feeds it from the frontend's explicit language selections. The session
+	// is the process: a learned variant is kept until the app quits (hiding a window does not
+	// forget it), and the next launch starts empty.
+	langPrefs := langpref.New()
+	trSvc.SetLangPrefs(langPrefs)
 	selSvc := selection.NewService(nil, settingsService)
 
 	// Top-level service references (resolved lazily via closures; assigned by runtime)
@@ -281,6 +289,7 @@ func main() {
 	engineSvc := service.NewEngineWrapper(reg, cfgDB, settingsService, nil, hm)
 	historySvc := service.NewHistoryWrapper(histDB, cfgDB)
 	translateSvc := service.NewTranslateWrapper(trSvc)
+	langPrefSvc := service.NewLangPrefWrapper(langPrefs)
 	appSvc = service.NewAppService(settingsService, trSvc, ekCtrl, hm, reg, histDB, cfgDB, nil)
 	// The wails notifications singleton must be initialized first (notifications.New is what
 	// assigns NotificationService_); otherwise it is a nil pointer and, when passed to
@@ -300,6 +309,7 @@ func main() {
 			application.NewService(engineSvc),
 			application.NewService(historySvc),
 			application.NewService(translateSvc),
+			application.NewService(langPrefSvc),
 			application.NewService(windowSvc),
 			// Frontend log bridge: receives frontend console / JS errors, writes logs/frontend.log
 			application.NewService(frontendLogSvc),
@@ -468,6 +478,9 @@ func main() {
 		if app != nil {
 			app.Event.Emit(kevents.EventWindowClosing, model.WindowTranslate)
 		}
+		// Issue #53: this hook deliberately does NOT reset the language-variant preferences. The
+		// window is only hidden here, and the point of the preference is to survive the next
+		// hotkey press (principal's ruling 2026-09-25: keep until the app quits).
 		translateWindow.Hide()
 	})
 	translateWindow.Center()

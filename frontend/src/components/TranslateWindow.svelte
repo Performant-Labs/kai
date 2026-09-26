@@ -87,6 +87,8 @@
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/models.ts';
   import { TRANSLATE_LANG, ALL_TRANSLATE_LANGS, type TranslateLang } from '../constants/lang';
   import { TranslateMulti } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
+  import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
+  import { learnFromSelection } from '../utils/langLearn.ts';
   import {
     GetEngines,
     GetAllEngines,
@@ -325,6 +327,24 @@
     }
   }
 
+  // A language picked in either select (issue #53): teach the backend's variant-preference store,
+  // then persist the choice as before. Picking es-MX once makes every later auto-detected Spanish
+  // come back qualified as es-MX for this window session; the backend ignores bases and languages
+  // without dialects, so every pick is passed through as it is.
+  // Called from the selects' own onchange ONLY: swap() and loadDefaults() assign fromLang/toLang
+  // directly and must never teach (an explicit choice is the only signal — "swap consumes, never
+  // teaches"). Reads the picked value off the event so it doesn't depend on bind:value ordering.
+  function onLangPicked(ev: Event) {
+    learnLangVariant((ev.currentTarget as HTMLSelectElement).value as TranslateLang);
+    persistLangs();
+  }
+
+  async function learnLangVariant(lang: TranslateLang) {
+    await learnFromSelection(lang, LearnLangVariant, (e) =>
+      console.error(t('log.learnLangVariantFailed'), e),
+    );
+  }
+
   const fallbackLanguages = $derived<NamedItem[]>(
     ALL_TRANSLATE_LANGS.map((c) => ({
       value: c,
@@ -445,7 +465,7 @@
       <select
         class="u-field u-select u-lang-select px-3 py-2 text-sm"
         bind:value={fromLang}
-        onchange={persistLangs}
+        onchange={onLangPicked}
         aria-label={t('translate.from')}
       >
         {#each languages as l}
@@ -477,7 +497,7 @@
       <select
         class="u-field u-select u-lang-select px-3 py-2 text-sm"
         bind:value={toLang}
-        onchange={persistLangs}
+        onchange={onLangPicked}
         aria-label={t('translate.to')}
       >
         {#each targetLanguages as l}

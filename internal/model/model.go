@@ -82,6 +82,43 @@ func (l Language) Base() Language {
 	return l
 }
 
+// Normalize returns the canonical base language a raw code stands for: a dialect alias folds to
+// its base (Base: es-MX / es-419 → es) and a recognized spelling takes its canonical form
+// (ParseLanguage: ES → es, zh_CN → zh), so every spelling of one language compares and looks up
+// alike. A code that is not recognized, auto included, comes back as it was (after Base), so an
+// unknown detection is still shown as reported.
+//
+// It is the "normalized first" step of qualifying a detected language (issue #53): the alias
+// table (Base) and the canonical-code table (ParseLanguage) stay the only two places that know
+// how to canonicalize a code; callers compose them here instead of re-deriving either.
+func (l Language) Normalize() Language {
+	if n, ok := ParseLanguage(string(l.Base())); ok {
+		return n
+	}
+	return l.Base()
+}
+
+// ParseLanguage maps a raw language code onto a recognized language: recognized codes match
+// case-insensitively with "_" read as "-" (pt-br → pt-BR, so region subtags survive the round
+// trip) and the legacy Chinese spellings zh-CN / zh_CN fold onto zh. ok=false: not a recognized
+// language — and never true for auto, which is a sentinel, not a language.
+//
+// It is the single canonical-code parser (issue #53 moved it here from the engine package, where
+// it was the unexported resolveLanguage): engines, the translate service and the variant
+// preference store all share it rather than growing a second case-folding loop.
+func ParseLanguage(code string) (Language, bool) {
+	c := strings.ReplaceAll(strings.TrimSpace(code), "_", "-")
+	if strings.EqualFold(c, "zh-CN") {
+		return ZH, true
+	}
+	for _, l := range allLanguages {
+		if l != Auto && strings.EqualFold(string(l), c) {
+			return l, true
+		}
+	}
+	return "", false
+}
+
 // SelectableOr returns l unless it is a recognized language that is not selectable (bare es /
 // pt); that is replaced by the first selectable variant of its family (es → es-MX,
 // pt → pt-BR), or by fallback when the family offers none. Codes outside the recognized set are

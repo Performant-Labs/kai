@@ -173,23 +173,6 @@ func SupportedTargets(engineName string) []model.Language {
 	return out
 }
 
-// resolveLanguage maps a raw request code onto a recognized language: recognized codes match
-// case-insensitively (pt-br → pt-BR, so region subtags survive the round trip) and the legacy
-// Chinese spellings zh-CN / zh_CN fold onto zh. ok=false: not a recognized language (and never
-// true for auto, which is a sentinel, not a language).
-func resolveLanguage(code string) (model.Language, bool) {
-	c := strings.ReplaceAll(strings.TrimSpace(code), "_", "-")
-	if strings.EqualFold(c, "zh-CN") {
-		return model.ZH, true
-	}
-	for _, l := range model.AllLanguages() {
-		if l != model.Auto && strings.EqualFold(string(l), c) {
-			return l, true
-		}
-	}
-	return "", false
-}
-
 // isAuto reports whether code asks for source auto-detection ("" or auto, any case).
 func isAuto(code string) bool { return code == "" || strings.EqualFold(code, string(model.Auto)) }
 
@@ -199,7 +182,7 @@ func isAuto(code string) bool { return code == "" || strings.EqualFold(code, str
 // the recognized set are handed to fallback, which keeps each engine's legacy pass-through for
 // them.
 func sourceCode(engineName, code string, fallback func(string) string) string {
-	if l, ok := resolveLanguage(string(model.Language(code).Base())); ok {
+	if l, ok := model.ParseLanguage(string(model.Language(code).Base())); ok {
 		if c, ok := LookupLanguage(engineName, l); ok && c.Supported {
 			return c.Code
 		}
@@ -212,7 +195,7 @@ func sourceCode(engineName, code string, fallback func(string) string) string {
 // never degraded to the base language. Codes outside the recognized set go to fallback, as in
 // sourceCode.
 func targetCode(engineName, code string, fallback func(string) string) (string, error) {
-	l, ok := resolveLanguage(code)
+	l, ok := model.ParseLanguage(code)
 	if !ok {
 		return fallback(code), nil
 	}
@@ -234,7 +217,7 @@ func languageLabel(l model.Language) string { return i18n.T("lang." + string(l))
 // does not report one: recognized codes keep their canonical spelling (pt-BR stays pt-BR), the
 // rest is lower-cased as before.
 func echoLanguage(l model.Language) model.Language {
-	if r, ok := resolveLanguage(string(l)); ok {
+	if r, ok := model.ParseLanguage(string(l)); ok {
 		return r
 	}
 	return model.Language(strings.ToLower(string(l)))

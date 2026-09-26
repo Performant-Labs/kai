@@ -13,10 +13,10 @@
  *
  * @param fromLang the current source-language selection (autoCode or a concrete language code)
  * @param autoCode the language code for auto (TRANSLATE_LANG.Auto)
- * @param detectedFrom the source language actually recognized in the engine result (empty string when there is no result / nothing detected)
+ * @param detectedFrom the source language actually recognized in the engine result (empty string when there is no result; the auto code when the engine reported no detection). Since issue #53 the backend qualifies it with the user's learned variant preference (a detected es arrives as es-MX once the user has picked es-MX), so it is shown as it arrives and keeps the suffix.
  * @param nameOf language code → display name
  * @param suffix detected suffix (i18n, e.g. ' (detected)' in en-US, its full-width-punctuation counterpart in zh-CN; may include a leading space)
- * @returns the override label; null when no override is needed (language pinned, or no detection yet)
+ * @returns the override label; null when no override is needed (language pinned, or nothing detected)
  */
 export function detectedSourceLabel(
   fromLang: string,
@@ -26,6 +26,8 @@ export function detectedSourceLabel(
   suffix: string,
 ): string | null {
   if (fromLang !== autoCode) return null;
-  if (detectedFrom === '') return null;
+  // Nothing detected: no result yet (''), or the engine reported no detection and the backend
+  // fell back to the request value, auto (issue #53) — "(detected)" would claim otherwise.
+  if (detectedFrom === '' || detectedFrom === autoCode) return null;
   return nameOf(detectedFrom) + suffix;
 }

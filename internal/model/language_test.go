@@ -76,3 +76,26 @@ func TestSelectableOrCoercesBareBaseOnly(t *testing.T) {
 		}
 	}
 }
+
+// #53: canonical-code parsing moves from engine.resolveLanguage to model so translate and the
+// preference store share one normalization (no second case-folding table).
+func TestParseLanguage(t *testing.T) {
+	cases := []struct {
+		in   string
+		want Language
+		ok   bool
+	}{
+		{"pt-br", PTBR, true},
+		{"ES-mx", ESMX, true},
+		{"zh_CN", ZH, true},
+		{"es", ES, true},
+		{"auto", "", false},
+		{"xx", "", false},
+	}
+	for _, c := range cases {
+		got, ok := ParseLanguage(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("ParseLanguage(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}

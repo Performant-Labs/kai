@@ -169,7 +169,7 @@ func srcName(code string) string {
 
 // dstName is the target-side phrasing (also the shared name lookup).
 func dstName(code string) string {
-	if l, ok := resolveLanguage(code); ok {
+	if l, ok := model.ParseLanguage(code); ok {
 		return languageLabel(l)
 	}
 	return code

@@ -27,6 +27,8 @@
   import type { ScreenshotRetranslatePayload } from '../utils/events';
   import { GetConfig } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
   import { GetAllEngines } from '@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts';
+  import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
+  import { learnFromSelection } from '../utils/langLearn.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import { persisted, pinKey } from '../stores/persisted';
 
@@ -118,6 +120,17 @@
     } catch (e) {
       console.error(t('log.screenshotRecaptureFailed'), e);
     }
+  }
+
+  // A language picked in either select (issue #53): teach the backend's variant-preference store
+  // (the same shared store the input translate window feeds), so picking es-MX once qualifies
+  // every later auto-detected Spanish as es-MX. The backend ignores bases and languages without
+  // dialects, so every pick is passed through as it is. Called from the selects' own onchange
+  // ONLY: swapLangs() and loadDefaults() assign fromLang/toLang directly and must never teach.
+  async function learnLangVariant(lang: TranslateLang) {
+    await learnFromSelection(lang, LearnLangVariant, (e) =>
+      console.error(t('log.screenshotLearnLangVariantFailed'), e),
+    );
   }
 
   // Swap source/target languages (Auto doesn't participate in swaps; landing on the to side is
@@ -367,7 +380,10 @@
               class="u-field u-select u-lang-select px-3 py-2 text-sm"
               value={fromLang}
               aria-label={t('translate.from')}
-              onchange={(e) => (fromLang = e.currentTarget.value as TranslateLang)}
+              onchange={(e) => {
+                fromLang = e.currentTarget.value as TranslateLang;
+                learnLangVariant(fromLang);
+              }}
             >
               {#each ALL_TRANSLATE_LANGS as l}
                 <option value={l}>{langName(l)}</option>
@@ -399,7 +415,10 @@
               class="u-field u-select u-lang-select px-3 py-2 text-sm"
               value={toLang}
               aria-label={t('translate.to')}
-              onchange={(e) => (toLang = e.currentTarget.value as TranslateLang)}
+              onchange={(e) => {
+                toLang = e.currentTarget.value as TranslateLang;
+                learnLangVariant(toLang);
+              }}
             >
               {#each TARGET_TRANSLATE_LANGS as l}
                 <!-- issue #52: disabled when no enabled engine can translate into it (backend

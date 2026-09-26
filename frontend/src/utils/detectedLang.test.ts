@@ -3,7 +3,8 @@ import { detectedSourceLabel } from './detectedLang.ts';
 
 const AUTO = 'auto';
 
-const nameOf = (code: string) => ({ en: 'English', zh: 'Chinese', es: 'Spanish' })[code] ?? code;
+const nameOf = (code: string) =>
+  ({ en: 'English', zh: 'Chinese', es: 'Spanish', 'es-MX': 'Spanish (Mexico)' })[code] ?? code;
 const SUFFIX = ' (detected)';
 
 describe('detectedSourceLabel', () => {
@@ -25,5 +26,15 @@ describe('detectedSourceLabel', () => {
 
   it('ignores an empty-suffix edge without inserting a stray space', () => {
     expect(detectedSourceLabel('auto', AUTO, 'es', nameOf, '')).toBe('Spanish');
+  });
+
+  it('returns null when the service fell back to auto (nothing detected)', () => {
+    expect(detectedSourceLabel('auto', AUTO, 'auto', nameOf, SUFFIX)).toBeNull();
+  });
+
+  it('keeps the (detected) suffix on a qualified variant label', () => {
+    expect(detectedSourceLabel('auto', AUTO, 'es-MX', nameOf, SUFFIX)).toBe(
+      'Spanish (Mexico) (detected)',
+    );
   });
 });

@@ -21,6 +21,7 @@ import (
 	"cnb.cool/dtapp/kai/internal/events"
 	"cnb.cool/dtapp/kai/internal/historystore"
 	"cnb.cool/dtapp/kai/internal/i18n"
+	"cnb.cool/dtapp/kai/internal/langpref"
 	"cnb.cool/dtapp/kai/internal/model"
 	"cnb.cool/dtapp/kai/internal/settings"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -35,6 +36,10 @@ type Service struct {
 	configStore *configstore.Store
 	settings    *settings.Service
 	app         *application.App
+	// langPrefs qualifies engine-detected source languages with the user's learned variant
+	// preference (issue #53). Set once at wiring time via SetLangPrefs; nil means no
+	// qualification (detected languages are still normalized).
+	langPrefs *langpref.Store
 
 	// screenshotCacheMu guards concurrent access to screenshotCache.
 	screenshotCacheMu sync.RWMutex
@@ -136,6 +141,14 @@ func (s *Service) SetConfigStore(cs *configstore.Store) {
 	s.configStore = cs
 }
 
+// SetLangPrefs injects the language-variant preference store (issue #53): from then on every
+// result whose source was auto-detected reports the detected language qualified through it (see
+// resultFrom). Like SetConfigStore it is setter injection at wiring time; without it detected
+// languages are carried but never qualified.
+func (s *Service) SetLangPrefs(p *langpref.Store) {
+	s.langPrefs = p
+}
+
 // Translate performs a single-engine translation: looks up the registered translator by
 // engine name, falling back to the default engine on failure;
 // on success the result is written to history (failures are only logged, not surfaced).
@@ -172,7 +185,7 @@ func (s *Service) translateWithEngine(reg engine.Translator, engineName string, 
 		}
 		resCh <- &model.TranslateResult{
 			Engine:   engineName,
-			From:     req.From,
+			From:     s.resultFrom(req.From, res.From),
 			To:       req.To,
 			Text:     req.Text,
 			Result:   res.Result,
@@ -197,6 +210,33 @@ func (s *Service) translateWithEngine(reg engine.Translator, engineName string, 
 			"Err", ctx.Err().Error()))
 		return nil, fmt.Errorf("%s(%s): %w", i18n.T("err.translate_timeout"), engineName, ctx.Err())
 	}
+}
+
+// resultFrom returns the source language a translation result reports (issue #53).
+//
+// An explicit request source is reported as requested: it is never replaced by what the engine
+// detected and never qualified, so an explicit choice overrides any learned preference. With the
+// source on auto, the engine's detected language is carried into the result (the service used to
+// drop it and report the request value, "auto") and qualified through the variant preference
+// store: es → es-MX once the user has picked es-MX, es-419 folding to es first. An engine that
+// reports no detection — empty, or auto echoed back as the LLM engines do — leaves the request
+// value in place.
+//
+// A code the app does not recognize passes through as the engine reported it, so an unknown
+// detection (say Italian) is shown rather than hidden behind "auto". Engines that report their
+// own native codes instead of a language (baidu's spa / jp / kor / fra, youdao's direction pair)
+// are not mapped back here: that reverse mapping belongs with the engine capability registry.
+func (s *Service) resultFrom(requested, reported model.Language) model.Language {
+	if !isAutoSource(requested) || isAutoSource(reported) {
+		return requested
+	}
+	return s.langPrefs.Qualify(reported)
+}
+
+// isAutoSource reports whether a source language asks for auto-detection ("" or auto, any
+// case), reading it the way the engines read the request.
+func isAutoSource(l model.Language) bool {
+	return l == "" || strings.EqualFold(string(l), string(model.Auto))
 }
 
 // TranslateMulti starts translations on all "enabled translation engines" in parallel,
