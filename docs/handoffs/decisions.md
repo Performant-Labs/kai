@@ -96,3 +96,34 @@
 - Decided (principal): learned variant preferences are kept until the app quits, not wiped when the translate window is hidden. `langPrefs.Reset()` is removed from the translate window's `WindowClosing` hook in `main.go`; the session is the process, so a restart starts empty. `Reset()` stays as API (tested) and is not called in production today.
 - Decided (principal): LLM prompt phrasing stays as built (option a): the variant is used for an explicit selection, not for an auto-detected source. Accepted because the source dialect changes the output little; the target dialect already works.
 - Hedged: no automated test pins the hook change (`main.go` is not unit-testable); `Reset` itself and the store's session semantics stay covered in `internal/langpref/store_test.go`.
+
+## #43 A (Phase 3, up-front plan review, 2026-09-25): PASS
+- Verdict PASS, 0 block / 6 warn. Handoff: docs/handoffs/43/handoff-A.md (includes an extend-vs-new baseline in place of the absent survey Reuse map).
+- Decided: #43 is verify-and-close-gaps on the seams #52/#53 built, with no new production object. Every acceptance line maps to an existing owner: `SelectableLanguages`/`GetLanguages`, `languageRegistry`/`SupportedTargets`/`isTargetDisabled`, the i18n `lang.*` tables, `langpref` plus `translateWithEngine`, and `detectedSourceLabel`.
+- Direction for T/F: map each acceptance line to an existing or new test at those seams, and make production changes only where a real RED shows one is needed. Any native detected-code reverse lookup goes in the engine capability registry. ScreenshotWindow's static list should follow TranslateWindow's `loadLanguages` pattern if it is touched. Regenerate bindings only if a bound signature changes.
+- Open for O before T-red: (1) whether "detected es/pt labels correctly" covers baidu/youdao (evidence: `internal/engine/baidu.go:118: from := model.Language(br.From)`, where baidu reports `spa`); default is google plus the LLM engines only. (2) Whether the LLM round-trip is live or over loopback, and which engine; default is loopback, with any live gap disclosed.
+
+## #43 T-red (2026-09-25)
+- **Decided:** authored 5 Go integration tests, 1 Go unit test, 1 frontend test file at existing seams; no production change.
+- **Assumed:** A "Notes for O" defaults (detection scoped to google + LLM; LLM round trip via loopback).
+- **Hedged:** no test is RED (feature already delivered by #52/#53, A finding 1); validity proven by a mutation (google pt-PT code) that fails `TestGoogleRoundTripPerVariantTarget`.
+- **Evidence:** `go test ./internal/translate ./internal/engine` ok; vitest src/constants 9 passed; see docs/handoffs/43/handoff-T-red.md.
+
+## #43 F (Phase 6, 2026-09-25)
+- **Decided:** no production change. T-red produced no RED (A finding 1), and F writes production code only against a real RED; every acceptance line already resolves to the seam #52/#53 built. F verified instead: regenerated bindings with the Makefile command (`wails3 generate bindings -clean=true -ts -i`), no binding delta; full authoritative suite exit 0 (10 Go packages ok, vitest 10 files / 78 tests); 7 of 7 acceptance lines mapped to code and tests in handoff-F.md.
+- **Decided:** ran a throwaway live google probe (real `translate.Service` + real engine + real gtx endpoint, 14 requests, key-free, deleted afterwards, never staged). Live result: es-MX / pt-BR / pt-PT targets round-trip (pt-BR and pt-PT in their own dialects; es-MX is generic Spanish, the documented gtx cost); variant sources are reported back as chosen; with no preference detection labels stay bare `es` / `pt`; after one pick, 3 auto-detected sends per family stayed es-MX / pt-PT.
+- **Decided:** ran 4 extra mutation bite checks beyond T's one (preference store, en-US LLM name, source alias, frontend en-US name); each made the intended tests fail with the intended message, each reverted, tree clean.
+- **Assumed:** A's two "Notes for O" defaults stand, because decisions.md holds no O ruling on either: detected-label scope is google plus the LLM engines (baidu/youdao native-code reverse lookup stays the #53 follow-up, engine registry is its home), and the LLM round trip is loopback.
+- **Hedged:** the LLM leg is loopback only. A live run needs a real provider key, and a live credential in the app under test is out of bounds for this run; disclosed, not hidden. deepl / tencent / apple detection and the baidu/youdao label are by code reading only. "Disabled visibly" is proven by the two `<option disabled=...>` bindings plus the unit-tested `isTargetDisabled`, not by a real window (headless mandate); a `ui-walkthrough`, if run, is where it gets eyes.
+- **Evidence:** docs/handoffs/43/handoff-F.md (verbatim excerpts with file:line, live probe output, mutation table, suite output). Model: Sonnet 5 (`claude-sonnet-5`), effort max, single call, no outside model. `archChanged: false` (no production file differs from 140cba2).
+
+## #43 T-green (2026-09-25)
+- Decided: GREEN, no blocking Tier 2 issue; no test repaired. Handoff: docs/handoffs/43/handoff-T-green.md.
+- Assumed: F's mutation bite checks stand in for a fresh bite run.
+- Hedged: disabled-option UI rendering and live LLM legs unverified headlessly (left to U).
+- Evidence: full suite exit 0 (Go all ok, vitest 78/78); diff 140cba2..HEAD touches only docs.
+
+## #43 A-dup (Phase 7, anti-duplication gate, 2026-09-25): PASS
+- Verdict PASS, 0 block / 3 warn. Handoff: docs/handoffs/43/handoff-A-dup.md. Diff 8e228bd..892efb6.
+- Decided: no parallel production path, because no production file differs from 8e228bd (only docs and three new test files). Each acceptance line stays with the owner named in the handoff-A baseline.
+- Hedged (warn, test hygiene only): inline google loopback servers in `service_variants_e2e_test.go` sit beside `newLoopbackService`; `language_display_names_test.go` and `variants.e2e.test.ts` are new files overlapping `language_capability_test.go`, `lang.test.ts` and `detectedLang.test.ts`. Optional follow-up folds, not rework.
