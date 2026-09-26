@@ -8,9 +8,9 @@
 // the pin and the last-used engine); TranslateWindow.svelte owns the wiring (seed at init, write
 // back from one $effect).
 //
-// Kept: input, the per-engine results, requestedTo (the target the results were requested with,
-// which the same-language notice of issue #44 compares against) and requested (whether a request
-// was made, which is what tells an idle pane from a failed one, see paneState). Not kept:
+// Kept: input, the per-engine results, requestedTo (the target the results were requested with;
+// nothing reads it back since issue #80, it stays part of the stored shape) and requested (whether
+// a request was made, which is what tells an idle pane from a failed one, see paneState). Not kept:
 // loading (always false after a restore: nothing is in flight in a fresh process) and manual
 // result edits (design §3: edits are discarded). The two languages are not part of it either;
 // they already persist through the settings file (persistLangs / loadDefaults).
@@ -18,7 +18,7 @@
 // Whatever storage hands back is untrusted: a previous version, a hand edit or a truncated write
 // can leave anything there (persisted() only parses the JSON, it validates nothing). So
 // restoreSession never trusts its argument and falls back to the empty session instead of
-// throwing or half-applying. Pure function of a plain value, like swapLangs.ts / flippedTarget.ts:
+// throwing or half-applying. Pure function of a plain value, like swapLangs.ts / detectedLang.ts:
 // no bindings import (the result type is the structural PaneResult, imported as a type only), no
 // storage access, no DOM.
 

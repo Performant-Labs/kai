@@ -50,7 +50,7 @@ export const zh: Dict = {
     to: '目标语言',
     swap: '交换语言',
     detected: '（已检测）',
-    flippedTo: '目标语言与原文相同，已改译为{lang}',
+    identity: '源语言与目标语言相同，已显示原文',
     failedPair: '语言对不可用——请在 系统设置 > 通用 > 语言与地区 中下载该语言对',
     failedNetwork: '无法连接 {engine}：请检查网络或代理设置',
     failedAuth: '{engine} 拒绝了该 API 密钥',

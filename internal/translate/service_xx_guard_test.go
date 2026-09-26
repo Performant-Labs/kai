@@ -29,12 +29,6 @@ func (x *xxServer) targets() []string {
 }
 
 func newXXService(t *testing.T, detected string) (*Service, *xxServer, *historystore.Store) {
-	return newXXServiceOpts(t, detected, "")
-}
-
-// newXXServiceOpts is newXXService plus failTL: a request whose tl equals it is still recorded and
-// then answered HTTP 500 (empty failTL means every request succeeds).
-func newXXServiceOpts(t *testing.T, detected, failTL string) (*Service, *xxServer, *historystore.Store) {
 	t.Helper()
 	rec := &xxServer{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,13 +37,7 @@ func newXXServiceOpts(t *testing.T, detected, failTL string) (*Service, *xxServe
 		rec.mu.Lock()
 		rec.tls = append(rec.tls, tl)
 		rec.mu.Unlock()
-		if failTL != "" && tl == failTL {
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte("boom"))
-			return
-		}
-		// Constant per target, never the request value itself: the assertion only needs the re-run's
-		// output ("out-en") to be distinguishable from the first pass's.
+		// Constant per target: distinguishes an engine answer toward en from any other.
 		out := "out-other"
 		if tl == "en" {
 			out = "out-en"
@@ -96,33 +84,37 @@ func xxTranslate(t *testing.T, svc *Service, from, to model.Language) *model.Tra
 	return res
 }
 
-// Detected Chinese into a Chinese target (incl. the legacy zh-CN spelling) is re-run once
-// toward English, reports the flipped target, and saves exactly one history row (the flipped one).
-func TestDetectedSourceEqualsTargetFlipsToEnglish(t *testing.T) {
+// Issue #80 (inverts #44): detected Chinese into a Chinese target (incl. the legacy zh-CN
+// spelling) shows the source text as an identity result: one engine call, no re-run toward
+// English, To as requested, and nothing saved to history.
+func TestDetectedSourceEqualsTargetShowsSourceText(t *testing.T) {
 	for _, target := range []model.Language{model.ZH, "zh-CN"} {
 		svc, rec, hist := newXXService(t, "zh-CN")
 		res := xxTranslate(t, svc, model.Auto, target)
-		if res.To != model.EN {
-			t.Errorf("target %q: To = %q, want en (flipped, reported)", target, res.To)
+		if res.To != target {
+			t.Errorf("target %q: To = %q, want the requested target", target, res.To)
 		}
-		if res.Result != "out-en" {
-			t.Errorf("target %q: Result = %q, want out-en (the re-run's translation)", target, res.Result)
+		if !res.Identity || res.Result != "Hola" {
+			t.Errorf("target %q: Identity/Result = %v/%q, want true/the source text", target, res.Identity, res.Result)
 		}
-		if got := rec.targets(); len(got) != 2 {
-			t.Errorf("target %q: engine called %d times (%v), want exactly 2 (original + one re-run)", target, len(got), got)
+		if got := rec.targets(); len(got) != 1 {
+			t.Errorf("target %q: engine called %d times (%v), want exactly 1 (no re-run)", target, len(got), got)
 		}
-		if got := historyTos(t, hist); len(got) != 1 || got[0] != "en" {
-			t.Errorf("target %q: history to_lang = %v, want exactly [en]", target, got)
+		if got := historyTos(t, hist); len(got) != 0 {
+			t.Errorf("target %q: history to_lang = %v, want none", target, got)
 		}
 	}
 }
 
-// es detected with an es-MX target is the same language family: X->X, flips to English.
-func TestDetectedSpanishIntoSpanishVariantFlips(t *testing.T) {
-	svc, _, _ := newXXService(t, "es")
+// Issue #80 (inverts #44): es detected with an es-MX target is the same language: source text.
+func TestDetectedSpanishIntoSpanishVariantShowsSourceText(t *testing.T) {
+	svc, rec, _ := newXXService(t, "es")
 	res := xxTranslate(t, svc, model.Auto, model.ESMX)
-	if res.To != model.EN {
-		t.Errorf("To = %q, want en (es detected, es-MX target is X->X)", res.To)
+	if res.To != model.ESMX || !res.Identity {
+		t.Errorf("To/Identity = %q/%v, want es-MX/true", res.To, res.Identity)
+	}
+	if got := rec.targets(); len(got) != 1 {
+		t.Errorf("engine called %d times (%v), want 1", len(got), got)
 	}
 }
 
@@ -151,38 +143,23 @@ func TestEnglishToEnglishDoesNotFlip(t *testing.T) {
 	if got := rec.targets(); len(got) != 1 {
 		t.Errorf("engine called %d times, want 1 (no re-run for en->en)", len(got))
 	}
+	if !res.Identity {
+		t.Error("Identity = false, want true (same language shows the source text)")
+	}
 }
 
-// The guard only applies to an auto source: an explicit zh source with a zh target is the
-// user's own request and is left alone.
+// Issue #80: an explicit zh->zh request is never flipped to English: it is an identity result,
+// the engine is not called, and To stays zh.
 func TestExplicitSourceNeverFlipped(t *testing.T) {
 	svc, rec, _ := newXXService(t, "zh-CN")
 	res := xxTranslate(t, svc, model.ZH, model.ZH)
 	if res.To != model.ZH {
-		t.Errorf("To = %q, want zh (explicit source, no guard)", res.To)
+		t.Errorf("To = %q, want zh", res.To)
 	}
-	if got := rec.targets(); len(got) != 1 {
-		t.Errorf("engine called %d times, want 1", len(got))
+	if !res.Identity {
+		t.Error("Identity = false, want true")
 	}
-}
-
-// A failed re-run is an engine failure, never the identity result. The guard discards the first
-// (same-language) pass, so when the fallback call fails Translate must surface that failure with
-// no result and nothing saved; falling back to the first pass would present exactly the X->X
-// "translation" issue #44 exists to remove.
-func TestFailedReRunIsNotPresentedAsIdentityResult(t *testing.T) {
-	svc, rec, hist := newXXServiceOpts(t, "zh-CN", "en")
-	res, err := svc.Translate(model.TranslateRequest{Text: "Hola", From: model.Auto, To: model.ZH, EngineName: "google"})
-	if err == nil {
-		t.Fatalf("Translate error = nil (result %+v), want the re-run's failure", res)
-	}
-	if res != nil {
-		t.Errorf("result = %+v, want nil (the discarded identity pass must not be presented)", res)
-	}
-	if got := rec.targets(); len(got) != 2 || got[1] != "en" {
-		t.Errorf("engine requests toward %v, want the original then exactly one re-run toward en", got)
-	}
-	if got := historyTos(t, hist); len(got) != 0 {
-		t.Errorf("history to_lang = %v, want none (a failed re-run saves nothing)", got)
+	if got := rec.targets(); len(got) != 0 {
+		t.Errorf("engine called %d times, want 0", len(got))
 	}
 }

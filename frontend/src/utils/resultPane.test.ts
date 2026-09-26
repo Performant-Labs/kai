@@ -366,3 +366,17 @@ describe('statusDot requested rule (#81)', () => {
     expect(Object.keys(dots).sort()).toEqual(['deepl', 'google']);
   });
 });
+
+// Issue #80: an identity result (the source text, flagged by the service) is an ordinary result
+// for the pane and the dot; only the muted line differs.
+describe('identity result (#80)', () => {
+  const results: Record<string, PaneResult> = { apple: { engine: 'apple', result: 'src', identity: true } };
+
+  it('paneState is result', () => {
+    expect(paneState({ hasEngines: true, engine: 'apple', results, loading: false, requested: true })).toBe('result');
+  });
+
+  it('statusDot is done', () => {
+    expect(statusDot('apple', results, false, true)).toBe('done');
+  });
+});

@@ -59,6 +59,10 @@ const (
 // BridgeError mirrors Swift BridgeError: every failing function returns
 // {"code":...,"detail":...}.
 // Success JSON lacks both fields, parsing to empty strings (safe).
+// A failing kai_translate call may also return "from" (issue #80): the bare language code the
+// bridge detected in the text before the framework failed, only for an auto source. It parses into
+// TranslateSuccess.From below, the same field the success payload uses, so the struct needs no
+// change.
 type BridgeError struct {
 	Code   string `json:"code"`
 	Detail string `json:"detail"`

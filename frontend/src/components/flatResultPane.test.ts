@@ -82,22 +82,22 @@ describe('flat result pane (#95)', () => {
     expect(ta).toMatch(/\boutline-none\b/);
   });
 
-  it('phonetic and the flipped notice are small muted lines above the text', () => {
+  it('phonetic and the identity notice are small muted lines above the text', () => {
     const r = branch('result');
     const phon = r.indexOf('activeResult.phonetic');
-    const flip = r.indexOf('data-testid="flipped-target"');
+    const ident = r.indexOf('data-testid="identity-result"');
     const text = r.indexOf('<textarea');
     expect(phon).toBeGreaterThan(-1);
-    expect(flip).toBeGreaterThan(-1);
-    expect(phon).toBeLessThan(flip); // phonetic first (approved wireframe)
-    expect(flip).toBeLessThan(text);
-    expect(openTag(r, 'data-testid="flipped-target"')).toMatch(/u-muted/);
-    expect(openTag(r, 'data-testid="flipped-target"')).toMatch(/text-xs/);
+    expect(ident).toBeGreaterThan(-1);
+    expect(phon).toBeLessThan(ident); // phonetic first (approved wireframe)
+    expect(ident).toBeLessThan(text);
+    expect(openTag(r, 'data-testid="identity-result"')).toMatch(/u-muted/);
+    expect(openTag(r, 'data-testid="identity-result"')).toMatch(/text-xs/);
     expect(openTag(r, '{activeResult.phonetic}')).toMatch(/u-muted/);
     expect(openTag(r, '{activeResult.phonetic}')).toMatch(/text-xs/);
     // Notes align with the text's p-4 inset (px-4); the first note adds the top inset.
-    expect(openTag(r, 'data-testid="flipped-target"')).toMatch(/[\s"']px-4[\s"']/);
-    expect(openTag(r, 'data-testid="flipped-target"')).toMatch(/first:pt-4/);
+    expect(openTag(r, 'data-testid="identity-result"')).toMatch(/[\s"']px-4[\s"']/);
+    expect(openTag(r, 'data-testid="identity-result"')).toMatch(/first:pt-4/);
     expect(openTag(r, '{activeResult.phonetic}')).toMatch(/[\s"']px-4[\s"']/);
     expect(openTag(r, '{activeResult.phonetic}')).toMatch(/first:pt-4/);
   });

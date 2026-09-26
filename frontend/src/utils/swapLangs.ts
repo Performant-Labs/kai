@@ -16,7 +16,7 @@
 // the first selectable variant of its family, the backend's SelectableOr rule (es -> es-MX), so
 // a Spanish text detected before any variant was learned still swaps (hand test of #82).
 //
-// Pure function of plain values, like detectedLang.ts / flippedTarget.ts / targetCapability.ts:
+// Pure function of plain values, like detectedLang.ts / targetCapability.ts:
 // the auto code and the "can the target select hold this code" predicate are injected by the
 // caller, so this stays free of the generated bindings and vitest can cover it directly. It only
 // computes the new pair. It never persists, never teaches the variant store and never translates;

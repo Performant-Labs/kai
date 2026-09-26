@@ -15,7 +15,8 @@ import Vision
 // src/dst are BCP-47 codes (e.g. "en" / "zh-Hans"); src may be an empty string for
 // auto-detect.
 // out receives the JSON {"result":"...","from":"..."} (TranslateSuccess); on failure out gets
-// {"code":"...","detail":"..."} (BridgeError).
+// {"code":"...","detail":"..."} (BridgeError), plus "from" (the language NaturalLanguage detected)
+// when the source was auto and a language was detected before the framework failed (issue #80).
 @_cdecl("kai_translate")
 public func kai_translate(
   _ src: UnsafePointer<CChar>?,
@@ -73,6 +74,14 @@ public func kai_translate(
         bridgeFileLog(bridgeLogText("translate.detect_fail", targetCode), level: BRIDGE_LOG_ERROR)
       }
     }
+    // The language NaturalLanguage detected, as the bare language code the success path also
+    // reports as `from` (zh-Hans becomes zh), for the two failure paths below (issue #80). It is
+    // the raw detection, not the installed-language fallback in effectiveSource, which is a guess:
+    // Go treats a detection equal to the target as "the text is already in the target language".
+    // detectedLang is only ever set for an auto source, so a pinned source reports none.
+    let detectedFrom: String? = detectedLang.flatMap {
+      Locale.Language(identifier: $0).languageCode?.identifier
+    }
     guard !effectiveSource.isEmpty else {
       let installedDesc =
         installed.isEmpty
@@ -85,7 +94,8 @@ public func kai_translate(
       // user-visible copy;
       // detail is appended purely as technical context (including Apple language identifiers —
       // not translatable copy).
-      resultJSON = bridgeErrorJSON(code: BRIDGE_ERR_NO_SOURCE_LANG, detail: detail)
+      resultJSON = bridgeErrorJSON(
+        code: BRIDGE_ERR_NO_SOURCE_LANG, detail: detail, from: detectedFrom)
       sema.signal()
       return
     }
@@ -101,9 +111,12 @@ public func kai_translate(
       // Apple system-level translation errors: uniformly shaped as
       // {"code":"apple_translate","detail":...},
       // rendered by the Go side's err.apple_translate_engine; detail carries the system's
-      // localizedDescription.
+      // localizedDescription. The framework refuses to translate a language into itself with this
+      // same error, so the detected language rides along (from) for the Go side to tell that
+      // apart from a real failure.
       let detail = error.localizedDescription
-      resultJSON = bridgeErrorJSON(code: BRIDGE_ERR_APPLE_TRANSLATE, detail: detail)
+      resultJSON = bridgeErrorJSON(
+        code: BRIDGE_ERR_APPLE_TRANSLATE, detail: detail, from: detectedFrom)
       bridgeFileLog(bridgeLogText("translate.fail", detail), level: BRIDGE_LOG_ERROR)
     }
     sema.signal()

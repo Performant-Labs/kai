@@ -59,7 +59,7 @@ export type Dict = {
     to: string;
     swap: string;
     detected: string;
-    flippedTo: string;
+    identity: string;
     failedPair: string;
     failedNetwork: string;
     failedAuth: string;

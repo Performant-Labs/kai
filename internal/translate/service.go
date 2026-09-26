@@ -166,76 +166,92 @@ func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult,
 	return res, nil
 }
 
-// identityFallbackTarget is the policy target an identity ("X to X") translation is re-run toward
-// (issue #44): English. The guard fires only when the detected source already is the requested
-// target, so the other language has to be a fixed one rather than another guess, and the
-// principal's core workflow is a foreign-language source read in English. It is deliberately not
-// the fresh-install default (settings.DefaultTarget): the two are both English today but answer
-// different questions.
-const identityFallbackTarget = model.EN
-
 // translateWithEngine runs a translation-engine call and assembles the result. It is the single
 // per-engine seam shared by the input window (Translate, TranslateMulti) and the screenshot
-// flows (translateAllStream), and the owner of the identity-translation guard (issue #44).
+// flows (translateAllStream), and the owner of the same-language rule (issue #80).
 //
-// Guard: with the source on auto, a result whose detected source equals the requested target is a
-// same-language "translation" (Mandarin text into a Chinese target, say) and is never presented.
-// The engine is re-run once toward identityFallbackTarget and the flipped target is reported in
-// the result's own To. The flip is per request: nothing is persisted, and the variant store is not
-// taught (only an explicit pick does that, issue #53). The discarded first pass is never returned,
-// so callers save exactly one history entry, the flipped one.
+// Rule: when the source and the target are the same language, the result is the source text
+// itself, flagged Identity, and never a failure. The decision has two branches and a
+// fall-through, the same for every engine:
+//
+//  1. Pinned source, SameAs(From, To): the engine is not called at all. Whitespace-only text is
+//     left to the engine, which answers it with its own empty-text error.
+//  2. Auto source, and the language the engine reports for the text, D, is the target's language
+//     (D.Covers(To)): identity, whether the engine translated the text anyway, echoed it, or
+//     failed because it cannot translate a language into itself. D is what the engine reported,
+//     bare and before resultFrom qualifies it through the variant preference: a detection cannot
+//     name a dialect, so it must not miss the target for lack of one. On a failure D is the
+//     detection the engine attached with engine.WithDetectedSource.
+//  3. Anything else: the engine's answer or error, unchanged.
+//
+// There is no re-run and no second engine call, and the target is never changed: To is always the
+// requested one. The identity result carries none of the engine's text (a paraphrase, phonetic or
+// dictionary belongs to a translation, and this is not one), and callers do not save it to history
+// (saveHistory).
 func (s *Service) translateWithEngine(reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
-	// One deadline covers the engine call and its guard re-run, so the guard never stretches the
-	// per-engine bound.
+	if strings.TrimSpace(req.Text) != "" && req.From.SameAs(req.To) {
+		return s.identityResult(engineName, req, ""), nil
+	}
+
 	timeout := 30 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	res, err := s.callEngine(ctx, reg, engineName, req)
+	if isAutoSource(req.From) {
+		if detected, ok := detectedSource(res, err); ok && detected.Covers(req.To) {
+			return s.identityResult(engineName, req, detected), nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	if to, flip := identityRerunTarget(req, res); flip {
-		// At most one re-run and no recursion: whatever the re-run returns stands. A failed re-run
-		// is an engine failure like any other; the identity result it replaces is not shown.
-		rerun := req
-		rerun.To = to
-		return s.callEngine(ctx, reg, engineName, rerun)
-	}
+	// callEngine leaves From as the engine reported it (the decision above needs the bare
+	// detection); it is qualified here, once, for the results that are shown as translations.
+	res.From = s.resultFrom(req.From, res.From)
 	return res, nil
 }
 
-// identityRerunTarget reports whether res is an identity translation that must not be presented
-// (issue #44) and, if so, the target to re-run the engine toward.
-//
-// Only an auto source is guarded: with an explicit source the user said what the text is, and the
-// same language on both sides is their own request. Nothing is compared when the engine reported
-// no detection (res.From is still auto, see resultFrom), which is how the LLM engines answer. The
-// guarantee therefore covers engines that report a recognized detected source: engines that report
-// their own native codes (baidu's jp / kor, youdao's direction pair) do not match a recognized
-// target, so the guard cannot fire for them.
-//
-// The comparison is at the base-language level and runs on res.From, which resultFrom already
-// qualified through the variant preference (es → es-MX), so es detected against an es-MX target,
-// and zh against a legacy zh-CN one, are still identity translations. Normalize folds a dialect
-// to its base and a spelling to its canonical form.
-//
-// English detected into an English target is not flipped: the fallback is English, so there is
-// nothing to flip to and the result stands.
-func identityRerunTarget(req model.TranslateRequest, res *model.TranslateResult) (model.Language, bool) {
-	if !isAutoSource(req.From) || isAutoSource(res.From) {
+// detectedSource is the source language an engine reported for an auto request: the detected
+// language a successful result carries (res.From as the engine returned it, still auto when the
+// engine detected nothing, which is how the LLM engines answer), or the one a failing engine
+// attached to its error (engine.WithDetectedSource). ok is false when there is none. Engines that
+// report their own native codes (baidu's jp / kor, youdao's direction pair) yield a detection that
+// does not match a recognized target, so the rule cannot fire for them.
+func detectedSource(res *model.TranslateResult, err error) (model.Language, bool) {
+	if err != nil {
+		return engine.DetectedSourceOf(err)
+	}
+	if isAutoSource(res.From) {
 		return "", false
 	}
-	detected := res.From.Normalize()
-	if detected != req.To.Normalize() || detected == identityFallbackTarget.Normalize() {
-		return "", false
+	return res.From, true
+}
+
+// identityResult is the result of a request whose source and target are the same language (issue
+// #80): the source text as it stands, flagged so the windows can say so. detected is the language
+// the engine reported for an auto request, empty for a pinned source; From goes through resultFrom
+// like every reported source language (a detection is qualified through the variant preference, a
+// pinned source is reported as requested). It is the only place Identity is set: an engine cannot
+// declare it, because callEngine builds the engine's result field by field and never copies the
+// engine's struct.
+func (s *Service) identityResult(engineName string, req model.TranslateRequest, detected model.Language) *model.TranslateResult {
+	return &model.TranslateResult{
+		Engine:   engineName,
+		From:     s.resultFrom(req.From, detected),
+		To:       req.To,
+		Text:     req.Text,
+		Result:   req.Text,
+		Identity: true,
 	}
-	return identityFallbackTarget, true
 }
 
 // callEngine runs one translation-engine call under ctx and assembles the result. It is the only
-// place an engine is invoked, so the goroutine, timing log and error wrapping exist once, whether
-// or not the identity guard re-runs the engine.
+// place an engine is invoked, so the goroutine, timing log and error wrapping exist once.
+//
+// The returned result's From is what the engine reported, unqualified; translateWithEngine decides
+// the same-language rule on it and only then applies resultFrom. A failure keeps the engine's error
+// in its chain (%w), so a detection attached with engine.WithDetectedSource is still found.
 func (s *Service) callEngine(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
 	start := time.Now()
 	resCh := make(chan *model.TranslateResult, 1)
@@ -250,7 +266,7 @@ func (s *Service) callEngine(ctx context.Context, reg engine.Translator, engineN
 		}
 		resCh <- &model.TranslateResult{
 			Engine:   engineName,
-			From:     s.resultFrom(req.From, res.From),
+			From:     res.From,
 			To:       req.To,
 			Text:     req.Text,
 			Result:   res.Result,
@@ -519,8 +535,8 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 // defaultTarget resolves the requested target of a flow that has no language bar to read (the
 // screenshot flow): the user's saved default_to, else the policy default (settings.DefaultTarget).
 // It is the one place that decision lives (issue #44), so no flow carries a hardcoded target of
-// its own. The screenshot pushes report its value as the requested target; each result still
-// carries the target it was actually translated into (see translateWithEngine).
+// its own. The screenshot pushes report its value as the requested target, and every result
+// carries that same target (see translateWithEngine).
 func (s *Service) defaultTarget() model.Language {
 	if s.settings != nil {
 		if cfg := s.settings.Get(); cfg != nil && cfg.DefaultTo != "" {
@@ -715,9 +731,11 @@ func (s *Service) ocrWithEngine(ocr engine.OcrEngine, req model.OcrRequest) (*mo
 }
 
 // saveHistory writes a successful translation to the history store (failures are only
-// logged, not surfaced).
+// logged, not surfaced). An identity result (issue #80) is not saved: history records
+// translations, and a copy of the source text is not one. It is the one choke point every caller
+// of translateWithEngine goes through, so the rule is stated here and nowhere else.
 func (s *Service) saveHistory(res *model.TranslateResult) {
-	if s.history == nil || res == nil {
+	if s.history == nil || res == nil || res.Identity {
 		return
 	}
 	fromOCR := int64(0)

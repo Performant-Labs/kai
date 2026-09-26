@@ -112,7 +112,6 @@
     type TranslateSession,
   } from '../utils/translateSession.ts';
   import { detectedSourceLabel } from '../utils/detectedLang.ts';
-  import { flippedTargetLabel } from '../utils/flippedTarget.ts';
   import { swapLanguages } from '../utils/swapLangs.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import {
@@ -144,11 +143,10 @@
   let results = $state<Record<string, TranslateResult>>(
     restored.results as unknown as Record<string, TranslateResult>,
   );
-  // The target the current results were requested with, captured when the request is sent (issue
-  // #44). The backend may translate a result into a different target (the same-language guard
-  // flips it to English) and reports that in the result's own `to`; comparing against this, not
-  // the live select, keeps a later change of the select from making an untouched result look
-  // flipped. Read-only feedback: nothing writes toLang from it. Retained with the results.
+  // The target the current results were requested with, captured when the request is sent and
+  // retained with the results (the #81 session field). Nothing reads it back any more: a result
+  // is always translated into the requested target (issue #80), so there is no second target to
+  // compare it with. Read-only bookkeeping: nothing writes toLang from it.
   let requestedTo = $state<string>(restored.requestedTo);
   // Whether a translation was requested and not cleared since (issue #81): set by doTranslate(),
   // reset by Clear. "No result and not loading" alone cannot tell an idle window (nothing requested
@@ -318,14 +316,6 @@
     );
     return label ?? langName(value);
   }
-  // Same-language guard feedback (issue #44): when the backend flipped this result's target (the
-  // detected source already was the requested target), the result pane says which language it was
-  // really translated into. Display only: the select keeps showing the requested target, and
-  // nothing here assigns toLang / fromLang, persists, teaches or retranslates (both selects render
-  // toLang, so writing it would make the flip sticky, and #13 owns the swap semantics).
-  const flippedLabel = $derived(
-    flippedTargetLabel(requestedTo, String(activeResult?.to ?? ''), langName),
-  );
   // The pair the swap button would apply (issue #13), or null when there is nothing to exchange:
   // the source is auto and the active engine detected nothing the target select can hold. One
   // derivation feeds both the button's disabled state and swap(), so the two cannot disagree.
@@ -516,14 +506,12 @@
   // button is disabled then and this is a no-op. The text on screen for the active engine (manual
   // edit ?? result) becomes the new source text and the old source text is dropped; with no result
   // yet the input stays as it is. The existing doTranslate() then clears results and edits and sends
-  // the request with the new pair, so requestedTo, and the flipped-target notice derived from it,
-  // are set there like for any other request. A swap consumes preferences and never writes them:
-  // the pair is persisted, but only a select's own onchange ever teaches the variant store.
+  // the request with the new pair, so requestedTo is set there like for any other request. A swap
+  // consumes preferences and never writes them: the pair is persisted, but only a select's own
+  // onchange ever teaches the variant store.
   function swap() {
     const pair = swapPair;
     if (!pair) return;
-    // Destructured on purpose: flippedNotice.test.ts rejects any line that assigns the target
-    // select from something ending in a dot-to (its display-only guard), which pair.to would trip.
     const { from, to } = pair;
     fromLang = from as TranslateLang;
     toLang = to as TranslateLang;
@@ -961,16 +949,16 @@
                On engine switch edited is discarded wholesale and the new engine starts from its own
                result. The activeResult check is redundant at runtime (a result for the active
                engine implies it); it only narrows the type for the markup below. The phonetic and
-               flipped-target notes are small muted lines above the text: whichever comes first adds
+               identity notes are small muted lines above the text: whichever comes first adds
                the top inset (first:pt-4), the text below brings its own p-4. -->
             {#if activeResult.phonetic}
               <span class="u-muted px-4 text-xs first:pt-4">{activeResult.phonetic}</span>
             {/if}
-            {#if flippedLabel}
-              <!-- Same-language guard (issue #44): this result went to a different target than
-                 the one selected; say which. Display only, never changes the select. -->
-              <p class="u-muted px-4 text-xs first:pt-4" data-testid="flipped-target">
-                {t('translate.flippedTo', { lang: flippedLabel })}
+            {#if activeResult.identity}
+              <!-- Same language on both sides (issue #80): the result is the source text, not a
+                 translation; say so. Display only, never changes either select. -->
+              <p class="u-muted px-4 text-xs first:pt-4" data-testid="identity-result">
+                {t('translate.identity')}
               </p>
             {/if}
             {#if editingResult || activeDisplay === ''}

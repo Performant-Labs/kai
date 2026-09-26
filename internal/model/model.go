@@ -99,6 +99,70 @@ func (l Language) Normalize() Language {
 	return l.Base()
 }
 
+// SameAs reports whether l and other are the same language for the "same source and target"
+// rule (issue #80): the source text is then the result, with no engine call. It is deliberately
+// stricter than Normalize equality: Normalize folds every dialect to its base, so pt-BR and pt-PT
+// (or es-MX and es-419) would count as one language although the user named two concrete variants
+// and an engine can translate between them.
+//
+// Two codes are the same language when their canonical forms are equal (case, "_" against "-" and
+// the legacy zh-CN spelling do not matter), or when one is the bare base of the other in the alias
+// table (es and es-MX, pt and pt-BR). Empty and auto name no language, so they are the same as
+// nothing, themselves included. Two identical unrecognized codes are the same language; what an
+// engine makes of them is the engine's business.
+func (l Language) SameAs(other Language) bool {
+	a, ok := l.canonical()
+	if !ok {
+		return false
+	}
+	b, ok := other.canonical()
+	if !ok {
+		return false
+	}
+	return a == b || a.Base() == b || b.Base() == a
+}
+
+// Covers reports whether l, read as a bare language code, stands for other's language (issue
+// #80). It is the comparison for a language an engine DETECTED in the text: a detection is the
+// bare language (es, zh, pt) and cannot name a dialect, so it never tells the target's dialect
+// apart and must not fail to match for lack of one. l covers other when the two are the same
+// language by SameAs, or when l is bare and other is one of its regional variants (es covers
+// es-MX, es-419 and es-ES).
+//
+// It is not symmetric on purpose. A detection that does name a dialect (pt-BR) covers only that
+// dialect, not pt-PT, so a dialect pair is left to the engine, as it is for a pinned source. And
+// it is for detections only: a pinned source, bare or not, is decided by SameAs, where es against
+// es-ES is not the same language.
+func (l Language) Covers(other Language) bool {
+	if l.SameAs(other) {
+		return true
+	}
+	a, ok := l.canonical()
+	if !ok || strings.Contains(string(a), "-") {
+		return false
+	}
+	b, ok := other.canonical()
+	if !ok {
+		return false
+	}
+	primary, _, _ := strings.Cut(string(b), "-")
+	return Language(primary) == a
+}
+
+// canonical returns the comparable form of a language code: the recognized language ParseLanguage
+// maps it to, else the trimmed code lower-cased with "_" read as "-". ok is false for "" and auto,
+// which name no language.
+func (l Language) canonical() (Language, bool) {
+	code := strings.TrimSpace(string(l))
+	if code == "" || strings.EqualFold(code, string(Auto)) {
+		return "", false
+	}
+	if n, ok := ParseLanguage(code); ok {
+		return n, true
+	}
+	return Language(strings.ToLower(strings.ReplaceAll(code, "_", "-"))), true
+}
+
 // ParseLanguage maps a raw language code onto a recognized language: recognized codes match
 // case-insensitively with "_" read as "-" (pt-br → pt-BR, so region subtags survive the round
 // trip) and the legacy Chinese spellings zh-CN / zh_CN fold onto zh. ok=false: not a recognized
@@ -190,12 +254,13 @@ const (
 type TranslateResult struct {
 	Engine    string     `json:"engine"`               // Translation engine identifier
 	From      Language   `json:"from"`                 // The actually detected source language
-	To        Language   `json:"to"`                   // Target language the result was translated into (the fallback target when the same-language guard flipped the requested one, issue #44)
+	To        Language   `json:"to"`                   // Target language (always the one requested)
 	Text      string     `json:"text"`                 // Source text
 	Result    string     `json:"result"`               // Translation
 	Phonetic  string     `json:"phonetic"`             // Pronunciation/phonetics
 	Dict      []DictItem `json:"dict"`                 // Dictionary detail entries
 	FromOCR   bool       `json:"from_ocr"`             // Whether it came from OCR recognition
+	Identity  bool       `json:"identity,omitempty"`   // Result is the source text, not a translation: source and target are the same language (issue #80; set by the translate service only, never by an engine)
 	Error     string     `json:"error,omitempty"`      // Sanitized engine error on failure (issues #42, #96; empty on success)
 	ErrorKind string     `json:"error_kind,omitempty"` // Engine failure category, one of the ErrorKind* values (issues #42, #96)
 }
@@ -266,6 +331,6 @@ type ScreenshotResult struct {
 	Image        string            `json:"image"`        // Region screenshot PNG as a base64 data URL (frontend renders <img> directly)
 	Text         string            `json:"text"`         // Source text recognized by OCR
 	Translations []TranslateResult `json:"translations"` // Per-engine translations
-	To           Language          `json:"to"`           // Requested target language (each translation carries its own To, which the same-language guard may have flipped, issue #44)
+	To           Language          `json:"to"`           // Requested target language
 	Error        string            `json:"error"`        // Flow failure reason (when non-empty the frontend stops spinning and shows the error)
 }

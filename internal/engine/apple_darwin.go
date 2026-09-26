@@ -114,6 +114,9 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 		// Swift custom error: log it here (this is the only place that knows the request's
 		// languages), then render the user-visible copy by error code, with detail as the
 		// technical context (appleBridgeError, untagged so its mapping is testable on any OS).
+		// The bridge also reports the source language it detected before the framework failed
+		// (tr.From, only for an auto source); appleBridgeError attaches it to the error so the
+		// translate service can recognize a text that already is in the target language (issue #80).
 		// Known codes map to err.apple_<code>; unknown codes fall back to the generic engine
 		// error copy, never exposing the raw key string to the user.
 		switch tr.Code {
@@ -126,7 +129,7 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 		default:
 			slog.Error(i18n.T("err.apple_translate_engine"), "from", sl, "to", tl, "code", tr.Code, "detail", tr.Detail)
 		}
-		return nil, appleBridgeError(tr.Code, tr.Detail)
+		return nil, appleBridgeError(tr.Code, tr.Detail, tr.From)
 	}
 	if tr.Result == "" {
 		slog.Error(i18n.T("err.apple_translate_empty"), "from", sl, "to", tl)

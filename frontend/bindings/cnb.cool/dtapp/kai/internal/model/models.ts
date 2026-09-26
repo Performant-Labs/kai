@@ -195,7 +195,7 @@ export interface ScreenshotResult {
     "translations": TranslateResult[] | null;
 
     /**
-     * Requested target language (each translation carries its own To, which the same-language guard may have flipped, issue #44)
+     * Requested target language
      */
     "to": Language;
 
@@ -262,7 +262,7 @@ export interface TranslateResult {
     "from": Language;
 
     /**
-     * Target language the result was translated into (the fallback target when the same-language guard flipped the requested one, issue #44)
+     * Target language (always the one requested)
      */
     "to": Language;
 
@@ -290,6 +290,11 @@ export interface TranslateResult {
      * Whether it came from OCR recognition
      */
     "from_ocr": boolean;
+
+    /**
+     * Result is the source text, not a translation: source and target are the same language (issue #80; set by the translate service only, never by an engine)
+     */
+    "identity"?: boolean;
 
     /**
      * Sanitized engine error on failure (issues #42, #96; empty on success)

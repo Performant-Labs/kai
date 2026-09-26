@@ -14,7 +14,7 @@ import (
 // Translate"); other codes are not pair errors.
 func TestAppleBridgeError(t *testing.T) {
 	t.Run("no_source_lang wraps ErrUnsupportedPair and keeps text", func(t *testing.T) {
-		err := appleBridgeError("no_source_lang", "detail-x")
+		err := appleBridgeError("no_source_lang", "detail-x", "")
 		if err == nil || !errors.Is(err, ErrUnsupportedPair) {
 			t.Fatalf("errors.Is(ErrUnsupportedPair) = false: %v", err)
 		}
@@ -23,7 +23,7 @@ func TestAppleBridgeError(t *testing.T) {
 		}
 	})
 	t.Run("apple_translate keeps detail, is not a pair sentinel", func(t *testing.T) {
-		err := appleBridgeError("apple_translate", "Unable to Translate")
+		err := appleBridgeError("apple_translate", "Unable to Translate", "")
 		if err == nil || errors.Is(err, ErrUnsupportedPair) {
 			t.Fatalf("err = %v, want non-nil and not ErrUnsupportedPair", err)
 		}
@@ -33,7 +33,7 @@ func TestAppleBridgeError(t *testing.T) {
 	})
 	for _, code := range []string{"empty_text", "target_required", "some_unknown_code"} {
 		t.Run(code+" is not a pair error", func(t *testing.T) {
-			err := appleBridgeError(code, "")
+			err := appleBridgeError(code, "", "")
 			if err == nil || errors.Is(err, ErrUnsupportedPair) || errors.Is(err, ErrAPIKey) {
 				t.Errorf("err = %v, want a plain non-nil error", err)
 			}

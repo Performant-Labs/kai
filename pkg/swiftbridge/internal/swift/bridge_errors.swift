@@ -38,10 +38,14 @@ let BRIDGE_ERR_APPLE_OCR: String = "apple_ocr"
 // then encodes to a String written back into the out buffer.
 
 /// Error return: {"code":"...","detail":"..."} (detail is non-translatable technical
-/// context).
+/// context). A failing translate call can also carry "from" (issue #80): the bare language code
+/// NaturalLanguage detected in the text before the framework failed, the same shape the success
+/// payload reports. It is left out of the JSON (a nil Optional is not encoded) when the source was
+/// pinned or nothing was detected, so every other error keeps its two-field shape.
 struct BridgeError: Codable {
   let code: String
   let detail: String
+  var from: String? = nil
 }
 
 /// Translation success: {"result":"...","from":"..."}
@@ -91,7 +95,8 @@ func bridgeEncode<T: Codable>(_ value: T) -> String {
   return str
 }
 
-/// Convenience builder for error JSON strings.
-func bridgeErrorJSON(code: String, detail: String) -> String {
-  bridgeEncode(BridgeError(code: code, detail: detail))
+/// Convenience builder for error JSON strings. from is only passed by kai_translate (see
+/// BridgeError).
+func bridgeErrorJSON(code: String, detail: String, from: String? = nil) -> String {
+  bridgeEncode(BridgeError(code: code, detail: detail, from: from))
 }

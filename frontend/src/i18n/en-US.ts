@@ -51,7 +51,7 @@ export const en: Dict = {
     to: 'To',
     swap: 'Swap languages',
     detected: ' (detected)',
-    flippedTo: 'Target matches the source language — translated into {lang} instead',
+    identity: 'Source and target language are the same — showing the source text',
     failedPair:
       'Language pair unavailable — add it in System Settings > General > Language & Region',
     failedNetwork: "Can't reach {engine}: check your network or proxy",

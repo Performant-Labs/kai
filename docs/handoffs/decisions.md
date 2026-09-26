@@ -261,6 +261,12 @@
 - Hedged (warns): small restated tail rule between statusDot and paneState; duplicated dot title/aria-label ternary grew to 4 arms; `as unknown as` seed cast widens the pre-existing PaneResult/TranslateResult hole.
 - Evidence: git diff fe629dc..270da9f; grep of non-test `localStorage` and `statusDots(` callers in frontend/src.
 
+## #80 A (Phase 3, up-front plan review, 2026-09-26): PASS
+- Verdict PASS, 0 block / 4 warn. Handoff: docs/handoffs/80/handoff-A.md (brief blob 2853220, commit f3c3f4a).
+- Decided: the plan extends the one per-engine seam (`translateWithEngine`) and the history choke point (`saveHistory`) with no parallel path. `Language.SameAs` goes in model. The detection rides an engine error wrapper. The #44 flip removal is spec'd (option B).
+- Assumed: F rebases onto #110 first, and the warn defaults apply without an O ruling.
+- Hedged: bare-vs-qualified success-path detection (`resultFrom` inside `callEngine`); the wrapper and the Apple mapping belong in #110's `errors.go`/`appleBridgeError`; two stale #44 comments (service.go:510-515, translateSession.ts:12) are not in the inventory; `Identity` is service-set only.
+- Evidence: service.go seam and callers; model.go language helpers; issue-96-implementation engine/errors.go, apple_errors.go.
 ## #96 D (Design, 2026-09-26)
 - Decided: Mode (a), one new low-fi HTML wireframe with a 150% default zoom control. Frames: translate failed pane for not_configured, rate_limit, engine (brief AC1), plus auth, long detail, no-payload fallback, both dot tooltips, and three TranslateCard states.
 - Decided: headline in `--app-danger`, detail muted below, Settings button only for not_configured and auth (per the brief's category table); cards get no button; tooltip shows headline only.

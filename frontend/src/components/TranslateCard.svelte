@@ -3,30 +3,17 @@
   import { Clipboard } from '@wailsio/runtime';
   import { untrack } from 'svelte';
   import type { TranslateResult } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
-  import { flippedTargetLabel } from '../utils/flippedTarget.ts';
   import { failureMessage } from '../utils/resultPane.ts';
 
-  // requestedTo is the target this round was requested with (the screenshot window passes the
-  // backend's ScreenshotResult.to, which keeps meaning the requested target). The card's own
-  // tr.to is where this engine actually translated: they differ when the same-language guard
-  // flipped the target (issue #44).
   let {
     tr,
     expanded = true,
-    requestedTo = '',
     onCopied,
   }: {
     tr: TranslateResult;
     expanded?: boolean;
-    requestedTo?: string;
     onCopied?: (text: string) => void;
   } = $props();
-
-  // Display only: names the language this card was really translated into; never changes the
-  // window's target select (its change would re-emit EventScreenshotRetranslate).
-  const flippedLabel = $derived(
-    tr?.result ? flippedTargetLabel(requestedTo, String(tr?.to ?? ''), langName) : null,
-  );
 
   // Why this engine failed (issue #96), when the backend sent a reason: the same failureMessage the
   // translate window's failed pane renders, so both windows read one copy table. An entry without
@@ -140,9 +127,12 @@
       {failure.detail}
     </p>
   {/if}
-  {#if flippedLabel}
-    <p class="mt-1 text-[11px] text-[var(--app-muted)]" data-testid="flipped-target">
-      {t('translate.flippedTo', { lang: flippedLabel })}
+  {#if tr?.identity && tr?.result}
+    <!-- Same language on both sides (issue #80): the result is the source text, not a translation;
+         say so. Display only: it never changes the window's target select (its change would
+         re-emit EventScreenshotRetranslate). -->
+    <p class="mt-1 text-[11px] text-[var(--app-muted)]" data-testid="identity-result">
+      {t('translate.identity')}
     </p>
   {/if}
   {#if isOpen && tr?.result}
