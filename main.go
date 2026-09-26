@@ -418,7 +418,8 @@ func main() {
 		winTheme = application.Dark
 	}
 
-	// Main window (settings page as the main screen, shown at startup)
+	// Settings window. Kai is a menu-bar app (ActivationPolicyAccessory): Settings starts hidden
+	// and opens only from the gear or the tray (see the Hide below).
 	settingsWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   model.WindowSettings,
 		Title:  i18n.T("window.settings_title"),
@@ -446,8 +447,12 @@ func main() {
 		}
 		settingsWindow.Hide()
 	})
-	// Main window shows and centers at startup
 	settingsWindow.Center()
+	// Start hidden (hand test of #82, 2026-09-26). Shown at startup it sat behind other apps, and
+	// closing the translate window made macOS bring it forward although the user never opened it.
+	// Created then hidden (not Hidden:true), as for the translate window below, to avoid the
+	// Windows WebView2 COM race; windowSvc.ShowSettings shows it with showAndFocus.
+	settingsWindow.Hide()
 
 	// Input translate window: two-pane layout (issue #10, locked decision: always side by
 	// side) — default/minimum widths enlarged, no longer pinned to 420 (old MaxWidth removed);
@@ -480,9 +485,11 @@ func main() {
 	// can be Shown again anytime.
 	_ = translateWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
-		// Red X = hide the window (don't quit): first broadcast kai:window:closing so the
-		// frontend clears the translate input/results, then Hide. The window is not destroyed
-		// (Svelte components stay mounted), so the next invocation starts from a clean state.
+		// Red X = hide the window (don't quit): first broadcast kai:window:closing, then Hide.
+		// The window is not destroyed (Svelte components stay mounted). Since issue #81 the
+		// translate window clears nothing on this broadcast: its text and results are retained
+		// (and stored, so they survive a restart too), so the next invocation shows the last
+		// translation; only its Clear button empties them.
 		if app != nil {
 			app.Event.Emit(kevents.EventWindowClosing, model.WindowTranslate)
 		}
@@ -782,9 +789,10 @@ func buildTrayMenu(app *application.App, hm *hotkey.Manager, configSvc *service.
 	}
 	// Settings, open the settings window
 	trayMenu.Add(i18n.T("menu.settings")).OnClick(func(ctx *application.Context) {
-		// Issue #69: same as the gear, keep Settings in front of a pinned translate window.
-		service.LowerForSettings(translateWindow)
-		settingsWindow.Show().Focus()
+		// Same path as the gear (kai:window:show "settings" -> windowSvc.ShowSettings): lowers a
+		// pinned translate window (#69) and shows Settings with showAndFocus, which a window
+		// hidden since startup needs to appear on the first click.
+		app.Event.Emit(kevents.EventWindowShow, "settings")
 	})
 	// Separator
 	trayMenu.AddSeparator()

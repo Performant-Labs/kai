@@ -7,12 +7,15 @@ import { zh } from '../i18n/zh-CN.ts';
 // issue #52 (Tester, RED): the static fallback lists mirror backend SelectableLanguages()
 // (recognized bare es/pt are NOT selectable); display names exist in en + zh.
 
-const SELECTABLE = ['auto', 'zh', 'en', 'ja', 'ko', 'fr', 'de', 'es-MX', 'pt-BR', 'pt-PT', 'ru'];
+// Chinese is listed last (principal, 2026-09-26).
+const SELECTABLE = ['auto', 'en', 'ja', 'ko', 'fr', 'de', 'es-MX', 'pt-BR', 'pt-PT', 'ru', 'zh'];
 
 describe('static language lists', () => {
-  it('equals the generated Language enum minus $zero, bare es and pt', () => {
+  it('has the same members as the generated Language enum minus $zero, bare es and pt', () => {
+    // Members only: the enum follows the Go const declaration order, the dropdown order is the
+    // backend's display order (asserted below).
     const derived = Object.values(Language).filter((c) => c !== '' && c !== 'es' && c !== 'pt');
-    expect([...ALL_TRANSLATE_LANGS]).toEqual(derived);
+    expect([...ALL_TRANSLATE_LANGS].sort()).toEqual([...derived].sort());
   });
 
   it('ALL_TRANSLATE_LANGS mirrors backend SelectableLanguages() order', () => {

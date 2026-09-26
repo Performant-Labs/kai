@@ -3,11 +3,13 @@ import { swapLanguages } from './swapLangs.ts';
 
 // Issue #13: dialect-aware swap. Pure helper, predicates injected (no bindings import).
 const AUTO = 'auto';
-const SELECTABLE = new Set(['en', 'zh', 'es-MX', 'es-ES', 'pt-BR']);
+// The target select's options in display order (dialects follow their family, like the backend).
+const OPTIONS = ['en', 'es-MX', 'es-ES', 'pt-BR', 'zh'];
+const SELECTABLE = new Set(OPTIONS);
 const isSelectable = (c: string) => SELECTABLE.has(c);
 
 const run = (from: string, to: string, detectedFrom: string) =>
-  swapLanguages({ from, to, detectedFrom, autoCode: AUTO, isSelectable });
+  swapLanguages({ from, to, detectedFrom, autoCode: AUTO, isSelectable, options: OPTIONS });
 
 describe('swapLanguages', () => {
   it('exchanges two pinned languages', () => {
@@ -22,8 +24,32 @@ describe('swapLanguages', () => {
     expect(run(AUTO, 'en', 'es-MX')).toEqual({ from: 'en', to: 'es-MX' });
   });
 
-  it('auto + bare es detection (recognized but not selectable) -> null', () => {
-    expect(run(AUTO, 'en', 'es')).toBeNull();
+  // Hand test of #82 (2026-09-26): after a restart the variant preference is gone, so Spanish comes
+  // back detected as bare es, which is not a target option, and the swap button stayed grey. A
+  // bare base now lands on the first selectable variant of its family, the same rule as the
+  // backend's model.Language.SelectableOr (es -> es-MX, pt -> pt-BR).
+  it('auto + bare es detection: target becomes the first selectable Spanish variant', () => {
+    expect(run(AUTO, 'en', 'es')).toEqual({ from: 'en', to: 'es-MX' });
+  });
+
+  it('auto + bare pt detection: target becomes the first selectable Portuguese variant', () => {
+    expect(run(AUTO, 'en', 'pt')).toEqual({ from: 'en', to: 'pt-BR' });
+  });
+
+  it('a family variant that is not selectable (capability-disabled) is skipped', () => {
+    const r = swapLanguages({
+      from: AUTO,
+      to: 'en',
+      detectedFrom: 'es',
+      autoCode: AUTO,
+      isSelectable: (c) => c !== 'es-MX' && SELECTABLE.has(c),
+      options: OPTIONS,
+    });
+    expect(r).toEqual({ from: 'en', to: 'es-ES' });
+  });
+
+  it('auto + bare base with no selectable variant -> null', () => {
+    expect(run(AUTO, 'en', 'de')).toBeNull();
   });
 
   it('auto + no detection (empty) -> null', () => {

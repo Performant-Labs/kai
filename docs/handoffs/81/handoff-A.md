@@ -1,0 +1,37 @@
+# handoff-A: #81 idle pane and retained session (Phase 3, up-front plan review)
+
+- **Date:** 2026-09-26
+- **Branch:** issue-81-implementation (worktree `.worktrees/0081-idle-and-retain`, base master fe629dc, brief commit 2692d74)
+- **Brief reviewed:** docs/handoffs/81-brief.md (blob 71fa061)
+- **Reuse map:** in the brief: `persisted()` store; `resultPane.ts` helpers (`statusDot`, `anyPending`); pure-helper pattern of `swapLangs.ts` / `flippedTarget.ts`; `loadDefaults` / `persistLangs` for languages
+- **Wireframe:** none (UI surface: no; the idle pane is blank, no new control or copy)
+- **Verdict:** PASS (0 block, 6 warn)
+
+## Summary
+
+The plan extends the objects in the Reuse map and adds no parallel path. `paneState` goes into the existing pure `utils/resultPane.ts`, next to `statusDot`, which already owns the same "no result and not loading" derivation. The new `utils/translateSession.ts` is a pure validator with no bindings import. It matches the `swapLangs.ts` / `flippedTarget.ts` / `detectedLang.ts` leaf layer, and dependency direction is preserved: utils import neither stores nor bindings. Persistence reuses `stores/persisted.ts`, the same way `pinnedStore`, `lastUsedStore` and `dividerStore` do. The key `kai:translate:session` follows the dominant `kai:<window>:<name>` convention (`kai:translate:lastEngine`, `pinKey`). Languages stay on `loadDefaults` / `persistLangs` and nothing changes there. The source-contract test follows `swapWindow.test.ts`.
+
+The warns below cover gaps the brief leaves open. F and T should settle them with the stated defaults. None of them needs a brief amendment.
+
+## Findings
+
+| # | Severity | Plan element | Drift dimension | Finding | Suggested fix |
+|---|---|---|---|---|---|
+| 1 | warn | AC1 `paneState` "failed only when ... no non-empty result **and no edit**" | pattern consistency / abstraction | The live chain's result branch is `{:else if activeResult?.result}` (TranslateWindow.svelte:845). It is result-only, and the card dereferences `activeResult.phonetic` without a guard. If `paneState` returns `'result'` because an edit exists but the result does not, the template renders the card with `activeResult === null`. Today edits exist only inside a rendered result card and are reset on each new round, so edit-without-result is unreachable. Folding `edited` into the state machine adds a branch the template cannot render safely, and it diverges from `statusDot`'s result-only `done`. | `'result'` iff `results[active]?.result` is non-empty, exactly as today. `edited` is not an input to `paneState`. T's "failed vs idle when an edit exists" case should assert that an edit alone never produces `'result'`. |
+| 2 | warn | AC1 loading branch | pattern consistency | The current loading branch tests entry **presence** (`loading && !results[activeEngine]`, :828), while the result branch tests a **non-empty `.result`**. An error payload (#42 `error`/`errorKind`, no `result`) that arrives while loading falls straight through to failed. `paneState` has to keep both tests as they are. Normalising them to one `.result` test would change behaviour. | Order: `no-engine` (activeEngines empty) > `loading` (loading && !(active in results)) > `result` (results[active]?.result) > `failed` (requested) > `idle`. |
+| 3 | warn | AC2 `statusDot(..., requested)` | layering / naming | The component never calls `statusDot` directly. It calls `statusDots(allEngines, results, loading)` (:219), which loops `statusDot`. The brief names only `statusDot`. `DotState` (`'pending' \| 'done' \| 'failed'`) also has no member for "nothing requested", and each dot's `title` maps each state to an i18n key, while the brief forbids new copy. | Add `requested` as an explicit parameter to both `statusDot` and `statusDots`. Extend `DotState` with `'idle'` (returned when `!requested` and there is no result). In the template, `idle` gets no bg class (or `u-muted` outline) and its `title` is `engineName(e.value)` alone, so no new i18n key. `anyPending` is unchanged, since it is already gated on `loading`. |
+| 4 | warn | AC3 `TranslateSession.results: Record<string, unknown>` | abstraction level | The component's state is `Record<string, TranslateResult>` (bindings type, :122). Typing the session as `unknown` forces an unchecked cast at the seam, which is the thing `restoreSession` exists to avoid. `resultPane.ts` already defines the bindings-free structural `PaneResult` with `engine?: string`. | Type `results` as `Record<string, PaneResult>`, importing the type only from `./resultPane.ts`, so the module stays bindings-free. Keep a single `as Record<string, TranslateResult>` in the component at seed time, and add a comment there. Do not import `@bindings` into `translateSession.ts`. |
+| 5 | warn | AC4/AC5 write path ("`clearInput` also resets the stored session" + a `$effect` write-back) | cross-cutting (single source of truth) | With the `$effect` mirroring `{input, results, requestedTo, requested}` into the store, clearing the four `$state` fields already writes `emptySession()`. A second `store.set(emptySession())` inside `clearInput` is a parallel write path to the same key. Also, `persisted<TranslateSession>` claims a validated type for raw `JSON.parse` output. | Keep one write path: the `$effect`. `clearInput` resets the state fields, including `requested = false`, and T pins that. Read once at init with `restoreSession(get(sessionStore))`, or `$sessionStore`. Never read `$sessionStore` fields unvalidated anywhere else. |
+| 6 | warn | AC5 closing handler "may still set `loading = false`" | cross-cutting (window lifecycle) | Closing hides the window, and results for an in-flight fan-out keep landing via `EventTranslateResult`. If close sets `loading = false` while `requested` is true and the active engine has not answered, a quick reopen shows the red `failed` pane and failed dots until the result arrives. The existing 15 s `anyPending` fallback (:486) already clears `loading` on its own. | Default: the translate branch of the closing handler does nothing. Drop the `loading = false` along with the clears and leave `loading` to the result handler and the 15 s fallback. If F keeps it, record the transient failed-on-reopen in handoff-F for S. |
+
+## Notes for O
+
+No block, so no amendment is required. If the brief is revised later, fold in findings 1 and 3: drop "and no edit" from the `failed` rule, and name `statusDots` plus a new `'idle'` `DotState` with no new i18n key. Those are the two places where F would otherwise have to choose. Findings 4 to 6 are defaults for F and T and do not change scope.
+
+## Patterns referenced
+
+- Pure leaf helpers with injected or plain inputs and no bindings: `frontend/src/utils/swapLangs.ts`, `flippedTarget.ts`, `detectedLang.ts`, `resultPane.ts` (module header: "never touches localStorage / wails runtime / DOM").
+- localStorage persistence only via `frontend/src/stores/persisted.ts`: `pinnedStore` (:17), `dividerStore` (:136), `lastUsedStore` (:201). Key convention `kai:translate:*`. `translate:divider` is the lone outlier.
+- Status dots: `statusDots` -> `statusDot` (resultPane.ts), consumed at TranslateWindow.svelte:219 and :759-770.
+- Result-pane chain: TranslateWindow.svelte:810-892. Closing handler: :295-309. `doTranslate`: :450-490. `clearInput`: :503-508. `loadDefaults` / `persistLangs`: :349-367.
+- Source-contract test style: `frontend/src/components/swapWindow.test.ts` (`fnBody` slicing), `flippedNotice.test.ts`. The jsdom store test style: `frontend/src/stores/persisted.test.ts`.

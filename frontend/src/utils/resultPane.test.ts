@@ -36,6 +36,7 @@ import {
   statusDots,
   resetEdits,
   anyPending,
+  paneState,
   type PaneEngine,
   type PaneResult,
 } from './resultPane.ts';
@@ -112,46 +113,46 @@ describe('activeEngineFor (consumes #8 resolvePrimaryEngine + defensive fallback
 
 describe('statusDot / statusDots (pending / done / failed derived from real fan-out signals)', () => {
   it('loading with no result for the engine -> pending', () => {
-    expect(statusDot('google', {}, true)).toBe('pending');
-    expect(statusDot('deepl', {}, true)).toBe('pending');
+    expect(statusDot('google', {}, true, true)).toBe('pending');
+    expect(statusDot('deepl', {}, true, true)).toBe('pending');
   });
 
   it('non-empty result -> done (holds with or without loading: result arrived means done)', () => {
     const results: Record<string, PaneResult> = { google: { result: 'hola' } };
-    expect(statusDot('google', results, true)).toBe('done');
-    expect(statusDot('google', results, false)).toBe('done');
+    expect(statusDot('google', results, true, true)).toBe('done');
+    expect(statusDot('google', results, false, true)).toBe('done');
   });
 
   it('empty-string result is not done: !loading and no usable result -> failed', () => {
-    expect(statusDot('google', { google: { result: '' } }, false)).toBe('failed');
+    expect(statusDot('google', { google: { result: '' } }, false, true)).toBe('failed');
   });
 
   it('!loading and the engine is absent (backend emits no event for failed engines) -> failed', () => {
     const results: Record<string, PaneResult> = { deepl: { result: 'hallo' } };
-    expect(statusDot('google', results, false)).toBe('failed');
+    expect(statusDot('google', results, false, true)).toBe('failed');
   });
 
   it('absent engine stays pending while loading (before the 15 s fallback)', () => {
     const results: Record<string, PaneResult> = { deepl: { result: 'hallo' } };
-    expect(statusDot('google', results, true)).toBe('pending');
+    expect(statusDot('google', results, true, true)).toBe('pending');
   });
 
   it('case 1: one engine fails while a sibling succeeds in a multi-engine fan-out (loading=false) -> failed dot immediately failed', () => {
     const results: Record<string, PaneResult> = { deepl: { result: 'hallo' } };
-    const dots = statusDots(ENGINES, results, false);
+    const dots = statusDots(ENGINES, results, false, true);
     expect(dots.google).toBe('failed');
     expect(dots.deepl).toBe('done');
   });
 
   it('case 2: the only engine fails; loading stays true before the 15 s fallback -> dot stays pending', () => {
     const sole = [ENGINES[0]];
-    const dots = statusDots(sole, {}, true);
+    const dots = statusDots(sole, {}, true, true);
     expect(dots.google).toBe('pending');
   });
 
   it('statusDots only covers enabled translate engines (ocr / disabled engines get no dot)', () => {
     const all = [...ENGINES, OCR_ENGINE];
-    const dots = statusDots(all, {}, true);
+    const dots = statusDots(all, {}, true, true);
     expect(Object.keys(dots).sort()).toEqual(['deepl', 'google']);
   });
 
@@ -237,5 +238,85 @@ describe('failureMessage (#42 surfacing failure reasons)', () => {
   it('returns the generic message with no detail for null/absent results', () => {
     expect(failureMessage(null, t)).toBe('Translation failed');
     expect(failureMessage({ engine: 'x' }, t)).toBe('Translation failed');
+  });
+});
+
+// issue #81: idle pane vs failed pane. paneState takes ONE object argument:
+//   { hasEngines, engine, results, loading, requested } -> 'no-engine' | 'loading' | 'result' | 'idle' | 'failed'
+// Order: no-engine > loading (loading && engine absent from results) > result (non-empty .result)
+// > failed (requested) > idle. Manual edits are NOT an input (an edit alone never yields 'result').
+// statusDot/statusDots gain an explicit 4th `requested` argument; DotState gains 'idle'.
+describe('paneState (#81 idle vs failed)', () => {
+  const base = { hasEngines: true, engine: 'google', results: {}, loading: false, requested: false };
+
+  it('no active engine -> no-engine (wins over everything)', () => {
+    expect(paneState({ ...base, hasEngines: false, loading: true, requested: true })).toBe('no-engine');
+  });
+
+  it('nothing requested, not loading -> idle (not failed)', () => {
+    expect(paneState(base)).toBe('idle');
+  });
+
+  it('loading with the engine absent from results -> loading', () => {
+    expect(paneState({ ...base, loading: true, requested: true })).toBe('loading');
+  });
+
+  it('non-empty result -> result', () => {
+    expect(
+      paneState({ ...base, requested: true, results: { google: { result: 'hola' } } }),
+    ).toBe('result');
+  });
+
+  it('result present also after a restore where loading is false and requested is true', () => {
+    expect(
+      paneState({ ...base, requested: true, results: { google: { result: 'x' } }, loading: false }),
+    ).toBe('result');
+  });
+
+  it('requested, not loading, engine absent from results -> failed', () => {
+    expect(paneState({ ...base, requested: true })).toBe('failed');
+  });
+
+  it('requested, not loading, engine returned an empty result -> failed', () => {
+    expect(paneState({ ...base, requested: true, results: { google: { result: '' } } })).toBe('failed');
+  });
+
+  it('an error payload (no result) after a request -> failed', () => {
+    expect(
+      paneState({ ...base, requested: true, results: { google: { error: 'boom', errorKind: 'network' } } }),
+    ).toBe('failed');
+  });
+
+  it('a result for ANOTHER engine does not make the active engine a result', () => {
+    expect(paneState({ ...base, requested: true, results: { deepl: { result: 'x' } } })).toBe('failed');
+  });
+
+  it('idle stays idle when a stale empty results map is present and nothing was requested', () => {
+    expect(paneState({ ...base, results: { google: { result: '' } } })).toBe('idle');
+  });
+});
+
+describe('statusDot requested rule (#81)', () => {
+  it('idle window (not requested, not loading, no result) -> never failed', () => {
+    expect(statusDot('google', {}, false, false)).not.toBe('failed');
+    expect(statusDot('google', {}, false, false)).toBe('idle');
+  });
+
+  it('requested and not loading with no result -> failed', () => {
+    expect(statusDot('google', {}, false, true)).toBe('failed');
+  });
+
+  it('a result is done regardless of requested', () => {
+    expect(statusDot('google', { google: { result: 'x' } }, false, false)).toBe('done');
+  });
+
+  it('loading is pending', () => {
+    expect(statusDot('google', {}, true, true)).toBe('pending');
+  });
+
+  it('statusDots on an idle window has no failed dot', () => {
+    const dots = statusDots(ENGINES, {}, false, false);
+    expect(Object.values(dots)).not.toContain('failed');
+    expect(Object.keys(dots).sort()).toEqual(['deepl', 'google']);
   });
 });

@@ -8,8 +8,9 @@ const (
 	EventWindowShow = "kai:window:show"
 
 	// EventWindowClosing is broadcast when a window close (native red X / custom title-bar
-	// close) is triggered; each window clears its own state as needed (e.g. the translate
-	// window clears input and results). payload: the window name (model.WindowTranslate
+	// close) is triggered; each window reacts to its own close as needed (e.g. the screenshot
+	// window clears its image and results; the translate window keeps its text and results
+	// across a close since issue #81). payload: the window name (model.WindowTranslate
 	// etc.); each window only handles its own close, avoiding accidental clearing when a
 	// different window closes.
 	// Aligned with the frontend's EventWindowClosing in frontend/src/utils/events.ts — the

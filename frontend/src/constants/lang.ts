@@ -34,7 +34,6 @@ export const Lang = {
 // which engine can translate into which option is backend-owned too (AllEngineItem.target_languages).
 export const ALL_TRANSLATE_LANGS: TranslateLang[] = [
   Language.Auto,
-  Language.ZH,
   Language.EN,
   Language.JA,
   Language.KO,
@@ -44,6 +43,8 @@ export const ALL_TRANSLATE_LANGS: TranslateLang[] = [
   Language.PTBR,
   Language.PTPT,
   Language.RU,
+  // Chinese last, matching the backend order (principal, 2026-09-26).
+  Language.ZH,
 ];
 
 // 目标翻译语言需排除 auto（引擎不支持自动检测目标语言）。

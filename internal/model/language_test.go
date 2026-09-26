@@ -20,14 +20,14 @@ func TestVariantConstantsHaveBCP47Values(t *testing.T) {
 }
 
 func TestAllLanguagesIsRecognizedSetFamiliesAdjacent(t *testing.T) {
-	want := []Language{Auto, ZH, EN, JA, KO, FR, DE, ES, ESMX, PT, PTBR, PTPT, RU}
+	want := []Language{Auto, EN, JA, KO, FR, DE, ES, ESMX, PT, PTBR, PTPT, RU, ZH}
 	if got := AllLanguages(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("AllLanguages() = %v, want %v (recognized set, families adjacent)", got, want)
 	}
 }
 
 func TestSelectableLanguagesExcludesBareEsPtKeepsOrder(t *testing.T) {
-	want := []Language{Auto, ZH, EN, JA, KO, FR, DE, ESMX, PTBR, PTPT, RU}
+	want := []Language{Auto, EN, JA, KO, FR, DE, ESMX, PTBR, PTPT, RU, ZH}
 	if got := SelectableLanguages(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("SelectableLanguages() = %v, want %v", got, want)
 	}

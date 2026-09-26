@@ -12,8 +12,9 @@
 // When the source is auto and nothing usable was detected there is nothing to exchange: this
 // returns null and the caller disables the button instead of guessing a language (the old
 // hardcoded zh fallback could never be right). A detection is usable only if the target select
-// can hold it: bare es / pt are recognized but not selectable (epic #51), so a bare detection
-// counts as "not detected" here and no default variant is invented.
+// can hold it. Bare es / pt are recognized but not selectable (epic #51); a bare detection lands on
+// the first selectable variant of its family, the backend's SelectableOr rule (es -> es-MX), so
+// a Spanish text detected before any variant was learned still swaps (hand test of #82).
 //
 // Pure function of plain values, like detectedLang.ts / flippedTarget.ts / targetCapability.ts:
 // the auto code and the "can the target select hold this code" predicate are injected by the
@@ -53,6 +54,13 @@ export interface SwapLanguagesArgs {
    * Never consulted for a pinned source, which is always exchanged.
    */
   isSelectable: (code: string) => boolean;
+  /**
+   * The target select's option codes in display order. When a detection is a bare family base the
+   * select does not offer (es, pt), the first selectable option of that family (code starting
+   * with `<base>-`) is used instead: the same rule as the backend's model.Language.SelectableOr
+   * (es -> es-MX, pt -> pt-BR). Optional; without it a bare base is unusable.
+   */
+  options?: string[];
 }
 
 /**
@@ -68,16 +76,22 @@ export function swapLanguages({
   detectedFrom,
   autoCode,
   isSelectable,
+  options = [],
 }: SwapLanguagesArgs): LangPair | null {
   let source = from;
   if (from === autoCode) {
     // No result yet (''), or the engine reported no detection and the backend fell back to the
     // request value, auto (issue #53): nothing was detected. A detection the target select cannot
-    // hold (a bare es / pt, or a language no enabled engine can target) is unusable too.
-    if (detectedFrom === '' || detectedFrom === autoCode || !isSelectable(detectedFrom)) {
-      return null;
-    }
-    source = detectedFrom;
+    // hold (a language no enabled engine can target, or a bare base with no usable variant) is
+    // unusable too.
+    if (detectedFrom === '' || detectedFrom === autoCode) return null;
+    // A bare family base (es, pt) is recognized but not a target option: land on its first
+    // selectable variant, so a Spanish text detected without a learned preference still swaps.
+    const usable = isSelectable(detectedFrom)
+      ? detectedFrom
+      : options.find((c) => c.startsWith(`${detectedFrom}-`) && isSelectable(c));
+    if (!usable) return null;
+    source = usable;
   }
   return { from: to, to: source };
 }

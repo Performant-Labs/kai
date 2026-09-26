@@ -52,7 +52,8 @@ const (
 // what engines and detection may emit and what has a display name. Dialect variants sit right
 // after their base so language families stay adjacent (…, ES, ESMX, PT, PTBR, PTPT, RU).
 // Recognized is a superset of selectable: see selectableExcluded.
-var allLanguages = []Language{Auto, ZH, EN, JA, KO, FR, DE, ES, ESMX, PT, PTBR, PTPT, RU}
+// Chinese is last on purpose (principal, 2026-09-26): the dropdowns list it at the bottom.
+var allLanguages = []Language{Auto, EN, JA, KO, FR, DE, ES, ESMX, PT, PTBR, PTPT, RU, ZH}
 
 // selectableExcluded lists recognized languages that are NOT offered in the language
 // dropdowns: the bare bases of a dialect family. Detection emits them on every auto send and

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { get } from 'svelte/store';
   import SpanText from './SpanText.svelte';
   import { t, langName, engineName } from '../i18n';
   import { rootStyle } from '../stores/theme';
@@ -96,11 +97,20 @@
   import {
     activeEngineFor,
     statusDots,
+    paneState,
     anyPending,
+    allReported,
+    isEngineOptionDisabled,
+    engineOptionLabel,
     resetEdits,
     failureMessage,
     type DotState,
   } from '../utils/resultPane.ts';
+  import {
+    emptySession,
+    restoreSession,
+    type TranslateSession,
+  } from '../utils/translateSession.ts';
   import { detectedSourceLabel } from '../utils/detectedLang.ts';
   import { flippedTargetLabel } from '../utils/flippedTarget.ts';
   import { swapLanguages } from '../utils/swapLangs.ts';
@@ -112,21 +122,59 @@
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
   import { ShowSettings } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
 
-  let input = $state('');
+  // The retained session (issue #81): the source text, the per-engine results and the request
+  // marker survive closing the window and an app restart, so reopening shows the last translation.
+  // It uses the same localStorage-backed store as the pin and the last-used engine; the values
+  // read back are untrusted, so restoreSession validates them and falls back to the empty session
+  // when anything is off. Read once, here. The $effect below is the only writer: Clear, a new
+  // request and every arriving result all reach storage through it. The two languages are not
+  // part of the session, they persist through the settings file (loadDefaults / persistLangs).
+  const sessionStore = persisted<TranslateSession>('kai:translate:session', emptySession());
+  const restored = restoreSession(get(sessionStore));
+
+  let input = $state(restored.input);
   let engines = $state<EngineListItem[]>([]);
   let languages = $state<NamedItem[]>([]);
   let fromLang = $state<TranslateLang>(TRANSLATE_LANG.Auto);
   let toLang = $state<TranslateLang>(TRANSLATE_LANG.EN);
   // Per-engine translation results, aggregated by engine name (multi-engine concurrency,
-  // arriving one by one).
-  let results = $state<Record<string, TranslateResult>>({});
+  // arriving one by one). Seeded from the retained session: those entries were validated as
+  // objects that name their engine, but restoreSession is bindings-free and types them
+  // structurally (PaneResult), so the cast to the generated result type is made here, once.
+  let results = $state<Record<string, TranslateResult>>(
+    restored.results as unknown as Record<string, TranslateResult>,
+  );
   // The target the current results were requested with, captured when the request is sent (issue
   // #44). The backend may translate a result into a different target (the same-language guard
   // flips it to English) and reports that in the result's own `to`; comparing against this, not
   // the live select, keeps a later change of the select from making an untouched result look
-  // flipped. Read-only feedback: nothing writes toLang from it.
-  let requestedTo = $state<string>('');
+  // flipped. Read-only feedback: nothing writes toLang from it. Retained with the results.
+  let requestedTo = $state<string>(restored.requestedTo);
+  // Whether a translation was requested and not cleared since (issue #81): set by doTranslate(),
+  // reset by Clear. "No result and not loading" alone cannot tell an idle window (nothing requested
+  // yet, or just cleared) from a request whose engines all failed, and only the second one is a
+  // failure. Retained with the results; a restore that finds no result reads as idle again.
+  let requested = $state(restored.requested);
   let loading = $state(false);
+  // The request is still open for the result pane: set by doTranslate(), cleared when every enabled
+  // translate engine has reported or by the 15 s fallback. `loading` alone cannot say this because
+  // the first arriving result clears it (the Translate button re-enables then); with two engines
+  // the fast one would end it and the slower active engine would read as failed until it answered.
+  let awaiting = $state(false);
+
+  // Write-back of the retained session (issue #81): whenever the text, the results, the requested
+  // target or the requested marker change, the whole session is stored again. Clear resets these
+  // same four fields, so it empties what is stored too. Neither the loading flag (nothing is in
+  // flight after a restart) nor the manual result edits (discarded by design, §3) are part of it.
+  // The snapshot detaches the stored value from the reactive proxies.
+  $effect(() => {
+    sessionStore.set({
+      input,
+      results: $state.snapshot(results),
+      requestedTo,
+      requested,
+    });
+  });
 
   // Two-pane layout (issue #10, locked decision: always side by side, no stacked fallback).
   // The divider splits the content row into the source pane (left) and the results pane (right);
@@ -180,7 +228,7 @@
   // Translating marquee: animated ellipsis (. → .. → ... → .... cycling)
   let dotCount = $state(0);
   $effect(() => {
-    if (!loading) {
+    if (!loading && !awaiting) {
       dotCount = 0;
       return;
     }
@@ -214,9 +262,27 @@
   // defensive fallback (falls back to the first engine when resolution is '' but enabled translate
   // engines still exist, guaranteeing the select never dangles). Recomputed whenever the engine
   // list / last-used / settings change; switching engines writes last-used (#8's setLastUsedEngine).
-  const activeEngine = $derived(activeEngineFor(LAST_ENGINE_KEY, defaultEngine, allEngines));
-  // One dot per enabled translate engine (state = the fan-out's real output: done/pending/failed, design §4).
-  const dots = $derived(statusDots(allEngines, results, loading));
+  // activeEngineFor reads the last-used value from localStorage itself, which Svelte cannot track,
+  // so $lastUsedStore is read here to make a pick in the dropdown re-derive the active engine
+  // (without it the pane kept the old engine and the next render snapped the select back).
+  const activeEngine = $derived(
+    ($lastUsedStore, activeEngineFor(LAST_ENGINE_KEY, defaultEngine, allEngines)),
+  );
+  // One dot per enabled translate engine (state = the fan-out's real output: done/pending/failed,
+  // design §4; an idle window, nothing requested, shows no failed dots: issue #81).
+  const dots = $derived(statusDots(allEngines, results, awaiting, requested));
+  // Which of the pane's five states applies (issue #81): no-engine / loading / result / idle /
+  // failed. The template's chain reads this one value, so a window that was never asked to
+  // translate (idle) can no longer fall into the failed branch.
+  const pane = $derived(
+    paneState({
+      hasEngines: activeEngines.length > 0,
+      engine: activeEngine,
+      results,
+      loading: awaiting,
+      requested,
+    }),
+  );
   // The active engine's current result (a failed engine is absent from results → null).
   const activeResult = $derived(activeEngine ? (results[activeEngine] ?? null) : null);
   // The text the active engine is showing / can show: manual edit ?? engine result ?? empty string.
@@ -262,6 +328,7 @@
       autoCode: TRANSLATE_LANG.Auto,
       isSelectable: (code) =>
         targetLanguages.some((l) => l.value === code) && !isTargetDisabled(allEngines, code),
+      options: targetLanguages.map((l) => l.value),
     }),
   );
   // Result-pane manual edits (aggregated by engine name): discarded wholesale on engine switch /
@@ -285,6 +352,9 @@
       if (payload && payload.engine) {
         results = { ...results, [payload.engine]: payload };
         loading = false;
+        // The request settles only when every enabled engine has reported: until then the active
+        // engine keeps its loading placeholder even if a faster sibling answered first.
+        if (allReported(allEngines, results)) awaiting = false;
       }
     });
     const offInputFill = onEvent(EventInputFill, (text: string) => {
@@ -299,13 +369,16 @@
         Window.SetAlwaysOnTop($pinnedStore).catch((e) => console.error(t('log.restorePinFailed'), e));
         return;
       }
-      // Global broadcast: only handle this window's (translate) closing, so closing another
-      // window doesn't mistakenly clear the translation.
+      // Global broadcast: only this window's (translate) closing is looked at, so closing another
+      // window never touches the translation.
       if (name !== WindowTranslate) return;
-      results = {};
-      input = '';
-      loading = false;
-      edited = new Map();
+      // Issue #81: closing the translate window used to clear the text and the results here. It
+      // no longer clears anything: the session (text, results, request marker; the languages
+      // persist on their own) is retained, so reopening the window shows the last translation.
+      // It is replaced only by Clear, a new EventInputFill or a new translate. The loading flag is
+      // left alone too: results still in flight when the window is hidden keep landing and end
+      // it, and the 15 s fallback covers a request that never answers, so a quick reopen is not
+      // turned into a failed pane.
     });
     // Broadcast after engines are added/removed or enabled/disabled in settings: re-fetch the
     // engine list so the translate window's result cards sync to the latest state (otherwise
@@ -450,6 +523,9 @@
   async function doTranslate() {
     if (!input.trim() || activeEngines.length === 0) return;
     loading = true;
+    awaiting = true;
+    // Something is now being asked for: from here on, no result means failed, not idle (issue #81).
+    requested = true;
     requestedTo = toLang;
     results = {};
     // A new fan-out round starts blank: the previous batch's edits are meaningless for the new
@@ -478,6 +554,7 @@
       // dot flips from pending to failed.
       setTimeout(() => {
         if (anyPending(allEngines, results, loading)) loading = false;
+        if (anyPending(allEngines, results, awaiting)) awaiting = false;
       }, 15000);
     }
   }
@@ -500,9 +577,15 @@
     }
   }
 
+  // Back to the idle window (issue #81): the four retained fields (text, results, requested target,
+  // requested marker) are reset here and the $effect above stores the empty session; there is no
+  // second write to storage.
   function clearInput() {
     input = '';
     results = {};
+    requestedTo = '';
+    requested = false;
+    awaiting = false;
     edited = new Map();
     editingResult = false;
   }
@@ -746,14 +829,19 @@
                 title={t('translate.engineActive')}
               >
                 {#each activeEngines as e}
-                  <option value={e.value} disabled={!e.enabled}>
-                    {engineName(e.value)}{!e.enabled ? t('translate.engineDisabled') : ''}
+                  <option value={e.value} disabled={isEngineOptionDisabled(e.value, allEngines)}>
+                    {engineOptionLabel(
+                      engineName(e.value),
+                      isEngineOptionDisabled(e.value, allEngines),
+                      t('translate.engineDisabled'),
+                    )}
                   </option>
                 {/each}
               </select>
               <!-- One status dot per engine (design §4): done/pending/failed derived purely from the
                  fan-out's real output; the active engine's dot gets an accent ring so the dropdown's
-                 selection is visible at a glance. -->
+                 selection is visible at a glance. An idle window (nothing requested, issue #81) has
+                 nothing to report: no fill, and the label is the engine name alone, so no new copy. -->
               <div class="flex items-center gap-1">
                 {#each activeEngines as e (e.value)}
                   {@const st = dots[e.value] as DotState}
@@ -769,13 +857,17 @@
                         ? ' · ' + t('translate.engineDone')
                         : st === 'pending'
                           ? ' · ' + t('translate.enginePending')
-                          : ' · ' + t('translate.engineFailed'))}
+                          : st === 'failed'
+                            ? ' · ' + t('translate.engineFailed')
+                            : '')}
                     aria-label={engineName(e.value) +
                       (st === 'done'
                         ? ' · ' + t('translate.engineDone')
                         : st === 'pending'
                           ? ' · ' + t('translate.enginePending')
-                          : ' · ' + t('translate.engineFailed'))}
+                          : st === 'failed'
+                            ? ' · ' + t('translate.engineFailed')
+                            : '')}
                   ></span>
                 {/each}
               </div>
@@ -807,7 +899,10 @@
           </div>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-4">
-          {#if activeEngines.length === 0}
+          <!-- One value decides the pane (paneState, issue #81): no-engine, loading, result, failed,
+             or idle (nothing requested yet, or just cleared), which has no branch below and stays
+             blank on purpose. -->
+          {#if pane === 'no-engine'}
             <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
               <svg
                 class="u-muted"
@@ -825,7 +920,7 @@
               </svg>
               <span class="u-muted text-sm">{t('translate.noActiveEngine')}</span>
             </div>
-          {:else if loading && !results[activeEngine]}
+          {:else if pane === 'loading'}
             <!-- The active engine is still in flight (no result yet): loading placeholder (kai-dots + kai-loading-bar). -->
             <div class="u-result-card">
               <div class="mb-2 flex items-center gap-2">
@@ -842,10 +937,12 @@
                 <div class="kai-loading-bar" aria-hidden="true"></div>
               </div>
             </div>
-          {:else if activeResult?.result}
+          {:else if pane === 'result' && activeResult}
             <!-- The active engine has a (non-empty) result: editable single card (design §5). Edits
                write back to edited[activeEngine]; displayed text = edited ?? result. On engine switch
-               edited is discarded wholesale and the new engine starts from its own result. -->
+               edited is discarded wholesale and the new engine starts from its own result. The
+               activeResult check is redundant at runtime (a result for the active engine implies it);
+               it only narrows the type for the card. -->
             <div class="u-result-card">
               <div class="mb-2 flex items-center gap-2">
                 <span
@@ -882,10 +979,11 @@
                 </div>
               {/if}
             </div>
-          {:else}
-            <!-- The active engine failed (absent from results with loading already cleared) or returned
-               an empty result: failed state (design §5). No retry, no retry button — retrying means the
-               user presses the translate button again (re-running the whole fan-out). -->
+          {:else if pane === 'failed'}
+            <!-- A translation was requested and the active engine failed (absent from results with
+               loading already cleared) or returned an empty result: failed state (design §5). No
+               retry, no retry button — retrying means the user presses the translate button again
+               (re-running the whole fan-out). Never shown for an idle window (issue #81). -->
             <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
               <span class="text-sm" style="color: var(--app-danger)">{t('translate.failed')}</span>
             </div>

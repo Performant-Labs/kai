@@ -4,8 +4,9 @@
 export const EventWindowShow = 'kai:window:show';
 
 // EventWindowClosing: broadcast when a window's close button (title-bar X) is clicked; each window
-// cleans up its own state as needed (e.g. the translate window clears results), then closes.
-// payload: optional window name.
+// reacts to its own closing as needed (e.g. the screenshot window clears its image and results),
+// then closes. The translate window keeps its text and results across a close (issue #81), so it
+// clears nothing. payload: optional window name.
 export const EventWindowClosing = 'kai:window:closing';
 
 // EventLocaleChanged: broadcast after the UI language changes, payload: LocaleChangedPayload
