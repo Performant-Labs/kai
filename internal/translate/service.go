@@ -304,6 +304,21 @@ func isAutoSource(l model.Language) bool {
 	return l == "" || strings.EqualFold(string(l), string(model.Auto))
 }
 
+// failurePayload builds the failure entry both fan-outs report for an engine that did not produce
+// a translation (issue #96): the sanitized error text and its category (ClassifyEngineError).
+// Sanitizing happens here, once, so no caller can forget it; the logs keep the full error.
+// From is left empty: the payload doesn't claim a "detected source language", avoiding misuse of
+// the auto-detect label. A caller that wants a source on the entry sets it afterwards.
+func failurePayload(name string, req model.TranslateRequest, err error) model.TranslateResult {
+	return model.TranslateResult{
+		Engine:    name,
+		To:        req.To,
+		Text:      req.Text,
+		Error:     SanitizeDetail(err.Error()),
+		ErrorKind: ClassifyEngineError(err),
+	}
+}
+
 // TranslateMulti starts translations on all "enabled translation engines" in parallel,
 // streaming each result to the frontend as it lands (EventTranslateResult).
 // The registry only contains engines the user enabled in the settings page and that
@@ -334,17 +349,10 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 				analytics.Error("translate_failed", map[string]any{"engine": name})
 				// issue #42: failures are no longer silently dropped — the same event is pushed
 				// with Error/ErrorKind payload, and the frontend shows the per-engine failure
-				// reason (categories per ClassifyEngineError).
-				// From is left empty: the failure payload doesn't claim a "detected source
-				// language", avoiding misuse of the auto-detect label.
+				// reason (categories per ClassifyEngineError). failurePayload builds it, for
+				// this fan-out and the screenshot one alike (issue #96).
 				if s.app != nil {
-					s.app.Event.Emit(events.EventTranslateResult, model.TranslateResult{
-						Engine:    name,
-						To:        req.To,
-						Text:      req.Text,
-						Error:     err.Error(),
-						ErrorKind: ClassifyEngineError(err.Error()),
-					})
+					s.app.Event.Emit(events.EventTranslateResult, failurePayload(name, req, err))
 				}
 				return
 			}
@@ -523,14 +531,15 @@ func (s *Service) defaultTarget() model.Language {
 }
 
 // enabledTranslatorNames returns the currently enabled, retrievable translation engine names
-// (for anonymous analytics reporting).
+// (for anonymous analytics reporting). An engine registered as a not-configured stand-in
+// (engine.IsNotConfigured, issue #96) is enabled but cannot work, so it is not reported as one.
 func (s *Service) enabledTranslatorNames() []string {
 	names := make([]string, 0)
 	for _, meta := range s.registry.AllEngines() {
 		if meta.Kind != engine.KindTranslator {
 			continue
 		}
-		if _, ok := s.registry.GetTranslator(meta.Name); ok {
+		if tr, ok := s.registry.GetTranslator(meta.Name); ok && !engine.IsNotConfigured(tr) {
 			names = append(names, meta.Name)
 		}
 	}
@@ -600,14 +609,11 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 			if err != nil {
 				slog.Warn(i18n.T("log.translate_screenshot_engine_failed"), slog.String("engine", meta.Name), slog.Any("error", err))
 				// Failures also append a placeholder card so the user can see which engine
-				// didn't produce a translation.
-				item = model.TranslateResult{
-					Engine: meta.Name,
-					From:   req.From,
-					To:     req.To,
-					Text:   req.Text,
-					Result: "",
-				}
+				// didn't produce a translation, and why (issue #96: the same failurePayload as
+				// the translate window's fan-out). The card header prints From for every card,
+				// failed ones included, so the placeholder keeps the requested source.
+				item = failurePayload(meta.Name, req, err)
+				item.From = req.From
 			} else {
 				s.saveHistory(res)
 				item = *res

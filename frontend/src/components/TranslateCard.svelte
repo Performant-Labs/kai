@@ -4,6 +4,7 @@
   import { untrack } from 'svelte';
   import type { TranslateResult } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
   import { flippedTargetLabel } from '../utils/flippedTarget.ts';
+  import { failureMessage } from '../utils/resultPane.ts';
 
   // requestedTo is the target this round was requested with (the screenshot window passes the
   // backend's ScreenshotResult.to, which keeps meaning the requested target). The card's own
@@ -25,6 +26,15 @@
   // window's target select (its change would re-emit EventScreenshotRetranslate).
   const flippedLabel = $derived(
     tr?.result ? flippedTargetLabel(requestedTo, String(tr?.to ?? ''), langName) : null,
+  );
+
+  // Why this engine failed (issue #96), when the backend sent a reason: the same failureMessage the
+  // translate window's failed pane renders, so both windows read one copy table. An entry without
+  // `error` keeps the fixed screenshot.translateFailed badge and shows no detail row. The card is
+  // read-only, so the action failureMessage may return (a Settings button) is deliberately unused
+  // here; the translate window is where a key gets fixed.
+  const failure = $derived(
+    tr && !tr.result && tr.error ? failureMessage(tr, t, engineName(tr.engine ?? '')) : null,
   );
 
   // The card is collapsible: by default only the first two successful translations start expanded
@@ -51,7 +61,9 @@
        non-interactive-element tabindex static check is ignored. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
-    class="flex items-center justify-between"
+    class={tr?.result
+      ? 'flex items-center justify-between'
+      : 'flex items-start justify-between gap-2'}
     class:cursor-pointer={tr?.result}
     role={tr?.result ? 'button' : undefined}
     tabindex={tr?.result ? 0 : undefined}
@@ -72,13 +84,17 @@
     <span class="text-xs font-semibold text-[var(--app-accent)]"
       >{engineName(tr?.engine ?? '')}</span
     >
-    <div class="flex items-center gap-2">
+    <!-- A failed card stacks the language line over the failure headline, right-aligned, so a long
+         headline wraps in its own column instead of squeezing the language line. -->
+    <div
+      class={tr?.result ? 'flex items-center gap-2' : 'flex flex-col items-end gap-0.5 text-right'}
+    >
       <span class="text-[11px] text-[var(--app-muted)]">
         {t('screenshot.source')}: {langName(tr?.from ?? '')} → {langName(tr?.to ?? '')}
       </span>
       {#if !tr?.result}
         <span class="text-[11px] font-medium text-[var(--app-danger)]"
-          >{t('screenshot.translateFailed')}</span
+          >{failure ? failure.headline : t('screenshot.translateFailed')}</span
         >
       {:else}
         <svg
@@ -118,6 +134,12 @@
       {/if}
     </div>
   </div>
+  {#if failure?.detail}
+    <!-- The sanitized reason under the header, muted; hidden when the error is empty. -->
+    <p class="mt-1 break-words text-[11px] text-[var(--app-muted)]" data-testid="failure-detail">
+      {failure.detail}
+    </p>
+  {/if}
   {#if flippedLabel}
     <p class="mt-1 text-[11px] text-[var(--app-muted)]" data-testid="flipped-target">
       {t('translate.flippedTo', { lang: flippedLabel })}

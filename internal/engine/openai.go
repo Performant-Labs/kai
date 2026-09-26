@@ -128,7 +128,7 @@ func (o *openaiTranslator) Translate(ctx context.Context, req model.TranslateReq
 			}
 			return nil, fmt.Errorf(i18n.T("err.openai_api_error"), apiErr.Message)
 		}
-		return nil, fmt.Errorf(i18n.T("err.openai_do"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.openai_do"), err)
 	}
 
 	if len(completion.Choices) == 0 {

@@ -144,7 +144,7 @@ func (t *tencentTranslator) Translate(ctx context.Context, req model.TranslateRe
 		ProjectId:  0,
 	})
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.tencent_marshal"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.tencent_marshal"), err)
 	}
 
 	now := time.Now().UTC()
@@ -153,7 +153,7 @@ func (t *tencentTranslator) Translate(ctx context.Context, req model.TranslateRe
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint, strings.NewReader(string(body)))
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.tencent_request"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.tencent_request"), err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
 	httpReq.Header.Set("Host", "tmt.tencentcloudapi.com")
@@ -165,17 +165,17 @@ func (t *tencentTranslator) Translate(ctx context.Context, req model.TranslateRe
 
 	resp, err := t.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.tencent_do"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.tencent_do"), err)
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	var tr tencentResponse
 	if err := json.Unmarshal(respBody, &tr); err != nil {
-		return nil, fmt.Errorf(i18n.T("err.tencent_decode"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.tencent_decode"), err)
 	}
 	if tr.Response.Error != nil {
-		return nil, fmt.Errorf(i18n.T("err.tencent_api_error"), tr.Response.Error.Code, tr.Response.Error.Message, tr.Response.Error.Code, tr.Response.Error.Message)
+		return nil, fmt.Errorf(i18n.T("err.tencent_api_error"), tr.Response.Error.Code, tr.Response.Error.Message)
 	}
 	from := model.Language(tr.Response.Source)
 	if from == "" {

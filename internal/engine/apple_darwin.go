@@ -111,30 +111,22 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 		return nil, fmt.Errorf("%s: %w", i18n.T("err.apple_translate_parse"), err)
 	}
 	if tr.Code != "" {
-		// Swift custom error: render user-visible copy via Go-side i18n by error code, with
-		// detail as the technical context.
+		// Swift custom error: log it here (this is the only place that knows the request's
+		// languages), then render the user-visible copy by error code, with detail as the
+		// technical context (appleBridgeError, untagged so its mapping is testable on any OS).
 		// Known codes map to err.apple_<code>; unknown codes fall back to the generic engine
 		// error copy, never exposing the raw key string to the user.
-		var msg string
 		switch tr.Code {
-		case swiftbridge.BridgeErrEmptyText:
-			msg = i18n.T("err.apple_empty_text")
-		case swiftbridge.BridgeErrTargetRequired:
-			msg = i18n.T("err.apple_target_required")
+		case swiftbridge.BridgeErrEmptyText, swiftbridge.BridgeErrTargetRequired:
+			// Caller-side input problems: not logged as engine errors (as before).
 		case swiftbridge.BridgeErrNoSourceLang:
 			slog.Error(i18n.T("err.apple_no_source_lang"), "from", sl, "to", tl, "detail", tr.Detail)
-			msg = i18n.T("err.apple_no_source_lang")
 		case swiftbridge.BridgeErrAppleTranslate:
 			slog.Error(i18n.T("err.apple_translate_engine"), "from", sl, "to", tl, "detail", tr.Detail)
-			msg = i18n.T("err.apple_translate_engine")
 		default:
 			slog.Error(i18n.T("err.apple_translate_engine"), "from", sl, "to", tl, "code", tr.Code, "detail", tr.Detail)
-			msg = i18n.T("err.apple_translate_engine")
 		}
-		if tr.Detail != "" {
-			msg = msg + " (" + tr.Detail + ")"
-		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, appleBridgeError(tr.Code, tr.Detail)
 	}
 	if tr.Result == "" {
 		slog.Error(i18n.T("err.apple_translate_empty"), "from", sl, "to", tl)

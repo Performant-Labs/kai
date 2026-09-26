@@ -69,7 +69,7 @@ type deeplResponse struct {
 
 func (d *deeplTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
 	if d.apiKey == "" {
-		return nil, fmt.Errorf(i18n.T("err.deepl_missing_apikey"))
+		return nil, withText(i18n.T("err.deepl_missing_apikey"), ErrAPIKey)
 	}
 	form := url.Values{}
 	form.Set("text", req.Text)
@@ -87,27 +87,27 @@ func (d *deeplTranslator) Translate(ctx context.Context, req model.TranslateRequ
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, d.endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.deepl_request"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.deepl_request"), err)
 	}
 	httpReq.Header.Set("Authorization", "DeepL-Auth-Key "+d.apiKey)
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := d.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.deepl_do"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.deepl_do"), err)
 	}
 	defer resp.Body.Close()
 
 	var dr deeplResponse
 	if err := json.NewDecoder(resp.Body).Decode(&dr); err != nil {
-		return nil, fmt.Errorf(i18n.T("err.deepl_decode"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.deepl_decode"), err)
 	}
 	if resp.StatusCode != http.StatusOK || len(dr.Translations) == 0 {
 		msg := dr.Message
 		if msg == "" {
 			msg = resp.Status
 		}
-		return nil, fmt.Errorf(i18n.T("err.deepl_api_error"), msg, msg)
+		return nil, fmt.Errorf(i18n.T("err.deepl_api_error"), msg)
 	}
 
 	// DeepL reports its detection upper-cased (ES, PT, ...); without one, echo the request language.

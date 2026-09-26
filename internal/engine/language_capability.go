@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"errors"
 	"strings"
 
 	"cnb.cool/dtapp/kai/internal/i18n"
@@ -59,7 +58,7 @@ var languageRegistry = map[string]map[model.Language]LanguageCapability{
 	// (bare es is Castilian on Apple's side and pt is Brazilian; es-419 is resolved by the
 	// framework to es-MX). The set of dialects is an OS-release property, verified here for
 	// macOS 27 only: a release that lacks one makes the framework fail the pair, which the
-	// per-engine failure reporting surfaces (translate.ErrorKindPair).
+	// per-engine failure reporting surfaces (model.ErrorKindPair).
 	"apple": {
 		model.ZH: yes("zh-Hans"), model.EN: yes("en"), model.JA: yes("ja"), model.KO: yes("ko"),
 		model.FR: yes("fr"), model.DE: yes("de"), model.RU: yes("ru"),
@@ -206,8 +205,10 @@ func targetCode(engineName, code string, fallback func(string) string) (string, 
 }
 
 // unsupportedTargetError is the visible refusal for a target the engine cannot translate into.
+// It wraps ErrUnsupportedPair (issue #96) so the failure reads as a language-pair problem, and its
+// text is the localized refusal only.
 func unsupportedTargetError(engineName string, l model.Language) error {
-	return errors.New(i18n.T("err.engine_unsupported_target", "engine", engineName, "lang", languageLabel(l)))
+	return withText(i18n.T("err.engine_unsupported_target", "engine", engineName, "lang", languageLabel(l)), ErrUnsupportedPair)
 }
 
 // languageLabel is the language's display name in the current backend locale ("lang.<code>").

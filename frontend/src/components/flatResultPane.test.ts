@@ -121,7 +121,9 @@ describe('flat result pane (#95)', () => {
     expect(b).toMatch(/enterResultEdit/);
     expect(b).toMatch(/setEdited\(activeEngine/);
     expect(b).toMatch(/SpanText/);
-    expect(b).toMatch(/t\('translate\.failed'\)/);
+    // #96: the failed copy is rendered through failureMessage (resultPane.ts), whose generic
+    // fallback is still t('translate.failed'); the markup reads failure.headline, not the key.
+    expect(b).toMatch(/failure\.headline/);
     expect(b).toMatch(/t\('translate\.noActiveEngine'\)/);
     expect(b).toMatch(/var\(--app-danger\)/);
   });

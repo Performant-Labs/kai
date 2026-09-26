@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -94,26 +95,27 @@ func (b *baiduTranslator) Translate(ctx context.Context, req model.TranslateRequ
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, b.endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.baidu_request"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.baidu_request"), err)
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := b.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.baidu_do"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.baidu_do"), err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	var br baiduResponse
 	if err := json.Unmarshal(body, &br); err != nil {
-		return nil, fmt.Errorf(i18n.T("err.baidu_decode"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.baidu_decode"), err)
 	}
 	if br.ErrorCode != "" {
-		return nil, fmt.Errorf(i18n.T("err.baidu_api_error"), br.ErrorCode, br.ErrorMsg, br.ErrorCode, br.ErrorMsg)
+		return nil, fmt.Errorf(i18n.T("err.baidu_api_error"), br.ErrorCode, br.ErrorMsg)
 	}
 	if len(br.TransResult) == 0 {
-		return nil, fmt.Errorf(i18n.T("err.baidu_empty_result"), string(body), string(body))
+		// The raw body is not part of the message: it is provider output the user cannot use.
+		return nil, errors.New(i18n.T("err.baidu_empty_result"))
 	}
 	from := model.Language(br.From)
 	if from == "" {

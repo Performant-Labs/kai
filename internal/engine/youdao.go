@@ -101,23 +101,23 @@ func (y *youdaoTranslator) Translate(ctx context.Context, req model.TranslateReq
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, y.endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.youdao_request"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.youdao_request"), err)
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := y.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf(i18n.T("err.youdao_do"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.youdao_do"), err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	var yr youdaoResponse
 	if err := json.Unmarshal(body, &yr); err != nil {
-		return nil, fmt.Errorf(i18n.T("err.youdao_decode"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.youdao_decode"), err)
 	}
 	if yr.ErrorCode != "0" {
-		return nil, fmt.Errorf(i18n.T("err.youdao_api_error"), yr.ErrorCode, yr.ErrorCode)
+		return nil, fmt.Errorf(i18n.T("err.youdao_api_error"), yr.ErrorCode)
 	}
 	if len(yr.Translation) == 0 {
 		return nil, fmt.Errorf(i18n.T("err.youdao_empty_result"))

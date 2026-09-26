@@ -90,7 +90,9 @@ func (e *geminiTranslator) translate(ctx context.Context, text, from, to string)
 
 	resp, err := e.client.Models.GenerateContent(ctx, e.model, contents, config)
 	if err != nil {
-		return "", fmt.Errorf(i18n.T("err.gemini_api_error"), err.Error())
+		// The SDK's error is kept in the chain (its transport cause, and later its typed API
+		// error) while the message stays what it was.
+		return "", withText(fmt.Sprintf(i18n.T("err.gemini_api_error"), err.Error()), err)
 	}
 	result := resp.Text()
 	if strings.TrimSpace(result) == "" {

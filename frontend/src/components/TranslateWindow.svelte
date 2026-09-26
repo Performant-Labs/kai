@@ -287,6 +287,12 @@
   const activeResult = $derived(activeEngine ? (results[activeEngine] ?? null) : null);
   // The text the active engine is showing / can show: manual edit ?? engine result ?? empty string.
   const activeDisplay = $derived(edited.get(activeEngine) ?? activeResult?.result ?? '');
+  // The active engine's failure, ready to render (issue #96): headline, muted detail and optional
+  // action, from the one failureMessage the dot tooltip and the screenshot card also read. Only the
+  // failed pane uses it. An engine that sent no payload (the 15 s fallback) gets the bare generic
+  // headline and nothing else; only the two credential kinds (not configured, key rejected) carry
+  // the Settings action.
+  const failure = $derived(failureMessage(activeResult, t, engineName(activeEngine)));
   // The result-pane engine dropdown's display value: activeEngine already includes the
   // "'' → first enabled" defensive fallback, so it is never empty while activeEngines is non-empty
   // (the select never points at nothing).
@@ -845,6 +851,13 @@
               <div class="flex items-center gap-1">
                 {#each activeEngines as e (e.value)}
                   {@const st = dots[e.value] as DotState}
+                  <!-- Issue #96: a failed engine that sent a payload says why in the tooltip and the
+                     label (the headline only, never the raw detail); one that sent none keeps the
+                     bare "Failed". failureMessage is called once per dot, for both attributes. -->
+                  {@const dotFailure =
+                    st === 'failed' && results[e.value]?.error
+                      ? failureMessage(results[e.value], t, engineName(e.value))
+                      : null}
                   <span
                     class="h-2 w-2 rounded-full"
                     class:bg-[var(--app-accent)]={st === 'done'}
@@ -858,7 +871,8 @@
                         : st === 'pending'
                           ? ' · ' + t('translate.enginePending')
                           : st === 'failed'
-                            ? ' · ' + t('translate.engineFailed')
+                            ? ' · ' +
+                              (dotFailure ? dotFailure.headline : t('translate.engineFailed'))
                             : '')}
                     aria-label={engineName(e.value) +
                       (st === 'done'
@@ -866,7 +880,8 @@
                         : st === 'pending'
                           ? ' · ' + t('translate.enginePending')
                           : st === 'failed'
-                            ? ' · ' + t('translate.engineFailed')
+                            ? ' · ' +
+                              (dotFailure ? dotFailure.headline : t('translate.engineFailed'))
                             : '')}
                   ></span>
                 {/each}
@@ -972,9 +987,22 @@
             <!-- A translation was requested and the active engine failed (absent from results with
                loading already cleared) or returned an empty result: failed state (design §5). No
                retry, no retry button — retrying means the user presses the translate button again
-               (re-running the whole fan-out). Never shown for an idle window (issue #81). -->
+               (re-running the whole fan-out). Never shown for an idle window (issue #81).
+               Issue #96: `failure` (derived above) is the reason, its muted detail and the optional
+               Settings action; ShowSettings is the existing binding and this window stays open. -->
             <div class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-              <span class="text-sm" style="color: var(--app-danger)">{t('translate.failed')}</span>
+              <span class="text-sm" style="color: var(--app-danger)">{failure.headline}</span>
+              {#if failure.detail}
+                <span class="u-muted max-w-[260px] break-words text-xs">{failure.detail}</span>
+              {/if}
+              {#if failure.action === 'settings'}
+                <button
+                  class="u-btn u-btn--ghost u-no-drag px-3 py-1 text-xs"
+                  onclick={() => ShowSettings()}
+                >
+                  {t('titlebar.settings')}
+                </button>
+              {/if}
             </div>
           {/if}
         </div>

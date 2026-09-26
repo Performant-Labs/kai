@@ -169,6 +169,23 @@ type TranslateRequest struct {
 	EngineName string   `json:"engine"` // Translation engine identifier to use
 }
 
+// Engine failure categories (TranslateResult.ErrorKind, issues #42 and #96). They live here, not
+// in translate, because engine.HTTPError.Kind names one and engine cannot import translate. The
+// string values are the wire format: the frontend maps each one to its own copy and falls back to
+// the generic headline for a value it does not know. translate.ClassifyEngineError is the only
+// place that picks a kind for an error.
+const (
+	ErrorKindNotConfigured = "not_configured" // The engine has no credentials set (no request was made)
+	ErrorKindAuth          = "auth"           // The provider rejected the credentials (401/403, invalid API key)
+	ErrorKindQuota         = "quota"          // The account is out of credits or quota (402)
+	ErrorKindRateLimit     = "rate_limit"     // Too many requests (429 without a quota signal, a Google gtx block)
+	ErrorKindUnavailable   = "unavailable"    // The provider is down (5xx)
+	ErrorKindNetwork       = "network"        // Network/endpoint unreachable (timeout, DNS, connection refused, TLS)
+	ErrorKindPair          = "pair"           // Language pair unavailable or unsupported
+	ErrorKindTooLong       = "too_long"       // The text is over the provider's length limit (413/414)
+	ErrorKindEngine        = "engine"         // Any other engine error (fallback)
+)
+
 // TranslateResult is a single translation result
 type TranslateResult struct {
 	Engine    string     `json:"engine"`               // Translation engine identifier
@@ -179,8 +196,8 @@ type TranslateResult struct {
 	Phonetic  string     `json:"phonetic"`             // Pronunciation/phonetics
 	Dict      []DictItem `json:"dict"`                 // Dictionary detail entries
 	FromOCR   bool       `json:"from_ocr"`             // Whether it came from OCR recognition
-	Error     string     `json:"error,omitempty"`      // Raw engine error on failure (issue #42; empty on success)
-	ErrorKind string     `json:"error_kind,omitempty"` // Engine failure category (pair/network/auth/engine, issue #42)
+	Error     string     `json:"error,omitempty"`      // Sanitized engine error on failure (issues #42, #96; empty on success)
+	ErrorKind string     `json:"error_kind,omitempty"` // Engine failure category, one of the ErrorKind* values (issues #42, #96)
 }
 
 // DictItem is a dictionary entry

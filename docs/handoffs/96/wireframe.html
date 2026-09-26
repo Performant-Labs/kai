@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>#96 - failure-reasons - wireframe</title>
+<style>
+  :root { --app-fg:#1f2329; --app-muted:#8a8f99; --app-border:#e5e6eb; --app-card:#f7f8fa; --app-accent:#3b82f6; --app-accent-fg:#fff; --app-danger:#ff5f57; --app-bg:#fff; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", sans-serif; background:#eef0f3; color:var(--app-fg); margin:0; padding:24px; }
+  #zoomwrap { zoom:1.5; transform-origin: top left; }
+  h1 { font-size:16px; margin:0 0 4px; } h2 { font-size:13px; margin:22px 0 8px; }
+  .meta { color:var(--app-muted); font-size:12px; margin-bottom:16px; max-width:900px; }
+  .board { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }
+  .board.two { grid-template-columns:repeat(2, 1fr); }
+  .frame { background:#fff; border:1px solid var(--app-border); border-radius:8px; overflow:hidden; }
+  .frame-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--app-muted); padding:8px 10px; border-bottom:1px solid var(--app-border); background:#fafbfc; }
+  .win { display:flex; height:250px; }
+  .pane { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .pane + .pane { border-left:1px solid var(--app-border); }
+  .pane-head { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid var(--app-border); font-size:11px; }
+  .pane-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; color:var(--app-muted); }
+  .pane-body { flex:1; padding:12px; font-size:13px; line-height:1.5; overflow:auto; }
+  .select-mock { font-size:11px; border:1px solid var(--app-border); border-radius:4px; padding:2px 6px; background:#fff; }
+  .dots { display:flex; gap:4px; align-items:center; margin-left:6px; position:relative; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--app-muted); }
+  .dot.done { background:var(--app-accent); } .dot.failed { background:var(--app-danger); }
+  .dot.active { outline:2px solid var(--app-accent); outline-offset:1px; }
+  .center { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:6px; text-align:center; }
+  .headline { color:var(--app-danger); font-size:13px; }
+  .detail { color:var(--app-muted); font-size:11px; line-height:1.4; max-width:260px; word-break:break-word; }
+  .btn { font-size:11px; border:1px solid var(--app-border); background:var(--app-card); border-radius:5px; padding:3px 10px; color:var(--app-fg); margin-top:4px; }
+  .muted { color:var(--app-muted); }
+  .tip { position:absolute; top:16px; left:-10px; white-space:nowrap; background:#2b2f36; color:#fff; font-size:11px; padding:4px 8px; border-radius:4px; z-index:2; }
+  .annot { font-size:11px; color:#3b5580; background:#eef4ff; border:1px dashed #b7d0f5; border-radius:6px; padding:8px 10px; margin:0; border-top-left-radius:0; border-top-right-radius:0; }
+  .card { border:1px solid var(--app-border); border-radius:8px; background:var(--app-card); margin:10px; overflow:hidden; }
+  .card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; padding:8px 10px; }
+  .card-eng { font-size:12px; font-weight:600; color:var(--app-accent); }
+  .card-right { display:flex; flex-direction:column; align-items:flex-end; gap:2px; text-align:right; }
+  .card-right .lang { font-size:11px; color:var(--app-muted); }
+  .card-right .fail { font-size:11px; font-weight:500; color:var(--app-danger); }
+  .card-detail { font-size:11px; color:var(--app-muted); padding:0 10px 8px; word-break:break-word; }
+  table { border-collapse:collapse; font-size:11px; background:#fff; width:100%; }
+  th, td { border:1px solid var(--app-border); padding:5px 8px; text-align:left; vertical-align:top; }
+  th { background:#fafbfc; }
+  code { font-size:11px; background:#f0f1f4; padding:0 3px; border-radius:3px; }
+  .zoombar { position:fixed; top:8px; right:8px; z-index:10; display:flex; gap:4px; align-items:center; background:#fff; border:1px solid var(--app-border); border-radius:6px; padding:4px 6px; font-size:13px; }
+  .zoombar button { font:inherit; min-width:28px; padding:2px 6px; cursor:pointer; }
+  .zoombar span { min-width:44px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="zoombar" role="group" aria-label="Zoom">
+  <button type="button" id="zout" aria-label="Zoom out">-</button>
+  <span id="zval">150%</span>
+  <button type="button" id="zin" aria-label="Zoom in">+</button>
+  <button type="button" id="zreset" aria-label="Reset zoom to 100%">0</button>
+</div>
+<div id="zoomwrap">
+<h1>#96 failure-reasons - wireframe (low-fi)</h1>
+<div class="meta">Draws the failed states on #95's flat result pane (no card chrome; text sits directly in the pane). Engine names and error details are examples. Copy is a draft (brief D9). Keys 0 / + / - or the buttons zoom.</div>
+
+<h2>A. Translate window - failed pane (right pane shown; source pane on the left for scale)</h2>
+<div class="board">
+
+  <div class="frame">
+    <div class="frame-label">A1 - not_configured (DeepL, no key)</div>
+    <div class="win">
+      <div class="pane"><div class="pane-head"><span class="pane-label">Source</span></div><div class="pane-body">Hello world</div></div>
+      <div class="pane">
+        <div class="pane-head"><span class="select-mock">DeepL v</span><span class="dots"><i class="dot failed active"></i><i class="dot done"></i></span></div>
+        <div class="pane-body"><div class="center">
+          <span class="headline">No API key set for DeepL</span>
+          <span class="detail">DeepL: missing API key</span>
+          <button class="btn" type="button">Settings</button>
+        </div></div>
+      </div>
+    </div>
+    <p class="annot">Headline: <code>failedNotConfigured</code> with {engine}. Detail: sanitized raw error, muted. Button label <code>titlebar.settings</code>, calls <code>ShowSettings()</code>; window stays open.</p>
+  </div>
+
+  <div class="frame">
+    <div class="frame-label">A2 - rate_limit (Google, 429)</div>
+    <div class="win">
+      <div class="pane"><div class="pane-head"><span class="pane-label">Source</span></div><div class="pane-body">Hello world</div></div>
+      <div class="pane">
+        <div class="pane-head"><span class="select-mock">Google v</span><span class="dots"><i class="dot failed active"></i><i class="dot done"></i></span></div>
+        <div class="pane-body"><div class="center">
+          <span class="headline">Google is rate-limiting requests; try again shortly</span>
+          <span class="detail">Google Translate: request failed (HTTP 429)</span>
+        </div></div>
+      </div>
+    </div>
+    <p class="annot">No action button. Retry stays "press translate again" (no auto retry, D8). Same layout for quota, unavailable, network, pair (non-Apple) and too_long; only the headline changes.</p>
+  </div>
+
+  <div class="frame">
+    <div class="frame-label">A3 - engine (unknown failure)</div>
+    <div class="win">
+      <div class="pane"><div class="pane-head"><span class="pane-label">Source</span></div><div class="pane-body">Hello world</div></div>
+      <div class="pane">
+        <div class="pane-head"><span class="select-mock">Baidu v</span><span class="dots"><i class="dot failed active"></i><i class="dot done"></i></span></div>
+        <div class="pane-body"><div class="center">
+          <span class="headline">Translation failed</span>
+          <span class="detail">Baidu: API error 54003 Invalid Sign</span>
+        </div></div>
+      </div>
+    </div>
+    <p class="annot">Existing generic <code>translate.failed</code> headline, now with the muted detail line. Detail omitted when the error is empty.</p>
+  </div>
+</div>
+
+<h2>B. Translate window - other failed cases</h2>
+<div class="board">
+  <div class="frame">
+    <div class="frame-label">B1 - auth (with Settings button)</div>
+    <div class="win"><div class="pane"><div class="pane-body"><div class="center">
+      <span class="headline">OpenAI rejected the API key</span>
+      <span class="detail">401 Unauthorized: Incorrect API key provided: sk-***</span>
+      <button class="btn" type="button">Settings</button>
+    </div></div></div></div>
+    <p class="annot">Settings button appears for not_configured and auth only.</p>
+  </div>
+  <div class="frame">
+    <div class="frame-label">B2 - long detail (truncated by SanitizeDetail)</div>
+    <div class="win"><div class="pane"><div class="pane-body"><div class="center">
+      <span class="headline">Google is unavailable right now</span>
+      <span class="detail">Google Translate: request failed (HTTP 503) (HTML response omitted)</span>
+    </div></div></div></div>
+    <p class="annot">Detail wraps inside max-width; HTML bodies never shown (replaced by a short marker).</p>
+  </div>
+  <div class="frame">
+    <div class="frame-label">B3 - failed with no payload (15 s fallback)</div>
+    <div class="win"><div class="pane"><div class="pane-body"><div class="center">
+      <span class="headline">Translation failed</span>
+    </div></div></div></div>
+    <p class="annot">Unchanged from today: generic headline, no detail, no button.</p>
+  </div>
+</div>
+
+<h2>C. Failed-dot tooltip (title and aria-label)</h2>
+<div class="board two">
+  <div class="frame">
+    <div class="frame-label">C1 - engine has a payload</div>
+    <div style="padding:16px 16px 44px;font-size:11px;">
+      <span class="select-mock">Google v</span>
+      <span class="dots" style="display:inline-flex"><i class="dot failed active"></i><i class="dot done"></i><span class="tip">Google - Google is rate-limiting requests; try again shortly</span></span>
+    </div>
+    <p class="annot">Text = <code>engineName - headline</code> from <code>failureMessage</code> (headline only, no detail).</p>
+  </div>
+  <div class="frame">
+    <div class="frame-label">C2 - failed, no payload</div>
+    <div style="padding:16px 16px 44px;font-size:11px;">
+      <span class="select-mock">Gemini v</span>
+      <span class="dots" style="display:inline-flex"><i class="dot failed active"></i><i class="dot done"></i><span class="tip">Gemini - Failed</span></span>
+    </div>
+    <p class="annot">Falls back to today's <code>translate.engineFailed</code>.</p>
+  </div>
+</div>
+
+<h2>D. Screenshot window - TranslateCard (failed)</h2>
+<div class="board">
+  <div class="frame">
+    <div class="frame-label">D1 - failed with reason (proposed placement)</div>
+    <div class="card">
+      <div class="card-head"><span class="card-eng">DeepL</span><div class="card-right"><span class="lang">Source: English to Chinese</span><span class="fail">No API key set for DeepL</span></div></div>
+      <div class="card-detail">DeepL: missing API key</div>
+    </div>
+    <p class="annot">Headline replaces the fixed badge, same slot and style. Detail is a muted second row inside the card, hidden when empty. Not clickable/expandable (as today). No Settings button on cards (keeps the card a read-only row; Settings is one click away in the translate window). Open question Q2.</p>
+  </div>
+  <div class="frame">
+    <div class="frame-label">D2 - failed, rate_limit</div>
+    <div class="card">
+      <div class="card-head"><span class="card-eng">Google</span><div class="card-right"><span class="lang">Source: English to Chinese</span><span class="fail">Google is rate-limiting requests; try again shortly</span></div></div>
+      <div class="card-detail">Google Translate: request failed (HTTP 429)</div>
+    </div>
+    <p class="annot">Longer headline wraps and right-aligns in the header column.</p>
+  </div>
+  <div class="frame">
+    <div class="frame-label">D3 - failed, no error field</div>
+    <div class="card">
+      <div class="card-head"><span class="card-eng">Apple</span><div class="card-right"><span class="lang">Source: English to Chinese</span><span class="fail">Translation failed</span></div></div>
+    </div>
+    <p class="annot">Entries without <code>error</code> keep <code>screenshot.translateFailed</code>, no detail row.</p>
+  </div>
+</div>
+
+<h2>E. Draft copy (en / zh) - for approval</h2>
+<table>
+  <tr><th>kind</th><th>key</th><th>en (draft)</th><th>zh-CN (draft)</th><th>button</th></tr>
+  <tr><td>not_configured</td><td>failedNotConfigured</td><td>No API key set for {engine}</td><td>{engine} 未设置 API 密钥</td><td>Settings</td></tr>
+  <tr><td>auth</td><td>failedAuth (changed)</td><td>{engine} rejected the API key</td><td>{engine} 拒绝了该 API 密钥</td><td>Settings</td></tr>
+  <tr><td>quota</td><td>failedQuota</td><td>{engine} account is out of credits or quota</td><td>{engine} 账户额度或余额已用尽</td><td>-</td></tr>
+  <tr><td>rate_limit</td><td>failedRateLimit</td><td>{engine} is rate-limiting requests; try again shortly</td><td>{engine} 请求过于频繁，请稍后重试</td><td>-</td></tr>
+  <tr><td>unavailable</td><td>failedUnavailable</td><td>{engine} is unavailable right now</td><td>{engine} 暂时不可用</td><td>-</td></tr>
+  <tr><td>network</td><td>failedNetwork (changed)</td><td>Can't reach {engine}: check your network or proxy</td><td>无法连接 {engine}：请检查网络或代理设置</td><td>-</td></tr>
+  <tr><td>pair (apple)</td><td>failedPair (unchanged)</td><td>Language pair unavailable - add it in System Settings > General > Language &amp; Region</td><td>existing</td><td>-</td></tr>
+  <tr><td>pair (others)</td><td>failedUnsupported</td><td>{engine} can't translate this language pair</td><td>{engine} 不支持该语言对</td><td>-</td></tr>
+  <tr><td>too_long</td><td>failedTooLong</td><td>Text is too long for {engine}</td><td>文本超出 {engine} 的长度限制</td><td>-</td></tr>
+  <tr><td>engine / none</td><td>failed (unchanged)</td><td>Translation failed</td><td>翻译失败</td><td>-</td></tr>
+</table>
+</div>
+<script>
+(function () {
+  var z = 1.5, w = document.getElementById('zoomwrap'), v = document.getElementById('zval');
+  function set(n) { z = Math.max(0.5, Math.min(3, n)); w.style.zoom = z; v.textContent = Math.round(z * 100) + '%'; }
+  document.getElementById('zin').onclick = function () { set(z + 0.25); };
+  document.getElementById('zout').onclick = function () { set(z - 0.25); };
+  document.getElementById('zreset').onclick = function () { set(1); };
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '+' || e.key === '=') set(z + 0.25);
+    else if (e.key === '-') set(z - 0.25);
+    else if (e.key === '0') set(1);
+  });
+})();
+</script>
+</body>
+</html>

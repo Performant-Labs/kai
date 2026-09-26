@@ -292,12 +292,12 @@ export interface TranslateResult {
     "from_ocr": boolean;
 
     /**
-     * Raw engine error on failure (issue #42; empty on success)
+     * Sanitized engine error on failure (issues #42, #96; empty on success)
      */
     "error"?: string;
 
     /**
-     * Engine failure category (pair/network/auth/engine, issue #42)
+     * Engine failure category, one of the ErrorKind* values (issues #42, #96)
      */
     "error_kind"?: string;
 }

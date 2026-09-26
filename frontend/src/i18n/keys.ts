@@ -63,6 +63,12 @@ export type Dict = {
     failedPair: string;
     failedNetwork: string;
     failedAuth: string;
+    failedNotConfigured: string;
+    failedQuota: string;
+    failedRateLimit: string;
+    failedUnavailable: string;
+    failedTooLong: string;
+    failedUnsupported: string;
     copy: string;
     result: string;
     noResult: string;

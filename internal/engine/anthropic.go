@@ -19,6 +19,7 @@ import (
 // Extra=JSON ({"model":"claude-3-5-sonnet-20241022","timeout_sec":30}); backward compatible
 // with the old plain model-name string.
 type anthropicTranslator struct {
+	apiKey  string
 	client  anthropic.Client
 	model   anthropic.Model
 	timeout time.Duration
@@ -47,6 +48,7 @@ func NewAnthropic(cfg *EngineConfig) *anthropicTranslator {
 		modelName = "claude-3-5-sonnet-20241022"
 	}
 	return &anthropicTranslator{
+		apiKey:  cfg.APIKey,
 		client:  anthropic.NewClient(opts...),
 		model:   modelName,
 		timeout: time.Duration(ex.TimeoutSec) * time.Second,
@@ -84,7 +86,9 @@ func (e *anthropicTranslator) translate(ctx context.Context, text, from, to stri
 
 	msg, err := e.client.Messages.New(ctx, params)
 	if err != nil {
-		return "", fmt.Errorf(i18n.T("err.anthropic_api_error"), err.Error())
+		// The SDK's error is kept in the chain (its transport cause, and later its typed API
+		// error) while the message stays what it was.
+		return "", withText(fmt.Sprintf(i18n.T("err.anthropic_api_error"), err.Error()), err)
 	}
 
 	var sb strings.Builder
@@ -98,6 +102,10 @@ func (e *anthropicTranslator) translate(ctx context.Context, text, from, to stri
 }
 
 func (e *anthropicTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
+	// No key, no request: the SDK would send one anyway and fail with its own credential error.
+	if e.apiKey == "" {
+		return nil, withText(i18n.T("err.anthropic_missing_apikey"), ErrAPIKey)
+	}
 	from := string(req.From)
 	to := string(req.To)
 	if from == "" || from == "auto" {

@@ -99,41 +99,78 @@ func (w *EngineWrapper) registerEngines() {
 		return c
 	}
 
+	// register puts the translator for the enabled engine e into the registry (issue #96). Three
+	// cases, decided here and never by a network call:
+	//   - a required field is missing (engine.ValidateRequired, the single definition of
+	//     "configured"; a row written before validation existed, or edited directly): a stub takes
+	//     the engine's place, so it reports "not configured" at once instead of failing at the
+	//     provider or timing out with no reason. The real engine is not built.
+	//   - the constructor fails (Gemini): a stub that returns that error, where the engine used to
+	//     be skipped without a trace.
+	//   - otherwise the engine itself, wrapped so its own key and secret never appear in an error
+	//     (engine.WithSecrets).
+	register := func(e *engine.EngineConfig, build func() (engine.Translator, error)) {
+		if engine.ValidateRequired(e) != nil {
+			w.registry.RegisterTranslator(engine.NewNotConfigured(e.Engine, engine.ErrAPIKey))
+			return
+		}
+		tr, err := build()
+		if err != nil {
+			w.registry.RegisterTranslator(engine.NewNotConfigured(e.Engine, err))
+			return
+		}
+		w.registry.RegisterTranslator(engine.WithSecrets(tr, e.APIKey, e.Secret))
+	}
+
 	// apple: macOS system translation (Translation.framework), key-free, no network client.
 	if e, ok := engines["apple"]; ok && e.Enabled {
-		w.registry.RegisterTranslator(engine.NewApple())
+		register(e, func() (engine.Translator, error) { return engine.NewApple(), nil })
 	}
 	if e, ok := engines["google"]; ok && e.Enabled {
-		w.registry.RegisterTranslator(engine.NewGoogle(e.Endpoint, newClient(15*time.Second)))
+		register(e, func() (engine.Translator, error) {
+			return engine.NewGoogle(e.Endpoint, newClient(15*time.Second)), nil
+		})
 	}
 	if e, ok := engines["deepl"]; ok && e.Enabled {
-		w.registry.RegisterTranslator(engine.NewDeepL(e, newClient(15*time.Second)))
+		register(e, func() (engine.Translator, error) {
+			return engine.NewDeepL(e, newClient(15*time.Second)), nil
+		})
 	}
 	if e, ok := engines["openai"]; ok && e.Enabled {
-		w.registry.RegisterTranslator(engine.NewOpenAI(e, newClient(30*time.Second)))
+		register(e, func() (engine.Translator, error) {
+			return engine.NewOpenAI(e, newClient(30*time.Second)), nil
+		})
 	}
 	if e, ok := engines["anthropic"]; ok && e.Enabled {
-		// Inject the global HTTP client (custom DNS/proxy/logging), consistent with
-		// openai/gemini.
-		e.HTTPClient = newClient(60 * time.Second)
-		w.registry.RegisterTranslator(engine.NewAnthropic(e))
+		register(e, func() (engine.Translator, error) {
+			// Inject the global HTTP client (custom DNS/proxy/logging), consistent with
+			// openai/gemini.
+			e.HTTPClient = newClient(60 * time.Second)
+			return engine.NewAnthropic(e), nil
+		})
 	}
 	if e, ok := engines["gemini"]; ok && e.Enabled {
-		// Inject the global HTTP client (custom DNS/proxy/logging) so the Gemini SDK never
-		// touches the useragent-wrapped global http.DefaultTransport and panics.
-		e.HTTPClient = newClient(60 * time.Second)
-		if g, err := engine.NewGemini(e); err == nil {
-			w.registry.RegisterTranslator(g)
-		}
+		register(e, func() (engine.Translator, error) {
+			// Inject the global HTTP client (custom DNS/proxy/logging) so the Gemini SDK never
+			// touches the useragent-wrapped global http.DefaultTransport and panics.
+			e.HTTPClient = newClient(60 * time.Second)
+			return engine.NewGemini(e)
+		})
 	}
 	if e, ok := engines["baidu"]; ok && e.Enabled {
-		w.registry.RegisterTranslator(engine.NewBaidu(e, newClient(15*time.Second)))
+		register(e, func() (engine.Translator, error) {
+			return engine.NewBaidu(e, newClient(15*time.Second)), nil
+		})
 	}
 	if e, ok := engines["tencent"]; ok && e.Enabled {
-		w.registry.RegisterTranslator(engine.NewTencent(e, newClient(15*time.Second)))
+		register(e, func() (engine.Translator, error) {
+			return engine.NewTencent(e, newClient(15*time.Second)), nil
+		})
 	}
 	if e, ok := engines["youdao"]; ok && e.Enabled {
-		w.registry.RegisterTranslator(engine.NewYoudao(e, newClient(15*time.Second)))
+		register(e, func() (engine.Translator, error) {
+			return engine.NewYoudao(e, newClient(15*time.Second)), nil
+		})
 	}
 	// OCR single-select: only one OCR engine may be registered into the Registry at a time.
 	// Prefer the user-enabled tesseract from the settings page; otherwise register vision

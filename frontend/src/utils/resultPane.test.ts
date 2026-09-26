@@ -199,45 +199,91 @@ describe('resetEdits (switching engines drops the previous engine manual edits)'
   });
 });
 
-// issue #42: user-facing copy for failure payloads (kind → localized key, raw detail appended).
-describe('failureMessage (#42 surfacing failure reasons)', () => {
-  const t = (key: string) => {
-    const dict: Record<string, string> = {
-      'translate.failed': 'Translation failed',
-      'translate.failedPair': 'Language pair unavailable',
-      'translate.failedNetwork': 'Engine unreachable — check network or proxy',
-      'translate.failedAuth': 'Check the API key',
+// issue #96 (supersedes #42's string-returning version): failureMessage(result, t, engineLabel)
+// returns { headline, detail, action }. The wire field is the generated binding name `error_kind`
+// (snake case), never `errorKind`. t is injected; new copy takes {engine}.
+describe('failureMessage (#96 surfacing failure reasons)', () => {
+  // t echoes "key" and, when an engine param is passed, "key[engine]" so both the key choice and
+  // the {engine} parameter are observable without depending on final copy.
+  const t = (key: string, params?: Record<string, string | number>): string =>
+    params && 'engine' in params ? `${key}[${params.engine}]` : key;
+
+  const kinds: Array<[string, string, string | null]> = [
+    // [error_kind, expected headline key, expected action]
+    ['not_configured', 'translate.failedNotConfigured', 'settings'],
+    ['auth', 'translate.failedAuth', 'settings'],
+    ['quota', 'translate.failedQuota', null],
+    ['rate_limit', 'translate.failedRateLimit', null],
+    ['unavailable', 'translate.failedUnavailable', null],
+    ['network', 'translate.failedNetwork', null],
+    ['too_long', 'translate.failedTooLong', null],
+    ['engine', 'translate.failed', null],
+  ];
+
+  for (const [kind, key, action] of kinds) {
+    it(`maps ${kind} to ${key} with {engine}, detail = raw error, action = ${action}`, () => {
+      const r = failureMessage({ engine: 'google', error: 'raw detail', error_kind: kind }, t, 'Google');
+      if (key === 'translate.failed') {
+        expect(r.headline).toMatch(/^translate\.failed(\[Google\])?$/);
+      } else {
+        expect(r.headline).toBe(`${key}[Google]`);
+      }
+      expect(r.detail).toBe('raw detail');
+      expect(r.action).toBe(action);
+    });
+  }
+
+  it('pair on apple keeps the existing system-settings copy (failedPair)', () => {
+    const r = failureMessage({ engine: 'apple', error: 'Unable to Translate', error_kind: 'pair' }, t, 'Apple');
+    expect(r.headline.startsWith('translate.failedPair')).toBe(true);
+    expect(r.detail).toBe('Unable to Translate');
+    expect(r.action).toBeNull();
+  });
+
+  it('pair on any other engine uses failedUnsupported with {engine}', () => {
+    const r = failureMessage({ engine: 'deepl', error: 'no pair', error_kind: 'pair' }, t, 'DeepL');
+    expect(r.headline).toBe('translate.failedUnsupported[DeepL]');
+    expect(r.action).toBeNull();
+  });
+
+  it('an unknown kind falls back to the generic headline but keeps the detail', () => {
+    const r = failureMessage({ engine: 'x', error: 'boom', error_kind: 'something_new' }, t, 'X');
+    expect(r.headline).toMatch(/^translate\.failed(\[X\])?$/);
+    expect(r.detail).toBe('boom');
+    expect(r.action).toBeNull();
+  });
+
+  it('only not_configured and auth carry the settings action', () => {
+    for (const [kind, , action] of kinds) {
+      const r = failureMessage({ engine: 'e', error: 'x', error_kind: kind }, t, 'E');
+      expect(r.action === 'settings').toBe(action === 'settings');
+    }
+  });
+
+  it('ignores the retired camelCase field', () => {
+    const legacy = { engine: 'e', error: 'x', errorKind: 'not_configured' } as unknown as PaneResult;
+    const r = failureMessage(legacy, t, 'E');
+    expect(r.headline).toMatch(/^translate\.failed(\[E\])?$/);
+    expect(r.action).toBeNull();
+  });
+
+  it('returns the generic headline with empty detail for null/absent results', () => {
+    for (const input of [null, undefined, { engine: 'x' }]) {
+      const r = failureMessage(input as PaneResult | null | undefined, t, 'X');
+      expect(r.headline).toMatch(/^translate\.failed(\[X\])?$/);
+      expect(r.detail).toBe('');
+      expect(r.action).toBeNull();
+    }
+  });
+
+  it('accepts a bindings-shaped TranslateResult (interface, no index signature) without a cast', () => {
+    // Type-level contract (AC/A finding 5): the first parameter is structural and narrow.
+    const bindingsShaped: { engine?: string; error?: string; error_kind?: string } = {
+      engine: 'google',
+      error: 'e',
+      error_kind: 'rate_limit',
     };
-    return dict[key] ?? key;
-  };
-
-  it('maps pair kind to the actionable message, detail appended', () => {
-    expect(
-      failureMessage({ engine: 'apple', error: 'Unable to Translate', errorKind: 'pair' }, t),
-    ).toBe('Language pair unavailable — Unable to Translate');
-  });
-
-  it('maps network kind to the reachability message', () => {
-    expect(
-      failureMessage({ engine: 'google', error: 'dial tcp: refused', errorKind: 'network' }, t),
-    ).toBe('Engine unreachable — check network or proxy — dial tcp: refused');
-  });
-
-  it('maps auth kind to the key message', () => {
-    expect(failureMessage({ engine: 'gpt', error: '401', errorKind: 'auth' }, t)).toBe(
-      'Check the API key — 401',
-    );
-  });
-
-  it('falls back to the generic message for unknown kinds', () => {
-    expect(failureMessage({ engine: 'x', error: 'boom', errorKind: 'engine' }, t)).toBe(
-      'Translation failed — boom',
-    );
-  });
-
-  it('returns the generic message with no detail for null/absent results', () => {
-    expect(failureMessage(null, t)).toBe('Translation failed');
-    expect(failureMessage({ engine: 'x' }, t)).toBe('Translation failed');
+    expect(failureMessage(bindingsShaped, t, 'Google').headline).toBe('translate.failedRateLimit[Google]');
   });
 });
 

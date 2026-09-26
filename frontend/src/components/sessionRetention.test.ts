@@ -115,8 +115,9 @@ describe('result pane chain', () => {
     expect(src).toMatch(/paneState\(/);
   });
 
-  it('translate.failed is rendered only in the failed branch, never as an unconditional else', () => {
-    const idx = src.indexOf("t('translate.failed')");
+  it('the failure headline is rendered only in the failed branch, never as an unconditional else', () => {
+    // #96: the generic copy lives in failureMessage; the branch renders failure.headline.
+    const idx = src.indexOf('failure.headline');
     expect(idx).toBeGreaterThan(-1);
     const before = src.slice(Math.max(0, idx - 900), idx);
     // the nearest preceding branch marker must be a paneState 'failed' test, not a bare {:else}

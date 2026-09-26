@@ -20,6 +20,11 @@
 // This module never touches localStorage / wails runtime / DOM: TranslateWindow holds lastUsed's
 // persisted store and hands the resolution inputs to activeEngineFor; the result-pane template
 // consumes statusDots and resetEdits.
+//
+// failureMessage (issues #42, #96) is the one renderer of a failure payload: the translate window's
+// failed pane, its failed-dot tooltip and the screenshot window's TranslateCard all read it, so the
+// copy table exists once. It reads the payload's `error_kind`, the generated binding's own field
+// name, with no mapping layer; the values come from internal/model (ErrorKind*).
 
 import { resolvePrimaryEngine } from './resolvePrimaryEngine.ts';
 
@@ -39,33 +44,97 @@ export type PaneResult = {
   engine?: string;
   result?: string;
   phonetic?: string;
-  /** issue #42: the failure payload's raw error and category (pair/network/auth/engine); absent on success. */
+  /** issues #42, #96: the failure payload's sanitized error and its category (`error_kind`, an ErrorKind); absent on success. */
   error?: string;
-  errorKind?: string;
+  error_kind?: string;
   [key: string]: unknown;
 };
 
 /**
- * User-facing copy for a failure payload (issue #42): kind → localized key (pair/network/auth get
- * actionable copy; everything else falls back to translate.failed), with the raw error detail
- * appended after " — ".
- * Pure function: t (i18n lookup) is injected by the caller.
+ * The failure categories the backend sends as `error_kind`. The source of truth is internal/model
+ * (ErrorKind*); a value this union does not list is treated as `engine`, so a newer backend never
+ * breaks an older window.
+ */
+export type ErrorKind =
+  | 'not_configured'
+  | 'auth'
+  | 'quota'
+  | 'rate_limit'
+  | 'unavailable'
+  | 'network'
+  | 'pair'
+  | 'too_long'
+  | 'engine';
+
+/**
+ * The parts of a result failureMessage reads. Structural and narrow on purpose: both PaneResult and
+ * the generated TranslateResult (an interface, so with no index signature) satisfy it without a cast.
+ */
+export type FailureSource = { engine?: string; error?: string; error_kind?: string };
+
+/** What a failed result renders as: a headline, a muted detail line (may be empty) and an optional action button. */
+export type FailureMessage = {
+  headline: string;
+  detail: string;
+  /** 'settings' = offer the Settings button (a credential problem the user fixes there); null = no button. */
+  action: 'settings' | null;
+};
+
+/**
+ * User-facing copy for a failure payload (issues #42, #96): the category picks a localized
+ * headline, the payload's (already sanitized) error is the detail, and only the two credential
+ * categories (not_configured, auth) carry the Settings action.
+ *
+ * `error_kind` picks the key: every category has its own copy taking the engine's display name as
+ * `{engine}`; `pair` reads differently for Apple, whose fix is a language download in System Settings
+ * (failedPair, no {engine}), than for any other engine (failedUnsupported); an unknown or absent
+ * kind falls back to the generic `translate.failed`. A null result, or one with no `error`,
+ * is the generic headline with no detail: a failed engine that sent no payload (the 15 s fallback).
+ * Pure function: t (the i18n lookup) is injected by the caller, and the caller owns the side
+ * effect of the action (opening Settings).
  */
 export function failureMessage(
-  result: PaneResult | null | undefined,
-  t: (key: string) => string,
-): string {
-  const generic = t('translate.failed');
-  if (!result?.error) return generic;
-  const key =
-    result.errorKind === 'pair'
-      ? 'translate.failedPair'
-      : result.errorKind === 'network'
-        ? 'translate.failedNetwork'
-        : result.errorKind === 'auth'
-          ? 'translate.failedAuth'
-          : 'translate.failed';
-  return `${t(key)} — ${result.error}`;
+  result: FailureSource | null | undefined,
+  t: (key: string, params?: Record<string, string | number>) => string,
+  engineLabel: string,
+): FailureMessage {
+  if (!result?.error) return { headline: t('translate.failed'), detail: '', action: null };
+  const p = { engine: engineLabel };
+  let headline: string;
+  // Typed as the union so a typo in a case label below fails the compile; an unknown wire value
+  // still reaches `default`.
+  const kind = result.error_kind as ErrorKind | undefined;
+  switch (kind) {
+    case 'not_configured':
+      headline = t('translate.failedNotConfigured', p);
+      break;
+    case 'auth':
+      headline = t('translate.failedAuth', p);
+      break;
+    case 'quota':
+      headline = t('translate.failedQuota', p);
+      break;
+    case 'rate_limit':
+      headline = t('translate.failedRateLimit', p);
+      break;
+    case 'unavailable':
+      headline = t('translate.failedUnavailable', p);
+      break;
+    case 'network':
+      headline = t('translate.failedNetwork', p);
+      break;
+    case 'too_long':
+      headline = t('translate.failedTooLong', p);
+      break;
+    case 'pair':
+      headline =
+        result.engine === 'apple' ? t('translate.failedPair') : t('translate.failedUnsupported', p);
+      break;
+    default:
+      headline = t('translate.failed');
+  }
+  const action = kind === 'not_configured' || kind === 'auth' ? 'settings' : null;
+  return { headline, detail: result.error, action };
 }
 
 /**

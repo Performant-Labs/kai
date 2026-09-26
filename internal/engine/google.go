@@ -83,18 +83,21 @@ func (g *googleTranslator) Translate(ctx context.Context, req model.TranslateReq
 	}
 	defer resp.Body.Close()
 
+	// A non-2xx answer is judged by its status alone. gtx is an unofficial endpoint whose error
+	// bodies are HTML pages, so the body is neither read nor put in the message (issue #96).
+	if resp.StatusCode != http.StatusOK {
+		return nil, googleHTTPError(resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(i18n.T("err.google_http"), resp.StatusCode, string(body), resp.StatusCode, string(body))
 	}
 
 	// Parse the Google gtx response: [[["dst","src",...],...], "detected_lang", ...]
 	var gresp googleResponse
 	if err := json.Unmarshal(body, &gresp); err != nil {
-		return nil, fmt.Errorf(i18n.T("err.google_parse"), err, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("err.google_parse"), err)
 	}
 
 	if gresp.Translated == "" {
@@ -108,6 +111,19 @@ func (g *googleTranslator) Translate(ctx context.Context, req model.TranslateReq
 		Text:   req.Text,
 		Result: gresp.Translated,
 	}, nil
+}
+
+// googleHTTPError is the error for a non-2xx gtx response: the localized "request failed (HTTP n)"
+// text over an *HTTPError carrying the status. gtx is keyless, so a 403 or 429 can only be Google
+// throttling this client, never a rejected key: both are marked as a rate limit rather than left
+// to the generic status map (which would read 403 as a bad key). That reading is a judgement about
+// an undocumented endpoint, verified by observation and not by hammering it (brief risk 1).
+func googleHTTPError(status int) error {
+	he := &HTTPError{Status: status}
+	if status == http.StatusForbidden || status == http.StatusTooManyRequests {
+		he.Kind = model.ErrorKindRateLimit
+	}
+	return withText(fmt.Sprintf(i18n.T("err.google_http"), status), he)
 }
 
 // googleResponse represents the Google gtx (dt=t) response.
