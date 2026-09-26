@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
-import { zh, type Dict } from './zh-CN';
+import type { Dict } from './keys';
+import { zh } from './zh-CN';
 import { en } from './en-US';
 import { Lang, type LangCode } from '../constants/lang';
 

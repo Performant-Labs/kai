@@ -1,4 +1,6 @@
-export const zh = {
+import type { Dict } from './keys';
+
+export const zh: Dict = {
   app: {
     name: 'Kai',
   },
@@ -371,5 +373,3 @@ export const zh = {
     vision: '系统 OCR',
   },
 };
-
-export type Dict = typeof zh;

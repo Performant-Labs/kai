@@ -1,4 +1,4 @@
-import type { Dict } from './zh-CN';
+import type { Dict } from './keys';
 
 export const en: Dict = {
   app: {
