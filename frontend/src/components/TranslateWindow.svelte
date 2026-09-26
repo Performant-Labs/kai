@@ -78,7 +78,7 @@
     EventEnginesChanged,
     EventAutoClipboardChanged,
   } from '../utils/events';
-  import { WindowTranslate } from '../constants/window';
+  import { WindowSettings, WindowTranslate } from '../constants/window';
   import type { TranslateResult } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
   import type {
     AllEngineItem,
@@ -108,6 +108,7 @@
     GetConfig,
     SaveConfig,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
+  import { ShowSettings } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
 
   let input = $state('');
   let engines = $state<EngineListItem[]>([]);
@@ -260,6 +261,12 @@
       doTranslate();
     });
     const offClosing = onEvent(EventWindowClosing, (name: string) => {
+      // Issue #69: opening Settings drops this window out of always-on-top so Settings is not
+      // hidden behind a pinned window; when Settings closes, put the persisted pin back.
+      if (name === WindowSettings) {
+        Window.SetAlwaysOnTop($pinnedStore).catch((e) => console.error(t('log.restorePinFailed'), e));
+        return;
+      }
       // Global broadcast: only handle this window's (translate) closing, so closing another
       // window doesn't mistakenly clear the translation.
       if (name !== WindowTranslate) return;
@@ -460,56 +467,90 @@
 
 <div class="u-surface flex h-screen flex-col" style={rootStyleToStyle($rootStyle)}>
   <main class="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4">
-    <!-- Language bar: spans both panes (from/swap/to apply to the whole translation; DeepL-style layout) -->
-    <div class="flex items-center justify-center gap-2">
-      <select
-        class="u-field u-select u-lang-select px-3 py-2 text-sm"
-        bind:value={fromLang}
-        onchange={onLangPicked}
-        aria-label={t('translate.from')}
-      >
-        {#each languages as l}
-          <option value={l.value}>{fromOptionLabel(l.value)}</option>
-        {/each}
-      </select>
-
-      <button
-        class="u-icon-btn u-no-drag"
-        onclick={swap}
-        aria-label={t('translate.swap')}
-        title={t('translate.swap')}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+    <!-- Toolbar row: spans both panes (from/swap/to apply to the whole translation; DeepL-style
+         layout). Three columns with equal 1fr sides keep the from/swap/to group centered while
+         the Settings gear (issue #69) sits alone in the right column, at the row's right end. -->
+    <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+      <div class="col-start-2 flex items-center justify-center gap-2">
+        <select
+          class="u-field u-select u-lang-select px-3 py-2 text-sm"
+          bind:value={fromLang}
+          onchange={onLangPicked}
+          aria-label={t('translate.from')}
         >
-          <path d="M7 10h14l-4-4" />
-          <path d="M17 14H3l4 4" />
-        </svg>
-      </button>
+          {#each languages as l}
+            <option value={l.value}>{fromOptionLabel(l.value)}</option>
+          {/each}
+        </select>
 
-      <select
-        class="u-field u-select u-lang-select px-3 py-2 text-sm"
-        bind:value={toLang}
-        onchange={onLangPicked}
-        aria-label={t('translate.to')}
-      >
-        {#each targetLanguages as l}
-          <!-- issue #52: a target no enabled engine can translate into is shown disabled;
-               the capability comes from the backend (allEngines[].target_languages), never a
-               frontend map. The source select above is never gated (every engine accepts every
-               source). -->
-          <option value={l.value} disabled={isTargetDisabled(allEngines, l.value)}>
-            {langName(l.value)}
-          </option>
-        {/each}
-      </select>
+        <button
+          class="u-icon-btn u-no-drag"
+          onclick={swap}
+          aria-label={t('translate.swap')}
+          title={t('translate.swap')}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M7 10h14l-4-4" />
+            <path d="M17 14H3l4 4" />
+          </svg>
+        </button>
+
+        <select
+          class="u-field u-select u-lang-select px-3 py-2 text-sm"
+          bind:value={toLang}
+          onchange={onLangPicked}
+          aria-label={t('translate.to')}
+        >
+          {#each targetLanguages as l}
+            <!-- issue #52: a target no enabled engine can translate into is shown disabled;
+                 the capability comes from the backend (allEngines[].target_languages), never a
+                 frontend map. The source select above is never gated (every engine accepts every
+                 source). -->
+            <option value={l.value} disabled={isTargetDisabled(allEngines, l.value)}>
+              {langName(l.value)}
+            </option>
+          {/each}
+        </select>
+      </div>
+
+      <!-- Settings gear (issue #69): app-level configuration, so it sits at the toolbar's right end,
+           outside both cards. Opens the Settings window through the existing WindowWrapper
+           binding (ShowSettings, no new Go API); this window stays open. Not a toggle, so it never
+           gets the --active styling. Glyph: Lucide "settings" (ISC), inline like the swap
+           button's. Label and tooltip reuse the titlebar.settings key. -->
+      <div class="col-start-3 flex justify-end">
+        <button
+          class="u-icon-btn u-no-drag"
+          onclick={() => ShowSettings()}
+          aria-label={t('titlebar.settings')}
+          title={t('titlebar.settings')}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+            />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Two-pane row (issue #10, locked decision: always side by side, no stacked fallback):

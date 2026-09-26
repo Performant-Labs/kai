@@ -330,18 +330,21 @@ func main() {
 		},
 		// Single instance: built into Wails v3 (macOS uses flock + NSDistributedNotification to
 		// notify the first instance). On a second launch, the second process triggers
-		// OnSecondInstanceLaunch and exits itself; the first instance brings the main window to
-		// the foreground, avoiding multi-instance contention over the database/hotkeys/tray.
+		// OnSecondInstanceLaunch and exits itself; the first instance brings the translate window
+		// (the app's main surface) to the foreground, avoiding multi-instance contention over the
+		// database/hotkeys/tray.
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "cnb.cool.dtapp.kai",
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 				slog.Info(i18n.T("log.single_instance_second_launch"))
 				// Kai is an Accessory app (no persistent main window, tray only); on second launch,
-				// bring the existing instance's settings window to the foreground (same behavior as
-				// the tray menu). Show/Focus is dispatched safely on the main thread.
-				if settingsWindow != nil {
-					settingsWindow.Show().Focus()
-				}
+				// bring the existing instance's translate window to the foreground (issue #69: the
+				// translate window, not Settings, matching a tray click's show). Go through
+				// WindowWrapper.ShowTranslateWindow (showAndFocus), never a bare Show().Focus(): the
+				// translate window is created hidden, so Wails builds its webview lazily and a lone
+				// Show() would only build it without displaying. Show/Focus is dispatched safely on
+				// the main thread.
+				windowSvc.ShowTranslateWindow()
 			},
 		},
 	}
@@ -436,6 +439,11 @@ func main() {
 	})
 	_ = settingsWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
+		// Issue #69: opening Settings lowers a pinned translate window (service.LowerForSettings);
+		// tell it Settings is closing so it re-applies its pin.
+		if app != nil {
+			app.Event.Emit(kevents.EventWindowClosing, model.WindowSettings)
+		}
 		settingsWindow.Hide()
 	})
 	// Main window shows and centers at startup
@@ -523,7 +531,7 @@ func main() {
 		}
 		screenshotWindow.Hide()
 	})
-	registerTray(app, hm, configSvc, settingsService)
+	registerTray(app, hm, configSvc, windowSvc, settingsService)
 
 	// After a language change, rebuild the tray menu copy with the latest language (the tray is
 	// native and can only be rebuilt by the backend). Prefer the language carried in the event
@@ -706,18 +714,18 @@ func showScreenshotWindow() {
 	})
 }
 
-func registerTray(app *application.App, hm *hotkey.Manager, configSvc *service.ConfigWrapper, ss *settings.Service) {
+func registerTray(app *application.App, hm *hotkey.Manager, configSvc *service.ConfigWrapper, windowSvc *service.WindowWrapper, ss *settings.Service) {
 	tray = app.SystemTray.New()
 	tray.SetIcon(selectTrayIcon(app))
 	// Do NOT use AttachWindow: on macOS, activating the app by clicking the tray also restores
-	// all windows (settings etc.). Toggle the main window manually instead, avoiding opening
-	// every window at once.
+	// all windows (settings etc.). Toggle the translate window manually instead, avoiding opening
+	// every window at once. The translate window is the app's main surface (issue #69); Settings
+	// is reached from the tray's right-click menu or the gear in the translate window. The show
+	// branch goes through windowSvc.ShowTranslateWindow (the window is created hidden, see
+	// ToggleTranslateWindow), and a tray click captures nothing: no clipboard/selection read,
+	// that stays with the input hotkey.
 	tray.OnClick(func() {
-		if settingsWindow.IsVisible() {
-			settingsWindow.Hide()
-		} else {
-			settingsWindow.Show().Focus()
-		}
+		service.ToggleTranslateWindow(translateWindow, windowSvc.ShowTranslateWindow)
 	})
 	buildTrayMenu(app, hm, configSvc, ss)
 }
@@ -774,6 +782,8 @@ func buildTrayMenu(app *application.App, hm *hotkey.Manager, configSvc *service.
 	}
 	// Settings, open the settings window
 	trayMenu.Add(i18n.T("menu.settings")).OnClick(func(ctx *application.Context) {
+		// Issue #69: same as the gear, keep Settings in front of a pinned translate window.
+		service.LowerForSettings(translateWindow)
 		settingsWindow.Show().Focus()
 	})
 	// Separator

@@ -86,8 +86,63 @@ func (w *WindowWrapper) ShowTranslateWindow() {
 	showAndFocus(w.translateWindow())
 }
 
-// ShowSettings opens settings
+// windowToggler is the slice of application.Window that ToggleTranslateWindow drives, so the
+// toggle can be exercised with a fake window and no running Wails app.
+type windowToggler interface {
+	IsVisible() bool
+	Hide() application.Window
+}
+
+// ToggleTranslateWindow is the tray-click toggle for the translate window (issue #69): hide it
+// when it is visible, otherwise summon it through show.
+//
+// show MUST be WindowWrapper.ShowTranslateWindow (i.e. showAndFocus), never a bare Show().Focus().
+// The translate window is created hidden, so Wails builds its webview lazily and a lone Show()
+// only builds it without displaying anything — the first tray click after launch would do nothing.
+//
+// The hide branch is a bare Hide(). It does not emit EventWindowClosing (only the red X does), so
+// text typed into the window survives a tray hide. Nothing here reads the clipboard or the
+// selection: a tray click captures nothing, that stays with the input hotkey (TriggerInput).
+//
+// It is a package-level func rather than a WindowWrapper method so Wails generates no frontend
+// binding for it.
+func ToggleTranslateWindow(win windowToggler, show func()) {
+	if win.IsVisible() {
+		win.Hide()
+		return
+	}
+	show()
+}
+
+// levelWindow is the slice of application.Window that LowerForSettings drives, so it can be
+// exercised with a fake window and no running Wails app.
+type levelWindow interface {
+	IsVisible() bool
+	SetAlwaysOnTop(b bool) application.Window
+}
+
+// LowerForSettings drops a visible, possibly pinned (always-on-top) window to the normal level so a
+// Settings window opened next is not hidden behind it (issue #69: the pinned translate window
+// covered a freshly opened Settings). A hidden window is left alone: it is not in the way, and its
+// own pin is re-applied when it is next shown.
+//
+// The pin preference lives in the frontend (Wails has no getter for the always-on-top state), so
+// restoring it is the frontend's job: the Settings close hook broadcasts EventWindowClosing with
+// the Settings window name and the translate window re-applies its pin.
+//
+// A package-level func rather than a WindowWrapper method so Wails generates no frontend binding.
+func LowerForSettings(win levelWindow) {
+	if win == nil || !win.IsVisible() {
+		return
+	}
+	win.SetAlwaysOnTop(false)
+}
+
+// ShowSettings opens settings, in front of a pinned translate window.
 func (w *WindowWrapper) ShowSettings() {
+	if tw := w.translateWindow(); tw != nil {
+		LowerForSettings(tw)
+	}
 	showAndFocus(w.settingsWindow())
 }
 
