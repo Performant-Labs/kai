@@ -1,0 +1,37 @@
+# .agents/pr-review.yml — PR reviewer config for Kai.
+# Drives Performant-Labs/playbook/.github/workflows/pr-review-reusable.yml
+# (called by .github/workflows/pr-review.yml). Same shape as the other code-repo consumers.
+
+project:
+  name: "Kai"
+  timezone: "America/Boise"
+
+# CI review via PR-Agent (DeepSeek V4 Pro). Uses the org-wide DEEPSEEK_API_KEY secret, which must
+# be shared with this repo (issue #67). The reviewer instructions live in .pr_agent.toml.
+pr_agent:
+  model: "deepseek/deepseek-v4-pro"
+  high_stakes_label: "high-stakes"   # app launch / migrations / hotkeys / updater / engine keys
+  skip_docs_only: true               # docs-only diffs (e.g. comment sweeps) skip the review
+  score_labels: true
+  score_banner: true
+  status_check: true
+
+# The pipeline's own gates cover local and dual review; CI PR-Agent is the independent second opinion.
+local_review:
+  enabled: false
+
+dual_review:
+  enabled: false
+
+dco:
+  required: false
+
+pr_template:
+  enabled: false
+
+# Automated UI walkthrough is infeasible on Wails v3 + macOS 27 (issue #28), so only headless tests.
+test_tiers:
+  t1_headless: true
+  t2_aria: false
+  t2_5_authenticated: false
+  t3_visual: false
