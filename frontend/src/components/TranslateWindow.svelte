@@ -155,6 +155,12 @@
   // yet, or just cleared) from a request whose engines all failed, and only the second one is a
   // failure. Retained with the results; a restore that finds no result reads as idle again.
   let requested = $state(restored.requested);
+  // Whether a request was made in THIS window run (issue #116). The persisted `requested` survives a
+  // restore whenever one engine's result did, so an engine that had failed last time (its failure
+  // payload is dropped on restore) would read as failed for a request the user does not remember.
+  // Failure is decided from this run-local marker: a restored window shows stored results and is
+  // otherwise blank; set by doTranslate(), reset by Clear.
+  let requestedThisRun = $state(false);
   let loading = $state(false);
   // The request is still open for the result pane: set by doTranslate(), cleared when every enabled
   // translate engine has reported or by the 15 s fallback. `loading` alone cannot say this because
@@ -270,7 +276,7 @@
   );
   // One dot per enabled translate engine (state = the fan-out's real output: done/pending/failed,
   // design §4; an idle window, nothing requested, shows no failed dots: issue #81).
-  const dots = $derived(statusDots(allEngines, results, awaiting, requested));
+  const dots = $derived(statusDots(allEngines, results, awaiting, requestedThisRun));
   // Which of the pane's five states applies (issue #81): no-engine / loading / result / idle /
   // failed. The template's chain reads this one value, so a window that was never asked to
   // translate (idle) can no longer fall into the failed branch.
@@ -280,7 +286,7 @@
       engine: activeEngine,
       results,
       loading: awaiting,
-      requested,
+      requested: requestedThisRun,
     }),
   );
   // The active engine's current result (a failed engine is absent from results → null).
@@ -532,6 +538,7 @@
     awaiting = true;
     // Something is now being asked for: from here on, no result means failed, not idle (issue #81).
     requested = true;
+    requestedThisRun = true;
     requestedTo = toLang;
     results = {};
     // A new fan-out round starts blank: the previous batch's edits are meaningless for the new
@@ -591,6 +598,7 @@
     results = {};
     requestedTo = '';
     requested = false;
+    requestedThisRun = false;
     awaiting = false;
     edited = new Map();
     editingResult = false;

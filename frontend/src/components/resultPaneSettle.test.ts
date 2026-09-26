@@ -13,12 +13,13 @@ describe('a fast engine answering first does not make the active engine read as 
   });
   it('doTranslate opens the wait, Clear closes it, and the 15 s fallback closes it too', () => {
     expect(src).toMatch(/loading = true;\s*awaiting = true;/);
-    expect(src).toMatch(/requested = false;\s*awaiting = false;/);
+    // #116 puts `requestedThisRun = false;` between the two; the wait is still closed by Clear.
+    expect(src).toMatch(/requested = false;\s*requestedThisRun = false;\s*awaiting = false;/);
     expect(src).toMatch(/anyPending\(allEngines, results, awaiting\)\) awaiting = false/);
   });
   it('the pane and the status dots read the wait, not the first-result loading flag', () => {
     expect(src).toMatch(/paneState\(\{[\s\S]*?loading: awaiting,/);
-    expect(src).toMatch(/statusDots\(allEngines, results, awaiting, requested\)/);
+    expect(src).toMatch(/statusDots\(allEngines, results, awaiting, requestedThisRun\)/);
   });
 });
 
