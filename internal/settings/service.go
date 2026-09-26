@@ -25,7 +25,8 @@ type Settings struct {
 	Language string `json:"language" mapstructure:"language"`
 	// Theme is the UI theme: auto / light / dark (auto follows the system appearance).
 	Theme string `json:"theme" mapstructure:"theme"`
-	// DefaultTo is the default translation target language (e.g. zh / en).
+	// DefaultTo is the default translation target language (e.g. zh / en). A fresh install starts
+	// at DefaultTarget (en); a value persisted here is honored as saved (issue #44).
 	DefaultTo string `json:"default_to" mapstructure:"default_to"`
 	// DefaultFrom is the default translation source language (auto = auto-detect).
 	DefaultFrom string `json:"default_from" mapstructure:"default_from"`
@@ -199,12 +200,23 @@ const (
 	UpdaterSourceCNB = "cnb"
 )
 
+// DefaultTarget is the policy default target language (issue #44): what a fresh install
+// translates into, and the fallback for a persisted target that cannot be used. It is English
+// because the core workflow is foreign-language text read in English (a Chinese default turns a
+// Mandarin source into a same-language pass). The frontend windows' own initial value is English
+// too, so a fresh install reads English both before and after the settings load.
+//
+// It is only a default: a target the user saved (default_to) is never rewritten. The
+// same-language case for such installs is handled per request, where the detected source is known
+// (translate.Service).
+const DefaultTarget = model.EN
+
 // DefaultSettings returns the default settings pointer
 func DefaultSettings() *Settings {
 	return &Settings{
 		Language:    string(model.LocaleENUS),
 		Theme:       string(model.ThemeAuto),
-		DefaultTo:   string(model.ZH),
+		DefaultTo:   string(DefaultTarget),
 		DefaultFrom: string(model.Auto),
 		Hotkeys: RegisteredHotkeyConfig{
 			// Input (summon main window): defaults to Alt+A and enabled.
@@ -233,10 +245,11 @@ func DefaultSettings() *Settings {
 // "es" would match no option in the dropdowns. A bare base becomes the first selectable variant
 // of its family (es → es-MX, pt → pt-BR); on the source side that is lossless, since every
 // engine aliases a variant source to its base. Anything else, unknown codes included, is left
-// untouched.
+// untouched. A family with no selectable variant falls back to the policy defaults (auto source,
+// DefaultTarget target).
 func (c *Settings) normalizeLanguages() {
 	c.DefaultFrom = string(model.Language(c.DefaultFrom).SelectableOr(model.Auto))
-	c.DefaultTo = string(model.Language(c.DefaultTo).SelectableOr(model.ZH))
+	c.DefaultTo = string(model.Language(c.DefaultTo).SelectableOr(DefaultTarget))
 }
 
 // defaultCopyHotkey returns the copy key's default, per OS:

@@ -172,7 +172,7 @@ type TranslateRequest struct {
 type TranslateResult struct {
 	Engine    string     `json:"engine"`               // Translation engine identifier
 	From      Language   `json:"from"`                 // The actually detected source language
-	To        Language   `json:"to"`                   // Target language
+	To        Language   `json:"to"`                   // Target language the result was translated into (the fallback target when the same-language guard flipped the requested one, issue #44)
 	Text      string     `json:"text"`                 // Source text
 	Result    string     `json:"result"`               // Translation
 	Phonetic  string     `json:"phonetic"`             // Pronunciation/phonetics
@@ -248,6 +248,6 @@ type ScreenshotResult struct {
 	Image        string            `json:"image"`        // Region screenshot PNG as a base64 data URL (frontend renders <img> directly)
 	Text         string            `json:"text"`         // Source text recognized by OCR
 	Translations []TranslateResult `json:"translations"` // Per-engine translations
-	To           Language          `json:"to"`           // Target language
+	To           Language          `json:"to"`           // Requested target language (each translation carries its own To, which the same-language guard may have flipped, issue #44)
 	Error        string            `json:"error"`        // Flow failure reason (when non-empty the frontend stops spinning and shows the error)
 }

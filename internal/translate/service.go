@@ -166,12 +166,77 @@ func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult,
 	return res, nil
 }
 
-// translateWithEngine runs a single translation-engine call and assembles the result.
+// identityFallbackTarget is the policy target an identity ("X to X") translation is re-run toward
+// (issue #44): English. The guard fires only when the detected source already is the requested
+// target, so the other language has to be a fixed one rather than another guess, and the
+// principal's core workflow is a foreign-language source read in English. It is deliberately not
+// the fresh-install default (settings.DefaultTarget): the two are both English today but answer
+// different questions.
+const identityFallbackTarget = model.EN
+
+// translateWithEngine runs a translation-engine call and assembles the result. It is the single
+// per-engine seam shared by the input window (Translate, TranslateMulti) and the screenshot
+// flows (translateAllStream), and the owner of the identity-translation guard (issue #44).
+//
+// Guard: with the source on auto, a result whose detected source equals the requested target is a
+// same-language "translation" (Mandarin text into a Chinese target, say) and is never presented.
+// The engine is re-run once toward identityFallbackTarget and the flipped target is reported in
+// the result's own To. The flip is per request: nothing is persisted, and the variant store is not
+// taught (only an explicit pick does that, issue #53). The discarded first pass is never returned,
+// so callers save exactly one history entry, the flipped one.
 func (s *Service) translateWithEngine(reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
+	// One deadline covers the engine call and its guard re-run, so the guard never stretches the
+	// per-engine bound.
 	timeout := 30 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	res, err := s.callEngine(ctx, reg, engineName, req)
+	if err != nil {
+		return nil, err
+	}
+	if to, flip := identityRerunTarget(req, res); flip {
+		// At most one re-run and no recursion: whatever the re-run returns stands. A failed re-run
+		// is an engine failure like any other; the identity result it replaces is not shown.
+		rerun := req
+		rerun.To = to
+		return s.callEngine(ctx, reg, engineName, rerun)
+	}
+	return res, nil
+}
+
+// identityRerunTarget reports whether res is an identity translation that must not be presented
+// (issue #44) and, if so, the target to re-run the engine toward.
+//
+// Only an auto source is guarded: with an explicit source the user said what the text is, and the
+// same language on both sides is their own request. Nothing is compared when the engine reported
+// no detection (res.From is still auto, see resultFrom), which is how the LLM engines answer. The
+// guarantee therefore covers engines that report a recognized detected source: engines that report
+// their own native codes (baidu's jp / kor, youdao's direction pair) do not match a recognized
+// target, so the guard cannot fire for them.
+//
+// The comparison is at the base-language level and runs on res.From, which resultFrom already
+// qualified through the variant preference (es → es-MX), so es detected against an es-MX target,
+// and zh against a legacy zh-CN one, are still identity translations. Normalize folds a dialect
+// to its base and a spelling to its canonical form.
+//
+// English detected into an English target is not flipped: the fallback is English, so there is
+// nothing to flip to and the result stands.
+func identityRerunTarget(req model.TranslateRequest, res *model.TranslateResult) (model.Language, bool) {
+	if !isAutoSource(req.From) || isAutoSource(res.From) {
+		return "", false
+	}
+	detected := res.From.Normalize()
+	if detected != req.To.Normalize() || detected == identityFallbackTarget.Normalize() {
+		return "", false
+	}
+	return identityFallbackTarget, true
+}
+
+// callEngine runs one translation-engine call under ctx and assembles the result. It is the only
+// place an engine is invoked, so the goroutine, timing log and error wrapping exist once, whether
+// or not the identity guard re-runs the engine.
+func (s *Service) callEngine(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
 	start := time.Now()
 	resCh := make(chan *model.TranslateResult, 1)
 	errCh := make(chan error, 1)
@@ -349,6 +414,10 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	}
 	slog.Debug(i18n.T("log.screenshot_capture_region_done"), slog.Int("image_bytes", len(img)))
 
+	// The requested target of this flow (the screenshot flow has no language bar to read), resolved
+	// once so every push below reports the same one.
+	to := s.defaultTarget()
+
 	// As soon as the screenshot completes (user released the drag, img is in hand), summon
 	// the window immediately — no need to wait for OCR and translation (recognition is
 	// handled within the page). This path follows the **exact same safe paradigm** as the
@@ -369,7 +438,7 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 			Image:        imageURL,
 			Text:         "",
 			Translations: nil,
-			To:           model.ZH,
+			To:           to,
 		})
 	}
 	slog.Debug(i18n.T("log.screenshot_pushed_image"), slog.String("step", "image_pushed"), slog.Int("image_len", len(imageURL)))
@@ -391,7 +460,7 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 				Image:        imageURL,
 				Text:         "",
 				Translations: nil,
-				To:           model.ZH,
+				To:           to,
 				Error:        err.Error(),
 			})
 		}
@@ -409,10 +478,6 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	s.screenshotCache[session] = ocrCache{text: text, imageURL: imageURL}
 	s.screenshotCacheMu.Unlock()
 
-	to := model.ZH
-	if s.settings != nil && s.settings.Get() != nil && s.settings.Get().DefaultTo != "" {
-		to = model.Language(s.settings.Get().DefaultTo)
-	}
 	from := model.Auto
 
 	imageURL = "data:image/png;base64," + encodeImage(img)
@@ -441,6 +506,20 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 		"ocr_retried":  false,
 	})
 	return &result, nil
+}
+
+// defaultTarget resolves the requested target of a flow that has no language bar to read (the
+// screenshot flow): the user's saved default_to, else the policy default (settings.DefaultTarget).
+// It is the one place that decision lives (issue #44), so no flow carries a hardcoded target of
+// its own. The screenshot pushes report its value as the requested target; each result still
+// carries the target it was actually translated into (see translateWithEngine).
+func (s *Service) defaultTarget() model.Language {
+	if s.settings != nil {
+		if cfg := s.settings.Get(); cfg != nil && cfg.DefaultTo != "" {
+			return model.Language(cfg.DefaultTo)
+		}
+	}
+	return settings.DefaultTarget
 }
 
 // enabledTranslatorNames returns the currently enabled, retrievable translation engine names

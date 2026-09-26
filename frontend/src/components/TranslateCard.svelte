@@ -3,12 +3,29 @@
   import { Clipboard } from '@wailsio/runtime';
   import { untrack } from 'svelte';
   import type { TranslateResult } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
+  import { flippedTargetLabel } from '../utils/flippedTarget.ts';
 
+  // requestedTo is the target this round was requested with (the screenshot window passes the
+  // backend's ScreenshotResult.to, which keeps meaning the requested target). The card's own
+  // tr.to is where this engine actually translated: they differ when the same-language guard
+  // flipped the target (issue #44).
   let {
     tr,
     expanded = true,
+    requestedTo = '',
     onCopied,
-  }: { tr: TranslateResult; expanded?: boolean; onCopied?: (text: string) => void } = $props();
+  }: {
+    tr: TranslateResult;
+    expanded?: boolean;
+    requestedTo?: string;
+    onCopied?: (text: string) => void;
+  } = $props();
+
+  // Display only: names the language this card was really translated into; never changes the
+  // window's target select (its change would re-emit EventScreenshotRetranslate).
+  const flippedLabel = $derived(
+    tr?.result ? flippedTargetLabel(requestedTo, String(tr?.to ?? ''), langName) : null,
+  );
 
   // The card is collapsible: by default only the first two successful translations start expanded
   // (the parent computes `expanded` and passes it in); the rest start collapsed.
@@ -101,6 +118,11 @@
       {/if}
     </div>
   </div>
+  {#if flippedLabel}
+    <p class="mt-1 text-[11px] text-[var(--app-muted)]" data-testid="flipped-target">
+      {t('translate.flippedTo', { lang: flippedLabel })}
+    </p>
+  {/if}
   {#if isOpen && tr?.result}
     <div class="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">
       {tr.result}

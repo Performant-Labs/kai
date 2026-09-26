@@ -102,6 +102,7 @@
     type DotState,
   } from '../utils/resultPane.ts';
   import { detectedSourceLabel } from '../utils/detectedLang.ts';
+  import { flippedTargetLabel } from '../utils/flippedTarget.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import {
     GetLanguages,
@@ -118,6 +119,12 @@
   // Per-engine translation results, aggregated by engine name (multi-engine concurrency,
   // arriving one by one).
   let results = $state<Record<string, TranslateResult>>({});
+  // The target the current results were requested with, captured when the request is sent (issue
+  // #44). The backend may translate a result into a different target (the same-language guard
+  // flips it to English) and reports that in the result's own `to`; comparing against this, not
+  // the live select, keeps a later change of the select from making an untouched result look
+  // flipped. Read-only feedback: nothing writes toLang from it.
+  let requestedTo = $state<string>('');
   let loading = $state(false);
 
   // Two-pane layout (issue #10, locked decision: always side by side, no stacked fallback).
@@ -232,6 +239,14 @@
     );
     return label ?? langName(value);
   }
+  // Same-language guard feedback (issue #44): when the backend flipped this result's target (the
+  // detected source already was the requested target), the result card says which language it was
+  // really translated into. Display only: the select keeps showing the requested target, and
+  // nothing here assigns toLang / fromLang, persists, teaches or retranslates (both selects render
+  // toLang, so writing it would make the flip sticky, and #13 owns the swap semantics).
+  const flippedLabel = $derived(
+    flippedTargetLabel(requestedTo, String(activeResult?.to ?? ''), langName),
+  );
   // Result-pane manual edits (aggregated by engine name): discarded wholesale on engine switch /
   // retranslate / clearing input; a new engine always starts from its own stored result
   // (no per-engine edit memory, design §3).
@@ -408,6 +423,7 @@
   async function doTranslate() {
     if (!input.trim() || activeEngines.length === 0) return;
     loading = true;
+    requestedTo = toLang;
     results = {};
     // A new fan-out round starts blank: the previous batch's edits are meaningless for the new
     // round and are discarded with it.
@@ -810,6 +826,13 @@
                   <span class="u-muted text-xs">{activeResult.phonetic}</span>
                 {/if}
               </div>
+              {#if flippedLabel}
+                <!-- Same-language guard (issue #44): this result went to a different target than
+                   the one selected; say which. Display only, never changes the select. -->
+                <p class="u-muted mb-2 text-xs" data-testid="flipped-target">
+                  {t('translate.flippedTo', { lang: flippedLabel })}
+                </p>
+              {/if}
               {#if editingResult || activeDisplay === ''}
                 <textarea
                   bind:this={resultEl}

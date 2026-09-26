@@ -128,6 +128,55 @@
 - Decided: no parallel production path, because no production file differs from 8e228bd (only docs and three new test files). Each acceptance line stays with the owner named in the handoff-A baseline.
 - Hedged (warn, test hygiene only): inline google loopback servers in `service_variants_e2e_test.go` sit beside `newLoopbackService`; `language_display_names_test.go` and `variants.e2e.test.ts` are new files overlapping `language_capability_test.go`, `lang.test.ts` and `detectedLang.test.ts`. Optional follow-up folds, not rework.
 
+## #44 A (Phase 3, up-front plan review, 2026-09-25): BLOCK
+- Verdict BLOCK, 3 block / 7 warn. Handoff: docs/handoffs/44/handoff-A.md (includes an extend-vs-new baseline in place of the absent survey Reuse map).
+- Decided: the brief's premise that fresh installs default to English is false. `settings.DefaultSettings()` sets `DefaultTo: zh` (`internal/settings/service.go:207`) and writes it to disk at startup, and `loadDefaults()` then replaces the component's `EN`. The default-target owner is the backend default config.
+- Decided: the X→X guard belongs at the single per-engine seam `translate.Service.translateWithEngine`, which both the input and screenshot paths already share and where `resultFrom` computes the detected source. It must not be a per-window frontend guard duplicated in TranslateWindow and ScreenshotWindow. The frontend only reflects `TranslateResult.To`.
+- Decided: the auto-flip is per request. It never persists `default_to` and never teaches the variant store (the #53 rule that only an explicit pick persists or teaches). The upgrade sweep is met by the runtime guard, not by rewriting persisted settings.
+- Open for O: the English→English fallback rule; the engine-coverage scope (LLM engines report `auto`, baidu/youdao report native codes, so the guard cannot fire for them); whether to pick auto-flip over a new swap affordance (a new affordance would need the D phase). `swap()` and `swapLangs()` stay out of bounds for #44 because #13 owns them.
+
+## #44 A (Phase 3, up-front plan review, round 2, 2026-09-25): BLOCK
+- Verdict BLOCK again, 3 block / 7 warn, same findings. Handoff: docs/handoffs/44/handoff-A.md (updated in place with a round-2 header).
+- Decided: re-review found no amendment. `docs/handoffs/44-brief.md` is byte-identical to a1c7d78 and decisions.md has no O ruling on round 1's Notes for O. All three block findings re-verified at head 575f70b: `DefaultTo: string(model.ZH)` (`internal/settings/service.go:207`) plus the startup re-save; no named owner for the guard (the answer is the `translateWithEngine` seam); flip persistence unspecified.
+- Decided: round 2 added one more hardcoded target literal to finding 1's sweep list, the screenshot image-pushed payload `To: model.ZH` at `internal/translate/service.go:372`, next to `:394` and `:412`.
+- Open for O: this is the second consecutive BLOCK. O must amend the brief per Notes for O items 1-5 before re-running A. A third BLOCK escalates to the operator.
+
+## #44 A (Phase 3, up-front plan review, round 3, 2026-09-25): BLOCK -- escalate
+- Verdict BLOCK a third time, 3 block / 7 warn, same findings. Handoff: docs/handoffs/44/handoff-A.md (round-3 header and summary; findings table unchanged).
+- Decided: still no amendment. `docs/handoffs/44-brief.md` is byte-identical to a1c7d78, no O ruling in this journal, no comments on issue #44. All block evidence re-verified at head 55f3ccc (`settings/service.go:207,239,300-305`; `translate/service.go:372,394,412`).
+- Open for the operator (escalation per the >2-blocks rule): adopt Notes for O items 1-3 into the brief (backend default target -> `en` with the ZH fallbacks following it; guard owned by `translateWithEngine`, frontend only reflects `TranslateResult.To`; flip is per request, never persists or teaches), and choose the English->English fallback rule and the engine-coverage scope. Re-running A on an unchanged brief is pointless.
+
+## #44 O rulings on A's three plan-review BLOCKs (2026-09-25 MDT)
+- Decided: adopt A's Notes for O items 1-5 into docs/handoffs/44-brief.md (new "Plan" section; issue text kept verbatim above it). Backend default target becomes `en` with the ZH fallbacks following it; the X->X guard is owned by `translateWithEngine` and reported through `TranslateResult.To`; the flip is per request and never persists or teaches; the upgrade sweep is met by the runtime guard.
+- Decided (principal choices, safe defaults): auto-flip rather than a new swap affordance (no UI surface); English->English does not flip; guarantee scoped to engines that report a recognized detection, remainder disclosed.
+- Decided: `swap()` / `swapLangs()` are out of bounds for #44 (#13 owns them).
+- Evidence: rounds 1-3 handoff at docs/handoffs/44/handoff-A.md; the brief was unchanged across all three because the automated driver has no step that amends it. Fresh run launched (not a resume) because a resume would replay the cached BLOCK.
+
+## #44 A (Phase 3, up-front plan review, round 4 -- first review of the amended brief, 2026-09-25): BLOCK (1 narrow block)
+- Verdict BLOCK, 1 block / 5 warn. Handoff: docs/handoffs/44/handoff-A.md (rewritten for the amended brief at 7fbfb0d).
+- Decided: the Plan section resolves all three earlier blocks (backend default target -> en with the ZH fallbacks following it; guard at `translateWithEngine` on a `Normalize().Base()` compare; flip per request, never persists or teaches). EN->EN, the engine-coverage scope and the #13 boundary are consistent with the code.
+- Decided (block, self-correction of A's own round-1 wording): "reflect `activeResult.to` in the target select" means writing `toLang`. That makes the flip sticky for the session (contradicts Plan 3). In ScreenshotWindow it also fires the `toLang` `$effect` -> `EventScreenshotRetranslate`, a second full fan-out with extra `saveHistory` calls (contradicts the one-history-entry pin). The fix is to show the flipped target per result, display-only, through a pure util next to `detectedLang.ts`. It must never assign `toLang`, persist, teach, or emit a retranslate.
+- Open for O: amend Plan item 2 plus one pin in item 7 (exact text in handoff Notes for O). Re-review is expected to PASS.
+
+## #44 A (Phase 3, up-front plan review, round 5, 2026-09-25): BLOCK -- escalate
+- Verdict BLOCK, 1 block / 5 warn, same findings as round 4. Handoff: docs/handoffs/44/handoff-A.md (round-5 header and Notes for O; findings table unchanged).
+- Decided: no amendment. `docs/handoffs/44-brief.md` has not changed since 7fbfb0d, and decisions.md has no O ruling on round 4's Notes for O. The block is re-verified at 335d905: both target selects render `toLang` (`TranslateWindow.svelte:499`, `ScreenshotWindow.svelte:416`), and ScreenshotWindow's `toLang` `$effect` (`:93-110`) emits `EventScreenshotRetranslate`. So "reflect `activeResult.to` in the target select" still makes the flip sticky and causes a second fan-out with extra history entries.
+- Open for the operator (escalation): amend Plan item 2 so the flipped target is shown per result, display-only, through a pure util next to `detectedLang.ts`, with no `toLang` write, no persist or teach, and no retranslate. Add the pin to item 7. The exact text is in the handoff's Notes for O. The driver cannot apply this edit itself, so re-running A on an unchanged brief is pointless.
+
+## #44 A (Phase 3, up-front plan review, round 6, 2026-09-25): BLOCK -- escalate
+- Verdict BLOCK, 1 block / 5 warn, same findings as rounds 4-5. Handoff: docs/handoffs/44/handoff-A.md (round-6 header; findings unchanged).
+- Decided: still no amendment. `docs/handoffs/44-brief.md` last changed at 7fbfb0d; Plan item 2 still says "reflects `activeResult.to` in the target select". Re-verified at 7623847: `TranslateWindow.svelte:499` `bind:value={toLang}`, `ScreenshotWindow.svelte:416` `value={toLang}`, `toLang` `$effect` emitting `EventScreenshotRetranslate` at `ScreenshotWindow.svelte:93-110`.
+- Open for the operator: apply the two-sentence amendment in the handoff's Notes for O (per-result display-only label; pin that `toLang` is unchanged and no retranslate is emitted). The driver cannot make this edit; re-running A without it will BLOCK again.
+
+## #44 O ruling on A round-4 block (2026-09-25 MDT)
+- Decided: adopt A's two-sentence fix. The frontend shows the flipped target as a per-result display-only label; it never writes toLang/fromLang, persists, teaches, or emits a retranslate. New T pin: toLang unchanged and no retranslate after a flip. A's five warns (re-run context bounded and non-recursive, one private default-target resolver, envelope To stays the requested target, dst_lang unchanged, mixed flip outcomes) go to F and T.
+- Evidence: A round 4-6 handoff at docs/handoffs/44/handoff-A.md; the block was my plan wording ("reflects activeResult.to in the target select"), not a code disagreement. Rounds 5-6 repeated only because the driver cannot amend the brief.
+
+## #44 A (Phase 3, up-front plan review, round 7, 2026-09-25): PASS
+- Verdict PASS, 0 block / 3 warn. Handoff: docs/handoffs/44/handoff-A.md (rewritten for the amended brief at 35c13e9).
+- Decided: the round-4 block is resolved. Plan item 2 now shows the flipped target as a per-result display-only label (pure util next to `detectedLang.ts`) that never writes `toLang`/`fromLang`, persists, teaches or emits `EventScreenshotRetranslate`; item 7 pins it. Cited code re-verified unchanged since 7fbfb0d.
+- Open for F/T (warns): compare detected vs target at `Normalize().Base()` after `resultFrom` qualification; route the single re-run through one shared engine-call helper, no copy of the timeout block and no recursion; mixed per-engine flip outcomes are expected and disclosed.
+
 ## #58 A (Phase 3, up-front plan review, 2026-09-25): PASS
 - Verdict PASS, 0 block / 6 warn. Handoff: docs/handoffs/58/handoff-A.md. It includes an extend-vs-new baseline because there is no survey Reuse map.
 - Decided: no new production object. `Dict` moves from `zh-CN.ts:375` to a type-only `frontend/src/i18n/keys.ts`, and its consumers (`en-US.ts`, `index.svelte.ts`) repoint to it. The new tests are a colocated vitest test in `frontend/src/i18n/` and an internal Go test in `internal/i18n`, which reads the shipped merged JSON through the existing `localesFS` embed.

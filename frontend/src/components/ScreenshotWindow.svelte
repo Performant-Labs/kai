@@ -466,8 +466,11 @@
                 {t('screenshot.result')}
               </div>
               {#each result.translations as tr}
+                <!-- requestedTo: result.to is the requested target; each card's own tr.to is where
+                     its engine actually translated (issue #44's same-language guard may differ). -->
                 <TranslateCard
                   {tr}
+                  requestedTo={result.to}
                   expanded={expandedEngines.has(tr.engine)}
                   onCopied={() => showToast(t('common.copied'))}
                 />

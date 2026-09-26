@@ -195,7 +195,7 @@ export interface ScreenshotResult {
     "translations": TranslateResult[] | null;
 
     /**
-     * Target language
+     * Requested target language (each translation carries its own To, which the same-language guard may have flipped, issue #44)
      */
     "to": Language;
 
@@ -262,7 +262,7 @@ export interface TranslateResult {
     "from": Language;
 
     /**
-     * Target language
+     * Target language the result was translated into (the fallback target when the same-language guard flipped the requested one, issue #44)
      */
     "to": Language;
 

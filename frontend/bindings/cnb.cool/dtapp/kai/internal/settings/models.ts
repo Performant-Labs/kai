@@ -183,7 +183,8 @@ export interface Settings {
     "theme": string;
 
     /**
-     * DefaultTo is the default translation target language (e.g. zh / en).
+     * DefaultTo is the default translation target language (e.g. zh / en). A fresh install starts
+     * at DefaultTarget (en); a value persisted here is honored as saved (issue #44).
      */
     "default_to": string;
 
