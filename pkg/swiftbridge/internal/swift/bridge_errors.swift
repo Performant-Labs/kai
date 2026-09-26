@@ -10,6 +10,8 @@
 //   3. the err.apple_<code> keys in internal/i18n/locales/split/
 //      — Apple system-level errors (apple_translate / apple_ocr) reuse the generic engine
 //      copy; no new keys.
+//      — cancelled has no copy at all: a cancel is reported through the Go engine's context, not
+//      through text (see bridge_errors.go).
 import Foundation
 
 // The Swift bridge layer's custom error codes (literals matching the Go side's BridgeErr*
@@ -29,6 +31,10 @@ let BRIDGE_ERR_NO_SOURCE_LANG: String = "no_source_lang"
 // only.
 let BRIDGE_ERR_APPLE_TRANSLATE: String = "apple_translate"
 let BRIDGE_ERR_APPLE_OCR: String = "apple_ocr"
+// kai_translate ended because kai_translate_cancel asked it to (issue #111), not because the
+// translation failed. The Go engine decides from its own context whether anybody asked; the code
+// carries no user-visible copy.
+let BRIDGE_ERR_CANCELLED: String = "cancelled"
 
 // MARK: - Codable models of the bridge's returned JSON
 // All outward (cgo) JSON is uniformly encoded with Codable structs + JSONEncoder;

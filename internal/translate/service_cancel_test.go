@@ -172,7 +172,9 @@ func newHonoring(name string) *honoring {
 	return h
 }
 
-// ignoring blocks on release and never looks at its ctx (the Apple engine's shape today).
+// ignoring blocks on release and never looks at its ctx: it stands for any engine that ignores
+// its ctx. The Apple engine is not one (it honours its ctx); for its shape see
+// TestCancelledAppleShapedEngineIsNotAFailure.
 type ignoring struct {
 	*fakeEngine
 	started  chan struct{}
@@ -410,8 +412,9 @@ func TestCancelWholeRequest(t *testing.T) {
 	}
 }
 
-// The shape that guards the Apple engine: an engine that never reads its ctx must not hold the
-// request open after a cancel, and its late result must be dropped.
+// An engine that never reads its ctx must not hold the request open after a cancel, and its late
+// result must be dropped (callEngine's contract for any such engine; the Apple engine honours its
+// ctx, see TestCancelledAppleShapedEngineIsNotAFailure).
 func TestCancelDoesNotWaitForAnEngineThatIgnoresItsContext(t *testing.T) {
 	g := newIgnoring("apple")
 	svc, em, hist := newCancelService(t, g)

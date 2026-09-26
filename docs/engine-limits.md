@@ -1,23 +1,23 @@
 # Engine input limits
 
-Where each translation engine breaks on large input, and the input budget the chunker (#84) works to. Issue #83, child of epic #86.
+Where each translation engine breaks on large input, and the input budget the chunker (#84) works to. Issue #83, child of epic #86. The bridge's fixed 20 s wait on apple was removed for #111, so the apple row is provisional again until #119 measures it.
 
 The budget lives in code: `internal/engine/input_budget.go` (`InputBudget`, `Budget.Max`). This page is its written record and is checked against it. `TestEngineLimitsDocListsEveryTranslator` fails when a translator has no row here, or when a row's Verified, Follow-up or link cell disagrees with the table in code.
 
-**Status.** Only apple is measured (one probe run, recorded below). Every other row is a provisional budget taken from the engine's documented limit: `Verified` is `no` and the follow-up issue in the last column measures it.
+**Status.** No row is measured now. The first apple measurement (#83) mostly measured the bridge's own 20 s wait, which #111 removed, so apple is a provisional figure like the others: `Verified` is `no` and the follow-up issue in the last column (#119 for apple) measures it.
 
 ## Reading the table
 
 - **Unit** is what the engine limits, and what the budget counts. `runes` is `utf8.RuneCountInString(text)`. `utf8 bytes` is `len(text)`. `query-escaped bytes` is `len(url.QueryEscape(text))`, which is what a URL or form value costs on the wire (a CJK character is 9).
-- **Latin max** and **CJK max** are the largest inputs the probe saw the engine accept, in runes: English to Chinese (Latin) and Chinese to English (CJK).
-- **Budget (80%)** is what a chunker may send: the limit times `BudgetMarginPercent` (80), rounded down, in the row's unit. For apple the limit is the smaller of the Latin and CJK maximums.
-- **Verified**: `yes` means measured by a probe run on the recorded host. `no` means a documented or provisional figure that has not been checked against the live service.
+- **Latin max** and **CJK max** are the largest inputs seen to pass, in runes: English to Chinese (Latin) and Chinese to English (CJK). In a measured row they come from a probe run on a recorded host; the provisional apple row's come from the #111 throwaway checks (see "Apple, provisional"). `>= N` means N runes was the largest size seen to pass, not a ceiling.
+- **Budget (80%)** is what a chunker may send: the limit times `BudgetMarginPercent` (80), rounded down, in the row's unit. For a measured apple row the limit is the smaller of the Latin and CJK maximums. The provisional apple row does not follow that rule: its limit (3200) is the largest Latin size that passed in the #111 throwaway checks, and its CJK maximum (`>= 1000`) is only a lower bound, from one check at 1000 runes, so it does not set the limit. The smaller of the two would give a budget of 800, not 2560. #119 measures both searches, and from then on the rule applies to the row.
+- **Verified**: `yes` means measured by a probe run on a recorded host (none are, now). `no` means a documented or provisional figure that has not been checked against the live service.
 
 ## Limits per engine
 
 | Engine | Unit | Latin max | CJK max | Failure past the limit | Latency at max | Documented limit | Budget (80%) | Verified | Date | Follow-up |
 |---|---|---|---|---|---|---|---|---|---|---|
-| apple | runes | 2250 | 650 | `[dynamic-bridge] System translation returned empty` after 20.0 s, kind `engine` (the bridge's 20 s wait expiring) | Latin 19.6 s, CJK 17.9 s | none found in Apple's Translation documentation (checked 2026-09-26); Kai's bridge imposes a 20 s wait (`apple_translate.swift`) and a 65,535-byte output buffer (`apple_darwin.go`) | 520 runes | yes | 2026-09-26 | - |
+| apple | runes | >= 3200 | >= 1000 | none seen | Latin 31.8 s at 3200, CJK 36.3 s at 1000 (throwaway checks, no wait) | none found in Apple's Translation documentation (checked 2026-09-26); Kai's bridge has no wait of its own since #111 and a 65,535-byte output buffer (`apple_darwin.go`) | 2560 runes | no | - | #119 |
 | google | query-escaped bytes | unmeasured | unmeasured | unmeasured | unmeasured | undocumented for the gtx endpoint Kai calls; nearest published figure is Cloud Translation's recommended maximum of 5K characters (code points) per request ([quotas](https://docs.cloud.google.com/translate/quotas)) | 4000 query-escaped bytes | no | - | #87 |
 | deepl | query-escaped bytes | unmeasured | unmeasured | unmeasured | unmeasured | request size limit of 128 KiB for the whole request ([API reference](https://developers.deepl.com/api-reference/translate/request-translation)) | 104857 query-escaped bytes | no | - | #88 |
 | openai | runes | unmeasured | unmeasured | unmeasured | unmeasured | no input limit binds, the output cap does; Kai sets none, so the model default applies; 8192 output tokens is the assumed basis ([API reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)) | 3276 runes | no | - | #92 |
@@ -27,13 +27,11 @@ The budget lives in code: `internal/engine/input_budget.go` (`InputBudget`, `Bud
 | tencent | runes | unmeasured | unmeasured | unmeasured | unmeasured | text length below 2000, unit not stated, read as characters ([SDK doc comment](https://pkg.go.dev/github.com/tencentyun/tencentcloud-sdk-go/tencentcloud/tmt/v20180321)) | 1600 runes | no | - | #90 |
 | youdao | runes | unmeasured | unmeasured | unmeasured | unmeasured | 5000 characters per query ([API doc](https://ai.youdao.com/DOCSIRMA/html/trans/api/wbfy/index.html)) | 4000 runes | no | - | #91 |
 
-## What the apple numbers say
+## Apple, provisional
 
-- **The bridge's 20 s wait binds, not the framework and not the output buffer.** `kai_translate` waits 20 s on a semaphore (`sema.wait(timeout: .now() + 20)` in `pkg/swiftbridge/internal/swift/apple_translate.swift`) and returns `{}` when the wait expires. Every failing point in both searches came back as `returned empty` at 20.00 s (20,001 to 20,006 ms). The largest translation the probe received was 2,286 bytes, against the 65,535 bytes the output buffer holds, so that ceiling is not reachable at these sizes.
-- **Two numbers because script changes the time per rune.** Latency grew about linearly with size: roughly 10 ms per rune for Latin text and 25 to 30 ms per rune for CJK text, on top of a fixed cost of about 2 s per call (a warm one-sentence request takes 1.7 to 2.5 s). The apple budget takes the smaller number, so it is conservative for Latin text: a per-script budget would allow chunks about 3.5 times larger there (2250 against 650). The #83 brief (`docs/handoffs/83-brief.md`) fixes one rune budget per engine, so that is not done here.
-- **The maximum is one draw near a noisy boundary.** An earlier run of the same probe, with coarser search bounds (lower bound 500, resolution floor 250 runes), bracketed Latin at 1750 pass / 2000 fail and CJK at 500 pass / 750 fail. The recorded run found Latin at 2250 pass / 2300 fail and CJK at 650 pass / 700 fail. The CJK brackets agree; the Latin ones differ by about 20%, and the same 2000-rune Latin input failed at 20.0 s in the first run and passed in 18.3 s in the second. The cause was not investigated (the first run's first call was slower, 6.1 s against 3.6 s, which fits a cold start). Near the limit a call only sometimes finishes inside 20 s, so a recorded maximum is not a guarantee, and the 20% margin is about as wide as the spread seen here.
-- **The failure is reported as an empty result.** The Go engine turns the bridge's `{}` into `err.apple_translate_empty` ("System translation returned empty"). `translate.ClassifyEngineError` finds none of its keywords in that text (no "timeout"), so it classifies as `engine`, not `network`. That is recorded, not changed here (failure reasons are #96). After such a failure the abandoned Swift task keeps running, so the probe waits 20 s and then requires a one-sentence request to answer promptly before it starts the next point (the `settle` lines in the log).
-- **The number belongs to this host and to the bridge.** It depends on the chip's speed and moves if the wait in `apple_translate.swift` changes. Re-run the probe on a slower host, or after any change to that wait, before trusting it.
+- **Time does not bind any more.** Since #111 the bridge waits for Apple with no timer (`job.sema.wait()` in `pkg/swiftbridge/internal/swift/apple_translate.swift`); a request runs to the end or until the user cancels it. The old 20 s wait produced the first numbers (2250 and 650 runes), so they were the wait, not the framework. The provisional 3200 is the largest size seen to succeed in throwaway checks with no wait, not a ceiling.
+- **The 64 KiB output buffer is expected to bind** for text that grows when translated (Chinese to English grows about 3.5 times in bytes); #119 measures where. #106 owns the buffer.
+- **Cancel frees Kai, not the framework.** A cancelled call returns at once, but Apple keeps working on the abandoned text and answers the next request only when it is done (see "Cancel checks"). Nothing in Kai can shorten that, so the chunker (#84) should keep Apple chunks well below `Max()`: a few thousand Latin runes or about a thousand CJK runes is roughly half a minute of work on an M1 Max.
 
 ## Notes on the provisional rows
 
@@ -41,67 +39,55 @@ The budget lives in code: `internal/engine/input_budget.go` (`InputBudget`, `Bud
 - **deepl**: 128 KiB is the whole request body. The other form fields are under 60 bytes, which the 20% margin covers.
 - **baidu**: the documentation page renders by JavaScript, so the sentence was read from a search of that page on 2026-09-26 and could not be re-fetched when this page was written. #89 measures it.
 - **tencent**: the SDK comment gives no unit; it is read as characters. If #90 finds it counts bytes, the budget is too large for CJK text by up to 3 times.
-- **openai, anthropic, gemini**: the input context is far larger than any chunk, so the output cap binds. 4096 runes assumes at most 2 output tokens per character, an assumption and not a measurement, and conservative for Latin text. None of the three engines checks the stop or finish reason, so an output cut at the cap comes back as a successful, silently truncated translation. The 30 s request timeout may bind before the cap on a slow model; the budget does not model that.
+- **openai, anthropic, gemini**: the input context is far larger than any chunk, so the output cap binds. 4096 runes assumes at most 2 output tokens per character, an assumption and not a measurement, and conservative for Latin text. None of the three engines checks the stop or finish reason, so an output cut at the cap comes back as a successful, silently truncated translation.
 
-## Probe run
+## Cancel checks
 
-Recorded on 2026-09-26, started 8:16 AM MDT, 370 s elapsed, by the command below (from the repository root, after building the bridge with `(cd pkg/swiftbridge/scripts && bash ./build.sh)`):
+`internal/engine/enginelimits/cancel_test.go` checks the Apple cancel path against the real framework. The Swift half of the bridge has no other behaviour test in CI (`pkg/swiftbridge/swift_source_test.go` only reads its text), so this is the record that it works. Recorded on 2026-09-26 on an Apple M1 Max, macOS 27.0 (build 26A428), with the bridge whose sha256 is `3cf6379b06fdf3226ba29bbe783ce714af3d391e969aa118ed2e3371b5dfc2f2` (`build.sh` is deterministic), by:
 
 ```sh
-KAI_ENGINE_PROBE=1 CGO_ENABLED=1 go test -tags enginelimits -ldflags=-linkmode=external -run TestProbeApple -timeout 60m -count=1 -v ./internal/engine/enginelimits/
+KAI_ENGINE_PROBE=1 CGO_ENABLED=1 go test -tags enginelimits -ldflags=-linkmode=external -run 'TestAppleCancel|TestAppleNotCutOff' -timeout 30m -count=1 -v ./internal/engine/enginelimits/
 ```
 
-- **Host**: macOS 27.0 (build 26A428), Apple M1 Max (10 cores, 32 GB), Go go1.27.1 darwin/arm64. The bridge dylib was built by `build.sh` at 8:08 AM MDT (14:08 UTC), minutes before the run.
-- **Language pairs**: Latin is English to Chinese Simplified (`en` to `zh-Hans`), CJK is Chinese Simplified to English. The source is always explicit, never auto. Requests use Kai's codes (`en`, `zh`), so they go through the same registry mapping the app uses.
-- **Path**: `engine.NewApple()` behind the `engine.Translator` interface, the code the app runs (trim, code mapping, 64 KiB output buffer, JSON decode). The probe never calls `swiftbridge.KaiTranslate` directly.
-- **Input**: deterministic numbered paragraphs (`17. ` then fixed prose, no other digits anywhere), exactly n runes, the final paragraph absorbing the remainder. The prose is a fixed set of 12 sentences repeated, so real text may translate faster or slower.
-- **A point passes** when `Translate` returns no error, every paragraph number appears in the output in order (a missing or misordered number is a silent truncation, kind `truncated`), and the output has at least 25% as many runes as the input.
-- **Search**: doubling from 100 runes until a point fails (capped at 100,000, the epic's hard cap), then bisection down to the larger of 50 runes and 1%. The #83 brief specified a lower bound of 500 and a resolution floor of 250 runes; both were tightened after the first run showed a limit of only a few hundred runes (see "Deviations" in `docs/handoffs/83/handoff-F.md`). Failure is assumed monotonic in size; every point is logged, so a non-monotonic result would be visible.
-- **Recorded values**: the largest passing size and the smallest failing size per search, the failure's error text and its `ClassifyEngineError` kind, the latency of the largest passing call, and the first call's latency per pair (which includes `prepareTranslation`).
-
-Raw `PROBE` lines from the run, with the test framework's `probe_test.go:NNN:` prefix removed:
+Raw lines (`PROBE precheck` is the probe's prerequisite check, run at the start of each test):
 
 ```text
-PROBE host macos=27.0 build=26A428 chip="Apple M1 Max" cpus=10 mem_gb=32 go=go1.27.1 goarch=arm64 bridge="size=245472 mtime=2026-09-26T14:08:00Z"
-PROBE config low=100 high=100000 step_floor=50 step_pct=1 min_out_pct=25 slow_call_ms=15000 settle_wait_ms=20000
 PROBE precheck languages=47 en=true zh_hans=true
-PROBE precheck pair=en>zh-Hans first_call_ms=3553 ok=true
-PROBE precheck pair=zh-Hans>en first_call_ms=1747 ok=true
-PROBE point search=latin n=100 runes=100 utf8_bytes=100 paragraphs=1 kind=pass latency_ms=2102 out_runes=26 out_bytes=74 missing_marker=0 class=- error=""
-PROBE point search=latin n=200 runes=200 utf8_bytes=200 paragraphs=1 kind=pass latency_ms=2966 out_runes=63 out_bytes=179 missing_marker=0 class=- error=""
-PROBE point search=latin n=400 runes=400 utf8_bytes=400 paragraphs=2 kind=pass latency_ms=4751 out_runes=119 out_bytes=343 missing_marker=0 class=- error=""
-PROBE point search=latin n=800 runes=800 utf8_bytes=800 paragraphs=4 kind=pass latency_ms=8415 out_runes=241 out_bytes=687 missing_marker=0 class=- error=""
-PROBE point search=latin n=1600 runes=1600 utf8_bytes=1600 paragraphs=7 kind=pass latency_ms=16670 out_runes=458 out_bytes=1310 missing_marker=0 class=- error=""
-PROBE point search=latin n=3200 runes=3200 utf8_bytes=3200 paragraphs=13 kind=error latency_ms=20001 out_runes=0 out_bytes=0 missing_marker=0 class=engine error="[dynamic-bridge] System translation returned empty"
-PROBE settle try=1 latency_ms=2367 ok=true
-PROBE point search=latin n=2400 runes=2400 utf8_bytes=2400 paragraphs=10 kind=error latency_ms=20005 out_runes=0 out_bytes=0 missing_marker=0 class=engine error="[dynamic-bridge] System translation returned empty"
-PROBE settle try=1 latency_ms=2335 ok=true
-PROBE point search=latin n=2000 runes=2000 utf8_bytes=2000 paragraphs=9 kind=pass latency_ms=18290 out_runes=584 out_bytes=1658 missing_marker=0 class=- error=""
-PROBE point search=latin n=2200 runes=2200 utf8_bytes=2200 paragraphs=9 kind=pass latency_ms=19337 out_runes=637 out_bytes=1825 missing_marker=0 class=- error=""
-PROBE point search=latin n=2300 runes=2300 utf8_bytes=2300 paragraphs=10 kind=error latency_ms=20005 out_runes=0 out_bytes=0 missing_marker=0 class=engine error="[dynamic-bridge] System translation returned empty"
-PROBE settle try=1 latency_ms=2329 ok=true
-PROBE point search=latin n=2250 runes=2250 utf8_bytes=2250 paragraphs=10 kind=pass latency_ms=19647 out_runes=661 out_bytes=1885 missing_marker=0 class=- error=""
-PROBE result search=latin from=en to=zh-Hans max_pass_runes=2250 min_fail_runes=2300 capped=false latency_at_max_ms=19647 first_call_ms=3553 fail_kind=error fail_class=engine fail_latency_ms=20005 fail_error="[dynamic-bridge] System translation returned empty"
-PROBE point search=cjk n=100 runes=100 utf8_bytes=294 paragraphs=1 kind=pass latency_ms=3614 out_runes=337 out_bytes=337 missing_marker=0 class=- error=""
-PROBE point search=cjk n=200 runes=200 utf8_bytes=584 paragraphs=2 kind=pass latency_ms=6523 out_runes=683 out_bytes=684 missing_marker=0 class=- error=""
-PROBE point search=cjk n=400 runes=400 utf8_bytes=1174 paragraphs=3 kind=pass latency_ms=12636 out_runes=1418 out_bytes=1419 missing_marker=0 class=- error=""
-PROBE point search=cjk n=800 runes=800 utf8_bytes=2344 paragraphs=6 kind=error latency_ms=20006 out_runes=0 out_bytes=0 missing_marker=0 class=engine error="[dynamic-bridge] System translation returned empty"
-PROBE settle try=1 latency_ms=2478 ok=true
-PROBE point search=cjk n=600 runes=600 utf8_bytes=1764 paragraphs=4 kind=pass latency_ms=17719 out_runes=2109 out_bytes=2110 missing_marker=0 class=- error=""
-PROBE point search=cjk n=700 runes=700 utf8_bytes=2054 paragraphs=5 kind=error latency_ms=20003 out_runes=0 out_bytes=0 missing_marker=0 class=engine error="[dynamic-bridge] System translation returned empty"
-PROBE settle try=1 latency_ms=4448 ok=true
-PROBE point search=cjk n=650 runes=650 utf8_bytes=1904 paragraphs=5 kind=pass latency_ms=17885 out_runes=2284 out_bytes=2286 missing_marker=0 class=- error=""
-PROBE result search=cjk from=zh-Hans to=en max_pass_runes=650 min_fail_runes=700 capped=false latency_at_max_ms=17885 first_call_ms=1747 fail_kind=error fail_class=engine fail_latency_ms=20003 fail_error="[dynamic-bridge] System translation returned empty"
-PROBE apple_limit_runes=650 basis=cjk capped=false elapsed_s=370
+PROBE precheck pair=en>zh-Hans first_call_ms=3009 ok=true
+PROBE precheck pair=zh-Hans>en first_call_ms=1618 ok=true
+CANCEL a not_cut_off runes=3200 latency_ms=27011 err=<nil>
+PROBE precheck languages=47 en=true zh_hans=true
+PROBE precheck pair=en>zh-Hans first_call_ms=1651 ok=true
+PROBE precheck pair=zh-Hans>en first_call_ms=1564 ok=true
+CANCEL b cancel_after_ms=3000 returned_after_ms=3000 lag_ms=0 err=context canceled
+CANCEL d next_request_after_cancel latency_ms=24773 err=<nil> (queues behind the abandoned work; not asserted)
+PROBE precheck languages=47 en=true zh_hans=true
+PROBE precheck pair=en>zh-Hans first_call_ms=1392 ok=true
+PROBE precheck pair=zh-Hans>en first_call_ms=1503 ok=true
+CANCEL c before_start latency_ms=0 code="cancelled" err=<nil>
+CANCEL c same_id_again latency_ms=1417 code="" result_len=51 err=<nil>
+PROBE precheck languages=47 en=true zh_hans=true
+PROBE precheck pair=en>zh-Hans first_call_ms=1398 ok=true
+PROBE precheck pair=zh-Hans>en first_call_ms=1507 ok=true
+CANCEL r running_call code="cancelled" latency_ms=501 err=<nil>
+CANCEL r zero_id code="" latency_ms=1491 result_len=51 err=<nil>
 ```
 
-The committed apple limit is the smaller of the two `max_pass_runes` values: `min(2250, 650) = 650` (`apple_limit_runes` in the last line). The budget is 650 * 80 / 100 = 520.
+- **A request the old wait cut off completes** (`TestAppleNotCutOff`): 3,200 Latin runes, which failed at exactly 20.0 s under the old wait, translated in 27.0 s through `engine.NewApple()`, with every paragraph number in the output.
+- **A cancelled ctx frees the caller at once and reaches the bridge** (`TestAppleCancelReachesSwift`, line `b`): the ctx was cancelled 3 s into that request, `Translate` returned less than a millisecond later with `context.Canceled` itself, not error copy, and the bridge's own call returned the `cancelled` payload instead of running on.
+- **The next request is not lost, but it waits** (same test, line `d`): a one-sentence request sent right after took 24.8 s, because Apple was still working on the abandoned text. Nothing in Kai can shorten that. This is why the chunker should keep Apple chunks small (see "Apple, provisional").
+- **A cancel that arrives before its call is remembered** (`TestAppleCancelBeforeStart`): `kai_translate_cancel` on a token with no call returned 0, the call that followed with that token returned `cancelled` in under a millisecond and translated nothing, and the same token used again afterwards translated normally (the remembered cancel was consumed).
+- **The return values hold** (`TestAppleCancelReturnValues`): cancelling a running call returns 1 and frees it in 1 ms (the cancel came at 500 ms and the call ended at 501 ms), cancelling it again returns 0, and a token of 0 or less can never be cancelled (its call ran to a translation).
 
-## How to re-run
+Only the lines the test names "asserted" decide a verdict; every latency is logged and none is asserted, because how long the framework takes is the machine's.
+
+## How to re-run the apple probe (#119)
 
 1. Build the bridge: `(cd pkg/swiftbridge/scripts && bash ./build.sh)`.
 2. Install English and Chinese (Simplified) under System Settings > General > Language & Region > Translation Languages.
-3. Run the command above from the repository root. It takes about 6 minutes on the recorded host, and longer on a slower one.
-4. Compare `apple_limit_runes` with the apple `Limit` in `internal/engine/input_budget.go`. When they differ materially (a slower host, or a changed bridge wait), update that row and this page: the Latin and CJK maximums, the latency, the host and the date.
+3. Keep the Mac awake and otherwise idle (`caffeinate -is`). Every point costs its full translation time, so other work makes the run longer and noisier.
+4. From the repository root: `KAI_ENGINE_PROBE=1 CGO_ENABLED=1 go test -tags enginelimits -ldflags=-linkmode=external -run TestProbeApple -timeout 3h -count=1 -v ./internal/engine/enginelimits/`. `KAI_ENGINE_PROBE_MAX_RUNES=1000` gives a short smoke run. A first data point (52 minutes, not verified) is in `docs/handoffs/111/handoff-F.md`, "Data for #119".
+5. Put the result in the apple row of `internal/engine/input_budget.go` and of this page (Latin and CJK maximums, latency, host, date; `Verified` yes, `SourceMeasured`, follow-up gone). The limit is the smaller of the two maximums, the `apple_limit_runes` line the probe prints last. Then take the provisional-row wording out of "Reading the table" here and out of the last paragraph of `internal/engine/enginelimits/doc.go`; no test checks that prose.
+6. After any change to the bridge's cancel path, run the cancel checks (command above, about two minutes).
 
-The probe is opt-in on purpose: it needs the build tag `enginelimits` and `KAI_ENGINE_PROBE=1`, and it is not part of CI, the Makefile, the Taskfile or the pipeline's test command. It needs external linking and a main-thread run loop (the `TestMain` in the probe parks the main OS thread in `dispatch_main`). Without them the framework reports no installed languages, or every call returns `returned empty` after exactly 20 s, which looks like a limit. The probe checks the prerequisites first and stops with the cause instead of reporting a limit.
+The probe and the cancel checks are opt-in on purpose: they need the build tag `enginelimits` and `KAI_ENGINE_PROBE=1`, and they are not part of CI, the Makefile, the Taskfile or the pipeline's test command. They need external linking and a main-thread run loop (the `TestMain` in the probe parks the main OS thread in `dispatch_main`); without them a translation never returns. The probe checks the prerequisites first, puts a ceiling of its own on every call, and stops with the cause instead of reporting a limit.

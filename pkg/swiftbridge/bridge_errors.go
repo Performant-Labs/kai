@@ -11,6 +11,10 @@
 //   3. the err.apple_<code> keys in internal/i18n/locales/split/
 //      — Apple system-level errors (apple_translate / apple_ocr) reuse the generic engine
 //      copy; no new keys.
+//      — cancelled has no key and no copy, on purpose: a cancel is reported through the engine's
+//      context (context.Cause), never through text. The Go engine decides from its ctx whether
+//      anybody asked for it (appleCancelOutcome); a cancelled payload nobody asked for is an
+//      ordinary engine error through appleBridgeError's default branch.
 
 package swiftbridge
 
@@ -27,6 +31,7 @@ const (
 	BridgeErrNoSourceLang       = "no_source_lang"       // Swift: BRIDGE_ERR_NO_SOURCE_LANG -> err.apple_no_source_lang
 	BridgeErrAppleTranslate     = "apple_translate"      // Swift: BRIDGE_ERR_APPLE_TRANSLATE (system-level; reuses err.apple_translate_engine)
 	BridgeErrAppleOcr           = "apple_ocr"            // Swift: BRIDGE_ERR_APPLE_OCR (system-level; reuses err.vision_ocr_engine)
+	BridgeErrCancelled          = "cancelled"            // Swift: BRIDGE_ERR_CANCELLED (kai_translate cancelled by kai_translate_cancel; no copy: reported through the ctx)
 )
 
 // Swift-side constants (mirror; the real definitions live in
@@ -43,6 +48,7 @@ const (
 //	let BRIDGE_ERR_NO_SOURCE_LANG      = "no_source_lang"
 //	let BRIDGE_ERR_APPLE_TRANSLATE     = "apple_translate"
 //	let BRIDGE_ERR_APPLE_OCR           = "apple_ocr"
+//	let BRIDGE_ERR_CANCELLED           = "cancelled"
 
 // ---------------------------------------------------------------------------
 // Go struct mirrors of the returned JSON (one-to-one with the Swift Codable struct fields)

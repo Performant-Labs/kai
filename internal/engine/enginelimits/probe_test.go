@@ -4,6 +4,7 @@ package enginelimits
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,35 +25,54 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Apple input-limit probe (issue #83). Opt-in: build tag enginelimits (darwin) AND
+// Apple input-limit probe (issue #83, revised by #111). Opt-in: build tag enginelimits (darwin) AND
 // KAI_ENGINE_PROBE=1. See doc.go for the exact command. The probe goes through the same code the
 // app uses (engine.NewApple() behind the engine.Translator interface), never through
 // swiftbridge.KaiTranslate directly, so what it measures includes TrimSpace, the language-code
 // registry, the 64 KiB output buffer and the JSON decode.
+//
+// The bridge no longer has a wait of its own (#111), so a request is never cut off and the time a
+// request takes is not a limit. What a point can fail on is what the engine itself reports: an
+// error (a framework failure, or the 64 KiB output buffer, which shows up as a JSON parse failure),
+// a paragraph number missing from the output, or an output implausibly small for its input.
 
 const gateEnv = "KAI_ENGINE_PROBE"
 
-// The search bounds are small on purpose. The Apple limit is decided by the bridge's 20 s wait,
-// and on the dev host CJK text takes about 25 ms per rune, so the limit is a few hundred runes:
-// a lower bound or a resolution floor sized for tens of thousands would either abort the run or
-// pin the result to a bracket as wide as the value itself.
+// maxRunesEnv overrides the upper bound of the search (in runes), for a shorter run.
+const maxRunesEnv = "KAI_ENGINE_PROBE_MAX_RUNES"
+
+// The search runs from lowRunes up to the upper bound (defaultHighRunes, or maxRunesEnv). 20,000 is
+// the epic's target document; time now grows linearly with size (about 9 ms per Latin rune and 26
+// per CJK rune on the dev host), so the doubling search costs minutes, and a bound beyond what the
+// epic needs would only make the run longer.
+//
+// The bisection stops at 5% of the low end, not the 1% of the first probe (#83). With no wait to
+// cut a point short, every point costs its full translation time even when it fails (about 10
+// minutes for 16,000 CJK runes), a CJK limit near 18,000 needs several bisection points, and the
+// budget applies its own 20% margin, so a bracket of 5% is well inside it.
 const (
-	lowRunes  = 100     // lower bound of the search
-	highRunes = 100_000 // upper bound: the epic's hard cap on one translation
-	stepFloor = 50      // the search stops when hi-lo <= max(stepFloor, stepPct% of lo)
-	stepPct   = 1
+	lowRunes         = 100    // lower bound of the search
+	defaultHighRunes = 20_000 // upper bound unless maxRunesEnv says otherwise
+	stepFloor        = 50     // the search stops when hi-lo <= max(stepFloor, stepPct% of lo)
+	stepPct          = 5
 
 	minOutPct    = 25 // a pass needs output runes >= 25% of input runes (coarse partial-result guard)
 	minTailRunes = 40 // the final paragraph never ends up a stub shorter than this
 
-	slowCall    = 15 * time.Second // a failed call this slow ran into the bridge's 20 s wait
-	settleWait  = 20 * time.Second // the bridge's own wait; the abandoned Swift Task runs on for about this long
-	settledBy   = 8 * time.Second  // a one-sentence request answers this fast once the framework is idle again
-	settleTries = 6                // settle waits again, up to this many times, until the framework answers promptly
+	// The probe's own ceilings, not the product's: the bridge has no limit of its own, so a
+	// framework that never answers (no main run loop, a hung service) would hang the run. Hitting
+	// one stops the probe with the likely cause and is never recorded as a limit. It goes through
+	// the engine's cancel path, which is exercised the same way a user's Cancel is.
+	pointCeiling    = 20 * time.Minute // one search point
+	precheckCeiling = 2 * time.Minute  // one one-sentence request
 )
 
+// highRunes is the upper bound of the search, set once by TestProbeApple.
+var highRunes = defaultHighRunes
+
 // prereqHelp names everything a probe run needs. A run without them fails in ways that look like
-// engine limits, so every prerequisite failure stops the probe with this text instead.
+// engine limits (or, since the bridge has no wait, never ends), so every prerequisite failure stops
+// the probe with this text instead.
 const prereqHelp = "The probe needs: (1) external linking with cgo (CGO_ENABLED=1 go test ... -ldflags=-linkmode=external); " +
 	"(2) the main-thread TestMain in this file, which parks the main OS thread in dispatch_main(); " +
 	"(3) the Swift bridge built first ((cd pkg/swiftbridge/scripts && bash ./build.sh)); " +
@@ -64,9 +84,9 @@ func init() { runtime.LockOSThread() }
 
 // TestMain parks the main OS thread in dispatch_main() so the main dispatch queue is serviced.
 // Translation.framework needs that to answer: without it the installed-language list comes back
-// empty after 30 s and every translation returns the bridge's empty result after 20 s. The tests
-// run on another goroutine. It is harmless when the probe is skipped: m.Run() returns at once and
-// the process exits.
+// empty after 30 s and a translation never returns (before #111 the bridge's 20 s wait gave up on
+// it with an empty result). The tests run on another goroutine. It is harmless when the probe is
+// skipped: m.Run() returns at once and the process exits.
 func TestMain(m *testing.M) {
 	// The engine logs the raw (up to 64 KB) payload on a parse failure; that is noise here. The
 	// probe records the returned error text instead.
@@ -91,7 +111,7 @@ type script struct {
 	join       string   // between the sentences of one paragraph
 	perPara    int      // sentences per paragraph
 	terminator rune     // ends every paragraph
-	warm       string   // one sentence for the pre-check and the settle pings
+	warm       string   // one sentence for the pre-check (and the cancel checks in cancel_test.go)
 }
 
 var latin = script{
@@ -236,14 +256,24 @@ type prober struct {
 	tr engine.Translator
 }
 
-// call translates text with the script's pair and times the call.
-func (p *prober) call(s script, text string) (res *model.TranslateResult, latency time.Duration, err error) {
+// call translates text with the script's pair and times the call, under the probe's own ceiling.
+// Reaching the ceiling stops the run: the engine has no limit of its own, so a call that long means
+// the framework is not answering, and that is a broken prerequisite, not a size limit.
+func (p *prober) call(s script, text string, ceiling time.Duration) (res *model.TranslateResult, latency time.Duration, err error) {
+	p.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), ceiling)
+	defer cancel()
 	start := time.Now()
-	res, err = p.tr.Translate(context.Background(), model.TranslateRequest{Text: text, From: s.from, To: s.to})
-	return res, time.Since(start), err
+	res, err = p.tr.Translate(ctx, model.TranslateRequest{Text: text, From: s.from, To: s.to})
+	latency = time.Since(start)
+	if errors.Is(err, context.DeadlineExceeded) {
+		p.t.Fatalf("probe stopped: a %d-byte %s>%s request had no answer after %s. The engine imposes no limit of its own, so the framework is not answering: most likely the main run loop is not running (external linking and the TestMain in this file), or the Translation service is hung. %s",
+			len(text), s.fromCode, s.toCode, ceiling, prereqHelp)
+	}
+	return res, latency, err
 }
 
-// try runs one probe point of n runes, logs it, and lets the framework settle after a timeout.
+// try runs one probe point of n runes and logs it.
 func (p *prober) try(s script, n int) outcome {
 	p.t.Helper()
 	text, paragraphs := s.buildInput(n)
@@ -251,11 +281,11 @@ func (p *prober) try(s script, n int) outcome {
 	if o.runes != n {
 		p.t.Fatalf("probe bug: buildInput(%d) produced %d runes", n, o.runes)
 	}
-	res, latency, err := p.call(s, text)
+	res, latency, err := p.call(s, text, pointCeiling)
 	o.latency = latency
 	switch {
 	case err != nil:
-		o.kind, o.err, o.class = kindError, err.Error(), translate.ClassifyEngineError(err.Error())
+		o.kind, o.err, o.class = kindError, err.Error(), translate.ClassifyEngineError(err)
 	default:
 		o.outRunes, o.outBytes = utf8.RuneCountInString(res.Result), len(res.Result)
 		if o.missing = firstMissingMarker(res.Result, paragraphs); o.missing != 0 {
@@ -268,26 +298,7 @@ func (p *prober) try(s script, n int) outcome {
 	}
 	p.t.Logf("PROBE point search=%s n=%d runes=%d utf8_bytes=%d paragraphs=%d kind=%s latency_ms=%d out_runes=%d out_bytes=%d missing_marker=%d class=%s error=%q",
 		s.name, n, o.runes, o.bytes, o.paragraphs, o.kind, o.latency.Milliseconds(), o.outRunes, o.outBytes, o.missing, dash(o.class), o.err)
-	if !o.ok() && o.latency >= slowCall {
-		p.settle()
-	}
 	return o
-}
-
-// settle waits until the framework answers a one-sentence request quickly again. After the
-// bridge's 20 s wait expires the abandoned Swift Task keeps running and would skew the next
-// point's latency, so the probe waits it out rather than starting the next point back to back.
-func (p *prober) settle() {
-	p.t.Helper()
-	for attempt := 1; attempt <= settleTries; attempt++ {
-		time.Sleep(settleWait)
-		_, d, err := p.call(latin, latin.warm)
-		p.t.Logf("PROBE settle try=%d latency_ms=%d ok=%t", attempt, d.Milliseconds(), err == nil)
-		if err == nil && d < settledBy {
-			return
-		}
-	}
-	p.t.Fatalf("the translation framework did not answer a one-sentence request within %s after %d waits of %s; stop, let the machine idle, and run the probe again", settledBy, settleTries, settleWait)
 }
 
 // result is one finished search.
@@ -301,8 +312,9 @@ type result struct {
 
 // search brackets the limit: it doubles from lowRunes until a point fails (or highRunes passes),
 // then bisects the last passing and first failing sizes down to max(stepFloor, stepPct% of the low
-// end) runes. Doubling from below, rather than testing highRunes first, keeps the abandoned
-// overrun small: the first failing size is at most twice the limit. It assumes failure is
+// end) runes. Doubling from below, rather than testing highRunes first, keeps the cost of the
+// failing points small: the first failing size is at most twice the limit, and a point costs its
+// full translation time even when it fails (the engine has no early exit). It assumes failure is
 // monotonic in size; every point is logged, so a non-monotonic result is visible.
 func (p *prober) search(s script, first time.Duration) result {
 	p.t.Helper()
@@ -364,7 +376,7 @@ func (p *prober) precheck() map[string]time.Duration {
 	}
 	first := map[string]time.Duration{}
 	for _, s := range []script{latin, cjk} {
-		res, d, err := p.call(s, s.warm)
+		res, d, err := p.call(s, s.warm, precheckCeiling)
 		if err != nil || res.Result == "" {
 			t.Fatalf("probe prerequisite failed: a one-sentence %s>%s translation failed after %s (error: %v). %s", s.fromCode, s.toCode, d, err, prereqHelp)
 		}
@@ -414,8 +426,8 @@ func logHost(t *testing.T) {
 	mem, _ := unix.SysctlUint64("hw.memsize")
 	t.Logf("PROBE host macos=%s build=%s chip=%q cpus=%d mem_gb=%d go=%s goarch=%s bridge=%q",
 		ver, build, chip, runtime.NumCPU(), mem>>30, runtime.Version(), runtime.GOARCH, bridgeStamp())
-	t.Logf("PROBE config low=%d high=%d step_floor=%d step_pct=%d min_out_pct=%d slow_call_ms=%d settle_wait_ms=%d",
-		lowRunes, highRunes, stepFloor, stepPct, minOutPct, slowCall.Milliseconds(), settleWait.Milliseconds())
+	t.Logf("PROBE config low=%d high=%d step_floor=%d step_pct=%d min_out_pct=%d point_ceiling_s=%d precheck_ceiling_s=%d",
+		lowRunes, highRunes, stepFloor, stepPct, minOutPct, int(pointCeiling.Seconds()), int(precheckCeiling.Seconds()))
 }
 
 func TestProbeApple(t *testing.T) {
@@ -423,6 +435,13 @@ func TestProbeApple(t *testing.T) {
 		t.Skip("set " + gateEnv + "=1 to run the Apple input-limit probe (the full command is in doc.go)")
 	}
 	started := time.Now()
+	if v := os.Getenv(maxRunesEnv); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 2*lowRunes {
+			t.Fatalf("%s=%q: want a whole number of at least %d runes", maxRunesEnv, v, 2*lowRunes)
+		}
+		highRunes = n
+	}
 	for _, s := range []script{latin, cjk} {
 		for _, sentence := range append([]string{s.warm}, s.sentences...) {
 			if strings.ContainsAny(sentence, "0123456789") {

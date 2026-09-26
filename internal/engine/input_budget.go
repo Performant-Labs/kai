@@ -86,14 +86,16 @@ func (b Budget) Fits(text string) bool { return b.Measure(text) <= b.Max() }
 // translate). Sources and reasoning per row; the same rows, with their links, are in
 // docs/engine-limits.md.
 var inputBudgets = map[string]Budget{
-	// apple — macOS Translation.framework. MEASURED by the probe (internal/engine/enginelimits) on
-	// macOS 27.0 (build 26A428), Apple M1 Max, 2026-09-26; the run is recorded in
-	// docs/engine-limits.md "Probe run". Limit is the smaller of the two searches, which is the
-	// CJK one: zh-Hans -> en passed 650 runes and failed at 700, en -> zh-Hans passed 2250 and
-	// failed at 2300. What binds is the bridge's own 20 s wait (apple_translate.swift), not the
-	// framework and not the 64 KiB output buffer, so the number depends on the chip and moves if
-	// that wait changes. Re-run the probe on a slower host before trusting it there.
-	"apple": {Unit: UnitRunes, Limit: 650, Source: SourceMeasured},
+	// apple — macOS Translation.framework. PROVISIONAL and unmeasured (#119 measures it). The bridge's
+	// old fixed 20 s wait, which is what the first measurement (#83, 650 runes) actually hit, is gone
+	// (#111): time no longer binds. 3200 is the largest size seen to succeed with no wait, from the
+	// #111 brief's throwaway checks on an Apple M1 Max (2,000 Latin runes in 24.0 s and 3,200 in
+	// 31.8 s, both complete), not a ceiling: a later probe run went far higher (see the #111 handoff,
+	// "Data for #119"). What will bind is the 64 KiB output buffer in apple_darwin.go for text that
+	// grows when translated. A call this size runs for tens of seconds with no progress, and after a
+	// cancel the framework queues the next request behind it, so the chunker (#84) should stay well
+	// below Max() for apple.
+	"apple": {Unit: UnitRunes, Limit: 3200, Source: SourceProvisional, FollowUp: 119},
 
 	// google — the key-free gtx endpoint Kai calls (google.go) is undocumented, so no limit is
 	// published for it. 5000 is Google's recommended maximum for Cloud Translation, 5K characters

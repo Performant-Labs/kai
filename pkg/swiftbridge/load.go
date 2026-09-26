@@ -19,6 +19,7 @@
 //   - C char* (output buffer)      -> Go unsafe.Pointer (caller passes
 //     unsafe.Pointer(&buf[0]))
 //   - C int / Int32                -> Go int32 (C int is 32-bit under macOS LP64)
+//   - Swift Int64                  -> Go int64 (the kai_translate call token)
 //   - C Bool                       -> Go bool (1-byte _Bool)
 //
 // This file compiles on macOS only (purego.Dlopen/RTLD_* are Unix-only). Non-macOS platforms
@@ -59,7 +60,8 @@ var (
 	KaiAvailableLanguages     func(out unsafe.Pointer, outCap int32) int32
 	KaiSetLogConfig           func(dir string, level string, retentionDays int32, compress bool)
 	KaiSetLocale              func(locale string)
-	KaiTranslate              func(src string, dst string, text string, out unsafe.Pointer, outCap int32) int32
+	KaiTranslate              func(src string, dst string, text string, token int64, out unsafe.Pointer, outCap int32) int32
+	KaiTranslateCancel        func(token int64) int32
 )
 
 // The dylib defaults to the same directory as this .go source file (build.sh copies the
@@ -170,6 +172,7 @@ func registerAll(h uintptr) {
 	register(&KaiSetLogConfig, "kai_set_log_config")
 	register(&KaiSetLocale, "kai_set_locale")
 	register(&KaiTranslate, "kai_translate")
+	register(&KaiTranslateCancel, "kai_translate_cancel")
 }
 
 // Available reports whether the Swift bridge loaded successfully (dylib Dlopen'ed and the

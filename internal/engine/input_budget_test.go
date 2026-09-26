@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -67,13 +69,18 @@ func TestInputBudgetNoneForOCR(t *testing.T) {
 	}
 }
 
-func TestInputBudgetAppleIsMeasured(t *testing.T) {
+// Issue #111 scope change ("split it"): the measured Apple budget is #119. Until it lands the apple
+// row is provisional, with #119 as its follow-up.
+func TestInputBudgetAppleIsProvisional(t *testing.T) {
 	b, ok := InputBudget("apple")
 	if !ok {
 		t.Fatal("apple has no budget")
 	}
-	if b.Source != SourceMeasured {
-		t.Errorf("apple Source = %q, want %q", b.Source, SourceMeasured)
+	if b.Source != SourceProvisional {
+		t.Errorf("apple Source = %q, want %q", b.Source, SourceProvisional)
+	}
+	if b.FollowUp != 119 {
+		t.Errorf("apple FollowUp = %d, want 119", b.FollowUp)
 	}
 	if b.Unit != UnitRunes {
 		t.Errorf("apple Unit = %q, want %q", b.Unit, UnitRunes)
@@ -198,19 +205,14 @@ func TestEngineLimitsDocListsEveryTranslator(t *testing.T) {
 			t.Errorf("engine %q: no budget to check the doc row against", name)
 			continue
 		}
-		if name == "apple" {
-			if r[colVerified] != "yes" {
-				t.Errorf("apple: Verified cell = %q, want %q", r[colVerified], "yes")
-			}
-			continue
-		}
 		if r[colVerified] != "no" {
 			t.Errorf("%s: Verified cell = %q, want %q", name, r[colVerified], "no")
 		}
 		if want := fmt.Sprintf("#%d", b.FollowUp); !strings.Contains(r[colFollowUp], want) {
 			t.Errorf("%s: Follow-up cell %q does not contain %s", name, r[colFollowUp], want)
 		}
-		if !strings.Contains(r[colDocumented], "http") {
+		// Apple publishes no limit, so its documented-limit cell says so instead of linking.
+		if name != "apple" && !strings.Contains(r[colDocumented], "http") {
 			t.Errorf("%s: Documented-limit cell %q has no http link", name, r[colDocumented])
 		}
 	}
@@ -223,4 +225,76 @@ func TestBudgetMeasureUnknownUnitPanics(t *testing.T) {
 		}
 	}()
 	Budget{Unit: "nope"}.Measure("x")
+}
+
+// Issue #111 criterion 11 (Tester). The old 650-rune limit was the bridge's 20 s wait, and the
+// largest size that wait ever let through was 2250 runes (Latin). With no wait, the provisional
+// limit (throwaway checks, #119 measures it) must be above that.
+func TestInputBudgetAppleLimitIsNotTheOldWait(t *testing.T) {
+	b, ok := InputBudget("apple")
+	if !ok {
+		t.Fatal("apple has no budget")
+	}
+	if b.Limit <= 2250 {
+		t.Errorf("apple Limit = %d, want > 2250 (the largest size the 20 s wait ever let through)", b.Limit)
+	}
+	if b.Source != SourceProvisional {
+		t.Errorf("apple Source = %q, want %q", b.Source, SourceProvisional)
+	}
+}
+
+var firstInt = regexp.MustCompile(`\d[\d,]*`)
+
+func cellInt(t *testing.T, what, cell string) int {
+	t.Helper()
+	m := firstInt.FindString(cell)
+	if m == "" {
+		t.Fatalf("%s cell %q holds no number", what, cell)
+	}
+	n, err := strconv.Atoi(strings.ReplaceAll(m, ",", ""))
+	if err != nil {
+		t.Fatalf("%s cell %q: %v", what, cell, err)
+	}
+	return n
+}
+
+// While the apple row is provisional (#119 measures it), its doc row must be tied to the code: the
+// Latin max is Limit, the Budget is Max(), the CJK max is written as a lower bound (">= N") because it
+// does not set Limit ("Reading the table" in docs/engine-limits.md), and the row no longer blames the
+// removed 20 s wait. When #119 measures the row the limit becomes the smaller of the two maximums, and
+// this test moves with it.
+func TestEngineLimitsDocApplePinsTheCode(t *testing.T) {
+	const (
+		colLatin  = 2
+		colCJK    = 3
+		colFailed = 4
+		colBudget = 7
+	)
+	var row []string
+	for _, r := range docRows(t) {
+		if len(r) > 0 && r[colEngine] == "apple" {
+			row = r
+		}
+	}
+	if len(row) != docColumns {
+		t.Fatalf("apple row has %d cells, want %d", len(row), docColumns)
+	}
+	b, ok := InputBudget("apple")
+	if !ok {
+		t.Fatal("apple has no budget")
+	}
+	// The provisional figure comes from the Latin throwaway check; the CJK cell is a lower bound
+	// from a smaller throwaway check, so only the Latin cell is tied to Limit.
+	if latin := cellInt(t, "Latin max", row[colLatin]); latin != b.Limit {
+		t.Errorf("doc Latin max %d, code Limit is %d", latin, b.Limit)
+	}
+	if !strings.HasPrefix(row[colCJK], ">=") {
+		t.Errorf("doc CJK max %q: a provisional row writes it as a lower bound (\">= N\"), because it does not set Limit", row[colCJK])
+	}
+	if got := cellInt(t, "Budget", row[colBudget]); got != b.Max() {
+		t.Errorf("doc Budget %d, code Max() = %d", got, b.Max())
+	}
+	if strings.Contains(row[colFailed], "20 s") || strings.Contains(row[colFailed], "returned empty") {
+		t.Errorf("apple row still describes the removed 20 s wait as the failure: %q", row[colFailed])
+	}
 }

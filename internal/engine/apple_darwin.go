@@ -74,6 +74,12 @@ func (s *appleTranslator) SupportsAutoSource() bool { return true }
 // Translate performs the translation via Translation.framework.
 // When src is "auto" (or empty), Swift auto-detects the source language with NaturalLanguage,
 // constrained to the locally installed list; the target language must be explicit.
+//
+// The call has no time limit of its own (issue #111): it returns when Apple is done, or when ctx
+// ends. A ctx that ends first cancels the Swift call (runCancellable) and Translate returns
+// context.Cause(ctx), never error copy: the translate service decides cancelled or superseded from
+// that cause. The framework itself keeps working on the abandoned text for a while and queues the
+// next request behind it, which nothing here can shorten.
 func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
@@ -93,10 +99,30 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	slog.Debug(i18n.T("log.apple_translate_invoke"), "from", sl, "to", tl, "text_len", len(text))
 
 	outBuf := make([]byte, 1<<16) // 64KB output buffer, enough for a long translation + JSON wrapping
-	if !swiftbridge.Available() {
+	// KaiTranslateCancel comes from the same bridge build as the token-taking KaiTranslate (issue
+	// #111). A library without it is a stale build whose kai_translate has the old argument list, and
+	// calling that with the new one would hand it the token where it expects the output buffer, so
+	// such a library counts as unavailable.
+	if !swiftbridge.Available() || swiftbridge.KaiTranslateCancel == nil {
 		return nil, fmt.Errorf(i18n.T("err.swiftbridge_unavailable"))
 	}
-	n := swiftbridge.KaiTranslate(sl, tl, text, unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // required for the Swift interop; buffer is allocated on the Go side
+	// The call has no timer of its own: it returns when Apple is done, or as soon as ctx ends
+	// (issue #111). runCancellable then asks the bridge to cancel the call named by this token; the
+	// bridge answers at once and the framework unwinds the abandoned work in the background.
+	token := nextAppleToken()
+	var n int32
+	payload, err := runCancellable(ctx, token, func() []byte {
+		n = swiftbridge.KaiTranslate(sl, tl, text, token, unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // required for the Swift interop; buffer is allocated on the Go side
+		if n < 0 {
+			return nil
+		}
+		return outBuf[:n]
+	}, func(token int64) { swiftbridge.KaiTranslateCancel(token) })
+	if err != nil {
+		// ctx had already ended: the bridge was never called, and the error is the ctx's cause,
+		// never error copy (the translate service decides cancelled or superseded from it).
+		return nil, err
+	}
 	if n < 0 {
 		slog.Error(i18n.T("err.apple_translate_buffer"), "from", sl, "to", tl, "text_len", len(text))
 		return nil, fmt.Errorf(i18n.T("err.apple_translate_buffer"))
@@ -104,7 +130,7 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 
 	// Trim the trailing \0 Swift may have written (C-string convention), avoiding a \x00
 	// error during JSON parsing.
-	payload := bytes.TrimRight(outBuf[:n], "\x00")
+	payload = bytes.TrimRight(payload, "\x00")
 	var tr swiftbridge.TranslateSuccess
 	if err := json.Unmarshal(payload, &tr); err != nil {
 		slog.Error(i18n.T("err.apple_translate_parse"), "from", sl, "to", tl, "raw", string(payload), "error", err)
@@ -126,8 +152,18 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 			slog.Error(i18n.T("err.apple_no_source_lang"), "from", sl, "to", tl, "detail", tr.Detail)
 		case swiftbridge.BridgeErrAppleTranslate:
 			slog.Error(i18n.T("err.apple_translate_engine"), "from", sl, "to", tl, "detail", tr.Detail)
+		case swiftbridge.BridgeErrCancelled:
+			// A cancel is not an engine failure, so it is not an error line (the translate service
+			// logs one the user asked for). One nobody asked for still becomes an engine error
+			// below, and the service logs that as a failure.
+			slog.Debug(i18n.T("log.translate_engine_cancelled"), "engine", "apple", "from", sl, "to", tl, "detail", tr.Detail)
 		default:
 			slog.Error(i18n.T("err.apple_translate_engine"), "from", sl, "to", tl, "code", tr.Code, "detail", tr.Detail)
+		}
+		// A cancelled payload that ctx asked for ends as the ctx's cause (appleCancelOutcome, the
+		// one place that decides), never as error copy.
+		if cancelErr, handled := appleCancelOutcome(ctx, tr.Code); handled {
+			return nil, cancelErr
 		}
 		return nil, appleBridgeError(tr.Code, tr.Detail, tr.From)
 	}

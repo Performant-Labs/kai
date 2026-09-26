@@ -95,6 +95,8 @@ func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
     "translate.detect_fail": "系统翻译自动检测失败且无已安装语言回退 dst=%@",
     "translate.fail": "系统翻译失败: %@",
     "translate.done": "系统翻译完成 from=%@ dst=%@ 译文长度=%d",
+    "translate.cancel": "系统翻译取消 token=%lld 状态=%@",
+    "translate.drain": "系统翻译取消后，被弃用的任务已结束 取消后耗时=%@s",
     "lang.query_done": "系统已安装语言列表查询完成 总数=%d 已安装=%d",
     "a11y.query": "辅助功能授权查询 结果=%@",
     "a11y.request": "辅助功能授权请求 弹出系统授权框并尝试打开设置面板",
@@ -132,6 +134,8 @@ func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
       "system translate auto-detect failed and no installed language fallback dst=%@",
     "translate.fail": "translate failed: %@",
     "translate.done": "system translate done from=%@ dst=%@ result_len=%d",
+    "translate.cancel": "system translate cancel token=%lld state=%@",
+    "translate.drain": "system translate: cancelled task finished unwinding %@s after the cancel",
     "lang.query_done": "installed language list query done total=%d installed=%d",
     "a11y.query": "accessibility authorization query result=%@",
     "a11y.request":

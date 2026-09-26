@@ -288,10 +288,11 @@ func (s *Service) identityResult(engineName string, req model.TranslateRequest, 
 // place an engine is invoked, so the goroutine, timing log and error wrapping exist once.
 //
 // It returns as soon as ctx ends, whether or not the engine looks at its ctx: an engine that never
-// does (the Apple bridge blocks inside Swift) is abandoned, keeps running on its own goroutine,
-// and its late result lands in a buffered channel nobody reads any more. What comes back is then
-// context.Cause(ctx), which is how the caller tells a cancel from a failure. A ctx that is done
-// before the engine was reached starts nothing.
+// does is abandoned, keeps running on its own goroutine, and its late result lands in a buffered
+// channel nobody reads any more. (The Apple engine does look: it cancels its Swift call when ctx
+// ends, so its goroutine ends too, issue #111.) What comes back is then context.Cause(ctx), which
+// is how the caller tells a cancel from a failure. A ctx that is done before the engine was
+// reached starts nothing.
 //
 // The returned result's From is what the engine reported, unqualified; translateWithEngine decides
 // the same-language rule on it and only then applies resultFrom. A failure keeps the engine's error
