@@ -1,0 +1,79 @@
+# Descriptive PR titles, enforced mechanically (issue #112).
+#
+# The coding pipeline opens every PR as "Implements #N" with the body "Closes #N.", and
+# squash-merge turns the title into the commit subject on master. This workflow rewrites that
+# default from the linked issue and then fails the check if the title is still not descriptive,
+# so a bad title cannot be merged unnoticed no matter who or what opened the PR.
+#
+# Security: the PR title and body reach the shell only through environment variables, never
+# through ${{ }} interpolation inside a script, and no third-party action is used.
+name: pr-title
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: write
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rewrite the pipeline's default title and body from the linked issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -eu
+          # Only the pipeline default is rewritten: "Implements #N" (optionally with a trailing dot).
+          if ! printf '%s' "$PR_TITLE" | grep -Eq '^Implements #[0-9]+\.?$'; then
+            echo "Title is not the pipeline default; leaving it alone."
+            exit 0
+          fi
+          issue=$(printf '%s' "$PR_TITLE" | grep -Eo '[0-9]+')
+          issue_title=$(gh issue view "$issue" --json title --jq .title) || {
+            echo "::error title=pr-title::Cannot read issue #$issue to build a descriptive title. Retitle the PR by hand: the title must say what changed."
+            exit 1
+          }
+          new_title="$issue_title (#$issue)"
+          # Body: keep the default only when it carries nothing but "Closes #N."
+          trimmed=$(printf '%s' "$PR_BODY" | tr -d '[:space:]')
+          if [ -z "$trimmed" ] || [ "$trimmed" = "Closes#$issue." ]; then
+            new_body=$(printf 'Closes #%s.\n\n%s\n\nThe pipeline handoffs (plan review, tests, implementation, audits) are in docs/handoffs/%s/.\n' "$issue" "$issue_title" "$issue")
+            gh pr edit "$PR_NUMBER" --title "$new_title" --body "$new_body"
+          else
+            gh pr edit "$PR_NUMBER" --title "$new_title"
+          fi
+          echo "Retitled PR #$PR_NUMBER to: $new_title"
+
+      - name: Fail a title that is still not descriptive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -eu
+          # Read the title again: the previous step may have changed it.
+          title=$(gh pr view "$PR_NUMBER" --json title --jq .title)
+          if printf '%s' "$title" | grep -Eq '^Implements #[0-9]+'; then
+            echo "::error title=pr-title::The title \"$title\" is the pipeline default. The title becomes the squash-commit subject on master: say what changed."
+            exit 1
+          fi
+          # Strip issue/PR references; what is left must have real words.
+          stripped=$(printf '%s' "$title" | sed -E 's/\(#[0-9]+\)//g; s/#[0-9]+//g; s/^[[:space:]]+//; s/[[:space:]]+$//')
+          words=$(printf '%s' "$stripped" | tr -cd '[:alpha:] ' | wc -w | tr -d ' ')
+          if [ "${#stripped}" -lt 15 ] || [ "$words" -lt 3 ]; then
+            echo "::error title=pr-title::The title \"$title\" is too short to describe the change (needs at least 3 words and 15 characters besides issue references)."
+            exit 1
+          fi
+          echo "PR title OK: $title"
