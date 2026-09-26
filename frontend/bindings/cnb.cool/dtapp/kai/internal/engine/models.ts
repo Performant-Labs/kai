@@ -210,12 +210,6 @@ export enum FieldWidget {
      * value is merged into Extra.model
      */
     WidgetLLMModel = "llm_model",
-
-    /**
-     * WidgetLLMTimeout is the LLM translation engine's per-request timeout in seconds, a number
-     * input whose value is merged into Extra.timeout_sec
-     */
-    WidgetLLMTimeout = "llm_timeout",
 };
 
 /**

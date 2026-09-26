@@ -92,11 +92,11 @@ func (w *EngineWrapper) registerEngines() {
 	}
 	engines := engine.EngineMap(configstore.EnginesToConfig(rows))
 
-	// Custom HTTP client (custom DNS + proxy)
-	newClient := func(timeout time.Duration) *http.Client {
-		c := network.BuildHTTPClient(cfg)
-		c.Timeout = timeout
-		return c
+	// Custom HTTP client (custom DNS + proxy). No client timeout (issue #109): a translation
+	// request ends when the engine answers, fails, or the user cancels its context; only the
+	// connect phase is bounded, inside network.BuildHTTPClient.
+	newClient := func() *http.Client {
+		return network.BuildHTTPClient(cfg)
 	}
 
 	// register puts the translator for the enabled engine e into the registry (issue #96). Three
@@ -128,24 +128,24 @@ func (w *EngineWrapper) registerEngines() {
 	}
 	if e, ok := engines["google"]; ok && e.Enabled {
 		register(e, func() (engine.Translator, error) {
-			return engine.NewGoogle(e.Endpoint, newClient(15*time.Second)), nil
+			return engine.NewGoogle(e.Endpoint, newClient()), nil
 		})
 	}
 	if e, ok := engines["deepl"]; ok && e.Enabled {
 		register(e, func() (engine.Translator, error) {
-			return engine.NewDeepL(e, newClient(15*time.Second)), nil
+			return engine.NewDeepL(e, newClient()), nil
 		})
 	}
 	if e, ok := engines["openai"]; ok && e.Enabled {
 		register(e, func() (engine.Translator, error) {
-			return engine.NewOpenAI(e, newClient(30*time.Second)), nil
+			return engine.NewOpenAI(e, newClient()), nil
 		})
 	}
 	if e, ok := engines["anthropic"]; ok && e.Enabled {
 		register(e, func() (engine.Translator, error) {
 			// Inject the global HTTP client (custom DNS/proxy/logging), consistent with
 			// openai/gemini.
-			e.HTTPClient = newClient(60 * time.Second)
+			e.HTTPClient = newClient()
 			return engine.NewAnthropic(e), nil
 		})
 	}
@@ -153,23 +153,23 @@ func (w *EngineWrapper) registerEngines() {
 		register(e, func() (engine.Translator, error) {
 			// Inject the global HTTP client (custom DNS/proxy/logging) so the Gemini SDK never
 			// touches the useragent-wrapped global http.DefaultTransport and panics.
-			e.HTTPClient = newClient(60 * time.Second)
+			e.HTTPClient = newClient()
 			return engine.NewGemini(e)
 		})
 	}
 	if e, ok := engines["baidu"]; ok && e.Enabled {
 		register(e, func() (engine.Translator, error) {
-			return engine.NewBaidu(e, newClient(15*time.Second)), nil
+			return engine.NewBaidu(e, newClient()), nil
 		})
 	}
 	if e, ok := engines["tencent"]; ok && e.Enabled {
 		register(e, func() (engine.Translator, error) {
-			return engine.NewTencent(e, newClient(15*time.Second)), nil
+			return engine.NewTencent(e, newClient()), nil
 		})
 	}
 	if e, ok := engines["youdao"]; ok && e.Enabled {
 		register(e, func() (engine.Translator, error) {
-			return engine.NewYoudao(e, newClient(15*time.Second)), nil
+			return engine.NewYoudao(e, newClient()), nil
 		})
 	}
 	// OCR single-select: only one OCR engine may be registered into the Registry at a time.

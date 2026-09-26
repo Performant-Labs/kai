@@ -93,6 +93,7 @@ func init() {
 	application.RegisterEvent[[]string](kevents.EventHotkeysChanged)
 	application.RegisterEvent[string](kevents.EventInputFill)
 	application.RegisterEvent[model.TranslateResult](kevents.EventTranslateResult)
+	application.RegisterEvent[kevents.TranslateProgressPayload](kevents.EventTranslateProgress)
 	application.RegisterEvent[model.ScreenshotResult](kevents.EventScreenshotOCR)
 	application.RegisterEvent[struct{}](kevents.EventWindowScreenshot)
 	application.RegisterEvent[struct{}](kevents.EventScreenshotRecapture)
@@ -585,6 +586,10 @@ func main() {
 	updLocale := resolveUpdaterLocale(settingsService.Get().Language)
 	updTheme := resolveUpdaterTheme(settingsService.Get().Theme, app)
 	updClient := network.BuildHTTPClient(*settingsService.Get())
+	// The shared builder carries no total deadline any more (issue #109: a translation request runs
+	// until it ends or the user cancels it). The updater is not a translation request, and its
+	// timing is not #109's to change, so it keeps the 60 s bound this client always had.
+	updClient.Timeout = 60 * time.Second
 	// Library globals: language/theme/primary source/logger/HTTP client (set once; switchable
 	// at runtime via SetXxx).
 	kupdater.SetLogger(slog.Default())

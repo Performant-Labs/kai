@@ -3,8 +3,8 @@
 //  1. "Translation failed" flashed in the active engine's pane while a slower engine was still
 //     working: any engine's first reply cleared `loading`, so the active engine (Apple, ~3 s) read
 //     as failed while the fast one (Google, ~0.3 s) had answered. allReported() is the settle
-//     rule: a request is only over when every enabled translate engine has reported (result or
-//     failure), or the 15 s fallback fires.
+//     rule: a request is only over when every started engine has reported (result, failure or
+//     cancel). #109 removed the timer fallback.
 //  2. The engine dropdown showed "Systemdisabled": the options come from GetEngines, which has no
 //     `enabled` field, so every option read as disabled. isEngineOptionDisabled() decides from the
 //     GetAllEngines list, and a suffix helper keeps a separator in front of the word.
@@ -27,37 +27,34 @@ const eng = (value: string, over: Partial<PaneEngine> = {}): PaneEngine => ({
   ...over,
 });
 
-describe('allReported (the request has settled)', () => {
-  const engines = [eng('apple'), eng('google')];
-  it('is false while an enabled translate engine has not reported', () => {
+// #109: the settle rule reads what the backend STARTED (the `engines` list TranslateMulti returns),
+// not the enabled-engine list, and there is no timer fallback (see components/noTimeLimit.test.ts).
+describe('allReported (every started engine has reported)', () => {
+  const started = ['apple', 'google'];
+  it('is false while a started engine has not reported', () => {
     const results: Record<string, PaneResult> = { google: { engine: 'google', result: 'hi' } };
-    expect(allReported(engines, results)).toBe(false);
+    expect(allReported(started, results)).toBe(false);
   });
-  it('is true once every enabled translate engine has an entry', () => {
+  it('is true once every started engine has an entry', () => {
     const results: Record<string, PaneResult> = {
       google: { engine: 'google', result: 'hi' },
       apple: { engine: 'apple', result: 'hello' },
     };
-    expect(allReported(engines, results)).toBe(true);
+    expect(allReported(started, results)).toBe(true);
   });
-  it('counts a failure payload (no result text) as reported', () => {
+  it('counts a failure payload (no result text) and a cancelled payload as reported', () => {
     const results: Record<string, PaneResult> = {
-      google: { engine: 'google', result: 'hi' },
+      google: { engine: 'google', result: '', cancelled: true },
       apple: { engine: 'apple', result: '', error: 'Unable to Translate' },
     };
-    expect(allReported(engines, results)).toBe(true);
+    expect(allReported(started, results)).toBe(true);
   });
-  it('ignores disabled, unsupported and ocr engines', () => {
-    const list = [
-      eng('apple'),
-      eng('google', { enabled: false }),
-      eng('bing', { supported: false }),
-      eng('vision', { kind: 'ocr' }),
-    ];
-    expect(allReported(list, { apple: { engine: 'apple', result: 'x' } })).toBe(true);
+  it('an enabled engine the backend did not start does not block (only the started list counts)', () => {
+    // bing is enabled in the engine list but was not started, so it is not in `started`.
+    expect(allReported(['apple'], { apple: { engine: 'apple', result: 'x' } })).toBe(true);
   });
   it('is false for nothing reported and true when there is nothing to wait for', () => {
-    expect(allReported(engines, {})).toBe(false);
+    expect(allReported(started, {})).toBe(false);
     expect(allReported([], {})).toBe(true);
   });
 });

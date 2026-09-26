@@ -25,6 +25,14 @@ func (w *TranslateWrapper) TranslateMulti(req model.TranslateRequest) (*model.Tr
 	return w.svc.TranslateMulti(req)
 }
 
+// CancelTranslate cancels the running translation request requestID (issue #109), or only its
+// engine when engine is not empty; the other engines keep running. It reports whether it found
+// something still running, and returns false, without any error, for an unknown or finished
+// request or engine.
+func (w *TranslateWrapper) CancelTranslate(requestID, engine string) bool {
+	return w.svc.CancelTranslate(requestID, engine)
+}
+
 func (w *TranslateWrapper) Ocr(req model.OcrRequest) (*model.OcrResult, error) {
 	return w.svc.Ocr(req)
 }

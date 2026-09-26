@@ -358,7 +358,7 @@ func TestDecisionUsesBareDetectionNotQualified(t *testing.T) {
 // Criterion 9: the screenshot fan-out path.
 func TestTranslateAllStreamExplicitSameLanguage(t *testing.T) {
 	svc, g, hist := newIdentityService(t, gtxOpts{result: "engine-text"})
-	out := svc.translateAllStream(model.TranslateRequest{Text: idText, From: "es", To: "es-MX"}, "img", "es-MX")
+	out := svc.translateAllStream(svc.requests.open("shot", "t80"), model.TranslateRequest{Text: idText, From: "es", To: "es-MX"}, "img", "es-MX")
 	if len(out) != 1 {
 		t.Fatalf("got %d translations, want 1", len(out))
 	}
@@ -378,7 +378,7 @@ func TestTranslateAllStreamExplicitSameLanguage(t *testing.T) {
 // detects the target language is an identity entry and is not saved.
 func TestTranslateAllStreamAutoDetectedSame(t *testing.T) {
 	svc, g, hist := newIdentityService(t, gtxOpts{detected: "es", result: "a paraphrase"})
-	out := svc.translateAllStream(model.TranslateRequest{Text: idText, From: model.Auto, To: "es-MX"}, "img", "es-MX")
+	out := svc.translateAllStream(svc.requests.open("shot", "t80"), model.TranslateRequest{Text: idText, From: model.Auto, To: "es-MX"}, "img", "es-MX")
 	if len(out) != 1 || !out[0].Identity || out[0].Result != idText {
 		t.Fatalf("out = %+v, want one identity entry", out)
 	}
@@ -395,7 +395,7 @@ func TestTranslateAllStreamAutoDetectedSame(t *testing.T) {
 func TestTranslateAllStreamAutoFailureWithDetectionSame(t *testing.T) {
 	d := &detectingEngine{err: engine.WithDetectedSource(errors.New("Unable to Translate"), "es")}
 	svc, hist := newIdentityServiceWith(t, d)
-	out := svc.translateAllStream(model.TranslateRequest{Text: idText, From: model.Auto, To: "es-MX"}, "img", "es-MX")
+	out := svc.translateAllStream(svc.requests.open("shot", "t80"), model.TranslateRequest{Text: idText, From: model.Auto, To: "es-MX"}, "img", "es-MX")
 	if len(out) != 1 || !out[0].Identity || out[0].Result != idText {
 		t.Fatalf("out = %+v, want one identity entry", out)
 	}

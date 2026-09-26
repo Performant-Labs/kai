@@ -23,6 +23,7 @@ declare module "@wailsio/runtime" {
             "kai:screenshot:recapture": {};
             "kai:screenshot:retranslate": events$0.ScreenshotRetranslatePayload;
             "kai:theme:changed": events$0.ThemeChangedPayload;
+            "kai:translate:progress": events$0.TranslateProgressPayload;
             "kai:translate:result": model$0.TranslateResult;
             "kai:window:closing": string;
             "kai:window:screenshot": {};

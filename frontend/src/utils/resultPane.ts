@@ -6,13 +6,14 @@
 // defensive fallback on top — '' → the first enabled translate engine — guaranteeing the result
 // pane's engine select never dangles.
 //
-// The status-dot states are a pure function of the fan-out's real output (design §4; backend
-// unchanged) plus one flag, whether a translation was requested at all (issue #81):
+// The status-dot states are a pure function of the fan-out's real output (design §4) plus one
+// flag, whether a translation was requested at all (issue #81):
+//   cancelled = results[engine].cancelled is set (issue #109): the user cancelled that engine. It is
+//             not a failure and wins over everything else, a partial result included;
 //   done    = results[engine].result is a non-empty string (done as soon as a result arrives, regardless of loading);
 //   pending = loading and that engine has no (non-empty) result yet;
-//   failed  = a request was made, !loading and that engine has no (non-empty) result — the backend
-//             sends no event whatsoever for a failed engine, it is simply absent from results;
-//             failed is the derived signal of "absent + loading finished";
+//   failed  = a request was made, !loading and that engine has no (non-empty) result: it reported a
+//             failure payload (error set) or never reported at all;
 //   idle    = nothing was requested (a fresh or cleared window): there is nothing to report, so it
 //             must not read as failed.
 // paneState below applies the same rules to the whole result pane.
@@ -47,6 +48,11 @@ export type PaneResult = {
   /** issues #42, #96: the failure payload's sanitized error and its category (`error_kind`, an ErrorKind); absent on success. */
   error?: string;
   error_kind?: string;
+  /**
+   * issue #109: the user cancelled this engine. Beside `error`, not a kind of it: a cancelled entry
+   * has no error, and result may hold a partial translation.
+   */
+  cancelled?: boolean;
   [key: string]: unknown;
 };
 
@@ -89,7 +95,7 @@ export type FailureMessage = {
  * `{engine}`; `pair` reads differently for Apple, whose fix is a language download in System Settings
  * (failedPair, no {engine}), than for any other engine (failedUnsupported); an unknown or absent
  * kind falls back to the generic `translate.failed`. A null result, or one with no `error`,
- * is the generic headline with no detail: a failed engine that sent no payload (the 15 s fallback).
+ * is the generic headline with no detail: an engine that reported nothing.
  * Pure function: t (the i18n lookup) is injected by the caller, and the caller owns the side
  * effect of the action (opening Settings).
  */
@@ -172,13 +178,16 @@ export function activeEngineFor(
   return '';
 }
 
-/** A single engine's dot state (the state table of design §4, plus idle from issue #81). */
-export type DotState = 'pending' | 'done' | 'failed' | 'idle';
+/**
+ * A single engine's dot state (the state table of design §4, plus idle from issue #81 and
+ * cancelled from issue #109).
+ */
+export type DotState = 'pending' | 'done' | 'failed' | 'idle' | 'cancelled';
 
 /**
- * A single engine's dot state: done (non-empty result) > pending (loading and no result) > failed
- * (a request was made, !loading and no result — a failed engine is absent from results) > idle
- * (nothing was requested, so there is nothing to have failed).
+ * A single engine's dot state: cancelled (the user cancelled it, issue #109) > done (non-empty
+ * result) > pending (loading and no result) > failed (a request was made, !loading and no result:
+ * it failed or never reported) > idle (nothing was requested, so there is nothing to have failed).
  *
  * @param requested whether a translation was requested and not cleared since (issue #81); passed
  *   explicitly by every caller, so an idle window can never be drawn as failed by omission.
@@ -189,6 +198,7 @@ export function statusDot(
   loading: boolean,
   requested: boolean,
 ): DotState {
+  if (results[engine]?.cancelled) return 'cancelled';
   if (results[engine]?.result) return 'done';
   if (loading) return 'pending';
   return requested ? 'failed' : 'idle';
@@ -212,8 +222,8 @@ export function statusDots(
   return dots;
 }
 
-/** What the result pane renders (issue #81). */
-export type PaneState = 'no-engine' | 'loading' | 'result' | 'idle' | 'failed';
+/** What the result pane renders (issue #81; cancelled from issue #109). */
+export type PaneState = 'no-engine' | 'loading' | 'result' | 'idle' | 'failed' | 'cancelled';
 
 /** The plain values paneState decides from. */
 export interface PaneStateArgs {
@@ -236,7 +246,10 @@ export interface PaneStateArgs {
  * Which state the result pane is in, one of:
  *   no-engine — no enabled translate engine at all (wins over everything);
  *   loading   — the request is in flight and the active engine has no entry in results yet;
- *   result    — the active engine has a non-empty result;
+ *   result    — the active engine has a non-empty result (a cancelled engine's partial result
+ *               included: cancelling keeps the parts already translated on screen);
+ *   cancelled — the user cancelled the active engine and it has no result (issue #109); never
+ *               failed;
  *   failed    — a request was made and the active engine has no usable result (absent, empty, or
  *               an error payload with no result);
  *   idle      — nothing was requested: the pane stays blank.
@@ -257,19 +270,22 @@ export function paneState({
   if (!hasEngines) return 'no-engine';
   if (loading && !results[engine]) return 'loading';
   if (results[engine]?.result) return 'result';
+  if (results[engine]?.cancelled) return 'cancelled';
   return requested ? 'failed' : 'idle';
 }
 
 /**
- * Whether every enabled translate engine has reported for the current request: a result or a
- * failure payload (an entry in results either way). This is the settle rule of the result pane:
- * the active engine keeps showing its loading placeholder until it has reported itself or the
- * request has settled, so a fast engine answering first no longer makes a slower active engine
- * read as failed. True when there is nothing to wait for.
+ * Whether every engine the backend started has reported for the current request: a result, a
+ * failure payload or a cancel (an entry in results either way). This is the settle rule of the
+ * result pane: the active engine keeps showing its loading placeholder until it has reported
+ * itself or the request has settled, so a fast engine answering first no longer makes a slower
+ * active engine read as failed. It reads the started list the backend returned, not the enabled
+ * engines, so an enabled engine that was never started cannot hold a request open (issue #109).
+ * True when there is nothing to wait for.
  */
-export function allReported(engines: PaneEngine[], results: Record<string, PaneResult>): boolean {
-  for (const e of engines) {
-    if (isEnabledTranslate(e) && !results[e.value]) return false;
+export function allReported(started: string[], results: Record<string, PaneResult>): boolean {
+  for (const e of started) {
+    if (!results[e]) return false;
   }
   return true;
 }
@@ -288,27 +304,6 @@ export function isEngineOptionDisabled(value: string, all: PaneEngine[]): boolea
 /** The dropdown option label: the engine name, plus " (disabled)" (localized word) when disabled. */
 export function engineOptionLabel(name: string, disabled: boolean, disabledWord: string): string {
   return disabled ? `${name} (${disabledWord})` : name;
-}
-
-/**
- * The 15 s fallback predicate (a design §4 extension): whether the fan-out is still in progress —
- * i.e. some enabled translate engine is "still pending" (loading and no (non-empty) result yet).
- * The old logic only cleared loading on "zero results"; relaxed to "any pending", sibling engines
- * arriving each flip loading to false themselves, and the moment loading clears with a failed
- * engine absent, its dot flips from pending to failed (case 1 is immediate; case 2 converges at
- * this predicate's 15 s fallback point).
- * With `loading === false` no engine can be pending -> always false (a fallback would be meaningless).
- */
-export function anyPending(
-  engines: PaneEngine[],
-  results: Record<string, PaneResult>,
-  loading: boolean,
-): boolean {
-  if (!loading) return false;
-  for (const e of engines) {
-    if (isEnabledTranslate(e) && !results[e.value]?.result) return true;
-  }
-  return false;
 }
 
 /**

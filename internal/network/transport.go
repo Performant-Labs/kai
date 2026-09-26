@@ -33,7 +33,14 @@ func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
 	return nil, false
 }
 
-// BuildHTTPClient builds an HTTP client with custom DNS and proxy per settings
+// BuildHTTPClient builds an HTTP client with custom DNS and proxy per settings.
+//
+// The client has no total deadline and the transport no response-header (read) deadline (issue
+// #109): a slow but alive response must be allowed to finish, and a non-streaming LLM completion
+// sends no headers at all until generation is done. What bounds a request is its context, i.e.
+// the user's Cancel. Only the connect phase keeps limits, because a host that cannot be reached
+// at all is the one case where a limit helps and "nothing ever happens" has no message: the
+// dialer (10 s), the TLS handshake (30 s) and the custom DNS lookup (queryDNSServer, 5 s).
 func BuildHTTPClient(s settings.Settings) *http.Client {
 	transport := httplogstore.WrapTransport(&http.Transport{
 		// Custom DNS resolution
@@ -54,8 +61,7 @@ func BuildHTTPClient(s settings.Settings) *http.Client {
 			d := net.Dialer{Timeout: 10 * time.Second}
 			return d.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
 		},
-		TLSHandshakeTimeout:   30 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
+		TLSHandshakeTimeout: 30 * time.Second,
 	})
 
 	// Configure proxy
@@ -73,7 +79,6 @@ func BuildHTTPClient(s settings.Settings) *http.Client {
 
 	return &http.Client{
 		Transport: transport,
-		Timeout:   60 * time.Second,
 	}
 }
 

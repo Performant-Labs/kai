@@ -8,14 +8,17 @@ import { describe, expect, it } from 'vitest';
 const src = readFileSync(resolve(__dirname, 'TranslateWindow.svelte'), 'utf8');
 
 describe('a fast engine answering first does not make the active engine read as failed', () => {
-  it('the result handler ends the wait only when every enabled engine has reported', () => {
-    expect(src).toMatch(/if \(allReported\(allEngines, results\)\) awaiting = false;/);
+  it('the result handler ends the wait only when the request has settled (every started engine reported)', () => {
+    // Inside the result handler: the same line in doTranslate (the call returned) is a different rule.
+    const m = src.match(/const offResult = onEvent\([\s\S]*?\n {4}\}\);/);
+    expect(m, 'result handler not found').not.toBeNull();
+    expect(m![0]).toMatch(/if \(requestSettled\(\w+, results\)\) awaiting = false;/);
   });
-  it('doTranslate opens the wait, Clear closes it, and the 15 s fallback closes it too', () => {
+  it('doTranslate opens the wait and Clear closes it; no timer closes it (#109)', () => {
     expect(src).toMatch(/loading = true;\s*awaiting = true;/);
     // #116 puts `requestedThisRun = false;` between the two; the wait is still closed by Clear.
     expect(src).toMatch(/requested = false;\s*requestedThisRun = false;\s*awaiting = false;/);
-    expect(src).toMatch(/anyPending\(allEngines, results, awaiting\)\) awaiting = false/);
+    expect(src).not.toMatch(/setTimeout\([^)]*awaiting/);
   });
   it('the pane and the status dots read the wait, not the first-result loading flag', () => {
     expect(src).toMatch(/paneState\(\{[\s\S]*?loading: awaiting,/);

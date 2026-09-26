@@ -16,6 +16,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as model$0 from "../model/models.js";
 
+/**
+ * CancelTranslate cancels the running translation request requestID (issue #109), or only its
+ * engine when engine is not empty; the other engines keep running. It reports whether it found
+ * something still running, and returns false, without any error, for an unknown or finished
+ * request or engine.
+ */
+export function CancelTranslate(requestID: string, engine: string): $CancellablePromise<boolean> {
+    return $Call.ByID(3553365376, requestID, engine);
+}
+
 export function Ocr(req: model$0.OcrRequest): $CancellablePromise<model$0.OcrResult | null> {
     return $Call.ByID(1768998496, req);
 }

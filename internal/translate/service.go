@@ -9,8 +9,10 @@ package translate
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +51,19 @@ type Service struct {
 	// Per-session separation keeps OCR results from different entry points from clobbering
 	// each other.
 	screenshotCache map[string]ocrCache
+
+	// requests holds the running translation requests (issue #109): what CancelTranslate reaches
+	// and what a newer request of the same session supersedes.
+	requests requestRegistry
+	// emitter, when set through SetEmitter, receives every app event instead of the wails app.
+	// The tests use it to observe what the service emits (issue #109, D8).
+	emitter emitter
+}
+
+// emitter is the one outlet for app events (issue #109, D8). *application.EventManager satisfies
+// it as it is, so production needs no adapter; a test hands in a recorder through SetEmitter.
+type emitter interface {
+	Emit(name string, data ...any) bool
 }
 
 // ocrCache is one cached screenshot-OCR unit.
@@ -72,6 +87,25 @@ func NewService(reg *engine.Registry, hist *historystore.Store, st *settings.Ser
 // SetApp injects the app once it is ready (startup orchestration phase).
 func (s *Service) SetApp(app *application.App) {
 	s.app = app
+}
+
+// SetEmitter replaces the outlet for app events (a test seam, issue #109). Nil restores the wails
+// app. Like the other setters it is called at wiring time, before the service is used.
+func (s *Service) SetEmitter(e emitter) {
+	s.emitter = e
+}
+
+// emit sends one app event: to the emitter when one was set, else to the wails app, else nowhere
+// (the app is injected late, and the tests build the service without one). It is the only place
+// the service reaches the event system, so every payload passes the same seam. Payloads are
+// values of the type main.go registered for the event.
+func (s *Service) emit(name string, data any) {
+	switch {
+	case s.emitter != nil:
+		s.emitter.Emit(name, data)
+	case s.app != nil:
+		s.app.Event.Emit(name, data)
+	}
 }
 
 // screenshotWindow fetches the screenshot translate window handle by name (a single choke
@@ -152,13 +186,14 @@ func (s *Service) SetLangPrefs(p *langpref.Store) {
 // Translate performs a single-engine translation: looks up the registered translator by
 // engine name, falling back to the default engine on failure;
 // on success the result is written to history (failures are only logged, not surfaced).
+// It has no request id and no cancel handle (issue #109): the engine runs until it answers.
 func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult, error) {
 	engineName := req.EngineName
 	reg, ok := s.registry.GetTranslator(engineName)
 	if !ok {
 		return nil, fmt.Errorf("%s: %s", i18n.T("err.translate_engine_not_registered"), engineName)
 	}
-	res, err := s.translateWithEngine(reg, engineName, req)
+	res, err := s.translateWithEngine(context.Background(), reg, engineName, req)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +204,11 @@ func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult,
 // translateWithEngine runs a translation-engine call and assembles the result. It is the single
 // per-engine seam shared by the input window (Translate, TranslateMulti) and the screenshot
 // flows (translateAllStream), and the owner of the same-language rule (issue #80).
+//
+// ctx is the engine's cancel-only context (issue #109). It has no deadline: a slow engine runs
+// until it answers, and the context ends only when the request registry cancels it, for the
+// user's Cancel or because a newer request replaced this one. A cancel is never turned into an
+// identity result: callEngine answers a done ctx with context.Cause(ctx) and no detection.
 //
 // Rule: when the source and the target are the same language, the result is the source text
 // itself, flagged Identity, and never a failure. The decision has two branches and a
@@ -188,17 +228,15 @@ func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult,
 // requested one. The identity result carries none of the engine's text (a paraphrase, phonetic or
 // dictionary belongs to a translation, and this is not one), and callers do not save it to history
 // (saveHistory).
-func (s *Service) translateWithEngine(reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
+func (s *Service) translateWithEngine(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
 	if strings.TrimSpace(req.Text) != "" && req.From.SameAs(req.To) {
 		return s.identityResult(engineName, req, ""), nil
 	}
 
-	timeout := 30 * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
 	res, err := s.callEngine(ctx, reg, engineName, req)
-	if isAutoSource(req.From) {
+	// A ctx that ended is a cancel, decided by outcomeOf from context.Cause before anything else: a
+	// detection an engine attached to a failure it raced the cancel with is not an identity result.
+	if isAutoSource(req.From) && ctx.Err() == nil {
 		if detected, ok := detectedSource(res, err); ok && detected.Covers(req.To) {
 			return s.identityResult(engineName, req, detected), nil
 		}
@@ -249,16 +287,35 @@ func (s *Service) identityResult(engineName string, req model.TranslateRequest, 
 // callEngine runs one translation-engine call under ctx and assembles the result. It is the only
 // place an engine is invoked, so the goroutine, timing log and error wrapping exist once.
 //
+// It returns as soon as ctx ends, whether or not the engine looks at its ctx: an engine that never
+// does (the Apple bridge blocks inside Swift) is abandoned, keeps running on its own goroutine,
+// and its late result lands in a buffered channel nobody reads any more. What comes back is then
+// context.Cause(ctx), which is how the caller tells a cancel from a failure. A ctx that is done
+// before the engine was reached starts nothing.
+//
 // The returned result's From is what the engine reported, unqualified; translateWithEngine decides
 // the same-language rule on it and only then applies resultFrom. A failure keeps the engine's error
 // in its chain (%w), so a detection attached with engine.WithDetectedSource is still found.
+//
+// An engine that panics ends as an ordinary failure, so the request never loses its terminal
+// event.
 func (s *Service) callEngine(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
+	if ctx.Err() != nil {
+		return nil, context.Cause(ctx)
+	}
 	start := time.Now()
 	resCh := make(chan *model.TranslateResult, 1)
 	errCh := make(chan error, 1)
 	// The engine call runs in a goroutine; results are collected over buffered channels for
-	// easy timeout and concurrency orchestration.
+	// easy cancellation and concurrency orchestration.
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error(i18n.T("log.translate_engine_panic"),
+					slog.String("engine", engineName), slog.Any("panic", r), slog.String("stack", string(debug.Stack())))
+				errCh <- fmt.Errorf("%s: %v", i18n.T("err.translate_engine_panic"), r)
+			}
+		}()
 		res, err := reg.Translate(ctx, req)
 		if err != nil {
 			errCh <- err
@@ -286,10 +343,11 @@ func (s *Service) callEngine(ctx context.Context, reg engine.Translator, engineN
 			"Err", err.Error()))
 		return nil, fmt.Errorf("%s(%s): %w", i18n.T("err.translate_failed"), engineName, err)
 	case <-ctx.Done():
+		cause := context.Cause(ctx)
 		slog.Debug(i18n.T("log.translate_engine_cost",
 			"Engine", engineName, "Ms", time.Since(start).Milliseconds(), "Ok", false,
-			"Err", ctx.Err().Error()))
-		return nil, fmt.Errorf("%s(%s): %w", i18n.T("err.translate_timeout"), engineName, ctx.Err())
+			"Err", cause.Error()))
+		return nil, cause
 	}
 }
 
@@ -339,11 +397,21 @@ func failurePayload(name string, req model.TranslateRequest, err error) model.Tr
 // streaming each result to the frontend as it lands (EventTranslateResult).
 // The registry only contains engines the user enabled in the settings page and that
 // registered successfully (OCR engines are excluded from the parallel translation).
-// Returns the number of engines started; actual results arrive asynchronously via events,
-// with the frontend aggregating by the engine field.
+// Returns the request's id and the engines started; actual results arrive asynchronously via
+// events, tagged with that id, with the frontend aggregating by the engine field.
+//
+// The request (issue #109) has no time limit. It is named by req.RequestID (the frontend names it
+// itself, because a fast engine can emit before this call returns; a backend id is generated only
+// when none is sent), and it ends when every engine started has reported once, whether with a
+// translation, a failure or a cancel, or when the user cancels it (CancelTranslate). Starting one
+// supersedes the translate window's running request: that one emits nothing more.
 func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMultiResult, error) {
 	all := s.registry.AllEngines()
-	started := 0
+	type task struct {
+		name string
+		reg  engine.Translator
+	}
+	tasks := make([]task, 0, len(all))
 	engines := make([]string, 0, len(all))
 	for _, meta := range all {
 		// Only parallelize enabled "translation" engines; skip OCR engines.
@@ -354,31 +422,20 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 		if !ok {
 			continue
 		}
+		tasks = append(tasks, task{name: meta.Name, reg: reg})
 		engines = append(engines, meta.Name)
-		started++
+	}
+	if req.RequestID == "" {
+		req.RequestID = newRequestID()
+	}
+	ar := s.requests.open(sessionTranslate, req.RequestID)
+	runs := s.requests.start(ar, engines)
+	for i, t := range tasks {
 		// Each engine gets its own goroutine, never blocking the others; completion is pushed
 		// to the frontend via an app-level event.
-		go func(reg engine.Translator, name string) {
-			res, err := s.translateWithEngine(reg, name, req)
-			if err != nil {
-				slog.Error(i18n.T("log.translate_multi_engine_failed"), slog.String("engine", name), slog.Any("error", err))
-				analytics.Error("translate_failed", map[string]any{"engine": name})
-				// issue #42: failures are no longer silently dropped — the same event is pushed
-				// with Error/ErrorKind payload, and the frontend shows the per-engine failure
-				// reason (categories per ClassifyEngineError). failurePayload builds it, for
-				// this fan-out and the screenshot one alike (issue #96).
-				if s.app != nil {
-					s.app.Event.Emit(events.EventTranslateResult, failurePayload(name, req, err))
-				}
-				return
-			}
-			s.saveHistory(res)
-			if s.app != nil {
-				s.app.Event.Emit(events.EventTranslateResult, *res)
-			}
-		}(reg, meta.Name)
+		go s.translateMultiEngine(ar, runs[i], t.reg, req)
 	}
-	if started > 0 {
+	if len(engines) > 0 {
 		analytics.Track(analytics.EventTranslateInput, map[string]any{
 			"engine":     strings.Join(engines, ","),
 			"src_lang":   string(req.From),
@@ -387,7 +444,157 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 			"trigger":    "manual",
 		})
 	}
-	return &model.TranslateMultiResult{Count: started}, nil
+	return &model.TranslateMultiResult{Count: len(engines), RequestID: req.RequestID, Engines: engines}, nil
+}
+
+// translateMultiEngine runs one engine of a TranslateMulti request and reports how it ended: one
+// EventTranslateResult, or nothing when the request was superseded.
+func (s *Service) translateMultiEngine(ar *activeRequest, run *engineRun, reg engine.Translator, req model.TranslateRequest) {
+	defer s.requests.finish(ar, run)
+	out := s.runEngine(ar, run, reg, req)
+	var payload model.TranslateResult
+	switch out.kind {
+	case outcomeSuperseded:
+		logEngineEnded(run.name, ar, errSuperseded)
+		return
+	case outcomeCancelled:
+		// A cancel is decided before anything failure-shaped runs: no ClassifyEngineError, no
+		// analytics.Error, no error log, and no history row.
+		logEngineEnded(run.name, ar, errUserCancelled)
+		// From is left empty, as for a failure: the payload does not claim a detected source
+		// language.
+		payload = model.TranslateResult{Engine: run.name, To: req.To, Text: req.Text, Cancelled: true}
+	case outcomeFailed:
+		slog.Error(i18n.T("log.translate_multi_engine_failed"), slog.String("engine", run.name), slog.Any("error", out.err))
+		analytics.Error("translate_failed", map[string]any{"engine": run.name})
+		// issue #42: failures are no longer silently dropped — the same event is pushed
+		// with Error/ErrorKind payload, and the frontend shows the per-engine failure
+		// reason (categories per ClassifyEngineError).
+		// From is left empty: the failure payload doesn't claim a "detected source
+		// language", avoiding misuse of the auto-detect label.
+		payload = failurePayload(run.name, req, out.err)
+	default:
+		s.saveHistory(out.res)
+		payload = *out.res
+	}
+	payload.RequestID = ar.id
+	s.reportOnce(ar, run, func() { s.emit(events.EventTranslateResult, payload) })
+}
+
+// outcomeKind says how one engine of a request ended.
+type outcomeKind int
+
+const (
+	outcomeSuccess    outcomeKind = iota // the engine returned a translation
+	outcomeFailed                        // the engine failed on its own
+	outcomeCancelled                     // the user cancelled it (errUserCancelled)
+	outcomeSuperseded                    // a newer request replaced its request (errSuperseded)
+)
+
+// engineOutcome is how one engine of a request ended, decided by outcomeOf.
+type engineOutcome struct {
+	kind outcomeKind
+	res  *model.TranslateResult // outcomeSuccess
+	err  error                  // outcomeFailed
+}
+
+// outcomeOf decides how an engine ended from the engine's ctx and what it returned. The ctx's
+// cause decides, never the error text: engines lose the error chain on the way out, so a
+// cancelled LLM call comes back as plain text. A translation the engine did return stands even if
+// a cancel arrived a moment later, but a superseded request drops everything.
+func outcomeOf(ctx context.Context, res *model.TranslateResult, err error) engineOutcome {
+	cause := context.Cause(ctx)
+	switch {
+	case errors.Is(cause, errSuperseded):
+		return engineOutcome{kind: outcomeSuperseded}
+	case err == nil:
+		return engineOutcome{kind: outcomeSuccess, res: res}
+	case errors.Is(cause, errUserCancelled):
+		return engineOutcome{kind: outcomeCancelled}
+	default:
+		return engineOutcome{kind: outcomeFailed, err: err}
+	}
+}
+
+// runEngine is the per-engine step both fan-outs share: it announces the engine (the started
+// progress event, before any result), runs it under its own cancel-only ctx through the one
+// per-engine seam, and says how it ended. The fan-outs build their own payloads from the outcome.
+func (s *Service) runEngine(ar *activeRequest, run *engineRun, reg engine.Translator, req model.TranslateRequest) engineOutcome {
+	// A request replaced before this engine began has nothing to announce or report.
+	if errors.Is(context.Cause(run.ctx), errSuperseded) {
+		return engineOutcome{kind: outcomeSuperseded}
+	}
+	now := time.Now().UnixMilli()
+	run.startedAtMs.Store(now)
+	ar.emitIfLive(func() {
+		s.emit(events.EventTranslateProgress, events.TranslateProgressPayload{
+			RequestID:   ar.id,
+			Engine:      run.name,
+			Phase:       events.ProgressPhaseStarted,
+			StartedAtMs: now,
+		})
+	})
+	res, err := s.translateWithEngine(run.ctx, reg, run.name, req)
+	return outcomeOf(run.ctx, res, err)
+}
+
+// reportOnce runs emit, the terminal report of one engine, unless the engine has already reported:
+// exactly one terminal event per started engine (issue #109). The engine goroutines are built so
+// that this never happens twice; the guard keeps it true if a later change makes it possible. A
+// superseded request emits nothing (emitIfLive).
+func (s *Service) reportOnce(ar *activeRequest, run *engineRun, emit func()) {
+	if !s.requests.claim(run) {
+		slog.Warn(i18n.T("log.translate_duplicate_report"), slog.String("engine", run.name), slog.String("request", ar.id))
+		return
+	}
+	ar.emitIfLive(emit)
+}
+
+// logEngineEnded records an engine that ended without a result because of its cause: the user's
+// Cancel at Info, a newer request replacing it at Debug (routine). Neither is a failure.
+func logEngineEnded(engineName string, ar *activeRequest, cause error) {
+	level := slog.LevelInfo
+	if errors.Is(cause, errSuperseded) {
+		level = slog.LevelDebug
+	}
+	slog.Log(context.Background(), level, i18n.T("log.translate_engine_cancelled"),
+		slog.String("engine", engineName), slog.String("request", ar.id), slog.Any("cause", cause))
+}
+
+// CancelTranslate cancels the running request requestID, or only its engine engineName when that
+// is not empty (issue #109). The others keep running; a cancelled engine reports one terminal
+// event with Cancelled set. It reports whether it found something still running, and returns
+// false, without any error, for an unknown or finished request or engine. Calling it again is
+// harmless.
+func (s *Service) CancelTranslate(requestID, engineName string) bool {
+	return s.requests.cancel(requestID, engineName)
+}
+
+// reportProgress announces that done of total parts of an engine's work are finished (issue
+// #109). It is the hook the chunked translation (#84) calls between its parts; #109 builds no
+// chunker and only defines and tests the event. It emits while the engine is still working and
+// says nothing for an unknown request, a finished engine or a cancelled one.
+func (s *Service) reportProgress(requestID, engineName string, done, total int) {
+	ar, run := s.requests.running(requestID, engineName)
+	if ar == nil {
+		return
+	}
+	ar.emitIfLive(func() {
+		s.emit(events.EventTranslateProgress, events.TranslateProgressPayload{
+			RequestID:   requestID,
+			Engine:      engineName,
+			Phase:       events.ProgressPhaseChunk,
+			StartedAtMs: run.startedAtMs.Load(),
+			Done:        done,
+			Total:       total,
+		})
+	})
+}
+
+// activeRequestCount is the number of requests still held: 0 once every engine of every request
+// has reported. A test hook.
+func (s *Service) activeRequestCount() int {
+	return s.requests.count()
 }
 
 // Ocr runs image OCR: performs OCR directly on the provided image data (the caller has
@@ -420,12 +627,15 @@ func (s *Service) ScreenshotOCR(engineName string) (*model.OcrResult, error) {
 //  3. translate per engine, Emitting once more after each finishes (accumulating
 //     translations); the frontend appends translation cards incrementally.
 //     Engines that fail to translate are appended as a "failure placeholder" too, so nothing
-//     is silently lost.
+//     is silently lost; a cancelled engine is appended as a cancelled placeholder (issue #109).
 //
 // session identifies the cache origin (events.ScreenshotSessionScreenshot /
 // ScreenshotSessionInput), keeping this round's OCR text and screenshot isolated per entry
-// point so different entries don't clobber each other's retranslate cache.
-// Returns the full result for callers that need a synchronous reply.
+// point so different entries don't clobber each other's retranslate cache. It is also the
+// request session (issue #109): a run replaces the session's running one, and every push of the
+// run carries its request id.
+// Returns the full result for callers that need a synchronous reply. A run that a newer capture
+// replaced while OCR was running ends quietly with neither a result nor an error.
 func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -442,6 +652,13 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	// once so every push below reports the same one.
 	to := s.defaultTarget()
 
+	// The region is chosen: this is a new run (issue #109). Opening its request before the first
+	// push replaces the session's running one, so nothing of that run can reach the window after
+	// this run's first push, and every push below carries this run's id (the progress event is a
+	// broadcast without an origin, so the window learns its id from these pushes).
+	ar := s.requests.open(session, newRequestID())
+	defer s.requests.release(ar)
+
 	// As soon as the screenshot completes (user released the drag, img is in hand), summon
 	// the window immediately — no need to wait for OCR and translation (recognition is
 	// handled within the page). This path follows the **exact same safe paradigm** as the
@@ -457,14 +674,12 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	// Show()/Focus(), fully aligned with TriggerInput.
 	showScreenshotWindow(s.screenshotWindow())
 	imageURL := "data:image/png;base64," + encodeImage(img)
-	if s.app != nil {
-		s.app.Event.Emit(events.EventScreenshotOCR, model.ScreenshotResult{
-			Image:        imageURL,
-			Text:         "",
-			Translations: nil,
-			To:           to,
-		})
-	}
+	s.pushScreenshot(ar, model.ScreenshotResult{
+		Image:        imageURL,
+		Text:         "",
+		Translations: nil,
+		To:           to,
+	})
 	slog.Debug(i18n.T("log.screenshot_pushed_image"), slog.String("step", "image_pushed"), slog.Int("image_len", len(imageURL)))
 
 	ocrName := s.registry.DefaultOCREngineName()
@@ -479,15 +694,13 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 		analytics.Error("ocr_failed", map[string]any{"ocr_provider": ocrName})
 		// OCR failure (including timeout) must be delivered to the frontend, otherwise the
 		// page keeps spinning on "recognizing text…".
-		if s.app != nil {
-			s.app.Event.Emit(events.EventScreenshotOCR, model.ScreenshotResult{
-				Image:        imageURL,
-				Text:         "",
-				Translations: nil,
-				To:           to,
-				Error:        err.Error(),
-			})
-		}
+		s.pushScreenshot(ar, model.ScreenshotResult{
+			Image:        imageURL,
+			Text:         "",
+			Translations: nil,
+			To:           to,
+			Error:        err.Error(),
+		})
 		return nil, err
 	}
 	text := ocrRes.Text
@@ -495,6 +708,11 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	if text == "" {
 		slog.Warn(i18n.T("log.screenshot_ocr_empty"))
 		return nil, fmt.Errorf(i18n.T("err.ocr_no_text"))
+	}
+	// A newer capture replaced this run while OCR was running: it neither caches its text (that
+	// would clobber the newer run's retranslate cache) nor translates.
+	if ar.isSuperseded() {
+		return nil, nil
 	}
 	// Cache this round's OCR text and screenshot per session for ScreenshotRetranslate to
 	// reuse after a language change (isolating different entry points).
@@ -508,20 +726,18 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 
 	// Stage one: push the screenshot + source text first so the frontend can display
 	// immediately (shown as soon as content is recognized — no waiting for translation).
-	first := model.ScreenshotResult{Image: imageURL, Text: text, Translations: nil, To: to}
-	if s.app != nil {
-		s.app.Event.Emit(events.EventScreenshotOCR, first)
-	}
+	s.pushScreenshot(ar, model.ScreenshotResult{Image: imageURL, Text: text, Translations: nil, To: to})
 
 	req := model.TranslateRequest{Text: text, From: from, To: to}
 	slog.Debug(i18n.T("log.screenshot_translate_start"), slog.String("target", string(to)), slog.Int("text_len", len(text)))
-	translations := s.translateAllStream(req, imageURL, to)
+	translations := s.translateAllStream(ar, req, imageURL, to)
 
 	result := model.ScreenshotResult{
 		Image:        imageURL,
 		Text:         text,
 		Translations: translations,
 		To:           to,
+		RequestID:    ar.id,
 	}
 	slog.Debug(i18n.T("log.screenshot_assemble_done"), slog.Int("image_len", len(result.Image)), slog.Int("text_len", len(result.Text)), slog.Int("translations", len(result.Translations)))
 	analytics.Track(analytics.EventTranslateScreenshot, map[string]any{
@@ -530,6 +746,13 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 		"ocr_retried":  false,
 	})
 	return &result, nil
+}
+
+// pushScreenshot delivers one push of a screenshot run to the screenshot window, tagged with the
+// run's request id, so no push can forget it. A run that a newer one replaced pushes nothing.
+func (s *Service) pushScreenshot(ar *activeRequest, res model.ScreenshotResult) {
+	res.RequestID = ar.id
+	ar.emitIfLive(func() { s.emit(events.EventScreenshotOCR, res) })
 }
 
 // defaultTarget resolves the requested target of a flow that has no language bar to read (the
@@ -568,6 +791,9 @@ func (s *Service) enabledTranslatorNames() []string {
 // EventScreenshotOCR incrementally.
 // Returns the accumulated translation results. Errors when the session has no OCR cache yet
 // (no screenshot taken).
+// Like ScreenshotTranslate it is a request of its session (issue #109): it replaces the running
+// one, and its first push, which carries the request id and no translations yet, opens the run
+// for the window.
 func (s *Service) ScreenshotRetranslate(session string, from, to model.Language) error {
 	s.screenshotCacheMu.RLock()
 	cache, ok := s.screenshotCache[session]
@@ -580,25 +806,30 @@ func (s *Service) ScreenshotRetranslate(session string, from, to model.Language)
 		slog.String("session", session),
 		slog.String("from", string(from)), slog.String("to", string(to)),
 		slog.Int("text_len", len(req.Text)))
-	s.translateAllStream(req, cache.imageURL, to)
+	ar := s.requests.open(session, newRequestID())
+	defer s.requests.release(ar)
+	s.pushScreenshot(ar, model.ScreenshotResult{Image: cache.imageURL, Text: cache.text, Translations: nil, To: to})
+	s.translateAllStream(ar, req, cache.imageURL, to)
 	return nil
 }
 
 // translateAllStream concurrently invokes all enabled translation engines (each in its own
-// goroutine, never blocking the others);
-// each completion (success or failure placeholder) Emits EventScreenshotOCR once (carrying
-// the accumulated translations), and the frontend dedupes by engine and appends
-// incrementally, so translations arrive one by one and a google timeout no longer holds up
-// deepl and the other engines.
+// goroutine, never blocking the others) as the engines of the request ar (issue #109);
+// each completion (success, failure placeholder or cancelled placeholder) Emits EventScreenshotOCR
+// once (carrying the accumulated translations), and the frontend dedupes by engine and appends
+// incrementally, so translations arrive one by one and a slow engine no longer holds up
+// the other engines. An engine that was cancelled reports a placeholder with Cancelled set and no
+// error; an engine of a superseded request reports nothing.
 // Returns the final accumulated result list (ordered by engine registration order, not
 // completion order).
-func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string, to model.Language) []model.TranslateResult {
+func (s *Service) translateAllStream(ar *activeRequest, req model.TranslateRequest, imageURL string, to model.Language) []model.TranslateResult {
 	metas := s.registry.AllEngines()
 	type task struct {
 		meta engine.EngineMeta
 		reg  engine.Translator
 	}
 	tasks := make([]task, 0, len(metas))
+	names := make([]string, 0, len(metas))
 	for _, meta := range metas {
 		if meta.Kind != engine.KindTranslator {
 			continue
@@ -608,7 +839,9 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 			continue
 		}
 		tasks = append(tasks, task{meta: meta, reg: reg})
+		names = append(names, meta.Name)
 	}
+	runs := s.requests.start(ar, names)
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -617,23 +850,41 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 	out := make([]model.TranslateResult, len(tasks))
 	for i, t := range tasks {
 		wg.Add(1)
-		go func(idx int, meta engine.EngineMeta, reg engine.Translator) {
+		go func(idx int, meta engine.EngineMeta, reg engine.Translator, run *engineRun) {
 			defer wg.Done()
+			defer s.requests.finish(ar, run)
 			slog.Debug(i18n.T("log.screenshot_engine_start"), slog.String("engine", meta.Name))
-			res, err := s.translateWithEngine(reg, meta.Name, req)
+			outcome := s.runEngine(ar, run, reg, req)
 			var item model.TranslateResult
-			if err != nil {
-				slog.Warn(i18n.T("log.translate_screenshot_engine_failed"), slog.String("engine", meta.Name), slog.Any("error", err))
+			switch outcome.kind {
+			case outcomeSuperseded:
+				logEngineEnded(meta.Name, ar, errSuperseded)
+				return
+			case outcomeCancelled:
+				logEngineEnded(meta.Name, ar, errUserCancelled)
+				// A cancelled engine is a placeholder card like a failed one, marked Cancelled and
+				// carrying no error.
+				item = model.TranslateResult{
+					Engine:    meta.Name,
+					From:      req.From,
+					To:        req.To,
+					Text:      req.Text,
+					Result:    "",
+					Cancelled: true,
+				}
+			case outcomeFailed:
+				slog.Warn(i18n.T("log.translate_screenshot_engine_failed"), slog.String("engine", meta.Name), slog.Any("error", outcome.err))
 				// Failures also append a placeholder card so the user can see which engine
 				// didn't produce a translation, and why (issue #96: the same failurePayload as
 				// the translate window's fan-out). The card header prints From for every card,
 				// failed ones included, so the placeholder keeps the requested source.
-				item = failurePayload(meta.Name, req, err)
+				item = failurePayload(meta.Name, req, outcome.err)
 				item.From = req.From
-			} else {
-				s.saveHistory(res)
-				item = *res
+			default:
+				s.saveHistory(outcome.res)
+				item = *outcome.res
 			}
+			item.RequestID = ar.id
 			mu.Lock()
 			out[idx] = item
 			// Push incrementally after each completion with all results finished so far
@@ -645,20 +896,23 @@ func (s *Service) translateAllStream(req model.TranslateRequest, imageURL string
 					partial = append(partial, o)
 				}
 			}
-			if s.app != nil {
-				s.app.Event.Emit(events.EventScreenshotOCR, model.ScreenshotResult{
-					Image:        imageURL,
-					Text:         req.Text,
-					Translations: partial,
-					To:           to,
-				})
+			// The push is sent through reportOnce, which already holds the run's emit guard, so it
+			// emits directly instead of going through pushScreenshot (a nested read lock could
+			// deadlock against a superseding writer).
+			push := model.ScreenshotResult{
+				Image:        imageURL,
+				Text:         req.Text,
+				Translations: partial,
+				To:           to,
+				RequestID:    ar.id,
 			}
+			s.reportOnce(ar, run, func() { s.emit(events.EventScreenshotOCR, push) })
 			mu.Unlock()
-		}(i, t.meta, t.reg)
+		}(i, t.meta, t.reg, runs[i])
 	}
 	wg.Wait()
 	// Filter out unfinished empty slots (theoretically all filled after wg.Wait; belt and
-	// braces).
+	// braces). An engine of a superseded request leaves its slot empty.
 	final := make([]model.TranslateResult, 0, len(out))
 	for _, o := range out {
 		if o.Engine != "" {

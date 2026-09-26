@@ -34,8 +34,15 @@ export const EventHotkeysChanged = 'kai:hotkeys:changed';
 // EventInputFill: fills the selection back into the main window's input box, payload: string (selected text)
 export const EventInputFill = 'kai:input:fill';
 
-// EventTranslateResult: multi-engine translation results arrive one by one, payload: TranslateResult
+// EventTranslateResult: multi-engine translation results arrive one by one, payload: TranslateResult.
+// It is the one terminal event of an engine (a translation, a failure or a cancel), tagged with the
+// request's request_id (issue #109); results of any other request are ignored.
 export const EventTranslateResult = 'kai:translate:result';
+
+// EventTranslateProgress: the non-terminal facts of a running engine (issue #109), payload:
+// TranslateProgressPayload. It is a broadcast to every window, so each window filters by the
+// request_id it is waiting on.
+export const EventTranslateProgress = 'kai:translate:progress';
 
 // EventEnginesChanged: broadcast after translation engines are added/removed or enabled/disabled in
 // settings, telling the translate window and others to refresh their engine lists.
@@ -63,6 +70,19 @@ export interface LocaleChangedPayload {
 export interface ThemeChangedPayload {
   mode: string; // ThemeMode: auto | light | dark
   theme: string; // dark | light
+}
+
+// TranslateProgressPayload: EventTranslateProgress arguments (aligned with internal/events/events.go).
+// phase 'started' is sent once per engine when its call begins, before any result; 'chunk' reports
+// done of total parts finished (chunked translation, #84). started_at_ms is the backend clock and
+// is informational only: elapsed time is measured from the moment this window received the event.
+export interface TranslateProgressPayload {
+  request_id: string;
+  engine: string;
+  phase: string; // 'started' | 'chunk'
+  started_at_ms: number;
+  done: number;
+  total: number;
 }
 
 // ScreenshotRetranslatePayload: screenshot-translation change-language-and-retranslate event arguments.

@@ -16,8 +16,6 @@
 //   - resetEdits(edited, previousEngine, nextEngine, results):on engine switch, discard the
 //     previous engine's manual edit; the new engine starts from its stored result (design §3
 //     "manual edits reset": no per-engine edit memory).
-//   - anyPending(engines, results):the 15 s fallback predicate "does any engine still lack a result"
-//     (a design §4 extension: relaxed from "zero results" to "any pending").
 //
 // No mocks: real jsdom localStorage (NODE_OPTIONS=--localstorage-file, see the vitest.config.ts
 // header note), real setTimeout (Node real timers; the 15 s case waits for real, no mocked timers,
@@ -35,7 +33,6 @@ import {
   statusDot,
   statusDots,
   resetEdits,
-  anyPending,
   paneState,
   type PaneEngine,
   type PaneResult,
@@ -154,17 +151,6 @@ describe('statusDot / statusDots (pending / done / failed derived from real fan-
     const all = [...ENGINES, OCR_ENGINE];
     const dots = statusDots(all, {}, true, true);
     expect(Object.keys(dots).sort()).toEqual(['deepl', 'google']);
-  });
-
-  it('anyPending: an engine without a result -> true (15 s fallback predicate: any pending keeps loading)', () => {
-    expect(anyPending(ENGINES, {}, true)).toBe(true);
-    expect(anyPending(ENGINES, { google: { result: 'x' } }, true)).toBe(true);
-  });
-
-  it('anyPending: all engines have non-empty results -> false (fallback no longer flips loading)', () => {
-    expect(anyPending(ENGINES, { google: { result: 'x' }, deepl: { result: 'y' } }, false)).toBe(
-      false,
-    );
   });
 });
 
@@ -364,6 +350,47 @@ describe('statusDot requested rule (#81)', () => {
     const dots = statusDots(ENGINES, {}, false, false);
     expect(Object.values(dots)).not.toContain('failed');
     expect(Object.keys(dots).sort()).toEqual(['deepl', 'google']);
+  });
+});
+
+// issue #109: cancelled is not failed. A cancel flag rides on the result entry (payload
+// `cancelled: true`, no error); the dot, the pane state and the settle rule all read it.
+describe('cancelled (#109)', () => {
+  const cancelledEntry: PaneResult = { engine: 'google', result: '', cancelled: true };
+  const partial: PaneResult = { engine: 'google', result: 'partial text', cancelled: true };
+
+  it('statusDot: a cancelled entry is cancelled, not failed, whether or not the request is still open', () => {
+    expect(statusDot('google', { google: cancelledEntry }, false, true)).toBe('cancelled');
+    expect(statusDot('google', { google: cancelledEntry }, true, true)).toBe('cancelled');
+  });
+  it('statusDot precedence: cancelled first, then done, pending, failed, idle', () => {
+    expect(statusDot('google', { google: partial }, false, true)).toBe('cancelled');
+    expect(statusDot('google', { google: { result: 'x' } }, false, true)).toBe('done');
+    expect(statusDot('google', {}, true, true)).toBe('pending');
+    expect(statusDot('google', {}, false, true)).toBe('failed');
+    expect(statusDot('google', {}, false, false)).toBe('idle');
+  });
+  it('a failure payload (error set, not cancelled) is still failed', () => {
+    expect(statusDot('google', { google: { result: '', error: 'boom' } }, false, true)).toBe('failed');
+  });
+  it('statusDots reports cancelled per engine', () => {
+    const dots = statusDots(ENGINES, { google: cancelledEntry, deepl: { result: 'y' } }, false, true);
+    expect(dots.google).toBe('cancelled');
+    expect(dots.deepl).toBe('done');
+  });
+  const base = { hasEngines: true, engine: 'google', results: {}, loading: false, requested: true };
+  it('paneState: a cancelled entry with an empty result is cancelled', () => {
+    expect(paneState({ ...base, results: { google: cancelledEntry } })).toBe('cancelled');
+  });
+  it('paneState: a cancelled entry with a partial result stays result (#84 keeps the parts on screen)', () => {
+    expect(paneState({ ...base, results: { google: partial } })).toBe('result');
+  });
+  it('paneState: a cancelled entry is never failed, even after the wait ends', () => {
+    expect(paneState({ ...base, results: { google: cancelledEntry }, loading: true })).not.toBe('failed');
+    expect(paneState({ ...base, results: { google: cancelledEntry } })).not.toBe('failed');
+  });
+  it('paneState: an error entry with no result is still failed', () => {
+    expect(paneState({ ...base, results: { google: { result: '', error: 'boom' } } })).toBe('failed');
   });
 });
 

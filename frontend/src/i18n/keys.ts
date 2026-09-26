@@ -33,6 +33,8 @@ export type Dict = {
     retryHint: string;
     expand: string;
     collapse: string;
+    cancelled: string;
+    cancelAll: string;
   };
   titlebar: {
     minimize: string;
@@ -88,6 +90,14 @@ export type Dict = {
     pin: string;
     unpin: string;
     autoClipboard: string;
+    cancel: string;
+    cancelEngine: string;
+    cancelled: string;
+    engineCancelled: string;
+    workingOn: string;
+    stillWaiting: string;
+    stillWaitingMin: string;
+    part: string;
   };
   settings: {
     title: string;
@@ -144,16 +154,12 @@ export type Dict = {
       binary: string;
       api_key: string;
       model: string;
-      timeout: string;
       app_id: string;
       app_secret: string;
       secret_id: string;
       secret_key: string;
       app_key: string;
       langs: string;
-    };
-    engine_hint: {
-      llm_timeout: string;
     };
     engine_ph: {
       google_endpoint: string;
@@ -171,7 +177,6 @@ export type Dict = {
       deepl_api_key: string;
       openai_api_key: string;
       openai_model: string;
-      llm_timeout: string;
       baidu_app_id: string;
       baidu_app_secret: string;
       tencent_secret_id: string;
@@ -322,10 +327,12 @@ export type Dict = {
     loadEngineListFailed: string;
     loadLangListFailed: string;
     translateRequestFailed: string;
+    translateCancelFailed: string;
     screenshotRecaptureFailed: string;
     screenshotRetranslateEmit: string;
     screenshotRetranslateFailed: string;
     screenshotCloseFailed: string;
+    screenshotCancelFailed: string;
     screenshotCopyFailed: string;
     screenshotRenderError: string;
     screenshotRenderOcrFailed: string;

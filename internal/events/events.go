@@ -32,8 +32,17 @@ const (
 	EventInputFill = "kai:input:fill"
 
 	// EventTranslateResult: multi-engine translations return results one by one, payload:
-	// model.TranslateResult
+	// model.TranslateResult. It is the one terminal event of an engine: a translation, a
+	// failure (Error set) or a cancel (Cancelled set), tagged with the request's RequestID
+	// (issue #109). Exactly one is emitted per started engine, except for a superseded request,
+	// which emits nothing.
 	EventTranslateResult = "kai:translate:result"
+
+	// EventTranslateProgress carries the non-terminal facts of a running engine (issue #109):
+	// it started, or (chunked translation, #84) some parts of it are done. payload:
+	// TranslateProgressPayload. Aligned with the frontend's EventTranslateProgress in
+	// frontend/src/utils/events.ts.
+	EventTranslateProgress = "kai:translate:progress"
 
 	// EventWindowScreenshot: a hotkey triggered screenshot translate; after the backend
 	// persists the region screenshot it summons the screenshot window to receive results.
@@ -41,7 +50,8 @@ const (
 
 	// EventScreenshotOCR: the screenshot translate flow progressed — after the backend
 	// captures the region→OCR→translates, it delivers results to the screenshot window.
-	// payload: ScreenshotResult{Image, Text, Translations, To}
+	// payload: ScreenshotResult{Image, Text, Translations, To, RequestID}; every push of one run
+	// carries the same RequestID (issue #109).
 	EventScreenshotOCR = "kai:screenshot:ocr"
 
 	// EventScreenshotRecapture: triggered by the frontend "recapture" button; the backend
@@ -80,6 +90,29 @@ const (
 	// isolated from the screenshot translate window).
 	ScreenshotSessionInput = "input"
 )
+
+// Phases of a TranslateProgressPayload.
+const (
+	// ProgressPhaseStarted is emitted once per engine when its call begins, before any result.
+	ProgressPhaseStarted = "started"
+	// ProgressPhaseChunk reports that Done of Total parts of the engine's work are finished. #109
+	// defines and tests it; the chunked translation (#84) is what sends it.
+	ProgressPhaseChunk = "chunk"
+)
+
+// TranslateProgressPayload carries the EventTranslateProgress event (issue #109).
+// RequestID and Engine say whose progress it is. StartedAtMs is the backend clock (epoch
+// milliseconds) at which the engine's call began: informational only, because the frontend
+// times an engine from the moment it received the started event and never compares clocks. Done
+// and Total are only meaningful for ProgressPhaseChunk.
+type TranslateProgressPayload struct {
+	RequestID   string `json:"request_id"`
+	Engine      string `json:"engine"`
+	Phase       string `json:"phase"` // ProgressPhaseStarted | ProgressPhaseChunk
+	StartedAtMs int64  `json:"started_at_ms"`
+	Done        int    `json:"done"`
+	Total       int    `json:"total"`
+}
 
 // LocaleChangedPayload carries the UI language change event.
 // Note: this is the UI display language — an entirely separate system from the translation

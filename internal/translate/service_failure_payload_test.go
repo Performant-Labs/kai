@@ -56,7 +56,7 @@ func TestTranslateAllStreamFailureEntryHasReason(t *testing.T) {
 	reg.RegisterTranslator(failingEngine{name: "fake", err: fmt.Errorf("boom: %w", &engine.HTTPError{Status: 503})})
 	svc := NewService(reg, nil, nil, nil)
 	req := model.TranslateRequest{Text: "Hello", From: model.EN, To: model.ZH}
-	out := svc.translateAllStream(req, "", model.ZH)
+	out := svc.translateAllStream(svc.requests.open("shot", "t96"), req, "", model.ZH)
 	if len(out) != 1 {
 		t.Fatalf("entries = %d, want 1", len(out))
 	}
@@ -80,7 +80,7 @@ func TestTranslateAllStreamTextOnlyFailure(t *testing.T) {
 	reg := engine.NewRegistry()
 	reg.RegisterTranslator(failingEngine{name: "fake", err: errors.New("some unexpected engine failure")})
 	svc := NewService(reg, nil, nil, nil)
-	out := svc.translateAllStream(model.TranslateRequest{Text: "Hi", From: model.EN, To: model.ZH}, "", model.ZH)
+	out := svc.translateAllStream(svc.requests.open("shot", "t96b"), model.TranslateRequest{Text: "Hi", From: model.EN, To: model.ZH}, "", model.ZH)
 	if len(out) != 1 || out[0].ErrorKind != "engine" || !strings.Contains(out[0].Error, "some unexpected engine failure") {
 		t.Errorf("out = %+v", out)
 	}

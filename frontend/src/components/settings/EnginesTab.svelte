@@ -127,21 +127,19 @@
     return JSON.stringify(o);
   }
   // LLM translation engines (openai / anthropic / gemini) keep their params unified in Extra(JSON):
-  //   - llmModel:      model name (e.g. gpt-4o-mini)
-  //   - llmTimeoutSec: per-request timeout (seconds, default 30)
+  //   - llmModel: model name (e.g. gpt-4o-mini)
+  // There is no timeout setting (issue #109): a request runs until it answers or the user cancels
+  // it. A timeout_sec that an older version stored is left in the row as it is and ignored.
   let llmModel = $state('');
-  let llmTimeoutSec = $state(30);
   // Parse the LLM params out of the engine's extra(JSON), populating local state.
   // Legacy-data compatibility: when extra is a plain model-name string (not JSON), the whole
   // string is used as the model fallback.
   function loadLlmOpts(extra: string | undefined) {
     llmModel = '';
-    llmTimeoutSec = 30;
     if (!extra) return;
     try {
       const o = JSON.parse(extra);
       if (typeof o.model === 'string' && o.model) llmModel = o.model;
-      if (typeof o.timeout_sec === 'number' && o.timeout_sec > 0) llmTimeoutSec = o.timeout_sec;
       return;
     } catch {
       /* Not JSON; fall through to the legacy plain model-name string compat below */
@@ -159,7 +157,6 @@
       }
     }
     o.model = llmModel;
-    o.timeout_sec = Number(llmTimeoutSec) || 30;
     return JSON.stringify(o);
   }
   // The system engine's supported-language list (read-only display; the backend reads it from Translation.framework)
@@ -289,7 +286,7 @@
       await loadOcrLangs();
       loadOcrOpts(saved?.extra);
     }
-    // When an LLM translation engine (openai / anthropic / gemini) is selected, populate the model and timeout from extra(JSON)
+    // When an LLM translation engine (openai / anthropic / gemini) is selected, populate the model from extra(JSON)
     if (['openai', 'anthropic', 'gemini'].includes(eng.value)) {
       loadLlmOpts(saved?.extra);
     }
@@ -343,7 +340,7 @@
     if (eng.kind === 'ocr') {
       extra = buildExtraWithOcr(configValues['extra'], eng.value === 'vision');
     }
-    // LLM engines (openai / anthropic / gemini): write the model name and timeout back into extra(JSON) before submitting
+    // LLM engines (openai / anthropic / gemini): write the model name back into extra(JSON) before submitting
     if (['openai', 'anthropic', 'gemini'].includes(eng.value)) {
       extra = buildExtraWithLlm(configValues['extra']);
     }
@@ -462,7 +459,6 @@
     ocrTimeoutSec = 60;
     ocrRetry = 2;
     llmModel = '';
-    llmTimeoutSec = 30;
     if (!name) {
       addSchema = [];
       return;
@@ -494,7 +490,7 @@
     if (addSchemaKind && (await addEngineIsOcr(addName))) {
       extra = buildExtraWithOcr(addValues['extra'], addName === 'vision');
     }
-    // LLM engines (openai / anthropic / gemini): assemble the model name and timeout into extra(JSON) before submitting
+    // LLM engines (openai / anthropic / gemini): assemble the model name into extra(JSON) before submitting
     if (['openai', 'anthropic', 'gemini'].includes(addName)) {
       extra = buildExtraWithLlm(addValues['extra']);
     }
@@ -784,21 +780,6 @@
                 bind:value={llmModel}
               />
             </div>
-          {:else if f.widget === 'llm_timeout'}
-            <!-- LLM translation engine: per-request timeout (seconds) -->
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-medium">{f.label_key ? t(f.label_key as any) : f.field}</p>
-                {#if f.hint_key}<p class="u-muted text-xs">{t(f.hint_key as any)}</p>{/if}
-              </div>
-              <input
-                type="number"
-                min="1"
-                max="300"
-                class="u-field w-28 px-3 py-1.5 text-sm"
-                bind:value={llmTimeoutSec}
-              />
-            </div>
           {:else if f.type === 'secret'}
             <!-- Secret-type field: plaintext/masked toggle so saved values can be inspected -->
             {@const revealKey = 'ef-reveal-' + f.field}
@@ -1032,21 +1013,6 @@
                 class="u-field w-full px-3 py-2 text-sm"
                 placeholder={f.placeholder_key ? t(f.placeholder_key as any) : ''}
                 bind:value={llmModel}
-              />
-            </div>
-          {:else if f.widget === 'llm_timeout'}
-            <!-- Add modal: LLM timeout (seconds) -->
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-medium">{f.label_key ? t(f.label_key as any) : f.field}</p>
-                {#if f.hint_key}<p class="u-muted text-xs">{t(f.hint_key as any)}</p>{/if}
-              </div>
-              <input
-                type="number"
-                min="1"
-                max="300"
-                class="u-field w-28 px-3 py-1.5 text-sm"
-                bind:value={llmTimeoutSec}
               />
             </div>
           {:else if f.type === 'secret'}

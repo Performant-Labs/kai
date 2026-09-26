@@ -203,6 +203,13 @@ export interface ScreenshotResult {
      * Flow failure reason (when non-empty the frontend stops spinning and shows the error)
      */
     "error": string;
+
+    /**
+     * RequestID names this run of the screenshot flow (issue #109), on every push of the run. The
+     * progress event is a broadcast that carries no window, so the screenshot window adopts its
+     * request id from these pushes and ignores progress events of any other request.
+     */
+    "request_id": string;
 }
 
 /**
@@ -220,6 +227,19 @@ export interface TranslateMultiResult {
      * Initial result set (including engine placeholders)
      */
     "results": TranslateResult[] | null;
+
+    /**
+     * RequestID is the request's id: the caller's TranslateRequest.RequestID echoed back, or the
+     * one the backend generated when none was sent (issue #109).
+     */
+    "request_id": string;
+
+    /**
+     * Engines lists the engines actually started (never null). The request is over when each of
+     * them has reported once (result, failure or cancel); the frontend settles from this list,
+     * not from its own view of which engines are enabled (issue #109).
+     */
+    "engines": string[] | null;
 }
 
 /**
@@ -245,6 +265,14 @@ export interface TranslateRequest {
      * Translation engine identifier to use
      */
     "engine": string;
+
+    /**
+     * RequestID names the request (issue #109). The frontend generates it before the call, because
+     * a fast engine can emit its result before the binding call returns, so an id handed back by
+     * the call would race the first event. It tags every event of the request and is what
+     * CancelTranslate takes. Empty: the backend generates one.
+     */
+    "request_id"?: string;
 }
 
 /**
@@ -305,4 +333,16 @@ export interface TranslateResult {
      * Engine failure category, one of the ErrorKind* values (issues #42, #96)
      */
     "error_kind"?: string;
+
+    /**
+     * The request this result belongs to (issue #109); the frontend ignores results of any other request
+     */
+    "request_id"?: string;
+
+    /**
+     * Cancelled marks an engine the user cancelled (issue #109). It is a flag beside Error, not a
+     * kind of it: a cancelled payload has no Error and no ErrorKind, and it is never a failure.
+     * Result may hold a partial translation (the contract chunked translation, #84, fills).
+     */
+    "cancelled"?: boolean;
 }

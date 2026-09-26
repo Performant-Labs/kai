@@ -7,6 +7,7 @@
     EventScreenshotOCR,
     EventScreenshotRecapture,
     EventScreenshotRetranslate,
+    EventTranslateProgress,
     EventWindowClosing,
     EventEnginesChanged,
     ScreenshotSessionScreenshot,
@@ -24,7 +25,16 @@
     TranslateResult,
   } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
   import type { AllEngineItem } from '@bindings/cnb.cool/dtapp/kai/internal/service/models.ts';
-  import type { ScreenshotRetranslatePayload } from '../utils/events';
+  import type { ScreenshotRetranslatePayload, TranslateProgressPayload } from '../utils/events';
+  import { CancelTranslate } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
+  import {
+    startProgress,
+    applyChunk,
+    progressLine,
+    formatClock,
+    splitElapsed,
+    type ProgressState,
+  } from '../utils/translateProgress.ts';
   import { GetConfig } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
   import { GetAllEngines } from '@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts';
   import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
@@ -53,6 +63,21 @@
 
   let result = $state<ScreenshotResult | null>(null);
   let imgEl: HTMLImageElement | undefined = $state();
+
+  // The request the current run of the screenshot flow belongs to (issue #109). The backend names
+  // each run and puts the id on every push it sends this window; the progress event is a broadcast
+  // that carries no window, so the id is adopted from this window's own pushes and progress events
+  // of any other request (say the translate window's) are ignored.
+  let requestId = $state('');
+  // A run this window cancelled by closing: its late pushes (the cancelled placeholders) must not
+  // bring the cleared window back.
+  let abandonedRequestId = '';
+  // The engines of the current run that have started, with what is known about each. An engine is
+  // pending until its card arrives in result.translations (whatever its outcome).
+  let pending = $state<Record<string, ProgressState>>({});
+  // The clock the pending cards read: this window's own, re-read once a second while an engine is
+  // pending (elapsed time is measured from when this window heard of the engine).
+  let nowMs = $state(Date.now());
 
   // The screenshot-translation language bar: shows source/target languages, directly user-selectable.
   // After a language change the frontend emits EventScreenshotRetranslate with a debounce; the backend
@@ -114,6 +139,58 @@
   );
   const expandedEngines = $derived(new Set(successEngines.slice(0, 2)));
 
+  // Engines started and not yet reported: each gets a pending card with its elapsed time and its
+  // own Cancel (issue #109), and while any exists the results header offers Cancel all.
+  const pendingEngines = $derived(
+    Object.keys(pending).filter((e) => !(result?.translations ?? []).some((tr) => tr.engine === e)),
+  );
+  const hasPending = $derived(pendingEngines.length > 0);
+  // The pending cards' elapsed counter: a 1 s tick that runs only while an engine is pending.
+  $effect(() => {
+    if (!hasPending) return;
+    nowMs = Date.now();
+    const tick = setInterval(() => {
+      nowMs = Date.now();
+    }, 1000);
+    return () => clearInterval(tick);
+  });
+  // A pending card's line: the elapsed clock, or "still waiting" after 30 s of silence, or chunk
+  // progress. progressLine decides which; this only words it (the card's header names the engine).
+  function pendingText(engine: string): string {
+    const line = progressLine(pending[engine], nowMs);
+    if (line.kind === 'chunk') {
+      return t('translate.part', { done: line.done ?? 0, total: line.total ?? 0 });
+    }
+    if (line.kind === 'stalled') {
+      const { minutes, seconds } = splitElapsed(line.elapsedMs);
+      return minutes > 0
+        ? t('translate.stillWaitingMin', { engine: engineName(engine), minutes, seconds })
+        : t('translate.stillWaiting', { engine: engineName(engine), seconds });
+    }
+    return `${t('screenshot.translating')} ${formatClock(line.elapsedMs)}`;
+  }
+
+  // The Cancel controls only ask the backend to stop; each cancelled engine then reports a
+  // cancelled placeholder card through the usual push.
+  function reportCancelFailure(e: unknown) {
+    console.error(t('log.screenshotCancelFailed'), e);
+  }
+  function cancelEngine(engine: string) {
+    if (requestId) CancelTranslate(requestId, engine).catch(reportCancelFailure);
+  }
+  function cancelAll() {
+    if (requestId) CancelTranslate(requestId, '').catch(reportCancelFailure);
+  }
+  // The window is being closed: cancel its run so nothing keeps working unseen (issue #109), and
+  // remember the id so the run's late pushes are ignored.
+  function abandonRun() {
+    if (!requestId) return;
+    abandonedRequestId = requestId;
+    CancelTranslate(requestId, '').catch(reportCancelFailure);
+    requestId = '';
+    pending = {};
+  }
+
   function recapture() {
     try {
       emitEvent(EventScreenshotRecapture);
@@ -148,6 +225,7 @@
     // same as the translate window. Don't use Window.Hide() to hide directly — that bypasses the
     // backend hook, leaving the window's hidden state wrong and making Focus ineffective on the
     // next Show (which manifests as being occluded).
+    abandonRun();
     result = null;
     if (imgEl) imgEl.src = '';
     try {
@@ -179,6 +257,16 @@
 
   const off = onEvent(EventScreenshotOCR, (data: ScreenshotResult) => {
     try {
+      // A late push of a run this window cancelled by closing is not shown: it would bring the
+      // cleared window back.
+      if (data.request_id && data.request_id === abandonedRequestId) return;
+      // A push with a new request id opens a new run (a recapture, or a language change): the
+      // previous run's cards and pending engines do not carry over into it.
+      const newRun = !!data.request_id && data.request_id !== requestId;
+      if (newRun) {
+        requestId = data.request_id;
+        pending = {};
+      }
       // Raw event pushed by the backend (backend→frontend), first-hand evidence: what did the backend actually push?
       console.debug(t('log.screenshotLogOcrEvent'), {
         hasImage: !!data.image,
@@ -199,7 +287,7 @@
       // This way the backend first pushes empty (source text only), then translations one by one
       // as the frontend displays them one by one.
       const merged = new Map<string, TranslateResult>();
-      for (const t of result?.translations ?? []) {
+      for (const t of newRun ? [] : (result?.translations ?? [])) {
         if (t && typeof t.engine === 'string') merged.set(t.engine, t);
       }
       for (const t of incoming) {
@@ -256,11 +344,30 @@
     }
   });
 
+  // The start of an engine of this window's run, and its chunk progress (issue #109). The event is a
+  // broadcast to every window: only events of the request this window adopted from its own pushes
+  // count.
+  const offProgress = onEvent(EventTranslateProgress, (payload: TranslateProgressPayload) => {
+    if (!payload || !payload.engine || !requestId || payload.request_id !== requestId) return;
+    const now = Date.now();
+    if (payload.phase === 'chunk') {
+      const current = pending[payload.engine] ?? startProgress(payload.engine, now);
+      pending = {
+        ...pending,
+        [payload.engine]: applyChunk(current, { done: payload.done, total: payload.total }, now),
+      };
+    } else {
+      pending = { ...pending, [payload.engine]: startProgress(payload.engine, now) };
+    }
+  });
+
   // Listens for this window's (screenshot) close event: the native red X → the backend's
   // WindowClosing hook broadcasts EventWindowClosing; filtered by window name here, the screenshot
-  // and translations are cleared so the next open is a clean window.
+  // and translations are cleared so the next open is a clean window, and the run still in flight is
+  // cancelled so nothing keeps working unseen (issue #109).
   const offClosing = onEvent(EventWindowClosing, (name: string) => {
     if (name !== WindowScreenshot) return;
+    abandonRun();
     result = null;
     if (imgEl) imgEl.src = '';
   });
@@ -292,6 +399,7 @@
     }
     return () => {
       off();
+      offProgress();
       offClosing();
       offEngines();
     };
@@ -460,11 +568,45 @@
             </div>
           </div>
 
-          {#if result.translations && result.translations.length > 0}
+          {#if (result.translations && result.translations.length > 0) || hasPending}
             <div class="flex flex-col gap-3">
-              <div class="text-xs font-medium text-[var(--app-muted)]">
-                {t('screenshot.result')}
+              <div
+                class="flex items-center justify-between text-xs font-medium text-[var(--app-muted)]"
+              >
+                <span>{t('screenshot.result')}</span>
+                <!-- Cancel all: only while at least one engine is still pending (issue #109). -->
+                {#if hasPending}
+                  <button
+                    class="u-btn u-btn--ghost u-no-drag px-2 py-0.5 text-xs"
+                    onclick={cancelAll}
+                  >
+                    <span aria-hidden="true">✕</span>
+                    {t('screenshot.cancelAll')}
+                  </button>
+                {/if}
               </div>
+              <!-- One pending card per engine that has started and not reported (issue #109): its
+                   elapsed time and its own Cancel. It gives way to the engine's card when the
+                   engine reports, whatever the outcome. -->
+              {#each pendingEngines as eng (eng)}
+                <div class="u-card p-3">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-[var(--app-accent)]"
+                      >{engineName(eng)}</span
+                    >
+                    <div class="flex items-center gap-2">
+                      <span class="text-[11px] text-[var(--app-muted)]">{pendingText(eng)}</span>
+                      <button
+                        class="u-btn u-btn--ghost u-no-drag px-2 py-0.5 text-[11px]"
+                        onclick={() => cancelEngine(eng)}
+                      >
+                        <span aria-hidden="true">✕</span>
+                        {t('translate.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              {/each}
               {#each result.translations as tr}
                 <TranslateCard
                   {tr}

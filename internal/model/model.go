@@ -231,6 +231,11 @@ type TranslateRequest struct {
 	From       Language `json:"from"`   // Source language (auto = auto-detect)
 	To         Language `json:"to"`     // Target language
 	EngineName string   `json:"engine"` // Translation engine identifier to use
+	// RequestID names the request (issue #109). The frontend generates it before the call, because
+	// a fast engine can emit its result before the binding call returns, so an id handed back by
+	// the call would race the first event. It tags every event of the request and is what
+	// CancelTranslate takes. Empty: the backend generates one.
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // Engine failure categories (TranslateResult.ErrorKind, issues #42 and #96). They live here, not
@@ -263,6 +268,11 @@ type TranslateResult struct {
 	Identity  bool       `json:"identity,omitempty"`   // Result is the source text, not a translation: source and target are the same language (issue #80; set by the translate service only, never by an engine)
 	Error     string     `json:"error,omitempty"`      // Sanitized engine error on failure (issues #42, #96; empty on success)
 	ErrorKind string     `json:"error_kind,omitempty"` // Engine failure category, one of the ErrorKind* values (issues #42, #96)
+	RequestID string     `json:"request_id,omitempty"` // The request this result belongs to (issue #109); the frontend ignores results of any other request
+	// Cancelled marks an engine the user cancelled (issue #109). It is a flag beside Error, not a
+	// kind of it: a cancelled payload has no Error and no ErrorKind, and it is never a failure.
+	// Result may hold a partial translation (the contract chunked translation, #84, fills).
+	Cancelled bool `json:"cancelled,omitempty"`
 }
 
 // DictItem is a dictionary entry
@@ -311,6 +321,13 @@ type OcrRegion struct {
 type TranslateMultiResult struct {
 	Count   int               `json:"count"`   // Number of engines started
 	Results []TranslateResult `json:"results"` // Initial result set (including engine placeholders)
+	// RequestID is the request's id: the caller's TranslateRequest.RequestID echoed back, or the
+	// one the backend generated when none was sent (issue #109).
+	RequestID string `json:"request_id"`
+	// Engines lists the engines actually started (never null). The request is over when each of
+	// them has reported once (result, failure or cancel); the frontend settles from this list,
+	// not from its own view of which engines are enabled (issue #109).
+	Engines []string `json:"engines"`
 }
 
 // HistoryItem is a translation history entry
@@ -333,4 +350,8 @@ type ScreenshotResult struct {
 	Translations []TranslateResult `json:"translations"` // Per-engine translations
 	To           Language          `json:"to"`           // Requested target language
 	Error        string            `json:"error"`        // Flow failure reason (when non-empty the frontend stops spinning and shows the error)
+	// RequestID names this run of the screenshot flow (issue #109), on every push of the run. The
+	// progress event is a broadcast that carries no window, so the screenshot window adopts its
+	// request id from these pushes and ignores progress events of any other request.
+	RequestID string `json:"request_id"`
 }

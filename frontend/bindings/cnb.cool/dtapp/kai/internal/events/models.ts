@@ -57,3 +57,23 @@ export interface ThemeChangedPayload {
      */
     "theme": string;
 }
+
+/**
+ * TranslateProgressPayload carries the EventTranslateProgress event (issue #109).
+ * RequestID and Engine say whose progress it is. StartedAtMs is the backend clock (epoch
+ * milliseconds) at which the engine's call began: informational only, because the frontend
+ * times an engine from the moment it received the started event and never compares clocks. Done
+ * and Total are only meaningful for ProgressPhaseChunk.
+ */
+export interface TranslateProgressPayload {
+    "request_id": string;
+    "engine": string;
+
+    /**
+     * ProgressPhaseStarted | ProgressPhaseChunk
+     */
+    "phase": string;
+    "started_at_ms": number;
+    "done": number;
+    "total": number;
+}

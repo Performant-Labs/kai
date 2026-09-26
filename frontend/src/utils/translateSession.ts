@@ -46,12 +46,16 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-// A results entry worth keeping: an object that names its engine and carries translated text. An
+// A results entry worth keeping: an object that names its engine and carries translated text, or
+// that records the user's cancel of that engine (issue #109): a cancel is a plain fact about the
+// request the user made, so it is restored as such and reads "Cancelled", never as a failure. An
 // engine failure arrives as an entry too (Error set, no result text); it is not a translation and
 // restoring it would show "Translation failed" for a request from a previous run.
 function isResultEntry(v: unknown): v is PaneResult {
   return (
-    isRecord(v) && typeof v.engine === 'string' && typeof v.result === 'string' && v.result !== ''
+    isRecord(v) &&
+    typeof v.engine === 'string' &&
+    ((typeof v.result === 'string' && v.result !== '') || v.cancelled === true)
   );
 }
 
@@ -60,8 +64,9 @@ function isResultEntry(v: unknown): v is PaneResult {
  *
  * - Anything that is not a well-formed session (not an object, or a field of the wrong type,
  *   including a missing one) yields the empty session.
- * - `results` keeps only the entries that are objects with a string `engine` and a non-empty
- *   `result`; the rest are dropped, engine failure payloads included.
+ * - `results` keeps only the entries that are objects with a string `engine` and either a
+ *   non-empty `result` or `cancelled: true` (issue #109); the rest are dropped, engine failure
+ *   payloads included.
  * - `requested` is forced false when no result survives: a request that never produced anything
  *   reads as an idle window after a restore, not as a failed one.
  *

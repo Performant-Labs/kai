@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
@@ -15,9 +14,8 @@ import (
 // geminiTranslator is the Google Gemini translation engine, built on the official
 // google.golang.org/genai SDK.
 type geminiTranslator struct {
-	client  *genai.Client
-	model   string
-	timeout time.Duration
+	client *genai.Client
+	model  string
 }
 
 // NewGemini constructs the Gemini engine from the engine config.
@@ -31,14 +29,13 @@ func NewGemini(cfg *EngineConfig) (*geminiTranslator, error) {
 	if cfg.HTTPClient == nil {
 		return nil, fmt.Errorf(i18n.T("err.gemini_uninitialized"))
 	}
-	// Clone into an independent instance with the engine-level timeout (synced to the HTTP
-	// layer), rather than mutating the shared global client's Timeout directly.
-	httpClient := cloneHTTPClientWithTimeout(cfg.HTTPClient, ex.TimeoutSec)
-
+	// The global client carries no deadline of its own, and the SDK adds none (its per-request
+	// timeout option is unset): a request ends when the model answers or the caller cancels the
+	// ctx (issue #109).
 	cc := &genai.ClientConfig{
 		APIKey:     cfg.APIKey,
 		Backend:    genai.BackendGeminiAPI,
-		HTTPClient: httpClient,
+		HTTPClient: cfg.HTTPClient,
 	}
 	// Only override when the user explicitly configured a non-default Base URL (Endpoint
 	// stores the full Base URL).
@@ -56,9 +53,8 @@ func NewGemini(cfg *EngineConfig) (*geminiTranslator, error) {
 		model = "gemini-1.5-flash"
 	}
 	return &geminiTranslator{
-		client:  client,
-		model:   model,
-		timeout: time.Duration(ex.TimeoutSec) * time.Second,
+		client: client,
+		model:  model,
 	}, nil
 }
 
@@ -68,12 +64,6 @@ func (e *geminiTranslator) Name() string { return "gemini" }
 func (e *geminiTranslator) translate(ctx context.Context, text, from, to string) (string, error) {
 	if e.model == "" {
 		return "", fmt.Errorf(i18n.T("err.gemini_model_required"))
-	}
-	// Engine-level request timeout (default 30s, configurable via Extra.timeout_sec).
-	if e.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, e.timeout)
-		defer cancel()
 	}
 
 	system := i18n.T("engine.openai_system")

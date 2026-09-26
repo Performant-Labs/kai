@@ -79,11 +79,20 @@
       <span class="text-[11px] text-[var(--app-muted)]">
         {t('screenshot.source')}: {langName(tr?.from ?? '')} → {langName(tr?.to ?? '')}
       </span>
-      {#if !tr?.result}
+      {#if tr?.cancelled && !tr?.result}
+        <!-- The user cancelled this engine and it produced nothing (issue #109): a muted badge,
+             never the failure one. -->
+        <span class="text-[11px] text-[var(--app-muted)]">{t('screenshot.cancelled')}</span>
+      {:else if !tr?.result}
         <span class="text-[11px] font-medium text-[var(--app-danger)]"
           >{failure ? failure.headline : t('screenshot.translateFailed')}</span
         >
       {:else}
+        {#if tr?.cancelled}
+          <!-- Cancelled with the parts already translated (the chunked translation, #84): they
+               stay on the card, marked. -->
+          <span class="text-[11px] text-[var(--app-muted)]">{t('screenshot.cancelled')}</span>
+        {/if}
         <svg
           class="h-3.5 w-3.5 text-[var(--app-muted)] transition-transform"
           class:rotate-180={isOpen}

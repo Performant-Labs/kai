@@ -74,11 +74,13 @@
 
   import {
     EventTranslateResult,
+    EventTranslateProgress,
     EventInputFill,
     EventWindowClosing,
     EventEnginesChanged,
     EventAutoClipboardChanged,
   } from '../utils/events';
+  import type { TranslateProgressPayload } from '../utils/events';
   import { WindowSettings, WindowTranslate } from '../constants/window';
   import type { TranslateResult } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
   import type {
@@ -87,7 +89,10 @@
     NamedItem,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/models.ts';
   import { TRANSLATE_LANG, ALL_TRANSLATE_LANGS, type TranslateLang } from '../constants/lang';
-  import { TranslateMulti } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
+  import {
+    TranslateMulti,
+    CancelTranslate,
+  } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
   import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
   import { learnFromSelection } from '../utils/langLearn.ts';
   import {
@@ -98,8 +103,6 @@
     activeEngineFor,
     statusDots,
     paneState,
-    anyPending,
-    allReported,
     isEngineOptionDisabled,
     engineOptionLabel,
     resetEdits,
@@ -111,6 +114,17 @@
     restoreSession,
     type TranslateSession,
   } from '../utils/translateSession.ts';
+  import {
+    newRequestID,
+    requestSettled,
+    startProgress,
+    applyChunk,
+    progressLine,
+    formatClock,
+    splitElapsed,
+    type ProgressLine,
+    type ProgressState,
+  } from '../utils/translateProgress.ts';
   import { detectedSourceLabel } from '../utils/detectedLang.ts';
   import { swapLanguages } from '../utils/swapLangs.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
@@ -160,11 +174,27 @@
   // otherwise blank; set by doTranslate(), reset by Clear.
   let requestedThisRun = $state(false);
   let loading = $state(false);
-  // The request is still open for the result pane: set by doTranslate(), cleared when every enabled
-  // translate engine has reported or by the 15 s fallback. `loading` alone cannot say this because
-  // the first arriving result clears it (the Translate button re-enables then); with two engines
-  // the fast one would end it and the slower active engine would read as failed until it answered.
+  // The request is still open (issue #109): set by doTranslate(), cleared when the request settles,
+  // i.e. the call has returned and every engine the backend started has reported a translation, a
+  // failure or a cancel (requestSettled), or when the call itself failed. No timer ends it: a slow
+  // engine is waited for until the user cancels. `loading` alone cannot say this because the first
+  // arriving result clears it; with two engines the fast one would end it and the slower active
+  // engine would read as failed until it answered.
   let awaiting = $state(false);
+  // The id of the request this window is waiting on. doTranslate names it before it calls the
+  // backend, because a fast engine can answer before the call returns; every result and progress
+  // event carries it back, and an event of any other request (one that a newer translate or a Clear
+  // replaced) is ignored. '' while nothing is open.
+  let requestId = $state('');
+  // The engines the backend says it started for the request; null until TranslateMulti returned.
+  let started = $state<string[] | null>(null);
+  // What is known about each running engine of the request (its started and chunk events), which
+  // the progress line is drawn from.
+  let progress = $state<Record<string, ProgressState>>({});
+  // The clock the progress line reads: this window's own, re-read once a second while a request is
+  // open, so the elapsed time is measured from when this window heard of the engine, never from the
+  // backend's clock.
+  let nowMs = $state(Date.now());
 
   // Write-back of the retained session (issue #81): whenever the text, the results, the requested
   // target or the requested marker change, the whole session is stored again. Clear resets these
@@ -242,6 +272,16 @@
     return () => clearInterval(timer);
   });
 
+  // The elapsed counter of the progress line: a 1 s tick that runs only while a request is open.
+  $effect(() => {
+    if (!awaiting) return;
+    nowMs = Date.now();
+    const tick = setInterval(() => {
+      nowMs = Date.now();
+    }, 1000);
+    return () => clearInterval(tick);
+  });
+
   const curLang = $derived(currentLang());
 
   const activeEngines = $derived(engines.filter((e) => e.kind === 'translate'));
@@ -272,12 +312,13 @@
   const activeEngine = $derived(
     ($lastUsedStore, activeEngineFor(LAST_ENGINE_KEY, defaultEngine, allEngines)),
   );
-  // One dot per enabled translate engine (state = the fan-out's real output: done/pending/failed,
-  // design §4; an idle window, nothing requested, shows no failed dots: issue #81).
+  // One dot per enabled translate engine (state = the fan-out's real output: done/pending/failed/
+  // cancelled, design §4 and issue #109; an idle window, nothing requested, shows no failed dots:
+  // issue #81; the request marker is the run-local one, issue #116).
   const dots = $derived(statusDots(allEngines, results, awaiting, requestedThisRun));
-  // Which of the pane's five states applies (issue #81): no-engine / loading / result / idle /
-  // failed. The template's chain reads this one value, so a window that was never asked to
-  // translate (idle) can no longer fall into the failed branch.
+  // Which of the pane's six states applies (issue #81, and cancelled from issue #109): no-engine /
+  // loading / result / idle / failed / cancelled. The template's chain reads this one value, so a
+  // window that was never asked to translate (idle) can no longer fall into the failed branch.
   const pane = $derived(
     paneState({
       hasEngines: activeEngines.length > 0,
@@ -287,13 +328,51 @@
       requested: requestedThisRun,
     }),
   );
-  // The active engine's current result (a failed engine is absent from results → null).
+  // The active engine's current result (an engine that has not reported is absent from results → null).
   const activeResult = $derived(activeEngine ? (results[activeEngine] ?? null) : null);
+  // The active engine's progress line while it is in flight (issue #109), from what its started and
+  // chunk events told this window; null while nothing is known, and the placeholder then keeps its
+  // plain loading text.
+  const activeLine = $derived(
+    activeEngine && progress[activeEngine] ? progressLine(progress[activeEngine], nowMs) : null,
+  );
+  // The progress line's copy. progressLine decides which line it is and holds the facts; this only
+  // words them.
+  function progressText(line: ProgressLine): string {
+    const engine = engineName(line.engine);
+    if (line.kind === 'chunk') {
+      return t('translate.part', { done: line.done ?? 0, total: line.total ?? 0 });
+    }
+    if (line.kind === 'stalled') {
+      const { minutes, seconds } = splitElapsed(line.elapsedMs);
+      return minutes > 0
+        ? t('translate.stillWaitingMin', { engine, minutes, seconds })
+        : t('translate.stillWaiting', { engine, seconds });
+    }
+    return t('translate.workingOn', { engine, time: formatClock(line.elapsedMs) });
+  }
+  // A status dot's tooltip and accessible label: the engine name, plus its state once it has one
+  // (an idle dot has nothing to report, so its label is the engine name alone). A failed engine that
+  // sent a payload says why with the failure headline (issue #96); one that sent none keeps the bare
+  // "Failed".
+  function dotLabel(engine: string, st: DotState, failedHeadline?: string): string {
+    const state =
+      st === 'done'
+        ? t('translate.engineDone')
+        : st === 'pending'
+          ? t('translate.enginePending')
+          : st === 'failed'
+            ? (failedHeadline ?? t('translate.engineFailed'))
+            : st === 'cancelled'
+              ? t('translate.engineCancelled')
+              : '';
+    return engineName(engine) + (state ? ' · ' + state : '');
+  }
   // The text the active engine is showing / can show: manual edit ?? engine result ?? empty string.
   const activeDisplay = $derived(edited.get(activeEngine) ?? activeResult?.result ?? '');
   // The active engine's failure, ready to render (issue #96): headline, muted detail and optional
   // action, from the one failureMessage the dot tooltip and the screenshot card also read. Only the
-  // failed pane uses it. An engine that sent no payload (the 15 s fallback) gets the bare generic
+  // failed pane uses it. An engine that sent no payload (it reported nothing) gets the bare generic
   // headline and nothing else; only the two credential kinds (not configured, key rejected) carry
   // the Settings action.
   const failure = $derived(failureMessage(activeResult, t, engineName(activeEngine)));
@@ -316,6 +395,11 @@
     );
     return label ?? langName(value);
   }
+  // The label of the pane's per-engine Cancel (issue #109), worded here so the pane markup names no
+  // engine (issue #95: the dropdown above does).
+  const cancelActiveLabel = $derived(
+    t('translate.cancelEngine', { engine: engineName(activeEngine) }),
+  );
   // The pair the swap button would apply (issue #13), or null when there is nothing to exchange:
   // the source is auto and the active engine detected nothing the target select can hold. One
   // derivation feeds both the button's disabled state and swap(), so the two cannot disagree.
@@ -352,11 +436,30 @@
     // Event listeners must register first (so a result arriving during the awaited loads isn't lost).
     const offResult = onEvent(EventTranslateResult, (payload: TranslateResult) => {
       if (payload && payload.engine) {
+        // A result of another request (an older one that a newer translate or a Clear replaced) is
+        // not this window's business.
+        if (payload.request_id !== requestId) return;
         results = { ...results, [payload.engine]: payload };
         loading = false;
-        // The request settles only when every enabled engine has reported: until then the active
-        // engine keeps its loading placeholder even if a faster sibling answered first.
-        if (allReported(allEngines, results)) awaiting = false;
+        // The request settles only when every engine the backend started has reported (result,
+        // failure or cancel): until then the active engine keeps its loading placeholder even if a
+        // faster sibling answered first.
+        if (requestSettled(started, results)) awaiting = false;
+      }
+    });
+    // The non-terminal facts of a running engine: its start and, later, its chunk progress. Only
+    // events of the request this window is waiting on count; the event is a broadcast.
+    const offProgress = onEvent(EventTranslateProgress, (payload: TranslateProgressPayload) => {
+      if (!payload || !payload.engine || payload.request_id !== requestId) return;
+      const now = Date.now();
+      if (payload.phase === 'chunk') {
+        const current = progress[payload.engine] ?? startProgress(payload.engine, now);
+        progress = {
+          ...progress,
+          [payload.engine]: applyChunk(current, { done: payload.done, total: payload.total }, now),
+        };
+      } else {
+        progress = { ...progress, [payload.engine]: startProgress(payload.engine, now) };
       }
     });
     const offInputFill = onEvent(EventInputFill, (text: string) => {
@@ -368,7 +471,9 @@
       // Issue #69: opening Settings drops this window out of always-on-top so Settings is not
       // hidden behind a pinned window; when Settings closes, put the persisted pin back.
       if (name === WindowSettings) {
-        Window.SetAlwaysOnTop($pinnedStore).catch((e) => console.error(t('log.restorePinFailed'), e));
+        Window.SetAlwaysOnTop($pinnedStore).catch((e) =>
+          console.error(t('log.restorePinFailed'), e),
+        );
         return;
       }
       // Global broadcast: only this window's (translate) closing is looked at, so closing another
@@ -377,10 +482,10 @@
       // Issue #81: closing the translate window used to clear the text and the results here. It
       // no longer clears anything: the session (text, results, request marker; the languages
       // persist on their own) is retained, so reopening the window shows the last translation.
-      // It is replaced only by Clear, a new EventInputFill or a new translate. The loading flag is
-      // left alone too: results still in flight when the window is hidden keep landing and end
-      // it, and the 15 s fallback covers a request that never answers, so a quick reopen is not
-      // turned into a failed pane.
+      // It is replaced only by Clear, a new EventInputFill or a new translate. The request is
+      // left alone too (issue #109): closing the window does not cancel it, results still in
+      // flight keep landing in the retained session and settle it, and the user can still Cancel it
+      // after reopening, so a quick reopen is not turned into a failed pane.
     });
     // Broadcast after engines are added/removed or enabled/disabled in settings: re-fetch the
     // engine list so the translate window's result pane syncs to the latest state (otherwise
@@ -414,6 +519,7 @@
     })();
     return () => {
       offResult();
+      offProgress();
       offInputFill();
       offClosing();
       offEngines();
@@ -533,31 +639,55 @@
     // round and are discarded with it.
     edited = new Map();
     editingResult = false;
+    // The request is named here, before the backend is called (issue #109). A request that is
+    // still open is replaced: the backend cancels it silently (a hotkey fill during a running
+    // translation does this), and its late events are ignored because they carry the old id.
+    requestId = newRequestID();
+    const id = requestId;
+    started = null;
+    progress = {};
     try {
       // Multi-engine concurrency is handled in parallel by the backend across enabled engines, independent of any single engine;
       // the bindings-generated TranslateRequest.engine is required, so pass an empty string to satisfy the type (the backend ignores it).
-      await TranslateMulti({
+      const res = await TranslateMulti({
         text: input,
         from: fromLang as TranslateLang,
         to: toLang as TranslateLang,
         engine: '',
+        request_id: requestId,
       });
-      // Results arrive asynchronously one by one via EventTranslateResult; the template clears
-      // loading when the first result lands.
+      // A newer request replaced this one while the call was pending: it is not this request's
+      // business any more.
+      if (requestId !== id) return;
+      // The call says which engines it started. Results arrive asynchronously one by one via
+      // EventTranslateResult, and the request settles when each of these has reported (possibly
+      // already, when the fast ones answered before the call returned). No engines started: settled.
+      started = res?.engines ?? [];
+      if (requestSettled(started, results)) awaiting = false;
+      if (started.length === 0) loading = false;
     } catch (e) {
+      // A rejected call started nothing, so the request is over at once; no timer is involved.
       console.error(t('log.translateRequestFailed'), e);
-    } finally {
-      // Fallback (relaxed, design §4): at 15 s, if the fan-out is still in progress (any enabled
-      // translate engine still pending), clear loading anyway; engines whose siblings already
-      // flipped loading to false don't get re-flipped here. The old "zero results" predicate left
-      // a failed engine's dot stuck on pending forever — relaxed to "any pending", case 2's sole
-      // failed engine converges at this fallback point, and the same moment loading clears, its
-      // dot flips from pending to failed.
-      setTimeout(() => {
-        if (anyPending(allEngines, results, loading)) loading = false;
-        if (anyPending(allEngines, results, awaiting)) awaiting = false;
-      }, 15000);
+      if (requestId === id) {
+        awaiting = false;
+        loading = false;
+      }
     }
+  }
+
+  // The Cancel controls (issue #109) only ask the backend to stop. The window's wait ends the way
+  // it ends for any other outcome: each cancelled engine reports one result (cancelled), and the
+  // request settles when all of them have.
+  function reportCancelFailure(e: unknown) {
+    console.error(t('log.translateCancelFailed'), e);
+  }
+  // Cancel the whole request.
+  function cancelRequest() {
+    CancelTranslate(requestId, '').catch(reportCancelFailure);
+  }
+  // Cancel one engine of the request; the others keep running.
+  function cancelEngine(engine: string) {
+    CancelTranslate(requestId, engine).catch(reportCancelFailure);
   }
 
   let toast = $state('');
@@ -580,14 +710,21 @@
 
   // Back to the idle window (issue #81): the four retained fields (text, results, requested target,
   // requested marker) are reset here and the $effect above stores the empty session; there is no
-  // second write to storage.
+  // second write to storage. A request that is still open is abandoned (issue #109): the backend
+  // stops it, so nothing keeps running unseen, and its late events are ignored, so they cannot
+  // bring the cleared window back.
   function clearInput() {
+    if (awaiting) cancelRequest();
+    requestId = '';
+    started = null;
+    progress = {};
     input = '';
     results = {};
     requestedTo = '';
     requested = false;
     requestedThisRun = false;
     awaiting = false;
+    loading = false;
     edited = new Map();
     editingResult = false;
   }
@@ -794,12 +931,26 @@
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
             </button>
+            <!-- Request-level Cancel (issue #109): only while a request is open, left of Translate.
+                 It asks the backend to stop every engine; the wait ends when they have reported. -->
+            {#if awaiting}
+              <button
+                class="u-btn u-btn--ghost u-no-drag px-3 py-1.5 text-sm"
+                onclick={cancelRequest}
+              >
+                <span aria-hidden="true">✕</span>
+                {t('translate.cancel')}
+              </button>
+            {/if}
+            <!-- Translate stays in its loading state until the request settles (awaiting), not
+                 until the first result lands, so a second press cannot silently replace the
+                 request that is still running. -->
             <button
               class="u-btn u-btn--primary u-no-drag px-5 py-1.5 text-sm"
               onclick={doTranslate}
-              disabled={loading || !input.trim()}
+              disabled={awaiting || !input.trim()}
             >
-              {loading ? t('common.loading') : t('translate.button')}
+              {awaiting ? t('common.loading') : t('translate.button')}
             </button>
           </div>
         </div>
@@ -840,10 +991,11 @@
                   </option>
                 {/each}
               </select>
-              <!-- One status dot per engine (design §4): done/pending/failed derived purely from the
-                 fan-out's real output; the active engine's dot gets an accent ring so the dropdown's
-                 selection is visible at a glance. An idle window (nothing requested, issue #81) has
-                 nothing to report: no fill, and the label is the engine name alone, so no new copy. -->
+              <!-- One status dot per engine (design §4): done/pending/failed/cancelled derived purely
+                 from the fan-out's real output; the active engine's dot gets an accent ring so the
+                 dropdown's selection is visible at a glance. A cancelled engine is a hollow muted
+                 ring, neither filled nor red (issue #109). An idle window (nothing requested, issue
+                 #81) has nothing to report: no fill, and the label is the engine name alone. -->
               <div class="flex items-center gap-1">
                 {#each activeEngines as e (e.value)}
                   {@const st = dots[e.value] as DotState}
@@ -859,26 +1011,11 @@
                     class:bg-[var(--app-accent)]={st === 'done'}
                     class:bg-[var(--app-muted)]={st === 'pending'}
                     class:bg-[var(--app-danger)]={st === 'failed'}
+                    style:border={st === 'cancelled' ? '1.5px solid var(--app-muted)' : null}
                     class:ring-2={e.value === activeEngine}
                     class:ring-[var(--app-accent)]={e.value === activeEngine}
-                    title={engineName(e.value) +
-                      (st === 'done'
-                        ? ' · ' + t('translate.engineDone')
-                        : st === 'pending'
-                          ? ' · ' + t('translate.enginePending')
-                          : st === 'failed'
-                            ? ' · ' +
-                              (dotFailure ? dotFailure.headline : t('translate.engineFailed'))
-                            : '')}
-                    aria-label={engineName(e.value) +
-                      (st === 'done'
-                        ? ' · ' + t('translate.engineDone')
-                        : st === 'pending'
-                          ? ' · ' + t('translate.enginePending')
-                          : st === 'failed'
-                            ? ' · ' +
-                              (dotFailure ? dotFailure.headline : t('translate.engineFailed'))
-                            : '')}
+                    title={dotLabel(e.value, st, dotFailure?.headline)}
+                    aria-label={dotLabel(e.value, st, dotFailure?.headline)}
                   ></span>
                 {/each}
               </div>
@@ -910,8 +1047,8 @@
           </div>
         </div>
         <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <!-- One value decides the pane (paneState, issue #81): no-engine, loading, result, failed,
-             or idle (nothing requested yet, or just cleared), which has no branch below and stays
+          <!-- One value decides the pane (paneState, issue #81): no-engine, loading, result, cancelled (issue #109),
+             failed, or idle (nothing requested yet, or just cleared), which has no branch below and stays
              blank on purpose. This body adds no padding of its own (issue #95): as in the source
              pane, each branch owns its inset, so a line of result text lines up with a line of
              source text. -->
@@ -937,10 +1074,26 @@
             <!-- The active engine is still in flight (no result yet): flat loading placeholder
                (kai-dots + kai-loading-bar); the engine dropdown above names the engine. -->
             <div class="flex flex-col gap-2 p-4">
+              <!-- The progress line (issue #109): which engine is being worked on and for how long,
+                   from its started event; the plain loading text until that event has arrived. -->
               <p class="u-muted text-base leading-relaxed">
-                {t('common.loading')}<span class="kai-dots">{'.'.repeat(dotCount)}</span>
+                {#if activeLine}
+                  {progressText(activeLine)}
+                {:else}
+                  {t('common.loading')}<span class="kai-dots">{'.'.repeat(dotCount)}</span>
+                {/if}
               </p>
               <div class="kai-loading-bar" aria-hidden="true"></div>
+              <!-- Cancels only this engine; the others keep running and their dots keep updating. -->
+              <div>
+                <button
+                  class="u-btn u-btn--ghost u-no-drag px-2 py-1 text-xs"
+                  onclick={() => cancelEngine(activeEngine)}
+                >
+                  <span aria-hidden="true">✕</span>
+                  {cancelActiveLabel}
+                </button>
+              </div>
             </div>
           {:else if pane === 'result' && activeResult}
             <!-- The active engine has a (non-empty) result: editable flat text (design §5) with the
@@ -948,11 +1101,16 @@
                engine). Edits write back to edited[activeEngine]; displayed text = edited ?? result.
                On engine switch edited is discarded wholesale and the new engine starts from its own
                result. The activeResult check is redundant at runtime (a result for the active
-               engine implies it); it only narrows the type for the markup below. The phonetic and
-               identity notes are small muted lines above the text: whichever comes first adds
-               the top inset (first:pt-4), the text below brings its own p-4. -->
+               engine implies it); it only narrows the type for the markup below. The phonetic,
+               cancelled and identity notes are small muted lines above the text: whichever
+               comes first adds the top inset (first:pt-4), the text below brings its own p-4. -->
             {#if activeResult.phonetic}
               <span class="u-muted px-4 text-xs first:pt-4">{activeResult.phonetic}</span>
+            {/if}
+            {#if activeResult.cancelled}
+              <!-- Cancelled with the parts already translated (the chunked translation, #84,
+                 produces this): they stay on screen, marked. -->
+              <span class="u-muted px-4 text-[11px] first:pt-4">{t('translate.cancelled')}</span>
             {/if}
             {#if activeResult.identity}
               <!-- Same language on both sides (issue #80): the result is the source text, not a
@@ -979,9 +1137,16 @@
                 <SpanText text={activeDisplay} />
               </div>
             {/if}
+          {:else if pane === 'cancelled'}
+            <!-- The user cancelled the active engine and it produced nothing (issue #109): muted
+               text, never the failure copy or the danger colour. There is no retry button either:
+               pressing Translate again re-runs the whole fan-out. -->
+            <div class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+              <span class="u-muted text-sm">{t('translate.cancelled')}</span>
+            </div>
           {:else if pane === 'failed'}
-            <!-- A translation was requested and the active engine failed (absent from results with
-               loading already cleared) or returned an empty result: failed state (design §5). No
+            <!-- A translation was requested and the active engine failed (a failure payload, or no
+               report at all) or returned an empty result: failed state (design §5). No
                retry, no retry button — retrying means the user presses the translate button again
                (re-running the whole fan-out). Never shown for an idle window (issue #81).
                Issue #96: `failure` (derived above) is the reason, its muted detail and the optional

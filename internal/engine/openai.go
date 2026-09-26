@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
@@ -18,15 +17,15 @@ import (
 // OpenAI-compatible chat-API translation engine (Chat Completions), built on the official
 // openai-go SDK.
 // Config: APIKey=sk-..., Endpoint=Base URL (default https://api.openai.com/v1),
-// Extra=JSON ({"model":"gpt-4o-mini","timeout_sec":30}); backward compatible with the old
-// plain model-name string.
+// Extra=JSON ({"model":"gpt-4o-mini"}); backward compatible with the old plain model-name
+// string. There is no request timeout: a request ends when the model answers or the caller
+// cancels the ctx (issue #109).
 // Endpoint just takes the base URL (same as DeepSeek/SiliconFlow and other compatible
 // platforms); the SDK appends /chat/completions itself.
 type openaiTranslator struct {
-	apiKey  string
-	model   shared.ChatModel
-	timeout time.Duration
-	client  openai.Client
+	apiKey string
+	model  shared.ChatModel
+	client openai.Client
 }
 
 // normalizeOpenAIBaseURL normalizes the user-entered endpoint into a bare Base URL.
@@ -66,18 +65,16 @@ func NewOpenAI(cfg *EngineConfig, client *http.Client) Translator {
 	if ep := normalizeOpenAIBaseURL(cfg.Endpoint); ep != "" {
 		opts = append(opts, option.WithBaseURL(ep))
 	}
-	// Reuse the project's unified http.Client, cloned into an independent instance with the
-	// engine-level timeout (synced to the HTTP layer), rather than mutating the shared global
-	// client's Timeout directly.
+	// Reuse the project's unified http.Client (custom DNS / proxy / logging), which carries no
+	// deadline of its own.
 	if client != nil {
-		opts = append(opts, option.WithHTTPClient(cloneHTTPClientWithTimeout(client, ex.TimeoutSec)))
+		opts = append(opts, option.WithHTTPClient(client))
 	}
 
 	return &openaiTranslator{
-		apiKey:  cfg.APIKey,
-		model:   modelName,
-		timeout: time.Duration(ex.TimeoutSec) * time.Second,
-		client:  openai.NewClient(opts...),
+		apiKey: cfg.APIKey,
+		model:  modelName,
+		client: openai.NewClient(opts...),
 	}
 }
 
@@ -87,13 +84,6 @@ func (o *openaiTranslator) Name() string { return "openai" }
 func (o *openaiTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
 	if o.apiKey == "" {
 		return nil, ErrAPIKey
-	}
-	// Engine-level request timeout (default 30s, configurable via Extra.timeout_sec).
-	// If the upstream ctx expires earlier, whichever expires first wins (Go context semantics).
-	if o.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, o.timeout)
-		defer cancel()
 	}
 	src := string(req.From)
 	dst := string(req.To)

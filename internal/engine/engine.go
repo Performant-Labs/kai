@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
-	"time"
 
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
@@ -402,9 +401,6 @@ const (
 	// WidgetLLMModel is the LLM translation engine's model name, a standalone text input whose
 	// value is merged into Extra.model
 	WidgetLLMModel FieldWidget = "llm_model"
-	// WidgetLLMTimeout is the LLM translation engine's per-request timeout in seconds, a number
-	// input whose value is merged into Extra.timeout_sec
-	WidgetLLMTimeout FieldWidget = "llm_timeout"
 )
 
 // EngineFieldSchema describes a single config field an engine needs.
@@ -549,16 +545,6 @@ var engineSchemas = map[string]EngineSchema{
 				Required:       false,
 				Default:        "gpt-4o-mini",
 			},
-			{
-				Field:          "llm_timeout",
-				Widget:         WidgetLLMTimeout,
-				LabelKey:       "settings.engine_field.timeout",
-				PlaceholderKey: "settings.engine_ph.llm_timeout",
-				HintKey:        "settings.engine_hint.llm_timeout",
-				Type:           FieldString,
-				Required:       false,
-				Default:        "30",
-			},
 		},
 	},
 	"baidu": {
@@ -662,16 +648,6 @@ var engineSchemas = map[string]EngineSchema{
 				Required:       false,
 				Default:        "claude-3-5-sonnet-20241022",
 			},
-			{
-				Field:          "llm_timeout",
-				Widget:         WidgetLLMTimeout,
-				LabelKey:       "settings.engine_field.timeout",
-				PlaceholderKey: "settings.engine_ph.llm_timeout",
-				HintKey:        "settings.engine_hint.llm_timeout",
-				Type:           FieldString,
-				Required:       false,
-				Default:        "30",
-			},
 		},
 	},
 	"gemini": {
@@ -700,16 +676,6 @@ var engineSchemas = map[string]EngineSchema{
 				Type:           FieldString,
 				Required:       false,
 				Default:        "gemini-2.0-flash",
-			},
-			{
-				Field:          "llm_timeout",
-				Widget:         WidgetLLMTimeout,
-				LabelKey:       "settings.engine_field.timeout",
-				PlaceholderKey: "settings.engine_ph.llm_timeout",
-				HintKey:        "settings.engine_hint.llm_timeout",
-				Type:           FieldString,
-				Required:       false,
-				Default:        "30",
 			},
 		},
 	},
@@ -833,46 +799,22 @@ func parseOCRExtra(engineName, extra string) ocrExtra {
 	return out
 }
 
-// DefaultLLMTimeoutSec is the default LLM translation-engine request timeout in seconds.
-const DefaultLLMTimeoutSec = 30
-
-// cloneHTTPClientWithTimeout clones an independent *http.Client from base and sets a
-// per-request timeout. The shared global client (from network.BuildHTTPClient) must not have
-// its Timeout mutated directly (it would affect everyone), so an independent instance is
-// cloned, making the "engine-level timeout" reach the HTTP layer too (the Transport is
-// reused, avoiding repeated connection setup).
-// timeoutSec<=0 falls back to DefaultLLMTimeoutSec; a nil base builds a basic client as a
-// fallback.
-func cloneHTTPClientWithTimeout(base *http.Client, timeoutSec int) *http.Client {
-	d := time.Duration(timeoutSec) * time.Second
-	if d <= 0 {
-		d = DefaultLLMTimeoutSec * time.Second
-	}
-	if base == nil {
-		base = &http.Client{
-			Transport: &http.Transport{Proxy: http.ProxyFromEnvironment},
-		}
-	}
-	return &http.Client{
-		Transport:     base.Transport,
-		Timeout:       d,
-		CheckRedirect: base.CheckRedirect,
-	}
-}
-
 // llmExtra is the unified JSON parse result of LLM translation engines' (openai / anthropic /
 // gemini) Extra. All LLM engines share the same Extra(JSON) structure so the JSON changes in
 // one place.
+//
+// It has no timeout (issue #109): an LLM request runs until it answers or the user cancels it.
+// A timeout_sec key that older versions stored in an engine row is neither read nor migrated;
+// decoding simply skips it, so such a row still parses to its model and imposes nothing.
 type llmExtra struct {
-	Model      string `json:"model"`       // Model name (e.g. gpt-4o-mini, claude-3-5-sonnet-20241022, gemini-2.0-flash)
-	TimeoutSec int    `json:"timeout_sec"` // Per-request timeout in seconds; <=0 falls back to DefaultLLMTimeoutSec
+	Model string `json:"model"` // Model name (e.g. gpt-4o-mini, claude-3-5-sonnet-20241022, gemini-2.0-flash)
 }
 
 // parseLLMExtra parses an LLM engine's Extra(JSON) uniformly.
 // Backward compatible: when Extra is a plain model-name string (not JSON), the whole string
-// becomes the model fallback and the timeout falls back to the default.
+// becomes the model fallback.
 func parseLLMExtra(extra string) llmExtra {
-	out := llmExtra{TimeoutSec: DefaultLLMTimeoutSec}
+	out := llmExtra{}
 	if extra == "" {
 		return out
 	}
@@ -881,9 +823,6 @@ func parseLLMExtra(extra string) llmExtra {
 	if err := json.Unmarshal([]byte(extra), &je); err == nil {
 		if je.Model != "" {
 			out.Model = je.Model
-		}
-		if je.TimeoutSec > 0 {
-			out.TimeoutSec = je.TimeoutSec
 		}
 		return out
 	}

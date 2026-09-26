@@ -93,6 +93,21 @@ describe('restoreSession', () => {
     expect(Object.keys(r.results)).toEqual(['good']);
   });
 
+  // Issue #109: a cancelled engine is a state the user chose, not a failure; it survives a restore.
+  it('keeps a cancelled entry (no result text) and requested stays true', () => {
+    const r = restoreSession({
+      input: 'hi',
+      results: {
+        g: { engine: 'g', result: '', cancelled: true },
+        bad: { engine: 'bad', result: '', error: 'boom' },
+      },
+      requestedTo: 'es',
+      requested: true,
+    });
+    expect(Object.keys(r.results)).toEqual(['g']);
+    expect(r.requested).toBe(true);
+  });
+
   // Found by hand-testing #82: an engine failure arrives as a results entry with an Error and no
   // result text. Restoring it made the reopened window show "Translation failed" for a request
   // from a previous run, before the user had done anything.

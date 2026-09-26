@@ -40,7 +40,7 @@
   "err.gemini_empty": "gemini error: empty response",
   "err.translate_engine_not_registered": "Translation engine not registered",
   "err.translate_failed": "Translation failed",
-  "err.translate_timeout": "Translation timeout",
+  "err.translate_engine_panic": "Translation engine crashed",
   "err.ocr_engine_not_registered": "OCR engine not registered",
   "err.screenshot_failed": "Screenshot failed",
   "err.ocr_no_text": "OCR found no text",
