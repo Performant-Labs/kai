@@ -84,6 +84,8 @@ export type Dict = {
     engineFailed: string;
     failed: string;
     clearInput: string;
+    undo: string;
+    redo: string;
     expand: string;
     collapse: string;
     history: string;

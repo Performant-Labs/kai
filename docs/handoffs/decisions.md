@@ -428,6 +428,106 @@ Headless static walkthrough against the approved wireframe (T1-T4, S1, C1) and e
 - **Hedged:** no browser or pixel diff (issue #28). The principal's by-hand items 1-8 from round 1 remain, including the open calls on Clear-cancels (F Deviation 6) and the ghost-button Cancel (F Deviation 4). The jsdom mount harness (Option B) was not promoted; it is a follow-up candidate alongside #78 / the #95 rebase.
 - **Evidence:** authoritative command exit 0 (Go 12 ok, vitest 24 files / 245 tests); in-place mutant runs (worktree clean afterward); `go test -race -count=5` on the cancel test ok; the Swift/Apple path diff is empty; the key-literal grep is empty; gofmt clean. Handoff: docs/handoffs/109/handoff-S.md (Round 2 section).
 
+## #118 D (Phase 2, design, 2026-09-26): wireframe ready for the principal's approval
+- **Decided:** mode (a), low-fi HTML wireframe at docs/handoffs/118/wireframe.html (zoom control starting at 150%, buttons and - / + / 0 keys). It draws the source footer with a new left group [Clear][Undo][Redo] (`u-icon-btn`, Lucide undo-2 / redo-2 in the build, Unicode ↶ ↷ in the wireframe) in light and dark; the Undo/Redo states: fresh launch, after a change, after Clear, after an Undo, everything undone, hover, request open; the 780 px minimum window at ratios 0.25 and 0.5, idle and request open; zh-CN copy (撤销 / 重做). Question 7 (footer crowding) is settled in the wireframe: the footer wraps (`flex-wrap gap-2`; the right group `ml-auto flex-wrap justify-end`), Redo is always shown, and Clear keeps its text. Seven open questions with recommendations are in handoff-D.md. Handoff: docs/handoffs/118/handoff-D.md.
+- **Assumed:** the brief does not number the principal's questions. D numbered seven (visible Redo, placement/glyphs, copy, swap restores text only, no retranslate/cancel, 1 s typing steps, footer crowding), so that question 7 is the footer crowding the run names. The wrap also fixes master's pre-existing clipping, a small step past the brief's out-of-scope line, which that line allows ("beyond what the wireframe settles").
+- **Hedged:** measured in headless Chrome, not WKWebView (font metrics may differ by a few px). The Lucide paths are not in the repo, so they are not drawn. The native tooltip is drawn as a box. Not approved: O records the principal's approval.
+- **Evidence:** headless `--dump-dom` measurements. Master already clips Translate by 40 px idle and 145 px with a request open at 0.25. The brief as written clips by 120 / 225 px, and by 38 px at 0.5 with a request open. The proposal clips nothing at any width (0.25: 2 rows idle, 3 rows open; 0.5: 1 row idle, 2 rows open). A headless screenshot was inspected, and `html.parser` reports well-formed markup.
+
+## #118 A (Phase 3, up-front architecture review, 2026-09-26): PASS
+- **Decided:** PASS, 0 block / 3 warn. Handoff: docs/handoffs/118/handoff-A.md. The brief's plan fits the codebase. `sourceHistory.ts` follows the pure-helper shape of `translateSession.ts` / `translateProgress.ts` (clock injected, no bindings, no DOM, immutable returns). There is one `setSource` funnel, and `applyUndo`/`applyRedo` are the only other writers of `input`. The #81 `$effect` stays the single persistence path, with no history field in the session. `doTranslate` stays the only sender, so the #109 request id and cancel are untouched by undo. The approved footer wrap uses Tailwind only. Warns: (1) the shortcut match and the `inputType`→kind map stay in the component as named functions (`shortcutAction`, `changeKindOf`) so contract tests slice them by name; Decision A's API gets no additions. (2) The history state is not named `history` (it would shadow `window.history`), and the regexes do not depend on the state name or on import aliases. (3) T pins the placement of the Undo/Redo buttons by source order (Clear < Undo < Redo < Copy), not by the footer's layout classes, which the approved wireframe changes.
+- **Assumed:** the approval recorded in handoff-D.md ("118 approved", all seven recommendations) is the design contract, including the footer wrap past the brief's out-of-scope line.
+- **Hedged:** read-only review; no tests run. The macOS key-routing order is a runtime and hand-test risk (brief Risks), not an architecture question.
+- **Evidence:** grep of `TranslateWindow.svelte` found the `input` writers at :148 (declaration), :467, :624, :721 and `bind:value={input}` at :895, no `svelte:window`/`keydown`/`beforeinput` handler, and no `record`/`undo`/`redo`/`history`/`setSource` identifiers. The component test files pin the old writers only at `sessionRetention.test.ts:98,107` and `swapWindow.test.ts:39,61`, and no test pins the footer classes. The export shapes of `utils/swapLangs.ts`, `translateSession.ts` and `translateProgress.ts` match.
+
+## #118 T-red (Phase 4, author tests RED, 2026-09-26): RED valid
+- **Decided:** RED valid; ready for F. New `frontend/src/utils/sourceHistory.test.ts` (44 pure unit tests, criteria 1-4 and Decision G, clock injected, no sleeps) and `frontend/src/components/sourceUndo.test.ts` (31 source-contract tests, criteria 5-8). Exactly the four named assertions updated (`sessionRetention.test.ts:98,107`, `swapWindow.test.ts:39,61`) to `setSource(…, 'program')`. A's warns applied: helper names `shortcutAction` / `changeKindOf` are pinned by name; no regex depends on the history state name or import aliases (`canUndo`/`canRedo` unaliased); placement is pinned by source order only. Handoff: docs/handoffs/118/handoff-T-red.md.
+- **Assumed:** the catalog-label test (`en/zh.translate.undo|redo`) is T's to write, with F adding the keys; `keys.test.ts` stays green in RED because T added none.
+- **Hedged:** the 500 ms dedupe is pinned only loosely (a `500` literal); key routing in WKWebView, IME behaviour, and caret-to-end are hand-test items. Three sourceUndo tests pass on master by design (regression guards).
+- **Evidence:** `NODE_OPTIONS=--no-experimental-webstorage pnpm --dir frontend test` gives 4 files / 32 tests failing, 275 passing: sourceHistory fails on the missing-module import (accepted RED), and the rest are AssertionErrors against master. `tsc --noEmit` shows only TS2307 for the missing module. A scratch-copy reference implementation (not committed) makes 351/351 pass, and the test files type-check. 15/16 mutants were killed, including the brief's four; the survivor is equivalent (redo is always empty while a typing run is open).
+
+## #118 F (Phase 6, implement against RED, 2026-09-26)
+- **Decided:** implemented criteria 1-8 against T's RED, extending the brief's Reuse-map objects:
+  - New pure `frontend/src/utils/sourceHistory.ts`, exactly the Decision A API, with no extra export.
+  - In `TranslateWindow.svelte`:
+    - `setSource` is the one writer. Clear, swap, `EventInputFill` and `oninput` go through it, and `applyUndo` / `applyRedo` are the only other writers of `input`.
+    - The named `changeKindOf` / `shortcutAction` follow A warn 1.
+    - There is one `<svelte:window onkeydown>`, and the source textarea is controlled (`value` + `oninput` + `onbeforeinput`, and `onblur` calls `breakTyping`).
+    - The Undo / Redo `u-icon-btn` buttons sit between Clear and Copy, in the wrapping footer with handoff-D question 7's exact classes. The Lucide undo-2 / redo-2 paths are copied verbatim from lucide 0.576.0 (ISC).
+  - `translate.undo` / `translate.redo` are in the three catalogs.
+  - The #81 `$effect` stays the only storage write, and the history is not in the session. Handoff: docs/handoffs/118/handoff-F.md.
+- **Decided (outside the brief's letter, each revertable in a line or two):**
+  1. `changeKindOf` also maps WebKit's IME commit types `deleteCompositionText` / `insertFromComposition` to `compose`. Under the literal list, a commit after a 1 s or longer candidate pause would push a half-composed step, which criterion 2 forbids.
+  2. `onSourceInput` puts back and never records an `input` event of `historyUndo` / `historyRedo`. This makes "a historyUndo never reaches record" hold even if WebKit's `beforeinput` turns out not to be cancelable.
+  3. `shortcutAction` returns null for a keydown without a string `key`.
+  4. The dedupe also requires `since >= 0` (a wall clock stepped backwards).
+  5. Caps apply on `record` only. Undo and redo move existing strings, so memory is unchanged by them; `chars` may exceed `maxChars` until the next record. This is documented in the module header.
+- **Assumed:** there is no explicit caret code. The textarea value setter puts the caret at the end (checked in jsdom). `archChanged: true`: a new module and a new window-level input path were added, as the brief and A anticipated.
+- **Hedged:** not exercised in WKWebView (#28), so the key routing is a hand-test item. Reading Wails beta.24's `performKeyEquivalent:`, Kai has no key or menu bindings on macOS, so the page gets Cmd+Z first and its `preventDefault` stops the Edit menu. The 500 ms dedupe is defense in depth. Recorded, not changed:
+  - IME compositions with no plain keystroke between them coalesce into one step (Decision A's compose rule). The fix is ready in the handoff if the zh-CN hand test finds the steps too coarse.
+  - A run that ends where it began leaves a no-op undo step.
+  - Ctrl+Y replaces Cocoa's "yank" in the source textarea.
+  - A drag-move is two steps.
+  - Three test gaps are listed for T-green: the dedupe logic, the commit types, and the native-undo guard.
+- **Evidence:**
+  - `NODE_OPTIONS=--no-experimental-webstorage pnpm --dir frontend test`: exit 0, 28 files / 351 tests. `pnpm --dir frontend tsc`: exit 0. `prettier --check` is clean.
+  - Dev `vite build`: exit 0, 199 modules against master's 198, with the same 5 pre-existing a11y warnings.
+  - `svelte-check` does not run here (TypeScript 7 without 6, the same on master). Instead, `tsc` on the extracted `<script>` gives master's 9 pre-existing errors and nothing new, and 7 handler-to-attribute type assertions pass.
+  - The throwaway jsdom mount of the real component (scratch only) passes 16/16 checks; 14/16 fail on master. All 18 in-memory mutants fail it. 14 of the 18 fail T's committed suite; M1, M16, M2 and M4 survive it.
+
+## #118 T-green (Phase 7, verify GREEN + Tier 2, 2026-09-26): PASS
+- **Decided:** PASS; no production change needed from F. The full authoritative command (swiftbridge build, Go tests and the frontend suite, with `NODE_OPTIONS=--no-experimental-webstorage`) exits 0, with 28 files / 351 tests, matching F. T added 3 source-contract tests to `sourceUndo.test.ts`, bringing the frontend to 354/354. They close F's listed gaps:
+  - the 500 ms dedupe as a data flow: the keydown stamps `Date.now()` before applying, and beforeinput guards `Date.now() - stamp < 500 … return` after `preventDefault` and before applying;
+  - the `oninput` native historyUndo/historyRedo guard: it puts the text back and returns before `setSource`;
+  - WebKit's IME commit types in the `compose` branch of `changeKindOf`.
+  Handoff: docs/handoffs/118/handoff-T-green.md.
+- **Assumed:** F's Deviations 1 and 2 are behaviours the criteria need (criterion 2; Decision B's "a historyUndo never reaches record"), so they are pinned. Deviation 3, the keydown with no `key`, is a defensive guard and is left unpinned.
+- **Hedged:** the mount harness was not re-run; T's evidence is the committed suite plus the mutants. Hand-test items stay with the principal: macOS Cmd+Z routing, zh-CN IME step size, and the caret after undo. `sessionRetention.test.ts` / `swapWindow.test.ts` fail `prettier --check`, but the master versions fail it identically and the lines #118 edited are clean, so they were left alone (criterion 7).
+- **Evidence:**
+  - 11 in-place mutants, each restored with its md5 verified: 10 are killed. That includes the brief's four (record removed, doTranslate in applyUndo, beforeinput preventDefault dropped, size cap dropped) and F's four survivors M1, M16, M2 and M4.
+  - The 1 survivor, "coalescing record keeps redo", is equivalent: undo and redo reset `typingAt`, so redo is always empty while a run is open.
+  - `tsc --noEmit` exits 0, and prettier is clean on the production files and the new test files.
+  - F edited no test files (`git diff 13a3ab6..07d603f --stat`).
+
+## #118 A-dup (Phase 7, anti-duplication gate, 2026-09-26): PASS
+- **Decided:** PASS, with 0 block and 1 warn. F extended every object the Reuse map named:
+  - the #81 `$effect` is still the only storage write, and `sessionStore.set` is unchanged;
+  - the `u-icon-btn` classes and the inline Lucide SVGs are reused, with no new CSS;
+  - the i18n catalog follows the three-file pattern.
+  The one new object, `sourceHistory.ts`, is the one the brief requires (criterion 1). `input` is assigned only in `setSource`, `applyUndo` and `applyRedo`. There is one window keydown handler and one textarea `beforeinput` handler. The warn: the `onSourceInput` native-undo guard writes `el.value` directly. That is the only imperative DOM write to the source textarea, it is justified by F Deviation 2, and it should stay the only one. Handoff: docs/handoffs/118/handoff-A-dup.md.
+- **Assumed:** `changeKindOf` and `shortcutAction` are event classification, not history rules, and they belong in the component as named functions, per the Phase 3 warn 1.
+- **Hedged:** runtime key routing on macOS is out of A's scope and stays a hand-test item.
+- **Evidence:**
+  - `grep -nE '\binput\s*=[^=]' TranslateWindow.svelte` gives :158, :290, :299 and :306.
+  - `git diff --quiet master..HEAD` is clean on `app.css`, `swapLangs.ts`, `translateSession.ts` and `persisted.ts`.
+  - The Go diff (`internal`, `pkg`, `main.go`, `go.mod`) is empty.
+  - The only other keydown handlers (TranslateCard, ShortcutsTab) do not match undo or redo.
+
+## #118 U (UI walkthrough, 2026-09-26): PASS
+- **Decided:** PASS, with 0 blocking findings. The source footer matches the approved wireframe:
+  - left group [Clear][Undo][Redo], right group [Copy][Cancel][Translate];
+  - the Q7 wrap class strings, exactly as written;
+  - Lucide undo-2/redo-2 at 16 px in `u-icon-btn u-no-drag`;
+  - `disabled={!canUndo/!canRedo(sourceHistory)}`, with the history empty on launch;
+  - `aria-label` = `title` = Undo/Redo, 撤销/重做.
+  Handoff: docs/handoffs/118/handoff-U.md.
+- **Assumed:** Finding 1 does not block. `app.css`'s older selection-popup `.u-icon-btn:hover` (accent fill, 1.06 scale) matches every `u-icon-btn`, disabled ones included, so hover looks different from wireframe B6 and from the D table's "no hover effect while disabled". Master's adjacent Copy button looks the same, and the brief forbids new CSS. Scoping that rule belongs in its own issue.
+- **Hedged:** nothing was walked live (#28). Twelve cells are listed for the principal's hand test. The first is that one Cmd+Z keypress undoes exactly one step under the Wails default Edit menu. The others include the zh-CN IME, the caret after undo, and the narrow footer in WKWebView metrics.
+- **Evidence:**
+  - frontend 28 files / 354 tests at 4831ad5;
+  - a scratch branch build generates `ml-auto`, which master's build lacks;
+  - headless Chrome rendered the real footer markup against the branch CSS at 187/374/464 px, idle and awaiting, in en and zh: 1/2/3 rows exactly as handoff-D measured, nothing clipped in any of the 12 cases;
+  - a headless rule-match check confirms that `.u-icon-btn:hover` matches disabled buttons.
+
+## #118 S (spec audit, 2026-09-26): PASS
+- **Decided:** PASS, with 0 blocking findings. Criteria 1-9 are met and S re-verified them. The full authoritative command exits 0 (Go all `ok`; frontend 28 files / 354 tests) and `tsc --noEmit` exits 0. `input` is assigned only in `setSource`, `applyUndo` and `applyRedo` (plus the declaration). The history is bounded (100 steps, 2,000,000 characters, newest kept; undo/redo only move existing strings) and is never persisted. No key-shaped literals were found. The diff touches exactly the brief's nine files; the footer wrap is the approved Q7 scope step. Handoff: docs/handoffs/118/handoff-S.md.
+- **Assumed:** U Finding 1 (the pre-existing duplicate `.u-icon-btn:hover` in `app.css`) does not block #118. It is on master, looks the same as the Copy button, and the brief forbids new CSS. It belongs in its own issue.
+- **Hedged:** criterion 10 is the principal's hand test on the built macOS app. Above all, one Cmd+Z undoes one step with no native undo afterwards; also the zh-CN IME step size and the narrow footer in WKWebView metrics.
+- **Evidence:**
+  - suite log in the session scratchpad;
+  - the grep for `input` writers gives :158, :290, :299 and :306;
+  - `git diff --quiet` is clean on `app.css`, `swapLangs.ts`, `translateSession.ts`, `persisted.ts` and all Go;
+  - two advisory test-quality notes: the `/\b500\b/` literal test is now redundant with T-green's data-flow test, and the `emptyHistory` independence test duplicates the purity tests. Neither is required.
 ## #111 A (Phase 3, up-front architecture review, 2026-09-26): PASS
 - **Decided:** PASS, 0 block / 5 warn. Handoff: docs/handoffs/111/handoff-A.md. The design extends the existing objects: the engine ctx is the only cancel channel; `callEngine`/`outcomeOf` are unchanged; `appleBridgeError` is the only copy mapping; the loader mirror and the source-contract test pattern are reused. Warns: (1) `runCancellable` and `appleCancelOutcome` both decide "cancelled payload plus ctx". Make `runCancellable` payload-agnostic so there is one decision point. (2) The brief's evidence predates #80: the `job.finish` reroute must keep `from: detectedFrom`, `appleBridgeError` takes 3 args, and the base is `1ee7dd5`. (3) The Swift registry needs tombstone-check-plus-insert in one critical section, lock order registry before job, and `task.cancel()` outside the job lock. (4) Allow comment-only fixes to `callEngine`'s doc and the `ignoring` fixture comment, which go stale. (5) Build the Apple-shaped fake as a sibling of `honoring`/`ignoring`, not a second harness.
 - **Assumed:** HEAD `a8f74e5` (parent `1ee7dd5`, #115 merged) is the implementation base, which satisfies the brief's start condition. #106 is still open, so the shared Swift/Go hunks rebase whenever it lands.

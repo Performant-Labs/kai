@@ -75,6 +75,8 @@ export const zh: Dict = {
     engineFailed: '已失败',
     failed: '翻译失败',
     clearInput: '清空',
+    undo: '撤销',
+    redo: '重做',
     expand: '展开',
     collapse: '收起',
     history: '历史',

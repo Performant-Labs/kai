@@ -77,6 +77,8 @@ export const en: Dict = {
     engineFailed: 'Failed',
     failed: 'Translation failed',
     clearInput: 'Clear',
+    undo: 'Undo',
+    redo: 'Redo',
     expand: 'Expand',
     collapse: 'Collapse',
     history: 'History',

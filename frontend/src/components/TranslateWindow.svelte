@@ -115,6 +115,16 @@
     type TranslateSession,
   } from '../utils/translateSession.ts';
   import {
+    emptyHistory,
+    record as recordChange,
+    breakTyping,
+    undo as undoStep,
+    redo as redoStep,
+    canUndo,
+    canRedo,
+    type ChangeKind,
+  } from '../utils/sourceHistory.ts';
+  import {
     newRequestID,
     requestSettled,
     startProgress,
@@ -257,6 +267,140 @@
   function enterResultEdit() {
     editingResult = true;
     tick().then(() => resultEl?.focus());
+  }
+
+  // Undo / redo of the source text (issue #118). Kai owns the source pane's undo completely: the
+  // browser's own undo of the textarea was lost whenever the pane left edit mode (the textarea is
+  // destroyed for the SpanText view) and never saw Clear, swap or a fill, which write the text
+  // directly. The history rules (typing runs, steps, caps) live in the pure utils/sourceHistory.ts;
+  // this is only the wiring. setSource is the one writer of a change: Clear, swap, the
+  // EventInputFill handler and the textarea's input all record through it, and applyUndo /
+  // applyRedo are the only other writers of `input`. Undo changes the text only: it never
+  // translates, never cancels the open request (#109) and leaves the results and the languages
+  // alone; the #81 $effect stores the restored text like any other change. The history is window
+  // state, not part of the retained session: it starts empty on every launch (the restored text is
+  // the baseline) and survives closing the window, which only hides it.
+  let sourceHistory = $state(emptyHistory());
+
+  // The one writer of a change to the source text: records it (the text before it is `input`),
+  // then applies it. Both time rules of the history (the typing window here and the shortcut
+  // dedupe below) read the same clock, Date.now().
+  function setSource(next: string, kind: ChangeKind) {
+    sourceHistory = recordChange(sourceHistory, input, next, kind, Date.now());
+    input = next;
+  }
+
+  // Undo / redo the last step. Setting the textarea's value puts the caret at the end of the text
+  // (Kai does not track the selection); with nothing to undo or redo, nothing happens.
+  function applyUndo() {
+    const step = undoStep(sourceHistory, input);
+    if (!step) return;
+    sourceHistory = step.history;
+    input = step.text;
+  }
+
+  function applyRedo() {
+    const step = redoStep(sourceHistory, input);
+    if (!step) return;
+    sourceHistory = step.history;
+    input = step.text;
+  }
+
+  // The kind of a user edit of the source textarea, read off its input event: paste, cut, drag and
+  // drop are a step of their own; an IME composition never splits on a pause, whether it is still
+  // composing or committing (WebKit reports the commit as deleteCompositionText /
+  // insertFromComposition, after compositionend); everything else is typing.
+  function changeKindOf(e: Event): ChangeKind {
+    const { inputType, isComposing } = e as InputEvent;
+    if (
+      inputType === 'insertFromPaste' ||
+      inputType === 'insertFromDrop' ||
+      inputType === 'deleteByCut' ||
+      inputType === 'deleteByDrag'
+    ) {
+      return 'paste';
+    }
+    if (
+      isComposing ||
+      inputType === 'insertCompositionText' ||
+      inputType === 'deleteCompositionText' ||
+      inputType === 'insertFromComposition'
+    ) {
+      return 'compose';
+    }
+    return 'typing';
+  }
+
+  // The source textarea is controlled (value={input} plus this handler, no two-way binding), so
+  // every edit reaches setSource. A native undo or redo is cancelled before it happens
+  // (onSourceBeforeInput); should one still get through, its text is put back and never recorded.
+  function onSourceInput(e: Event) {
+    const el = e.currentTarget as HTMLTextAreaElement;
+    const { inputType } = e as InputEvent;
+    if (inputType === 'historyUndo' || inputType === 'historyRedo') {
+      el.value = input;
+      return;
+    }
+    setSource(el.value, changeKindOf(e));
+  }
+
+  // A native undo or redo of the source textarea (the Edit menu's key equivalent, a context menu)
+  // is always cancelled, so the browser's own undo stack never acts on the source text, and Kai's
+  // history is walked instead. One exception keeps one keypress one step: on macOS Wails' default
+  // Edit menu binds Cmd+Z as well, so when the window keydown below has just applied the shortcut,
+  // this one is only cancelled.
+  const SHORTCUT_DEDUPE_MS = 500;
+  let shortcutAt = -Infinity;
+
+  function onSourceBeforeInput(e: InputEvent) {
+    if (e.inputType !== 'historyUndo' && e.inputType !== 'historyRedo') return;
+    e.preventDefault();
+    const since = Date.now() - shortcutAt;
+    if (since >= 0 && since < SHORTCUT_DEDUPE_MS) return;
+    if (e.inputType === 'historyUndo') applyUndo();
+    else applyRedo();
+  }
+
+  // Leaving the textarea ends edit mode and the typing run: typing after coming back is a new step.
+  function leaveSourceEdit() {
+    editingSource = false;
+    sourceHistory = breakTyping(sourceHistory);
+  }
+
+  // Which history action a key press asks for: Cmd+Z / Ctrl+Z undo, Shift+Cmd+Z / Ctrl+Shift+Z /
+  // Ctrl+Y redo, never with Alt; null for any other key. Also null when the press belongs to another
+  // editable element than the source textarea: the result edit keeps its native undo, and a select
+  // or any other field keeps its keys. Anywhere else (the source textarea, a button, the page) the
+  // shortcut is Kai's, so it still works after Clear, Undo or Swap took the focus.
+  function shortcutAction(e: KeyboardEvent): 'undo' | 'redo' | null {
+    if (e.altKey || typeof e.key !== 'string') return null;
+    const pressed = e.key.toLowerCase();
+    let action: 'undo' | 'redo' | null = null;
+    if (pressed === 'z' && (e.metaKey || e.ctrlKey)) action = e.shiftKey ? 'redo' : 'undo';
+    else if (pressed === 'y' && e.ctrlKey && !e.metaKey && !e.shiftKey) action = 'redo';
+    if (action === null) return null;
+    const target = e.target;
+    if (
+      target !== sourceEl &&
+      target instanceof HTMLElement &&
+      (target.isContentEditable || ['TEXTAREA', 'INPUT', 'SELECT'].includes(target.tagName))
+    ) {
+      return null;
+    }
+    return action;
+  }
+
+  // The window-level undo / redo shortcut. Every match in scope is cancelled, even with nothing
+  // left to undo, so the browser's own undo never runs on the source text. While an IME
+  // composition is open the key belongs to the IME.
+  function onWindowKeydown(e: KeyboardEvent) {
+    if (e.isComposing) return;
+    const action = shortcutAction(e);
+    if (action === null) return;
+    e.preventDefault();
+    shortcutAt = Date.now();
+    if (action === 'undo') applyUndo();
+    else applyRedo();
   }
 
   // Translating marquee: animated ellipsis (. → .. → ... → .... cycling)
@@ -464,7 +608,8 @@
     });
     const offInputFill = onEvent(EventInputFill, (text: string) => {
       if (!text) return;
-      input = text;
+      // Its own undo step (issue #118): Undo brings back the text the fill replaced.
+      setSource(text, 'program');
       doTranslate();
     });
     const offClosing = onEvent(EventWindowClosing, (name: string) => {
@@ -614,14 +759,15 @@
   // yet the input stays as it is. The existing doTranslate() then clears results and edits and sends
   // the request with the new pair, so requestedTo is set there like for any other request. A swap
   // consumes preferences and never writes them: the pair is persisted, but only a select's own
-  // onchange ever teaches the variant store.
+  // onchange ever teaches the variant store. The new source text is its own undo step (issue #118):
+  // Undo brings back the old source text and leaves the languages swapped.
   function swap() {
     const pair = swapPair;
     if (!pair) return;
     const { from, to } = pair;
     fromLang = from as TranslateLang;
     toLang = to as TranslateLang;
-    if (activeDisplay !== '') input = activeDisplay;
+    if (activeDisplay !== '') setSource(activeDisplay, 'program');
     persistLangs();
     doTranslate();
   }
@@ -712,13 +858,14 @@
   // requested marker) are reset here and the $effect above stores the empty session; there is no
   // second write to storage. A request that is still open is abandoned (issue #109): the backend
   // stops it, so nothing keeps running unseen, and its late events are ignored, so they cannot
-  // bring the cleared window back.
+  // bring the cleared window back. The cleared text is its own undo step (issue #118): Undo brings
+  // the text back, and the result pane stays idle until the user translates again.
   function clearInput() {
     if (awaiting) cancelRequest();
     requestId = '';
     started = null;
     progress = {};
-    input = '';
+    setSource('', 'program');
     results = {};
     requestedTo = '';
     requested = false;
@@ -729,6 +876,10 @@
     editingResult = false;
   }
 </script>
+
+<!-- Undo / redo of the source text from the keyboard (issue #118), at window level so it still
+     works when the focus is on a button; shortcutAction decides what is in scope. -->
+<svelte:window onkeydown={onWindowKeydown} />
 
 <div class="u-surface flex h-screen flex-col" style={rootStyleToStyle($rootStyle)}>
   <main class="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4">
@@ -889,12 +1040,16 @@
           </div>
         </div>
         {#if input === '' || editingSource}
+          <!-- Controlled (issue #118): every edit goes through setSource, so it is recorded for
+               Undo; a native undo or redo is cancelled and Kai's history walked instead. -->
           <textarea
             bind:this={sourceEl}
             class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
-            bind:value={input}
+            value={input}
+            oninput={onSourceInput}
+            onbeforeinput={onSourceBeforeInput}
             onfocus={() => (editingSource = true)}
-            onblur={() => (editingSource = false)}
+            onblur={leaveSourceEdit}
             placeholder={t('translate.placeholder')}></textarea>
         {:else}
           <!-- Non-editing state: word-level span rendering (hover highlight, no click behavior — #18) -->
@@ -905,11 +1060,61 @@
             <SpanText text={input} />
           </div>
         {/if}
-        <div class="u-border-t flex items-center justify-between px-3 py-2">
-          <button class="u-btn u-btn--ghost u-no-drag px-3 py-1.5 text-sm" onclick={clearInput}>
-            {t('translate.clearInput')}
-          </button>
+        <!-- Footer: Clear, Undo and Redo on the left; Copy, Cancel and Translate on the right. The
+             row wraps when the pane is narrow (issue #118, the approved wireframe's question 7): the
+             right group then takes its own row, right-aligned, and nothing is clipped. -->
+        <div class="u-border-t flex flex-wrap items-center justify-between gap-2 px-3 py-2">
           <div class="flex items-center gap-2">
+            <button class="u-btn u-btn--ghost u-no-drag px-3 py-1.5 text-sm" onclick={clearInput}>
+              {t('translate.clearInput')}
+            </button>
+            <!-- Undo / Redo (issue #118): the source text only. Each is disabled while there is
+                 nothing to undo or redo, a fresh launch included (the history starts empty).
+                 Glyphs: Lucide "undo-2" / "redo-2" (ISC), inline like the swap button's. -->
+            <button
+              class="u-icon-btn u-no-drag"
+              onclick={applyUndo}
+              disabled={!canUndo(sourceHistory)}
+              aria-label={t('translate.undo')}
+              title={t('translate.undo')}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9 14 4 9l5-5" />
+                <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+              </svg>
+            </button>
+            <button
+              class="u-icon-btn u-no-drag"
+              onclick={applyRedo}
+              disabled={!canRedo(sourceHistory)}
+              aria-label={t('translate.redo')}
+              title={t('translate.redo')}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m15 14 5-5-5-5" />
+                <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" />
+              </svg>
+            </button>
+          </div>
+          <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
             <button
               class="u-icon-btn u-no-drag"
               onclick={() => copy(input)}

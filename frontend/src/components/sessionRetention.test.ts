@@ -95,7 +95,7 @@ describe('requested flag and Clear', () => {
   it('clearInput resets requested, input, results and edited', () => {
     const b = fnBody('clearInput');
     expect(b).toMatch(/\brequested\s*=\s*false/);
-    expect(b).toMatch(/\binput\s*=\s*''/);
+    expect(b).toMatch(/setSource\(\s*''\s*,\s*'program'\s*\)/);
     expect(b).toMatch(/\bresults\s*=\s*\{\}/);
     expect(b).toMatch(/\bedited\s*=\s*new Map/);
   });
@@ -104,7 +104,7 @@ describe('requested flag and Clear', () => {
     const i = src.indexOf('onEvent(EventInputFill');
     expect(i).toBeGreaterThan(-1);
     const body = src.slice(i, src.indexOf('\n    });', i));
-    expect(body).toMatch(/input\s*=\s*text/);
+    expect(body).toMatch(/setSource\(\s*text\s*,\s*'program'\s*\)/);
     expect(body).toMatch(/doTranslate\(\)/);
   });
 });

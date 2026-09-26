@@ -36,7 +36,7 @@ describe('translate window swap', () => {
   });
 
   it('moves the displayed result text into the input', () => {
-    expect(swap()).toMatch(/input\s*=\s*activeDisplay/);
+    expect(swap()).toMatch(/setSource\(\s*activeDisplay\s*,\s*'program'\s*\)/);
   });
 
   it('triggers the reverse translation through the existing doTranslate', () => {
@@ -58,7 +58,9 @@ describe('translate window swap', () => {
   });
 
   it('moves the result into the input only when there is text on screen', () => {
-    expect(swap()).toMatch(/if\s*\(\s*activeDisplay\s*!==\s*''\s*\)\s*input\s*=\s*activeDisplay/);
+    expect(swap()).toMatch(
+      /if\s*\(\s*activeDisplay\s*!==\s*''\s*\)\s*setSource\(\s*activeDisplay\s*,\s*'program'\s*\)/,
+    );
   });
 
   it('swapPair gates the detection on the loaded target list and engine capability (#52)', () => {
