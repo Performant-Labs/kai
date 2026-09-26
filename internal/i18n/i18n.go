@@ -21,7 +21,7 @@ const (
 
 var (
 	mu     sync.RWMutex
-	locale Locale = ZH_CN
+	locale Locale = EN_US
 
 	bundle *i18n.Bundle
 )
@@ -56,15 +56,23 @@ func localizer() *i18n.Localizer {
 }
 
 // SetLocale sets the current locale.
+//
+// "auto" follows the system language (only a Chinese system language selects Chinese); any other
+// unrecognized value is English, the default interface language.
 func SetLocale(l string) {
+	// Resolve "auto" before taking the lock: detection may run a subprocess.
+	var resolved Locale
+	switch Locale(l) {
+	case ZH_CN:
+		resolved = ZH_CN
+	case Auto:
+		resolved = systemLocaleFn()
+	default:
+		resolved = EN_US
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	switch Locale(l) {
-	case EN_US:
-		locale = EN_US
-	default:
-		locale = ZH_CN
-	}
+	locale = resolved
 }
 
 // GetLocale returns the current locale string.
@@ -103,7 +111,7 @@ func T(key string, templateData ...any) string {
 		TemplateData: data,
 	})
 	if err != nil {
-		defaultLocalizer := i18n.NewLocalizer(bundle, string(ZH_CN))
+		defaultLocalizer := i18n.NewLocalizer(bundle, string(EN_US))
 		msg, err = defaultLocalizer.Localize(&i18n.LocalizeConfig{
 			MessageID:    key,
 			TemplateData: data,
@@ -120,8 +128,8 @@ func TWithLocale(loc string, key string, templateData ...any) string {
 	mu.Lock()
 	saved := locale
 	locale = Locale(loc)
-	if locale != EN_US {
-		locale = ZH_CN
+	if locale != ZH_CN {
+		locale = EN_US
 	}
 	mu.Unlock()
 
@@ -136,15 +144,15 @@ func TWithLocale(loc string, key string, templateData ...any) string {
 
 // ResolveLocale converts a frontend locale into the backend locale.
 func ResolveLocale(loc string) string {
-	if loc == string(EN_US) {
-		return string(EN_US)
+	if loc == string(ZH_CN) {
+		return string(ZH_CN)
 	}
-	return string(ZH_CN)
+	return string(EN_US)
 }
 
 // SupportedLocales returns all supported locale codes.
 func SupportedLocales() []string {
-	return []string{string(ZH_CN), string(EN_US)}
+	return []string{string(EN_US), string(ZH_CN)}
 }
 
 // GetCurrentLocale returns the current locale string.

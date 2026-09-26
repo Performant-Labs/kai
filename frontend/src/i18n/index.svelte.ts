@@ -13,10 +13,10 @@ type ResolvedLang = typeof Lang.ZHCN | typeof Lang.ENUS;
 const dicts: Record<ResolvedLang, Dict> = { [Lang.ZHCN]: zh, [Lang.ENUS]: en };
 
 // Hold the current language in runes state so t() refreshes reactively in any component.
-let currentLang = $state<ResolvedLang>(Lang.ZHCN);
+let currentLang = $state<ResolvedLang>(Lang.ENUS);
 
 // Backwards compatibility with the old writable usage (ui.ts etc. still operate via setLocale/get).
-const localeStore = writable<ResolvedLang>(Lang.ZHCN);
+const localeStore = writable<ResolvedLang>(Lang.ENUS);
 localeStore.subscribe((l) => {
   if (l !== currentLang) currentLang = l;
 });

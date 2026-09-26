@@ -18,8 +18,8 @@ import (
 // Settings is the app settings (UI preferences only; engine config is stored independently
 // in config.db, not here).
 type Settings struct {
-	// Language is the UI language: auto / zh-CN / en-US (auto resolves from the system
-	// language).
+	// Language is the UI language: auto / zh-CN / en-US. New installs default to en-US;
+	// auto follows the system language (a Chinese system selects Chinese, anything else English).
 	// Note: this is the app's display language — separate from the translation languages
 	// (model.Language: auto/zh/en/...). Two independent systems; never mix them.
 	Language string `json:"language" mapstructure:"language"`
@@ -202,7 +202,7 @@ const (
 // DefaultSettings returns the default settings pointer
 func DefaultSettings() *Settings {
 	return &Settings{
-		Language:    string(model.LocaleAuto),
+		Language:    string(model.LocaleENUS),
 		Theme:       string(model.ThemeAuto),
 		DefaultTo:   string(model.ZH),
 		DefaultFrom: string(model.Auto),
