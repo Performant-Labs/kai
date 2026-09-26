@@ -12,6 +12,7 @@ import {
   DEFAULT_LIMITS,
   breakTyping,
   canRedo,
+  caretAfterRestore,
   canUndo,
   emptyHistory,
   record,
@@ -387,5 +388,97 @@ describe('purity: no function mutates its input', () => {
     const n = record(h, '', 'a', 'typing', T0);
     expect(n).not.toBe(h);
     expect(h.undo).toEqual([]);
+  });
+});
+
+// Issue #144 (Tester, RED): where the caret goes when undo or redo restores a text (brief
+// Decision D). Computed from the step's two texts, not recorded: the end of the changed range in
+// the restored text, as a collapsed caret. Offsets are UTF-16 code units (what selectionStart
+// uses), and the caret never lands between a high and a low surrogate.
+describe('caretAfterRestore (issue #144, Decision D)', () => {
+  it('undo of typed text: the caret sits where the typing began', () => {
+    expect(caretAfterRestore('Hello world', 'Hello')).toBe(5);
+    expect(caretAfterRestore('abc', 'ac')).toBe(1);
+  });
+
+  it('undo of a deletion: the caret sits right after the restored text', () => {
+    expect(caretAfterRestore('Hel world', 'Hello world')).toBe(5);
+  });
+
+  it('undo of Clear: the end of the text', () => {
+    expect(caretAfterRestore('', 'abc')).toBe(3);
+  });
+
+  it('redo of typing: the end of the retyped text', () => {
+    expect(caretAfterRestore('Hello', 'Hello world')).toBe(11);
+  });
+
+  it('identical texts: restored.length', () => {
+    expect(caretAfterRestore('same', 'same')).toBe(4);
+  });
+
+  it('a whole-text replacement (a swap): the end of the text', () => {
+    expect(caretAfterRestore('Hello', 'Bonjour')).toBe(7);
+  });
+
+  it('CJK: the caret sits where the typing began', () => {
+    expect(caretAfterRestore('你好世界', '你好')).toBe(2);
+  });
+
+  it('an emoji differing only in its low surrogate: 4, never 3 (inside the pair)', () => {
+    expect(caretAfterRestore('ab\u{1F600}', 'ab\u{1F601}')).toBe(4);
+  });
+
+  it('the suffix boundary never splits a pair: U+1F600 and U+10600 share their low surrogate', () => {
+    // 'x' + D83D DE00 vs 'x' + D801 DE00: the common suffix is the lone DE00, which would put the
+    // caret at 2, between D801 and DE00. The guard steps it back: the caret goes after the pair.
+    expect(caretAfterRestore('x\u{1F600}', 'x\u{10600}')).toBe(3);
+  });
+
+  it('the prefix boundary never splits a pair: undo of inserting one emoji before another', () => {
+    // shown 'X😀' (X D83D DE00), restored 'X😁😀' (X D83D DE01 D83D DE00). The raw common prefix is
+    // X D83D (2, inside 😁); stepped back to 1 before it bounds the suffix, the changed range in
+    // the restored text is 😁 at [1, 3), so the caret sits right after it, at 3.
+    expect(caretAfterRestore('X\u{1F600}', 'X\u{1F601}\u{1F600}')).toBe(3);
+  });
+
+  it('is total: lone surrogates and empty strings never throw and stay in range', () => {
+    for (const [a, b] of [
+      ['', ''],
+      ['abc', ''],
+      ['\uD83D', 'a\uDE00'],
+      ['\uDE00', '\uD83D'],
+      ['a\uD83D', 'a\uD83D\uD83D'],
+    ]) {
+      const c = caretAfterRestore(a, b);
+      expect(Number.isInteger(c)).toBe(true);
+      expect(c).toBeGreaterThanOrEqual(0);
+      expect(c).toBeLessThanOrEqual(b.length);
+    }
+  });
+
+  it('property: over random pairs the caret lies in [0, restored.length] and never splits a pair', () => {
+    // A seeded LCG, so every run checks the same pairs (no flakiness, no clock).
+    let seed = 144;
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    const alphabet = ['a', 'b', ' ', '\n', '你', '\u{1F600}', '\u{1F601}', '\u{10600}', '\u{1F400}'];
+    const word = () => Array.from({ length: rand(7) }, () => alphabet[rand(alphabet.length)]).join('');
+    const isHigh = (u: number) => u >= 0xd800 && u <= 0xdbff;
+    const isLow = (u: number) => u >= 0xdc00 && u <= 0xdfff;
+    for (let i = 0; i < 2000; i++) {
+      const common = word();
+      const shown = rand(2) ? common + word() + word() : word() + common;
+      const restored = rand(2) ? common + word() : word() + common + word();
+      const c = caretAfterRestore(shown, restored);
+      const at = `caretAfterRestore(${JSON.stringify(shown)}, ${JSON.stringify(restored)}) = ${c}`;
+      expect(Number.isInteger(c), at).toBe(true);
+      expect(c, at).toBeGreaterThanOrEqual(0);
+      expect(c, at).toBeLessThanOrEqual(restored.length);
+      const split = c > 0 && c < restored.length && isHigh(restored.charCodeAt(c - 1)) && isLow(restored.charCodeAt(c));
+      expect(split, at).toBe(false);
+    }
   });
 });

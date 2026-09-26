@@ -95,9 +95,9 @@ function sourceTextarea(): string {
   return openTags('textarea').find((t) => t.includes('bind:this={sourceEl}')) ?? '';
 }
 
-/** The result-edit textarea's opening tag (the one bound to resultEl). */
+/** The result textarea's opening tag (the one showing activeDisplay; #144 dropped resultEl). */
 function resultTextarea(): string {
-  return openTags('textarea').find((t) => t.includes('bind:this={resultEl}')) ?? '';
+  return openTags('textarea').find((t) => t.includes('value={activeDisplay}')) ?? '';
 }
 
 /** The value of an `attr={…}` attribute in a tag (brace-matched), '' when absent. */
@@ -250,10 +250,11 @@ describe('the source textarea (criterion 5, Decision B)', () => {
     expect(b).not.toContain("'program'");
   });
 
-  it('onblur ends the typing run (breakTyping) and still leaves edit mode', () => {
+  // #144 (Decision E4): there is no edit mode left to leave; blur only ends the typing run.
+  it('onblur ends the typing run (breakTyping)', () => {
     const run = handlerCode(attr(sourceTextarea(), 'onblur'));
     expect(run).toMatch(new RegExp(`\\b${local('breakTyping')}\\(`));
-    expect(run).toMatch(/editingSource\s*=\s*false/);
+    expect(run).not.toMatch(/editingSource/);
   });
 
   it('onbeforeinput cancels native historyUndo / historyRedo and applies Kai undo / redo', () => {

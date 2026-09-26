@@ -584,3 +584,65 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
 - **Assumed:** round 1's audit of criteria 1-13 still holds, because the cycle `c43a769..17c54c2` changes no production code (only the comment in `enginelimits/doc.go`).
 - **Hedged:** Advisory for O. Keep `docs/handoffs/111/` in the PR, because `docs/engine-limits.md` and `input_budget.go` point at handoff-F "Data for #119". Separately, the body of issue #119 is stale. S did not re-run the opt-in cancel checks; F re-ran them at 2:54 PM MDT on the byte-identical bridge.
 - **Evidence:** the authoritative command with `NODE_OPTIONS=--no-experimental-webstorage` exits 0 at 3:09 PM MDT (Go all ok; vitest 26 files and 276 tests). `go vet -tags enginelimits` is clean, gofmt is clean, and the key-literal grep over the cycle diff finds nothing.
+
+## #144 A (Phase 3, up-front architecture review, 2026-09-26, 4:03 PM MDT): PASS
+- **Decided:** PASS, 0 block / 4 warn. The plan deletes SpanText and both view/edit swaps. It keeps the existing source and result-edit textareas, adds the pure `caretAfterRestore` to `sourceHistory.ts`, and adds thin `showRestored` wiring. The #118 three-writer funnel is intact. Warns: (1) extend `newLoopbackService` into `newLoopbackServiceBody(t, body)` instead of copying the loopback setup for Go guard (c); (2) keep `input = step.text` inside both `applyUndo` and `applyRedo`, sharing only `showRestored`; (3) rename `leaveSourceEdit` to `endTypingRun` and reword the stale "edit mode"/"destroyed" comments (:364, :271-285, `sourceHistory.ts:3-4`); (4) `caretAfterRestore` imports nothing (not `tokenize`), and the tokenize header says "no consumer yet, kept for #18/#19". Handoff: docs/handoffs/144/handoff-A.md.
+- **Assumed:** there is no O agent in this automated path, so the Notes for O are advisory. Phase 7 will check warns 1 and 2 against F's diff.
+- **Hedged:** read-only review. No tests or builds were run. Runtime and WebKit claims (caret painting, scroll on `setSelectionRange`) are T's and the hand test's to check, not A's.
+- **Evidence:** the grep of removed symbols over `frontend/src` (7 files, all named in the brief); `TranslateWindow.svelte:2,214-221,257-269,364-391,423,1042-1060,1327-1344`; `sourceUndo.test.ts:94-116,204-214`; `service_detected_from_test.go:15-24` (hardcoded body); `service_cancel_test.go:64,136,146,198`.
+
+## #144 T (Phase 4, author tests / RED, 2026-09-26, 4:10 PM MDT): PASS
+- **Decided:** RED is valid. New: `realTextPanes.test.ts` (20 source-contract tests, AC1-AC6 and AC8's `tick`), a `caretAfterRestore` describe in `sourceHistory.test.ts` (12 tests: the brief's exact values, a totality test and a seeded 2000-pair property loop), and Go guards `TestGoogleParserKeepsParagraphBreaks`, `TestTranslateMultiEmitsParagraphsVerbatim` and `TestTranslateGoogleLoopbackKeepsParagraphs`. Updated exactly Decision E1-E5 in `flatResultPane.test.ts` and `sourceUndo.test.ts`. Acted on A warn 1: `newLoopbackService` now delegates to `newLoopbackServiceBody(t, body)`. Frontend: 32 failed / 354 passed, every failure on its target assertion (12 of them "caretAfterRestore is not a function", the accepted RED for a new export).
+- **Assumed:** AC1's grep means non-test source. The tests that forbid SpanText must name it, so the scan excludes `*.test.ts`.
+- **Hedged:** T added two exact caret cases beyond the brief, because the brief's emoji case cannot catch a removed surrogate guard: `('x\u{1F600}','x\u{10600}')→3` (suffix guard) and `('X😀','X😁😀')→3` (prefix guard, applied before the suffix cap). The Go parser test adds a synthetic both-ends-break body, because the live body cannot catch the brief's TrimSpace mutant; T confirmed that mutant fails and reverted it. E2 passes on master, since the textarea already has `flex-1`. `pnpm check` crashes on master (svelte-check with TS 7), which is pre-existing.
+- **Evidence:** docs/handoffs/144/handoff-T-red.md. A throwaway implementation of the brief went fully GREEN (386/386) and was reverted, so `git status` shows test files only. Go guards pass, and `gofmt` is clean.
+
+## #144 F (Phase 6, implement, 2026-09-26, 4:28 PM MDT)
+- **Decided:** implemented AC1-AC7 against T's RED, and changed no test. Frontend: 32 failed / 354 passed became 29 files / 386 passed; the full authoritative command exits 0.
+  - `SpanText.svelte` is deleted. Both view/edit swaps are removed and the existing textareas kept.
+  - Removed: `editingSource`, `editingResult`, `enterSourceEdit`, `enterResultEdit`, `resultEl`, the source `onfocus`, the result `onblur` and `bind:this`, the three `editingResult = false`, and the `tick` import.
+  - Both textareas carry the identical AC4 class set, `whitespace-pre-wrap` included.
+  - `leaveSourceEdit` is renamed `endTypingRun` (A warn 3).
+  - `caretAfterRestore`, with a private `splitsPair`, is added to `sourceHistory.ts`, which still has no import (A warn 4).
+  - `showRestored(shown, restored)` does its writes in the brief's order. `applyUndo`/`applyRedo` each call it before their own `input = step.text` (A warn 2).
+  - Stale "edit mode", "destroyed" and SpanText comments are reworded in `TranslateWindow.svelte`, `sourceHistory.ts` and `tokenize.ts`. The `tokenize.ts` header now says "no consumer yet, kept for #18/#19".
+  - Handoff: docs/handoffs/144/handoff-F.md.
+- **Decided:** the surrogate guard in `caretAfterRestore` checks both texts, which the brief leaves open. That takes the prefix and suffix over whole characters of both texts. It matches a restored-only guard on every well-formed pair and is the correct reading for lone surrogates: `('a😀\uD83D','a\uD83D')` gives 1, where restored-only gives 2. It is offered to T as an optional pin. `done: true`, `archChanged: true` (a component state machine and a component file removed; a new exported pure function).
+- **Assumed:** AC8's check is `tsc --noEmit`, which exits 0. `pnpm check` (svelte-check 4.7.6) crashes in its TypeScript 7 version gate before reading any source. The crash is pre-existing and T saw it on master.
+- **Hedged:**
+  - The runtime order of `showRestored` before `input =` is a guarantee, not something today's behaviour depends on. Svelte 5 flushes the `value={input}` write in a microtask, so a mounted mutant that swaps the two lines, with the caret taken from the pre-undo text, still behaves correctly. T's source-contract test pins the order.
+  - A `\r` in `input` (from a fill, a swap or a restore) makes Svelte re-write the normalized textarea value, so the caret falls back to the end, as on master.
+  - Scroll on undo, WebKit caret painting and focus behaviour of `setSelectionRange`, the zh-CN IME and the narrow-pane look are the principal's hand test (AC9).
+- **Evidence:**
+  - Throwaway real-component mount in jsdom (Svelte plugin, browser condition; Wails runtime and bindings mocked): 11 checks, all pass on the branch and 9 fail on master, each on the issue's symptom. Master's caret after Cmd+Z is `[11,11]` where the branch gives `[5,5]`; master shows no textarea after blur and no result textarea. Removing `showRestored` fails 4 of the checks.
+  - 13 source mutants, each killed by a committed test. sha256 of both files was identical before and after.
+  - `vite build`: `.whitespace-pre-wrap { white-space: pre-wrap }` is in the emitted CSS, both textareas carry the identical class, and `tokenize` is tree-shaken out of the translate bundle.
+  - The three Go paragraph guards pass. Prettier is clean.
+  - All throwaway files were deleted; `git status` shows only this cycle's files.
+
+## #144 T (Phase 7, verify GREEN + Tier 2, 2026-09-26, 4:32 PM MDT): PASS
+- **Decided:** GREEN. The authoritative command exits 0: 13 Go packages ok and frontend 29 files / 386 tests. The three Go paragraph guards pass by name, and `tsc --noEmit` is clean. F changed no test, and T repaired none. AC1-AC8 are met, and AC9 is the principal's hand test.
+- **Decided:** T declined F's optional lone-surrogate pin `('a😀\uD83D','a\uD83D')→1`. The brief does not specify it, both guard readings satisfy AC7, and it would freeze an implementation choice. This is closed, not a follow-up.
+- **Assumed:** the svelte-check crash (TS 7 version gate) is pre-existing and identical on master, so AC8's "no new check errors" rests on `tsc`.
+- **Evidence:** docs/handoffs/144/handoff-T-green.md.
+  - T's own mutants were all killed: caret always at the end (3 caret cases fail), `applyRedo` without `showRestored` (1 fails), the result textarea without `whitespace-pre-wrap` (2 fail). The files were restored and the sha256 matched.
+  - The greps found three `input =` writers (setSource, applyUndo, applyRedo) and no removed symbol in the non-test source.
+  - The IME guards are unchanged (`isComposing` early return at `:402`).
+
+## #144 A-dup (Phase 7, anti-duplication gate, 2026-09-26, 4:34 PM MDT): PASS
+- **Decided:** PASS, 0 block / 2 warn. F extended every object in the Reuse map:
+  - The source textarea and the result-edit textarea are kept, and their swaps are deleted.
+  - `caretAfterRestore` sits in `sourceHistory.ts`, which still has no import.
+  - `newLoopbackService` delegates to `newLoopbackServiceBody` (Phase 3 warn 1 closed).
+  - `input =` is still assigned only in `setSource`, `applyUndo` and `applyRedo`, and only `showRestored` is shared (Phase 3 warn 2 closed).
+  - Warns: (1) `realTextPanes.test.ts` copies the source-contract parser helpers (`braceBlock`, `fnBody`, `openTags`, `attr`) from `sourceUndo.test.ts`. The fix is to extract them to a shared `svelteSource.testutil.ts`. (2) The live gtx body is duplicated across the `engine` and `translate` test packages, which Go's unexported test scope makes acceptable.
+  - Handoff: docs/handoffs/144/handoff-A-dup.md.
+- **Assumed:** the cycle is `master..41c0df0` (F `a4ccc42` plus T-green). The brief's "in the style of sourceUndo.test.ts" did not mandate a shared helper module, so copied test helpers are a warn and not a block.
+- **Hedged:** read-only review; no build or tests run (T-green ran the suite). Test-helper duplication is scored as pattern consistency, not coverage.
+- **Evidence:** `git diff master..41c0df0 --stat` (the only production files are `TranslateWindow.svelte`, `sourceHistory.ts`, `tokenize.ts` comments and the `SpanText.svelte` deletion). `grep -n "input = " TranslateWindow.svelte` → :158 (decl), :277, :304, :312. `service_detected_from_test.go:15-27` holds the one httptest constructor. The helper comparison is `realTextPanes.test.ts:38-85` against `sourceUndo.test.ts:40-109`.
+
+## #144 S (Phase 8, spec audit, 2026-09-26, 4:36 PM MDT): PASS
+- **Decided:** PASS. AC1-AC8 are met on the branch, and AC9 is the principal's hand test (10 items in the handoff). The scope matches the brief. `service_detected_from_test.go` is the extension A warn 1 asked for. No production Go, Swift, CSS, i18n, `resultPane.ts` or `translateSession.ts` change.
+- **Assumed:** AC1's literal grep means non-test source, because the tests that forbid the name must name it (T's reading). AC8's "no new check errors" rests on `tsc`, since svelte-check crashes before reading any source (pre-existing, TS 7 gate).
+- **Hedged:** the test-helper duplication in `realTextPanes.test.ts` vs `sourceUndo.test.ts` (A-dup warn 1) and three minor overlapping assertions are advisory, not REWORK. The WebKit caret, scroll, IME, Apple break fidelity and narrow-pane look are unverifiable headlessly (#28).
+- **Evidence:** docs/handoffs/144/handoff-S.md. The authoritative command exits 0 (13 Go packages ok, 29 files / 386 tests). `tsc` is clean and `gofmt` is clean. The dead-code grep over non-test `frontend/src` is empty. The `input =` writers are only :277/:304/:312 (plus the :158 decl), and the #118 guard is unchanged. The key-literal grep over the added lines finds nothing.

@@ -62,24 +62,24 @@ describe('flat result pane (#95)', () => {
     expect(tag).toMatch(/(^|[\s"'])flex-1([\s"']|$)/); // fills the section: the textarea and the centred states size from it
   });
 
-  it('result display div and edit textarea use the source pane text classes', () => {
+  // #144 (Decision E1): the display div is gone; the one result textarea carries the source
+  // textarea's exact class set, whitespace-pre-wrap included.
+  it('the result textarea uses the source pane text classes and keeps whitespace', () => {
     const r = branch('result');
     expect(r.length).toBeGreaterThan(0);
     const ta = openTag(r, '<textarea');
-    const div = openTag(r, 'onclick={enterResultEdit}');
-    for (const tag of [ta, div]) {
-      expect(tag).toMatch(/[\s"']p-4[\s"']/);
-      expect(tag).toMatch(/\btext-base\b/);
-      expect(tag).toMatch(/\bleading-relaxed\b/);
-      expect(tag).not.toMatch(/min-h-\[120px\]/);
-    }
-    expect(div).toMatch(/\bcursor-text\b/);
-    expect(div).not.toMatch(/overflow-y-auto/); // the wrapper is the one scroller
+    expect(ta).toMatch(/[\s"']p-4[\s"']/);
+    expect(ta).toMatch(/\btext-base\b/);
+    expect(ta).toMatch(/\bleading-relaxed\b/);
+    expect(ta).not.toMatch(/min-h-\[120px\]/);
     expect(ta).toMatch(/\bmin-h-0\b/);
     expect(ta).toMatch(/\bflex-1\b/);
     expect(ta).toMatch(/\bresize-none\b/);
     expect(ta).toMatch(/\bbg-transparent\b/);
     expect(ta).toMatch(/\boutline-none\b/);
+    expect(ta).toMatch(/\bwhitespace-pre-wrap\b/);
+    const classes = (tag: string) => (tag.match(/\sclass="([^"]*)"/)?.[1] ?? '').split(/\s+/).filter(Boolean).sort();
+    expect(classes(ta)).toEqual(classes(openTag(src, 'bind:this={sourceEl}')));
   });
 
   it('phonetic and the identity notice are small muted lines above the text', () => {
@@ -102,9 +102,9 @@ describe('flat result pane (#95)', () => {
     expect(openTag(r, '{activeResult.phonetic}')).toMatch(/first:pt-4/);
   });
 
-  it('result display div fills the pane so the whole area is the click-to-edit target', () => {
+  it('the result textarea fills the pane (the whole area is the edit target)', () => {
     const r = branch('result');
-    expect(openTag(r, 'onclick={enterResultEdit}')).toMatch(/[\s"']flex-1[\s"']/);
+    expect(openTag(r, '<textarea')).toMatch(/[\s"']flex-1[\s"']/);
   });
 
   it('loading is flat: no card, keeps loading copy, dots and bar, and pads itself', () => {
@@ -118,9 +118,8 @@ describe('flat result pane (#95)', () => {
 
   it('keeps behaviour hooks and the failed / no-engine copy', () => {
     const b = body();
-    expect(b).toMatch(/enterResultEdit/);
     expect(b).toMatch(/setEdited\(activeEngine/);
-    expect(b).toMatch(/SpanText/);
+    expect(b).not.toMatch(/SpanText|enterResultEdit|editingResult/); // #144 (Decision E3)
     // #96: the failed copy is rendered through failureMessage (resultPane.ts), whose generic
     // fallback is still t('translate.failed'); the markup reads failure.headline, not the key.
     expect(b).toMatch(/failure\.headline/);

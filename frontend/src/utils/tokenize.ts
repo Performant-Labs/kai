@@ -1,6 +1,7 @@
 // Unicode tokenizer (issue #11 groundwork): splits arbitrary text into tokens with original
-// offsets, used by the two panes' hover-highlight span rendering (click behavior belongs to a
-// later issue, #18, and is deliberately not done here).
+// offsets. No consumer yet: the per-word display that used it was removed when both panes became
+// real textareas (issue #144). It is kept for #18 / #19, which map a textarea's selection to word
+// offsets: the offsets here are UTF-16 code units, the unit of selectionStart / selectionEnd.
 //
 // Design notes:
 // - Bottom-level segmentation is based on Intl.Segmenter (word granularity) — platform native,
@@ -11,7 +12,7 @@
 // - Hyphens/apostrophes between two word segments merge back into one token
 //   (state-of-the-art, don't);
 // - Invariant: joining the tokens back must equal the original text character for character
-//   (the foundation of spanText rendering and the offset system).
+//   (the foundation of the offset system).
 
 export type TokenKind = 'word' | 'punct' | 'space';
 

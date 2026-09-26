@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import SpanText from './SpanText.svelte';
   import { t, langName, engineName } from '../i18n';
   import { rootStyle } from '../stores/theme';
   import { currentLang } from '../stores/ui';
@@ -122,6 +121,7 @@
     redo as redoStep,
     canUndo,
     canRedo,
+    caretAfterRestore,
     type ChangeKind,
   } from '../utils/sourceHistory.ts';
   import {
@@ -249,29 +249,16 @@
     window.addEventListener('mouseup', up);
   }
 
-  // Word-level span rendering (issue #11 groundwork): both panes' text renders as SpanText
-  // (hover-highlighted spans), editing still goes through the textarea. Rule: pane text non-empty
-  // and not in editing state → show the span layer; clicking the span layer switches back to the
-  // textarea (word clicks themselves are deliberately inert; dictionary/alternatives are #18).
-  // Empty text is always a textarea (placeholder visible, directly typeable).
-  let editingSource = $state(true);
-  let editingResult = $state(false);
+  // Real text in both panes (issue #144): each pane shows its text in one textarea that is always
+  // there and never swapped for another view, so a selection, the caret and the scroll position
+  // stay where they are, and line breaks, blank lines and spaces show exactly as typed or as the
+  // engine returned them. Word-level interaction (dictionary, alternatives: #18 / #19) is to build
+  // on the textarea's selection. The source textarea is referenced for the undo shortcut's scope
+  // (shortcutAction) and for the caret after an undo or redo (showRestored).
   let sourceEl = $state<HTMLTextAreaElement | null>(null);
-  let resultEl = $state<HTMLTextAreaElement | null>(null);
-
-  function enterSourceEdit() {
-    editingSource = true;
-    tick().then(() => sourceEl?.focus());
-  }
-
-  function enterResultEdit() {
-    editingResult = true;
-    tick().then(() => resultEl?.focus());
-  }
 
   // Undo / redo of the source text (issue #118). Kai owns the source pane's undo completely: the
-  // browser's own undo of the textarea was lost whenever the pane left edit mode (the textarea is
-  // destroyed for the SpanText view) and never saw Clear, swap or a fill, which write the text
+  // browser's own undo of the textarea never sees Clear, swap or a fill, which write the text
   // directly. The history rules (typing runs, steps, caps) live in the pure utils/sourceHistory.ts;
   // this is only the wiring. setSource is the one writer of a change: Clear, swap, the
   // EventInputFill handler and the textarea's input all record through it, and applyUndo /
@@ -290,12 +277,30 @@
     input = next;
   }
 
-  // Undo / redo the last step. Setting the textarea's value puts the caret at the end of the text
-  // (Kai does not track the selection); with nothing to undo or redo, nothing happens.
+  // Puts a text that undo or redo restores into the source textarea itself, before `input` takes it
+  // (issue #144). Any write of a textarea's value leaves the caret at the end of the text, so this
+  // one write places it: collapsed at caretAfterRestore (where the undone edit was), with the
+  // scroll position kept. Svelte's own write that follows finds the textarea already holding the
+  // text and skips it, so the caret stands. It never moves the focus: an undo from the button
+  // leaves the focus on the button, and typing resumes at the caret once the user is back in the
+  // textarea.
+  function showRestored(shown: string, restored: string) {
+    const el = sourceEl;
+    if (!el) return;
+    const caret = caretAfterRestore(shown, restored);
+    const top = el.scrollTop;
+    el.value = restored;
+    el.setSelectionRange(caret, caret);
+    el.scrollTop = top;
+  }
+
+  // Undo / redo the last step: the restored text goes into the textarea first (showRestored), then
+  // into `input`. With nothing to undo or redo, nothing happens.
   function applyUndo() {
     const step = undoStep(sourceHistory, input);
     if (!step) return;
     sourceHistory = step.history;
+    showRestored(input, step.text);
     input = step.text;
   }
 
@@ -303,6 +308,7 @@
     const step = redoStep(sourceHistory, input);
     if (!step) return;
     sourceHistory = step.history;
+    showRestored(input, step.text);
     input = step.text;
   }
 
@@ -361,17 +367,16 @@
     else applyRedo();
   }
 
-  // Leaving the textarea ends edit mode and the typing run: typing after coming back is a new step.
-  function leaveSourceEdit() {
-    editingSource = false;
+  // Leaving the textarea ends the typing run: typing after coming back is a new step.
+  function endTypingRun() {
     sourceHistory = breakTyping(sourceHistory);
   }
 
   // Which history action a key press asks for: Cmd+Z / Ctrl+Z undo, Shift+Cmd+Z / Ctrl+Shift+Z /
   // Ctrl+Y redo, never with Alt; null for any other key. Also null when the press belongs to another
-  // editable element than the source textarea: the result edit keeps its native undo, and a select
-  // or any other field keeps its keys. Anywhere else (the source textarea, a button, the page) the
-  // shortcut is Kai's, so it still works after Clear, Undo or Swap took the focus.
+  // editable element than the source textarea: the result textarea keeps its native undo, and a
+  // select or any other field keeps its keys. Anywhere else (the source textarea, a button, the
+  // page) the shortcut is Kai's, so it still works after Clear, Undo or Swap took the focus.
   function shortcutAction(e: KeyboardEvent): 'undo' | 'redo' | null {
     if (e.altKey || typeof e.key !== 'string') return null;
     const pressed = e.key.toLowerCase();
@@ -573,7 +578,6 @@
     setLastUsedEngine(name);
     // Engine switch: discard the previous engine's manual edit; the new engine starts from its own stored result.
     edited = resetEdits(edited, activeEngine, name, results);
-    editingResult = false;
   }
 
   onMount(() => {
@@ -784,7 +788,6 @@
     // A new fan-out round starts blank: the previous batch's edits are meaningless for the new
     // round and are discarded with it.
     edited = new Map();
-    editingResult = false;
     // The request is named here, before the backend is called (issue #109). A request that is
     // still open is replaced: the backend cancels it silently (a hotkey fill during a running
     // translation does this), and its late events are ignored because they carry the old id.
@@ -873,7 +876,6 @@
     awaiting = false;
     loading = false;
     edited = new Map();
-    editingResult = false;
   }
 </script>
 
@@ -1039,27 +1041,18 @@
             </button>
           </div>
         </div>
-        {#if input === '' || editingSource}
-          <!-- Controlled (issue #118): every edit goes through setSource, so it is recorded for
-               Undo; a native undo or redo is cancelled and Kai's history walked instead. -->
-          <textarea
-            bind:this={sourceEl}
-            class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
-            value={input}
-            oninput={onSourceInput}
-            onbeforeinput={onSourceBeforeInput}
-            onfocus={() => (editingSource = true)}
-            onblur={leaveSourceEdit}
-            placeholder={t('translate.placeholder')}></textarea>
-        {:else}
-          <!-- Non-editing state: word-level span rendering (hover highlight, no click behavior — #18) -->
-          <div
-            class="min-h-0 flex-1 cursor-text overflow-y-auto p-4 text-base leading-relaxed"
-            onclick={enterSourceEdit}
-          >
-            <SpanText text={input} />
-          </div>
-        {/if}
+        <!-- Controlled (issue #118): every edit goes through setSource, so it is recorded for
+             Undo; a native undo or redo is cancelled and Kai's history walked instead. Always this
+             one element (issue #144): it is never swapped for another view, so the caret and the
+             scroll position survive leaving it, and undo writes into it in place. -->
+        <textarea
+          bind:this={sourceEl}
+          class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none whitespace-pre-wrap"
+          value={input}
+          oninput={onSourceInput}
+          onbeforeinput={onSourceBeforeInput}
+          onblur={endTypingRun}
+          placeholder={t('translate.placeholder')}></textarea>
         <!-- Footer: Clear, Undo and Redo on the left; Copy, Cancel and Translate on the right. The
              row wraps when the pane is narrow (issue #118, the approved wireframe's question 7): the
              right group then takes its own row, right-aligned, and nothing is clipped. -->
@@ -1303,12 +1296,16 @@
           {:else if pane === 'result' && activeResult}
             <!-- The active engine has a (non-empty) result: editable flat text (design §5) with the
                source pane's text look (issue #95: no card, no engine badge; the dropdown names the
-               engine). Edits write back to edited[activeEngine]; displayed text = edited ?? result.
-               On engine switch edited is discarded wholesale and the new engine starts from its own
-               result. The activeResult check is redundant at runtime (a result for the active
-               engine implies it); it only narrows the type for the markup below. The phonetic,
-               cancelled and identity notes are small muted lines above the text: whichever
-               comes first adds the top inset (first:pt-4), the text below brings its own p-4. -->
+               engine). The text is one real textarea that is always there (issue #144): selecting,
+               clicking and typing act on it in place, and it shows the engine's string exactly,
+               line breaks and blank lines included. It fills the pane, as the source textarea does.
+               Edits write back to edited[activeEngine] when they are committed (the change event,
+               on leaving the textarea); displayed text = edited ?? result. On engine switch edited
+               is discarded wholesale and the new engine starts from its own result. The
+               activeResult check is redundant at runtime (a result for the active engine implies
+               it); it only narrows the type for the markup below. The phonetic, cancelled and
+               identity notes are small muted lines above the text: whichever comes first adds the
+               top inset (first:pt-4), the text below brings its own p-4. -->
             {#if activeResult.phonetic}
               <span class="u-muted px-4 text-xs first:pt-4">{activeResult.phonetic}</span>
             {/if}
@@ -1324,24 +1321,11 @@
                 {t('translate.identity')}
               </p>
             {/if}
-            {#if editingResult || activeDisplay === ''}
-              <textarea
-                bind:this={resultEl}
-                class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
-                value={activeDisplay}
-                onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
-                onblur={() => (editingResult = false)}
-                placeholder={t('translate.noResult')}></textarea>
-            {:else}
-              <!-- Non-editing state: word-level span rendering (hover highlight); click to edit (#9's editable semantics kept).
-                 flex-1 makes the whole area below the notes the click target, as in the source pane. -->
-              <div
-                class="flex-1 cursor-text p-4 text-base leading-relaxed"
-                onclick={enterResultEdit}
-              >
-                <SpanText text={activeDisplay} />
-              </div>
-            {/if}
+            <textarea
+              class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none whitespace-pre-wrap"
+              value={activeDisplay}
+              onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
+              placeholder={t('translate.noResult')}></textarea>
           {:else if pane === 'cancelled'}
             <!-- The user cancelled the active engine and it produced nothing (issue #109): muted
                text, never the failure copy or the danger colour. There is no retry button either:

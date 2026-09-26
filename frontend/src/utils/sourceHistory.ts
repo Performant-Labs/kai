@@ -1,17 +1,18 @@
 // The undo/redo history of the translate window's source text (issue #118).
 //
-// The source pane had no dependable undo. The browser's own undo of the textarea was lost whenever
-// the pane left edit mode (the textarea is destroyed for the SpanText view), and Clear, swap and a
-// hotkey or clipboard fill wrote the text directly, so the native undo never saw them. Kai now owns
-// the undo of the source text completely: every change is recorded here, and the window's Undo and
-// Redo (the buttons, Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, Ctrl+Y) walk back and forth through it.
+// The browser's own undo of the source textarea cannot be relied on: Clear, swap and a hotkey or
+// clipboard fill write the text directly, so the native undo never sees them. Kai owns the undo of
+// the source text completely: every change is recorded here, and the window's Undo and Redo (the
+// buttons, Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, Ctrl+Y) walk back and forth through it.
 //
 // This module is the pure half: the history value and total functions over it. Every function
 // returns a new value and mutates nothing, so assigning the result to a Svelte $state is the only
 // reactivity needed. Pure function of plain values, like translateSession.ts / translateProgress.ts:
 // no bindings import, no DOM, no clock (the caller passes `now`). TranslateWindow.svelte owns the
 // wiring: one writer of the text (setSource) records every change, and applyUndo / applyRedo are
-// the only other writers.
+// the only other writers. caretAfterRestore (issue #144) is the caret rule for a restored step:
+// where the caret goes when undo or redo puts a text back, computed from the two texts, so a step
+// stays a plain string.
 //
 // Steps. A step is a snapshot of the whole text before a change:
 // - typing coalesces: a run of typing records is one step. The run ends at the first pause of
@@ -197,6 +198,57 @@ export function redo(
     },
     text,
   };
+}
+
+// Whether offset `at` of `text` falls between the two halves of a surrogate pair: a high surrogate
+// before it and a low one at it. Never at either end of the text.
+function splitsPair(text: string, at: number): boolean {
+  if (at <= 0 || at >= text.length) return false;
+  const before = text.charCodeAt(at - 1);
+  const after = text.charCodeAt(at);
+  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+}
+
+/**
+ * Where the caret goes when undo or redo replaces `shown` (the text on screen) with `restored`
+ * (issue #144): the end of the changed range in the restored text, as a collapsed caret, in UTF-16
+ * code units (the unit of a textarea's selectionStart). The changed range is what is left of
+ * `restored` once the longest common prefix and the longest common suffix of the two texts are
+ * taken off; the suffix is capped so that it never overlaps the prefix.
+ *
+ * - The undo of typed text puts the caret where the typing began (none of it is in `restored`).
+ * - The undo of a deletion, or of text typed over a selection, puts it right after the restored
+ *   text.
+ * - The undo of Clear or of a swap, and the redo of typing, put it at the end of the new text.
+ * - Identical texts give `restored.length`.
+ *
+ * Both ends are taken over whole characters: a prefix that would end inside a surrogate pair of
+ * either text is stepped back before it caps the suffix, and a suffix that would start inside one
+ * is shortened, so the caret never lands between a high and a low surrogate. Total: any two
+ * strings, lone surrogates included, give an integer in [0, restored.length].
+ *
+ * Where the ends of a typed run repeat the text next to it ('a' → 'aa'), the prefix and suffix
+ * cannot tell which copy was typed, and the caret lands one equivalent character away.
+ */
+export function caretAfterRestore(shown: string, restored: string): number {
+  const shorter = Math.min(shown.length, restored.length);
+  let prefix = 0;
+  while (prefix < shorter && shown.charCodeAt(prefix) === restored.charCodeAt(prefix)) {
+    prefix += 1;
+  }
+  if (splitsPair(shown, prefix) || splitsPair(restored, prefix)) prefix -= 1;
+  let suffix = 0;
+  while (
+    suffix < shorter - prefix &&
+    shown.charCodeAt(shown.length - 1 - suffix) ===
+      restored.charCodeAt(restored.length - 1 - suffix)
+  ) {
+    suffix += 1;
+  }
+  if (splitsPair(shown, shown.length - suffix) || splitsPair(restored, restored.length - suffix)) {
+    suffix -= 1;
+  }
+  return restored.length - suffix;
 }
 
 /** Whether there is a step to undo (the Undo button is disabled otherwise). */

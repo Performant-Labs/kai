@@ -14,8 +14,14 @@ import (
 // value of the gtx detected-language slot (e.g. `"es"` or `null`).
 func newLoopbackService(t *testing.T, detected string) *Service {
 	t.Helper()
+	return newLoopbackServiceBody(t, `[[["Hola","Hello",null,null,1]],null,`+detected+`]`)
+}
+
+// newLoopbackServiceBody is newLoopbackService with the whole gtx response body given (#144).
+func newLoopbackServiceBody(t *testing.T, body string) *Service {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`[[["Hola","Hello",null,null,1]],null,` + detected + `]`))
+		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
 	reg := engine.NewRegistry()
