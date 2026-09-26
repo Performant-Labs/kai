@@ -1,12 +1,15 @@
 -- httplog database migration script (a dedicated migration file, separate from schema.sql)
 -- Used only for "store compatibility": appending new columns / indexes to the existing
 -- http_log table.
--- Table creation itself lives in schema.sql; this file only holds ALTERs / extra indexes.
+-- Table creation itself lives in schema.sql, and this file only holds ALTERs / extra indexes.
 -- Note: SQLite has no `ADD COLUMN IF NOT EXISTS`, so a repeated ALTER reports a
 -- "duplicate column" error. At runtime (httplog.go's Migrate) that error is ignored to stay
 -- idempotent — a second launch / already-migrated store simply skips, without error.
 -- When adding new columns later, append one ALTER TABLE line here — no Go code changes.
+-- IMPORTANT: the loader splits this whole file on the semicolon character and runs each piece
+-- as its own statement, so a comment in this file must never contain one. A piece that starts
+-- mid-sentence fails to parse, and then the request-log store cannot be initialized at all.
 
--- Example (current schema matches the CREATE TABLE; no missing columns yet; format kept for
--- future extensions):
--- ALTER TABLE http_log ADD COLUMN new_field TEXT DEFAULT '';
+-- Example (the current schema matches the CREATE TABLE and has no missing columns yet, so this
+-- only shows the format for future extensions). A real statement ends with a semicolon:
+-- ALTER TABLE http_log ADD COLUMN new_field TEXT DEFAULT ''
