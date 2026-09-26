@@ -11,7 +11,7 @@
 //
 // nameOf (language code → display name) is injected by the caller (i18n's langName), like
 // detectedLang.ts, so this stays free of the generated bindings and vitest can cover it directly.
-// Both windows share it: the translate window reads its own result card, the screenshot window
+// Both windows share it: the translate window reads its own result pane, the screenshot window
 // reads each translation card.
 
 /**

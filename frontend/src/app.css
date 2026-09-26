@@ -568,15 +568,6 @@ body {
     }
   }
 
-  .u-result-card {
-    background: var(--app-card);
-    border: 1px solid var(--app-border);
-    border-radius: 0.75rem;
-    border-top: 3px solid var(--app-accent);
-    padding: 1rem;
-    color: var(--app-fg);
-  }
-
   /* Translating marquee: base track with a highlight band sweeping across */
   .kai-loading-bar {
     position: relative;

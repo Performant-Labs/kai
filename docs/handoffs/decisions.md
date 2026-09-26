@@ -261,6 +261,30 @@
 - Hedged (warns): small restated tail rule between statusDot and paneState; duplicated dot title/aria-label ternary grew to 4 arms; `as unknown as` seed cast widens the pre-existing PaneResult/TranslateResult hole.
 - Evidence: git diff fe629dc..270da9f; grep of non-test `localStorage` and `statusDots(` callers in frontend/src.
 
+## #95 D (Design, 2026-09-26)
+- Decided: Mode (a), a new low-fi HTML wireframe (no prior design asset existed for this surface). Six frames, one per `paneState` value, each pairing the result pane with the source pane so the flattened look can be checked side by side; a seventh "before" frame shows the current `u-result-card` look once, for contrast only.
+- Decided: wireframe palette pulled from the real `frontend/src/app.css:7-32` custom properties rather than an invented mockup palette; icons are boxed Unicode glyphs, no hand-authored SVG paths.
+- Assumed: phonetic renders above the flipped-target notice (brief doesn't pin their relative order); the edit textarea fills the pane height (no fixed `min-h-[120px]`), per the brief's own risk note. Both flagged as open questions for O/principal approval, not blocking.
+- Hedged: validated headlessly only (Python `html.parser`, well-formed markup, no parse errors) — never rendered in a browser, so the claim that result text visually lines up with source text is argued from shared CSS classes, not confirmed by eye. Disclosed in the handoff per the role's "if you could not look at it, say so."
+- Evidence: docs/handoffs/95/wireframe.html, docs/handoffs/95/handoff-D.md. Not self-approved — approval left to the principal via O before T-red starts.
+
+## #95 A (Phase 3, up-front plan review, 2026-09-26): PASS
+- Verdict PASS, 0 block / 5 warn. Handoff: docs/handoffs/95/handoff-A.md (brief blob 6e514f6).
+- Decided: The plan is a presentation-only in-place edit of the result-pane markup plus removal of `.u-result-card`, which only `TranslateWindow.svelte` uses. The new test follows the source-contract pattern. There is no parallel path and no new module. `engineName` stays in use through the dropdown.
+- Assumed: T and F apply the warn defaults because O has recorded no ruling. The defaults: move `p-4` off the pane body wrapper (line 901) onto each branch, with `px-4` on the phonetic and flip lines. Keep one scroller, the wrapper, and put no `overflow-y-auto` on the result display div. Make the wrapper `flex flex-col` and give the textarea `min-h-0 flex-1`. Reword the "card" comments. Leave the #9 design doc as history.
+- Hedged: AC7 as written passes on a double-padded layout. T should pin that the wrapper has no `p-4`. The visual alignment is still confirmed only by the principal's hand test.
+- Evidence: TranslateWindow.svelte:752-767, 815, 901-990, 106; app.css:571; resultPane.ts:13-17, 54-69; en-US.ts:55-58. Grep for `u-result-card` (frontend/src: app.css and TranslateWindow only).
+- For O (principal's relayed request to file an issue for more specific failure messages): `failureMessage` (#42) exists but is imported and never called in TranslateWindow. The window also never receives failure payloads, because the backend sends no event for a failed engine. The new issue needs a backend event change and new error kinds (missing key, quota, service down), reusing `failureMessage`. See the handoff's Notes for O.
+
+## #95 A (Phase 3, re-run, 2026-09-26): PASS
+- Decided: PASS confirmed, 0 block / 5 warn, same findings as the first Phase 3 entry. docs/handoffs/95/handoff-A.md gained a re-verification line.
+- Assumed: warn defaults 1-3 (wrapper `p-4` moved onto the branches, one scroller, `flex flex-col` wrapper with textarea `min-h-0 flex-1`) still apply to T and F, because O has recorded no ruling.
+- Hedged: the visual alignment has still not been seen. It is argued from the classes and left to the principal's hand test.
+- Evidence: brief blob 6e514f6 unchanged. `git diff --stat d591857..HEAD` is docs only. The `u-result-card` grep in frontend/src returns app.css:571 and TranslateWindow.svelte:925,946. TranslateWindow.svelte:752-767 and 901 were re-read.
+
+## #95 S (Phase 9, spec audit, 2026-09-26): REWORK
+- Decided: REWORK, 1 test-only change for T: flatResultPane test 3's `/\bflex\b/` passes on `flex-1`/`flex-col`, so a wrapper without `display:flex` (edit textarea collapses) survives. Production code meets all ACs. Handoff: docs/handoffs/95/handoff-S.md.
+- Hedged: visual alignment and 16px notes gap left to the principal's hand test.
 ## #83 A (Phase 3, up-front plan review, 2026-09-26): PASS
 - Verdict PASS, 0 block / 5 warn. Handoff: docs/handoffs/83/handoff-A.md (brief commit 27ce5cc, base d591857).
 - Decided: `input_budget.go` is a sibling table to `languageRegistry` with the same map + `(value, bool)` shape, in the same layer, stdlib-only. The exhaustiveness test reuses `translatorNames()`. The probe is a separate, tag-gated leaf package (`internal/engine/enginelimits`) importing `engine` and `translate` with no cycle (translate -> engine only). It goes through `NewApple()` / `Translator`. No parallel path.

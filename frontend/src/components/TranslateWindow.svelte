@@ -307,7 +307,7 @@
     return label ?? langName(value);
   }
   // Same-language guard feedback (issue #44): when the backend flipped this result's target (the
-  // detected source already was the requested target), the result card says which language it was
+  // detected source already was the requested target), the result pane says which language it was
   // really translated into. Display only: the select keeps showing the requested target, and
   // nothing here assigns toLang / fromLang, persists, teaches or retranslates (both selects render
   // toLang, so writing it would make the flip sticky, and #13 owns the swap semantics).
@@ -381,7 +381,7 @@
       // turned into a failed pane.
     });
     // Broadcast after engines are added/removed or enabled/disabled in settings: re-fetch the
-    // engine list so the translate window's result cards sync to the latest state (otherwise
+    // engine list so the translate window's result pane syncs to the latest state (otherwise
     // enabled/disabled engines never refresh and the old list sticks).
     const offEngines = onEvent(EventEnginesChanged, () => {
       loadEngines();
@@ -811,7 +811,7 @@
         onmousedown={startDividerDrag}
       ></div>
 
-      <!-- Right pane: results (issue #9's active-engine single card + engine dropdown + status dots, migrated as-is) -->
+      <!-- Right pane: results (issue #9's active-engine pane: engine dropdown + status dots + the active engine's flat result text, #95) -->
       <section class="u-card u-card--panel flex min-w-0 flex-1 flex-col overflow-hidden">
         <div class="u-border-b flex items-center justify-between px-3 py-2">
           <span class="u-label">{t('translate.result')}</span>
@@ -898,12 +898,14 @@
             {/if}
           </div>
         </div>
-        <div class="min-h-0 flex-1 overflow-y-auto p-4">
+        <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <!-- One value decides the pane (paneState, issue #81): no-engine, loading, result, failed,
              or idle (nothing requested yet, or just cleared), which has no branch below and stays
-             blank on purpose. -->
+             blank on purpose. This body adds no padding of its own (issue #95): as in the source
+             pane, each branch owns its inset, so a line of result text lines up with a line of
+             source text. -->
           {#if pane === 'no-engine'}
-            <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <div class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
               <svg
                 class="u-muted"
                 width="40"
@@ -921,70 +923,57 @@
               <span class="u-muted text-sm">{t('translate.noActiveEngine')}</span>
             </div>
           {:else if pane === 'loading'}
-            <!-- The active engine is still in flight (no result yet): loading placeholder (kai-dots + kai-loading-bar). -->
-            <div class="u-result-card">
-              <div class="mb-2 flex items-center gap-2">
-                <span
-                  class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
-                >
-                  {engineName(activeEngine)}
-                </span>
-              </div>
-              <div class="flex flex-col gap-2">
-                <p class="u-muted text-base leading-relaxed">
-                  {t('common.loading')}<span class="kai-dots">{'.'.repeat(dotCount)}</span>
-                </p>
-                <div class="kai-loading-bar" aria-hidden="true"></div>
-              </div>
+            <!-- The active engine is still in flight (no result yet): flat loading placeholder
+               (kai-dots + kai-loading-bar); the engine dropdown above names the engine. -->
+            <div class="flex flex-col gap-2 p-4">
+              <p class="u-muted text-base leading-relaxed">
+                {t('common.loading')}<span class="kai-dots">{'.'.repeat(dotCount)}</span>
+              </p>
+              <div class="kai-loading-bar" aria-hidden="true"></div>
             </div>
           {:else if pane === 'result' && activeResult}
-            <!-- The active engine has a (non-empty) result: editable single card (design §5). Edits
-               write back to edited[activeEngine]; displayed text = edited ?? result. On engine switch
-               edited is discarded wholesale and the new engine starts from its own result. The
-               activeResult check is redundant at runtime (a result for the active engine implies it);
-               it only narrows the type for the card. -->
-            <div class="u-result-card">
-              <div class="mb-2 flex items-center gap-2">
-                <span
-                  class="rounded-full bg-[var(--app-accent)] px-2 py-0.5 text-xs font-medium text-[var(--app-accent-fg)]"
-                >
-                  {engineName(activeEngine)}
-                </span>
-                {#if activeResult.phonetic}
-                  <span class="u-muted text-xs">{activeResult.phonetic}</span>
-                {/if}
+            <!-- The active engine has a (non-empty) result: editable flat text (design §5) with the
+               source pane's text look (issue #95: no card, no engine badge; the dropdown names the
+               engine). Edits write back to edited[activeEngine]; displayed text = edited ?? result.
+               On engine switch edited is discarded wholesale and the new engine starts from its own
+               result. The activeResult check is redundant at runtime (a result for the active
+               engine implies it); it only narrows the type for the markup below. The phonetic and
+               flipped-target notes are small muted lines above the text: whichever comes first adds
+               the top inset (first:pt-4), the text below brings its own p-4. -->
+            {#if activeResult.phonetic}
+              <span class="u-muted px-4 text-xs first:pt-4">{activeResult.phonetic}</span>
+            {/if}
+            {#if flippedLabel}
+              <!-- Same-language guard (issue #44): this result went to a different target than
+                 the one selected; say which. Display only, never changes the select. -->
+              <p class="u-muted px-4 text-xs first:pt-4" data-testid="flipped-target">
+                {t('translate.flippedTo', { lang: flippedLabel })}
+              </p>
+            {/if}
+            {#if editingResult || activeDisplay === ''}
+              <textarea
+                bind:this={resultEl}
+                class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
+                value={activeDisplay}
+                onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
+                onblur={() => (editingResult = false)}
+                placeholder={t('translate.noResult')}></textarea>
+            {:else}
+              <!-- Non-editing state: word-level span rendering (hover highlight); click to edit (#9's editable semantics kept).
+                 flex-1 makes the whole area below the notes the click target, as in the source pane. -->
+              <div
+                class="flex-1 cursor-text p-4 text-base leading-relaxed"
+                onclick={enterResultEdit}
+              >
+                <SpanText text={activeDisplay} />
               </div>
-              {#if flippedLabel}
-                <!-- Same-language guard (issue #44): this result went to a different target than
-                   the one selected; say which. Display only, never changes the select. -->
-                <p class="u-muted mb-2 text-xs" data-testid="flipped-target">
-                  {t('translate.flippedTo', { lang: flippedLabel })}
-                </p>
-              {/if}
-              {#if editingResult || activeDisplay === ''}
-                <textarea
-                  bind:this={resultEl}
-                  class="min-h-[120px] resize-none bg-transparent p-4 text-base leading-relaxed outline-none"
-                  value={activeDisplay}
-                  onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
-                  onblur={() => (editingResult = false)}
-                  placeholder={t('translate.noResult')}></textarea>
-              {:else}
-                <!-- Non-editing state: word-level span rendering (hover highlight); click to edit (#9's editable semantics kept) -->
-                <div
-                  class="min-h-[120px] cursor-text text-base leading-relaxed"
-                  onclick={enterResultEdit}
-                >
-                  <SpanText text={activeDisplay} />
-                </div>
-              {/if}
-            </div>
+            {/if}
           {:else if pane === 'failed'}
             <!-- A translation was requested and the active engine failed (absent from results with
                loading already cleared) or returned an empty result: failed state (design §5). No
                retry, no retry button — retrying means the user presses the translate button again
                (re-running the whole fan-out). Never shown for an idle window (issue #81). -->
-            <div class="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <div class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
               <span class="text-sm" style="color: var(--app-danger)">{t('translate.failed')}</span>
             </div>
           {/if}

@@ -175,8 +175,8 @@ export interface PaneStateArgs {
  * The two tests on results are deliberately not the same, exactly as the template's chain always
  * was: loading looks at entry presence (an error payload that arrives while loading ends the
  * wait, so it falls through to failed), result looks at a non-empty `.result`. Manual edits are
- * not an input: an edit exists only inside a rendered result card, so an edit without a result
- * never selects `result` (the card would have nothing to render).
+ * not an input: an edit exists only inside a rendered result, so an edit without a result
+ * never selects `result` (there would be nothing to render).
  */
 export function paneState({
   hasEngines,
