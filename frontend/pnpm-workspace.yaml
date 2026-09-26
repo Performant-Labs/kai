@@ -2,3 +2,10 @@ allowBuilds:
   esbuild: true
 onlyBuiltDependencies:
   - esbuild
+
+# Do not let a machine's pnpm switch itself to the version pinned in package.json's
+# "packageManager". When it does (e.g. pnpm 11 switching to 12.5.1), the first
+# `pnpm install` rewrites frontend/pnpm-lock.yaml with an unrelated `@pnpm/exe` block, and the
+# pipeline's first `git add -A` commit then carries it. With `ignore`, install leaves the
+# lockfile alone under any pnpm version. CI installs the pinned pnpm itself, so it is unaffected.
+pmOnFail: ignore
