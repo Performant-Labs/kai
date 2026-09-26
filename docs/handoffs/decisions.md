@@ -198,3 +198,37 @@
 - Verdict PASS, 0 block / 3 warn. Handoff: docs/handoffs/58/handoff-A-dup.md. Diff b4d9fb6..24f0f9c.
 - Decided: F relocated `Dict` rather than creating a parallel contract. The old `typeof zh` definition is deleted, `keys.ts` is the single definition, all three consumers import from `./keys`, and nothing re-exports it. The Go parity test reuses the `localesFS` embed. It adds no parallel merge/read path, and its test-local `flattenKeys` does not duplicate `error.go` `flatten`, which serves a different concern.
 - Warns: (1) `keys.ts` is a deliberate third copy of the key tree; M5/M6 drift is caught only by tsc. (2) The stray `frontend/pnpm-lock.yaml` +25 lines from Brief commit 9cca47c should be restored to master before the PR. (3) T's acceptance-1 regex misses re-export forms.
+
+## #13 A (Phase 3, up-front plan review, 2026-09-25): PASS
+- Verdict PASS, 0 block / 4 warn. Handoff: docs/handoffs/13/handoff-A.md (brief at 670a41f).
+- Decided: the plan extends existing objects and adds no parallel path. `swapLangs.ts` follows the pure injected-predicate helper pattern (`detectedLang.ts`, `flippedTarget.ts`, `targetCapability.ts`). The reverse translation reuses `doTranslate()`, following the `EventInputFill` precedent at `TranslateWindow.svelte:273-277`. Persistence reuses `persistLangs()`. The never-teach rule is kept, and the source-contract tests follow `translateWindowGear.test.ts`.
+- Assumed: pinned-path semantics stay as the brief wrote them (the button is always enabled when `from` is pinned). `loading` does not disable the swap. O has recorded no ruling on either point.
+- Hedged (warns for F/T): (1) `isSelectable` should compose `targetLanguages` membership with `!isTargetDisabled(allEngines, c)` (#52), so the swap never lands on a disabled target option. (2) Compute the helper result once as a `$derived` and use it for both the button's `disabled` and `swap()`. (3) Late events from the previous fan-out can merge into the reversed round. This race predates #13; note it and do not fix it here. (4) The file name `swapLangs.ts` is close to ScreenshotWindow's local `swapLangs`; add a clarifying module header.
+- Evidence: TranslateWindow.svelte:209, 220-231, 267-277, 350-362, 411-441, 502-536; langLearn.test.ts:60-73; utils/targetCapability.ts.
+
+## #13 T-red (Phase 4, 2026-09-25)
+- Decided: valid RED. swapLangs.test.ts (10 unit cases) fails on missing module; swapWindow.test.ts fails 5 of 6 on real assertions.
+- Assumed: source-contract regexes (`input = activeDisplay`, `doTranslate()` inside swap body) are the accepted pin given no render harness (#28).
+- Hedged: the "never teaches" case passes pre-feature (guard only). Helper-use regex also accepts a `swapPair` name.
+- Evidence: docs/handoffs/13/handoff-T-red.md.
+
+## #13 F (Phase 6, 2026-09-25)
+- **Decided:** implemented against T's RED with two production files. New pure `frontend/src/utils/swapLangs.ts` (`swapLanguages`, plain-string in and out, header names #13 and disowns ScreenshotWindow's local `swapLangs()`). In `TranslateWindow.svelte` one `swapPair` `$derived` now feeds both the button's `disabled` and `swap()`, and `swap()` is: no-op on null, assign the pair, `if (activeDisplay !== '') input = activeDisplay`, `persistLangs()`, `doTranslate()`. The hardcoded `TRANSLATE_LANG.ZH` fallback is gone. No i18n, CSS or backend change.
+- **Decided:** A's warns 1, 2 and 4 applied, because decisions.md holds no O ruling on A's Notes for O. `isSelectable` is `targetLanguages.some(...) && !isTargetDisabled(allEngines, code)` (list membership plus the #52 capability gate; the helper has no engine knowledge). One derivation serves markup and handler. The module header disambiguates the name from ScreenshotWindow's `swapLangs()`.
+- **Decided (constraint found):** `swap()` destructures (`const { from, to } = pair`), because `toLang = pair.to` matches the existing display-only regex in `flippedNotice.test.ts` and fails it (verified on a scratch copy). A comment in `swap()` records why.
+- **Assumed:** the pinned path stays ungated and `loading` does not disable the button (A's defaults, no O ruling). `to` is always a concrete language (the brief's invariant); a hand-edited `default_to: "auto"` is not handled. `archChanged: true` under the "when in doubt" rule: literally a new module with a new exported interface, so Phase 7 should look at it. Its weight is low (one new leaf util in the existing pure-helper layer, one caller, no dependency direction changed, and A approved the module in Phase 3). O can downgrade it.
+- **Hedged:** (1) `svelte-check` cannot run here (TS 7 without TS 6, predates this story), so the svelte-side expressions were checked with a scratch `tsc` file (its negative control fails as expected) and a dev `vite build`. (2) The shipped contract is still T's source-contract tests. To see the reactive behavior they cannot, I ran a throwaway jsdom mount of the real component with mocked bindings (17 checks, all pass; 9 of the first 14 fail on HEAD) and a 16-mutant pass on scratch copies. Both live in the scratchpad, are not staged and are not part of the change. The survivors are gaps in T's suite (component predicate composition, pinned path not consulting `isSelectable`, AC3's "no result: input unchanged") and are listed in handoff-F for T. (3) A warn 3 (late events from the previous round) is not fixed: pressing swap mid-flight re-sends the unchanged input with the exchanged pair, which is AC3 taken literally. Open for O only if the hand test hits it.
+- **Evidence:** docs/handoffs/13/handoff-F.md (verbatim output). RED reproduced first (`5 failed | 1 passed`), then targeted GREEN (5 files, 35 tests), then the full authoritative command exit 0: Go 11 packages ok, vitest 17 files / 121 tests. `tsc --noEmit` exit 0, `prettier --check` clean on the new file (the svelte file's one pre-existing violation is unchanged), dev `vite build` ok (197 modules). Model: Sonnet 5 (`claude-sonnet-5`), single call, no outside model.
+
+## [T] #13 Phase 7 (GREEN)
+- Decided: PASS; repaired 4 test gaps myself (tests only).
+- Assumed: F's jsdom probe stands in for AC5 given no render harness.
+- Hedged: none.
+- Evidence: full suite 125 passed; two scratch mutants now caught; tsc 0.
+
+## #13 A-dup (Phase 7, anti-duplication gate, 2026-09-25): PASS
+- Verdict PASS, 0 block / 2 warn. Handoff: docs/handoffs/13/handoff-A-dup.md. Diff fcf6238..54f7247.
+- Decided: F extended the objects in the Reuse map and built no parallel path. `swap()` and the button were edited in place. The reverse translation goes through the existing `doTranslate()`, persistence through `persistLangs()`, and the capability gate through `isTargetDisabled`. The new `utils/swapLangs.ts` is mandated by AC1 and matches the pure-helper layer. A's Phase 3 warns 1, 2 and 4 were applied.
+- Assumed: ScreenshotWindow's divergent `swapLangs()` is acceptable because the brief explicitly scoped it out.
+- Hedged (warns): (1) the "nothing detected" predicate is duplicated between `swapLangs.ts:77` and `detectedLang.ts:31`; extract `hasDetection` if a third consumer appears. (2) ScreenshotWindow could adopt `swapLanguages` (with `detectedFrom: ''`) without changing its behavior. This is a follow-up candidate for O.
+- Evidence: git diff fcf6238..54f7247 (TranslateWindow.svelte, utils/swapLangs.ts); ScreenshotWindow.svelte:138-143; detectedLang.ts:31.

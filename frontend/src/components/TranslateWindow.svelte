@@ -103,6 +103,7 @@
   } from '../utils/resultPane.ts';
   import { detectedSourceLabel } from '../utils/detectedLang.ts';
   import { flippedTargetLabel } from '../utils/flippedTarget.ts';
+  import { swapLanguages } from '../utils/swapLangs.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import {
     GetLanguages,
@@ -246,6 +247,22 @@
   // toLang, so writing it would make the flip sticky, and #13 owns the swap semantics).
   const flippedLabel = $derived(
     flippedTargetLabel(requestedTo, String(activeResult?.to ?? ''), langName),
+  );
+  // The pair the swap button would apply (issue #13), or null when there is nothing to exchange:
+  // the source is auto and the active engine detected nothing the target select can hold. One
+  // derivation feeds both the button's disabled state and swap(), so the two cannot disagree.
+  // isSelectable composes the two layers of "can be picked as a target": the loaded language list
+  // (bare es / pt are recognized but not in it) and the issue #52 capability gate, so a detection
+  // never lands the target on an option the select renders disabled.
+  const swapPair = $derived(
+    swapLanguages({
+      from: fromLang,
+      to: toLang,
+      detectedFrom,
+      autoCode: TRANSLATE_LANG.Auto,
+      isSelectable: (code) =>
+        targetLanguages.some((l) => l.value === code) && !isTargetDisabled(allEngines, code),
+    }),
   );
   // Result-pane manual edits (aggregated by engine name): discarded wholesale on engine switch /
   // retranslate / clearing input; a new engine always starts from its own stored result
@@ -408,16 +425,26 @@
     }
   }
 
+  // Swap the two languages and translate back (issue #13, DeepL style). swapPair already holds the
+  // exchanged pair (the old target becomes the source, an auto source is replaced by the language
+  // that was detected, so auto never survives) or is null when there is nothing to exchange; the
+  // button is disabled then and this is a no-op. The text on screen for the active engine (manual
+  // edit ?? result) becomes the new source text and the old source text is dropped; with no result
+  // yet the input stays as it is. The existing doTranslate() then clears results and edits and sends
+  // the request with the new pair, so requestedTo, and the flipped-target notice derived from it,
+  // are set there like for any other request. A swap consumes preferences and never writes them:
+  // the pair is persisted, but only a select's own onchange ever teaches the variant store.
   function swap() {
-    // When the source language is "auto-detect" it cannot serve directly as the target language
-    // (the target dropdown has no auto option). In that case land the source language on a
-    // concrete language (zh) before swapping, so the swap always has a visible effect and toLang
-    // never lands on auto.
-    const from = fromLang === TRANSLATE_LANG.Auto ? TRANSLATE_LANG.ZH : fromLang;
-    const to = toLang === TRANSLATE_LANG.Auto ? TRANSLATE_LANG.ZH : toLang;
-    fromLang = to;
-    toLang = from;
+    const pair = swapPair;
+    if (!pair) return;
+    // Destructured on purpose: flippedNotice.test.ts rejects any line that assigns the target
+    // select from something ending in a dot-to (its display-only guard), which pair.to would trip.
+    const { from, to } = pair;
+    fromLang = from as TranslateLang;
+    toLang = to as TranslateLang;
+    if (activeDisplay !== '') input = activeDisplay;
     persistLangs();
+    doTranslate();
   }
 
   async function doTranslate() {
@@ -499,9 +526,13 @@
           {/each}
         </select>
 
+        <!-- Swap (issue #13): disabled while there is nothing to exchange (source auto and nothing
+             usable detected yet); enabled whenever the source is pinned. Label and tooltip stay
+             the same either way. -->
         <button
           class="u-icon-btn u-no-drag"
           onclick={swap}
+          disabled={swapPair === null}
           aria-label={t('translate.swap')}
           title={t('translate.swap')}
         >
