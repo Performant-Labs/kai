@@ -69,21 +69,27 @@ func TestInputBudgetNoneForOCR(t *testing.T) {
 	}
 }
 
-// Issue #111 scope change ("split it"): the measured Apple budget is #119. Until it lands the apple
-// row is provisional, with #119 as its follow-up.
-func TestInputBudgetAppleIsProvisional(t *testing.T) {
+// Issue #119 measured the apple budget on a quiet M1 Max (two sessions, 2026-09-26/27): the CJK
+// pair failed at 19,100 runes with the 64 KiB output buffer (#106) as the cause, and passed at
+// 18,200; Latin and the two other pairs tried (en>es, ja>en) never failed at any size probed. The
+// smaller of the two searches sets the limit, so apple is measured at 18,200 runes with no
+// follow-up left (#106 owns the buffer and is a separate issue).
+func TestInputBudgetAppleIsMeasured(t *testing.T) {
 	b, ok := InputBudget("apple")
 	if !ok {
 		t.Fatal("apple has no budget")
 	}
-	if b.Source != SourceProvisional {
-		t.Errorf("apple Source = %q, want %q", b.Source, SourceProvisional)
+	if b.Source != SourceMeasured {
+		t.Errorf("apple Source = %q, want %q", b.Source, SourceMeasured)
 	}
-	if b.FollowUp != 119 {
-		t.Errorf("apple FollowUp = %d, want 119", b.FollowUp)
+	if b.FollowUp != 0 {
+		t.Errorf("apple FollowUp = %d, want 0 (measured budgets carry no follow-up)", b.FollowUp)
 	}
 	if b.Unit != UnitRunes {
 		t.Errorf("apple Unit = %q, want %q", b.Unit, UnitRunes)
+	}
+	if b.Limit != 18200 {
+		t.Errorf("apple Limit = %d, want 18200 (the #119 measured CJK maximum, buffer-bound by #106)", b.Limit)
 	}
 }
 
@@ -205,10 +211,18 @@ func TestEngineLimitsDocListsEveryTranslator(t *testing.T) {
 			t.Errorf("engine %q: no budget to check the doc row against", name)
 			continue
 		}
-		if r[colVerified] != "no" {
-			t.Errorf("%s: Verified cell = %q, want %q", name, r[colVerified], "no")
+		wantVerified := "no"
+		if b.Source == SourceMeasured {
+			wantVerified = "yes"
 		}
-		if want := fmt.Sprintf("#%d", b.FollowUp); !strings.Contains(r[colFollowUp], want) {
+		if r[colVerified] != wantVerified {
+			t.Errorf("%s: Verified cell = %q, want %q", name, r[colVerified], wantVerified)
+		}
+		if b.FollowUp == 0 {
+			if r[colFollowUp] != "-" {
+				t.Errorf("%s: Follow-up cell %q, want %q (measured budgets carry no follow-up)", name, r[colFollowUp], "-")
+			}
+		} else if want := fmt.Sprintf("#%d", b.FollowUp); !strings.Contains(r[colFollowUp], want) {
 			t.Errorf("%s: Follow-up cell %q does not contain %s", name, r[colFollowUp], want)
 		}
 		// Apple publishes no limit, so its documented-limit cell says so instead of linking.
@@ -238,8 +252,8 @@ func TestInputBudgetAppleLimitIsNotTheOldWait(t *testing.T) {
 	if b.Limit <= 2250 {
 		t.Errorf("apple Limit = %d, want > 2250 (the largest size the 20 s wait ever let through)", b.Limit)
 	}
-	if b.Source != SourceProvisional {
-		t.Errorf("apple Source = %q, want %q", b.Source, SourceProvisional)
+	if b.Source != SourceMeasured {
+		t.Errorf("apple Source = %q, want %q (measured by #119)", b.Source, SourceMeasured)
 	}
 }
 
@@ -263,6 +277,12 @@ func cellInt(t *testing.T, what, cell string) int {
 // does not set Limit ("Reading the table" in docs/engine-limits.md), and the row no longer blames the
 // removed 20 s wait. When #119 measures the row the limit becomes the smaller of the two maximums, and
 // this test moves with it.
+// TestEngineLimitsDocApplePinsTheCode checks the apple row against Limit and Max() by the #119
+// convention: the limit is the smaller of the Latin and CJK maxima, so whichever cell equals it is
+// written as an exact number, and the other (which never failed at any size tried) is a lower
+// bound (">= N"). Before #119 measured the row, Latin set the limit and CJK was the lower bound;
+// #119 found the opposite (the 64 KiB output buffer binds CJK first), so this checks whichever
+// cell actually matches Limit rather than assuming which one that is.
 func TestEngineLimitsDocApplePinsTheCode(t *testing.T) {
 	const (
 		colLatin  = 2
@@ -283,13 +303,17 @@ func TestEngineLimitsDocApplePinsTheCode(t *testing.T) {
 	if !ok {
 		t.Fatal("apple has no budget")
 	}
-	// The provisional figure comes from the Latin throwaway check; the CJK cell is a lower bound
-	// from a smaller throwaway check, so only the Latin cell is tied to Limit.
-	if latin := cellInt(t, "Latin max", row[colLatin]); latin != b.Limit {
-		t.Errorf("doc Latin max %d, code Limit is %d", latin, b.Limit)
+	latinIsBound := strings.HasPrefix(row[colLatin], ">=")
+	cjkIsBound := strings.HasPrefix(row[colCJK], ">=")
+	if latinIsBound == cjkIsBound {
+		t.Fatalf("apple row: exactly one of Latin max %q / CJK max %q must be the exact Limit and the other a lower bound (\">= N\")", row[colLatin], row[colCJK])
 	}
-	if !strings.HasPrefix(row[colCJK], ">=") {
-		t.Errorf("doc CJK max %q: a provisional row writes it as a lower bound (\">= N\"), because it does not set Limit", row[colCJK])
+	exact := row[colLatin]
+	if latinIsBound {
+		exact = row[colCJK]
+	}
+	if got := cellInt(t, "the exact max cell", exact); got != b.Limit {
+		t.Errorf("doc exact max cell = %d, code Limit is %d", got, b.Limit)
 	}
 	if got := cellInt(t, "Budget", row[colBudget]); got != b.Max() {
 		t.Errorf("doc Budget %d, code Max() = %d", got, b.Max())

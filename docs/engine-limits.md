@@ -1,23 +1,23 @@
 # Engine input limits
 
-Where each translation engine breaks on large input, and the input budget the chunker (#84) works to. Issue #83, child of epic #86. The bridge's fixed 20 s wait on apple was removed for #111, so the apple row is provisional again until #119 measures it.
+Where each translation engine breaks on large input, and the input budget the chunker (#84) works to. Issue #83, child of epic #86. The bridge's fixed 20 s wait on apple was removed for #111; #119 measured the apple row on a quiet Mac.
 
 The budget lives in code: `internal/engine/input_budget.go` (`InputBudget`, `Budget.Max`). This page is its written record and is checked against it. `TestEngineLimitsDocListsEveryTranslator` fails when a translator has no row here, or when a row's Verified, Follow-up or link cell disagrees with the table in code.
 
-**Status.** No row is measured now. The first apple measurement (#83) mostly measured the bridge's own 20 s wait, which #111 removed, so apple is a provisional figure like the others: `Verified` is `no` and the follow-up issue in the last column (#119 for apple) measures it.
+**Status.** apple is measured (#119): `Verified` is `yes`, and it carries no follow-up (`Verified` = `yes` rows never do). Every other row is provisional or documented, not yet checked against the live service: `Verified` is `no` and the follow-up issue in the last column measures it.
 
 ## Reading the table
 
 - **Unit** is what the engine limits, and what the budget counts. `runes` is `utf8.RuneCountInString(text)`. `utf8 bytes` is `len(text)`. `query-escaped bytes` is `len(url.QueryEscape(text))`, which is what a URL or form value costs on the wire (a CJK character is 9).
-- **Latin max** and **CJK max** are the largest inputs seen to pass, in runes: English to Chinese (Latin) and Chinese to English (CJK). In a measured row they come from a probe run on a recorded host; the provisional apple row's come from the #111 throwaway checks (see "Apple, provisional"). `>= N` means N runes was the largest size seen to pass, not a ceiling.
-- **Budget (80%)** is what a chunker may send: the limit times `BudgetMarginPercent` (80), rounded down, in the row's unit. For a measured apple row the limit is the smaller of the Latin and CJK maximums. The provisional apple row does not follow that rule: its limit (3200) is the largest Latin size that passed in the #111 throwaway checks, and its CJK maximum (`>= 1000`) is only a lower bound, from one check at 1000 runes, so it does not set the limit. The smaller of the two would give a budget of 800, not 2560. #119 measures both searches, and from then on the rule applies to the row.
-- **Verified**: `yes` means measured by a probe run on a recorded host (none are, now). `no` means a documented or provisional figure that has not been checked against the live service.
+- **Latin max** and **CJK max** are the largest inputs seen to pass, in runes: English to Chinese (Latin) and Chinese to English (CJK). In a measured row they come from a probe run on a recorded host. `>= N` means N runes was the largest size seen to pass, not a ceiling (the apple Latin search hit the probe session's own time cap at 20,000, not a failure).
+- **Budget (80%)** is what a chunker may send: the limit times `BudgetMarginPercent` (80), rounded down, in the row's unit. For the measured apple row the limit is the smaller of the Latin and CJK maxima (see "Apple, measured (#119)").
+- **Verified**: `yes` means measured by a probe run on a recorded host (apple, since #119). `no` means a documented or provisional figure that has not been checked against the live service.
 
 ## Limits per engine
 
 | Engine | Unit | Latin max | CJK max | Failure past the limit | Latency at max | Documented limit | Budget (80%) | Verified | Date | Follow-up |
 |---|---|---|---|---|---|---|---|---|---|---|
-| apple | runes | >= 3200 | >= 1000 | none seen | Latin 31.8 s at 3200, CJK 36.3 s at 1000 (throwaway checks, no wait) | none found in Apple's Translation documentation (checked 2026-09-26); Kai's bridge has no wait of its own since #111 and a 65,535-byte output buffer (`apple_darwin.go`) | 2560 runes | no | - | #119 |
+| apple | runes | >= 20000 | 18200 | the 64 KiB output buffer (#106): CJK fails at 19,100 runes, needing ~67,187 output bytes against the 65,535-byte buffer | CJK 454.4 s median at 18,200 (min 451.3 s, max 457.6 s); Latin 160.9 s at the 20,000-rune cap | none found in Apple's Translation documentation (checked 2026-09-26); Kai's bridge has no wait of its own since #111 and a 65,535-byte output buffer (`apple_darwin.go`), owned by #106 | 14560 runes | yes | 2026-09-27 (MDT), Apple M1 Max, macOS 27.0 (26A428), 10 cores, 32 GB, Go go1.27.1 | - |
 | google | query-escaped bytes | unmeasured | unmeasured | unmeasured | unmeasured | undocumented for the gtx endpoint Kai calls; nearest published figure is Cloud Translation's recommended maximum of 5K characters (code points) per request ([quotas](https://docs.cloud.google.com/translate/quotas)) | 4000 query-escaped bytes | no | - | #87 |
 | deepl | query-escaped bytes | unmeasured | unmeasured | unmeasured | unmeasured | request size limit of 128 KiB for the whole request ([API reference](https://developers.deepl.com/api-reference/translate/request-translation)) | 104857 query-escaped bytes | no | - | #88 |
 | openai | runes | unmeasured | unmeasured | unmeasured | unmeasured | no input limit binds, the output cap does; Kai sets none, so the model default applies; 8192 output tokens is the assumed basis ([API reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)) | 3276 runes | no | - | #92 |
@@ -27,11 +27,12 @@ The budget lives in code: `internal/engine/input_budget.go` (`InputBudget`, `Bud
 | tencent | runes | unmeasured | unmeasured | unmeasured | unmeasured | text length below 2000, unit not stated, read as characters ([SDK doc comment](https://pkg.go.dev/github.com/tencentyun/tencentcloud-sdk-go/tencentcloud/tmt/v20180321)) | 1600 runes | no | - | #90 |
 | youdao | runes | unmeasured | unmeasured | unmeasured | unmeasured | 5000 characters per query ([API doc](https://ai.youdao.com/DOCSIRMA/html/trans/api/wbfy/index.html)) | 4000 runes | no | - | #91 |
 
-## Apple, provisional
+## Apple, measured (#119)
 
-- **Time does not bind any more.** Since #111 the bridge waits for Apple with no timer (`job.sema.wait()` in `pkg/swiftbridge/internal/swift/apple_translate.swift`); a request runs to the end or until the user cancels it. The old 20 s wait produced the first numbers (2250 and 650 runes), so they were the wait, not the framework. The provisional 3200 is the largest size seen to succeed in throwaway checks with no wait, not a ceiling.
-- **The 64 KiB output buffer is expected to bind** for text that grows when translated (Chinese to English grows about 3.5 times in bytes); #119 measures where. #106 owns the buffer.
-- **Cancel frees Kai, not the framework.** A cancelled call returns at once, but Apple keeps working on the abandoned text and answers the next request only when it is done (see "Cancel checks"). Nothing in Kai can shorten that, so the chunker (#84) should keep Apple chunks well below `Max()`: a few thousand Latin runes or about a thousand CJK runes is roughly half a minute of work on an M1 Max.
+- **Time does not bind.** Since #111 the bridge waits for Apple with no timer (`job.sema.wait()` in `pkg/swiftbridge/internal/swift/apple_translate.swift`); a request runs to the end or until the user cancels it. The old 20 s wait produced the first numbers (2250 and 650 runes), so they were the wait, not the framework. Two probe sessions confirm it: English to Chinese never failed at any size tried, up to the session cap of 20,000 runes (about 161 s), and latency grows in proportion to size, not worse.
+- **The 64 KiB output buffer binds for Chinese to English**, near 19,100 runes: the failing call projects to about 67,187 output bytes against the 65,535-byte buffer (`apple_darwin.go`). 18,200 passed; #106 owns the buffer, and this limit should be re-measured once it raises. English to Spanish and Japanese to English (the two extra pairs #119 tried) never failed at any size probed, up to 6,400 runes.
+- **Cancel frees Kai, not the framework.** A cancelled call returns at once, but Apple keeps working on the abandoned text and answers the next request only when it is done (see "Cancel checks"). Nothing in Kai can shorten that, so the chunker (#84) should keep Apple chunks well below `Max()`, not up near the limit.
+- **Quality at large input sizes is unmeasured.** The probe only checks that a call succeeds and times it; it does not check whether the translated text stays accurate as input grows. Kai's bridge sends one whole string per call (`pkg/swiftbridge/internal/swift/apple_translate.swift`), not Apple's batch API (`translate(batch:)` / `translations(from:)`), which translates an array of separate strings and can return results as each one finishes. #84 should chunk by paragraph and consider the batch API, both to avoid sending a single very large string whose quality is untested and to give progressive results, rather than picking a chunk size from latency alone.
 
 ## Notes on the provisional rows
 
@@ -80,6 +81,30 @@ CANCEL r zero_id code="" latency_ms=1491 result_len=51 err=<nil>
 - **The return values hold** (`TestAppleCancelReturnValues`): cancelling a running call returns 1 and frees it in 1 ms (the cancel came at 500 ms and the call ended at 501 ms), cancelling it again returns 0, and a token of 0 or less can never be cancelled (its call ran to a translation).
 
 Only the lines the test names "asserted" decide a verdict; every latency is logged and none is asserted, because how long the framework takes is the machine's.
+
+## Probe runs (#119)
+
+Both sessions ran on the same Mac and bridge build: Apple M1 Max, macOS 27.0 (26A428), 10 cores, 32 GB, Go go1.27.1.
+
+| Session | Started (MDT) | Load at start | Duration | Scope |
+|---|---|---|---|---|
+| 1 | 2026-09-26 18:27 | ~8-10 | 72.8 min | full ladder + CJK boundary search |
+| 2 | 2026-09-27 08:57 | ~9-14 (settled below 10 before starting) | 32.2 min | ladder only, `KAI_ENGINE_PROBE_SKIP_BOUNDARY=1`, capped at 6,400 runes; picked up `ja>en` because Japanese happened to be installed |
+
+Both sessions used the corrected quiet/noisy thresholds (load 10 to start, 12 or above is noisy; the original 3/5 never let a session start on this Mac's idle load of about 8). 7 of session 1's 36 ladder runs, all mid-size, were flagged noisy and left out of the statistics; none of the sizes that set the limit (18,200 and 19,100) were affected. No size disagreed between the two sessions by more than about 4%, well under the 20% threshold that would have required using the smaller figure.
+
+Per-size medians (min–max), not-noisy runs only:
+
+| Pair | 400 runes | 1,600 runes | 6,400 runes | 20,000 runes |
+|---|---|---|---|---|
+| en>zh-Hans | 4.7 s (4.6-6.0) | 14.9 s (14.8-16.2) | 53.3-53.5 s | 160.9 s |
+| zh-Hans>en | 12.1-12.5 s | 41.4-41.6 s | 162.7-163.7 s | (boundary search took over, see below) |
+| en>es | 4.9-5.0 s | 15.0-15.7 s | 55.0-56.3 s | not tried |
+| ja>en | 10.9 s (session 2 only) | 35.8 s (session 2 only) | 137.8 s (session 2 only) | not tried |
+
+CJK boundary search (session 1, single runs each): 12,800 runes passed (326.4 s), 16,400 passed (411.5 s), 18,200 passed twice (451.3 s and 457.6 s), 19,100 failed twice (477.3 s and 479.3 s, 0 output bytes, projected 67,187 bytes against the 65,535-byte buffer). The search stopped there: the failure is inside the #111 bracket, so no further bisection was needed.
+
+**Chunk size for #84 (a doc figure, not a new constant).** Median latency is about 8-9 ms per rune for Latin scripts (en>zh-Hans, en>es) and about 22-31 ms per rune for CJK and Japanese source text (zh-Hans>en, ja>en). A chunk that should feel like progress rather than a long silent wait, about 30 s of work on this machine, is roughly 3,500 Latin runes or 1,200 CJK/Japanese-source runes. Neither is a round number the data argues for over the other; #84's brief should cite this paragraph rather than a new constant.
 
 ## How to re-run the apple probe (#119)
 

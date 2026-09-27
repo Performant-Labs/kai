@@ -86,16 +86,17 @@ func (b Budget) Fits(text string) bool { return b.Measure(text) <= b.Max() }
 // translate). Sources and reasoning per row; the same rows, with their links, are in
 // docs/engine-limits.md.
 var inputBudgets = map[string]Budget{
-	// apple — macOS Translation.framework. PROVISIONAL and unmeasured (#119 measures it). The bridge's
-	// old fixed 20 s wait, which is what the first measurement (#83, 650 runes) actually hit, is gone
-	// (#111): time no longer binds. 3200 is the largest size seen to succeed with no wait, from the
-	// #111 brief's throwaway checks on an Apple M1 Max (2,000 Latin runes in 24.0 s and 3,200 in
-	// 31.8 s, both complete), not a ceiling: a later probe run went far higher (see the #111 handoff,
-	// "Data for #119"). What will bind is the 64 KiB output buffer in apple_darwin.go for text that
-	// grows when translated. A call this size runs for tens of seconds with no progress, and after a
-	// cancel the framework queues the next request behind it, so the chunker (#84) should stay well
-	// below Max() for apple.
-	"apple": {Unit: UnitRunes, Limit: 3200, Source: SourceProvisional, FollowUp: 119},
+	// apple — macOS Translation.framework. MEASURED by #119, two probe sessions on an idle Apple M1
+	// Max, 2026-09-26/27 (docs/engine-limits.md, "Apple, measured (#119)"). Time does not bind:
+	// English to Chinese passed at every size tried, up to the session's 20,000-rune cap, in about
+	// 161 s. Chinese to English passed at 18,200 runes and failed at 19,100 — the 64 KiB output
+	// buffer in apple_darwin.go (#106), not the translator itself: the failing call would have
+	// needed about 67,187 output bytes against the 65,535-byte buffer. English to Spanish and
+	// Japanese to English never failed at any size tried (up to 6,400 runes). 18,200 is the smaller
+	// of the Latin and CJK maxima, so it is the limit; it will rise once #106 raises the buffer.
+	// A cancel still frees Kai but not the framework (Apple keeps working and the next request
+	// queues), so the chunker (#84) should keep chunks well below Max() regardless of the limit.
+	"apple": {Unit: UnitRunes, Limit: 18200, Source: SourceMeasured, FollowUp: 0},
 
 	// google — the key-free gtx endpoint Kai calls (google.go) is undocumented, so no limit is
 	// published for it. 5000 is Google's recommended maximum for Cloud Translation, 5K characters
