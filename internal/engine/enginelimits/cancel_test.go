@@ -36,6 +36,14 @@ const (
 	cancelAfter      = 3 * time.Second  // how far into the request the user cancels
 	promptly         = time.Second      // a cancel must free the caller within this
 	afterCancelGuard = 3 * time.Minute  // ceiling for the request issued right after a cancel
+
+	// ceilingCancelSize is Kai's real, measured production ceiling (#119): 18,200 CJK runes, where
+	// the abandoned call itself takes about 454 s median (docs/engine-limits.md). #111 only ever
+	// measured the drain tail at cancelSize (3,200 Latin runes); #157 measures it at the size Kai
+	// can actually send, since nothing establishes the tail stays short rather than scaling toward
+	// the abandoned call's own duration.
+	ceilingCancelSize       = 18_200
+	ceilingAfterCancelGuard = 12 * time.Minute // generous: the abandoned call alone can take ~454 s
 )
 
 // gatedProber skips the test unless the probe gate is set, then runs the probe's pre-check, so a
@@ -127,6 +135,55 @@ func TestAppleCancelReachesSwift(t *testing.T) {
 	t.Logf("CANCEL d next_request_after_cancel latency_ms=%d err=%v (queues behind the abandoned work; not asserted)", dD.Milliseconds(), errD)
 	if errD != nil || resD == nil || resD.Result == "" {
 		t.Fatalf("asserted: a one-sentence request right after a cancel must still succeed within %s, got: %v", afterCancelGuard, errD)
+	}
+}
+
+// (#157) The same drain-tail measurement as TestAppleCancelReachesSwift's (d), but at Kai's real
+// 18,200-rune CJK ceiling instead of #111's original 3,200-rune Latin size, since nothing has
+// established whether the drain tail stays short (8-17 s typically, per #111) or scales toward the
+// abandoned call's own ~454 s duration at this size. Logged, not asserted on a specific bound — the
+// file's own convention: how long the framework takes is the machine's, not the code's. The only
+// assertion is what #111's (b)/(d) also assert: the cancel itself is prompt, and the next request
+// still eventually succeeds.
+func TestAppleCancelAtCeiling(t *testing.T) {
+	p := gatedProber(t)
+	text, _ := cjk.buildInput(ceilingCancelSize)
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	var cancelledAt atomic.Int64
+	timer := time.AfterFunc(cancelAfter, func() {
+		cancelledAt.Store(time.Now().UnixNano())
+		stop()
+	})
+	defer timer.Stop()
+
+	start := time.Now()
+	res, err := p.tr.Translate(ctx, model.TranslateRequest{Text: text, From: cjk.from, To: cjk.to})
+	returned := time.Now()
+	at := cancelledAt.Load()
+	if at == 0 {
+		t.Fatalf("Translate ended after %s, before the cancel was issued at %s (result=%v err=%v)", returned.Sub(start).Round(time.Millisecond), cancelAfter, res != nil, err)
+	}
+	lag := returned.Sub(time.Unix(0, at))
+	t.Logf("CANCEL ceiling cancel_after_ms=%d returned_after_ms=%d lag_ms=%d err=%v runes=%d", cancelAfter.Milliseconds(), returned.Sub(start).Milliseconds(), lag.Milliseconds(), err, ceilingCancelSize)
+	if err == nil {
+		t.Fatalf("asserted: Translate returned a result after the cancel; want an error (the cancel never reached the bridge)")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("asserted: err = %v, want errors.Is(err, context.Canceled): a cancel is the ctx's cause, never error copy", err)
+	}
+	if lag > promptly {
+		t.Errorf("asserted: Translate returned %s after the cancel, want within %s", lag.Round(time.Millisecond), promptly)
+	}
+
+	ctxD, stopD := context.WithTimeout(context.Background(), ceilingAfterCancelGuard)
+	defer stopD()
+	startD := time.Now()
+	resD, errD := p.tr.Translate(ctxD, model.TranslateRequest{Text: cjk.warm, From: cjk.from, To: cjk.to})
+	dD := time.Since(startD)
+	t.Logf("CANCEL ceiling next_request_after_cancel latency_ms=%d err=%v (this IS the #157 measurement: the drain tail behind an abandoned %d-rune CJK request)", dD.Milliseconds(), errD, ceilingCancelSize)
+	if errD != nil || resD == nil || resD.Result == "" {
+		t.Fatalf("asserted: a one-sentence request right after a cancel must still succeed within %s, got: %v", ceilingAfterCancelGuard, errD)
 	}
 }
 

@@ -31,7 +31,7 @@ The budget lives in code: `internal/engine/input_budget.go` (`InputBudget`, `Bud
 
 - **Time does not bind.** Since #111 the bridge waits for Apple with no timer (`job.sema.wait()` in `pkg/swiftbridge/internal/swift/apple_translate.swift`); a request runs to the end or until the user cancels it. The old 20 s wait produced the first numbers (2250 and 650 runes), so they were the wait, not the framework. Two probe sessions confirm it: English to Chinese never failed at any size tried, up to the session cap of 20,000 runes (about 161 s), and latency grows in proportion to size, not worse.
 - **The 64 KiB output buffer binds for Chinese to English**, near 19,100 runes: the failing call projects to about 67,187 output bytes against the 65,535-byte buffer (`apple_darwin.go`). 18,200 passed; #106 owns the buffer, and this limit should be re-measured once it raises. English to Spanish and Japanese to English (the two extra pairs #119 tried) never failed at any size probed, up to 6,400 runes.
-- **Cancel frees Kai, not the framework.** A cancelled call returns at once, but Apple keeps working on the abandoned text and answers the next request only when it is done (see "Cancel checks"). Nothing in Kai can shorten that, so the chunker (#84) should keep Apple chunks well below `Max()`, not up near the limit.
+- **Cancel frees Kai, not the framework.** A cancelled call returns at once, but Apple keeps working on the abandoned text and answers the next request only when it is done (see "Cancel checks"). Nothing in Kai can shorten that, so the chunker (#84) should keep Apple chunks well below `Max()`, not up near the limit. **This scales with size, measured (#157):** at #111's original 3,200-rune size the drain tail was 8–42 s; at Kai's real 18,200-rune CJK ceiling, cancelling 3 s into the request and immediately issuing the next one, the next request waited **91.9 s** before it went through — not the abandoned call's full ~454 s duration, but far past the smaller size's figure. A chunk sized for progress (a few thousand runes, per "Apple, measured" above) keeps this tail bounded to roughly one chunk's own duration.
 - **Quality at large input sizes is unmeasured.** The probe only checks that a call succeeds and times it; it does not check whether the translated text stays accurate as input grows. Kai's bridge sends one whole string per call (`pkg/swiftbridge/internal/swift/apple_translate.swift`), not Apple's batch API (`translate(batch:)` / `translations(from:)`), which translates an array of separate strings and can return results as each one finishes. #84 should chunk by paragraph and consider the batch API, both to avoid sending a single very large string whose quality is untested and to give progressive results, rather than picking a chunk size from latency alone. Epic #151 builds a dedicated quality probe for this (structural integrity, round-trip drift, and an optional DeepL divergence check) — see `docs/quality-limits.md`; as of 2026-09-27 that probe's tooling exists but has not been run yet.
 
 ## Notes on the provisional rows
@@ -73,6 +73,19 @@ PROBE precheck pair=zh-Hans>en first_call_ms=1507 ok=true
 CANCEL r running_call code="cancelled" latency_ms=501 err=<nil>
 CANCEL r zero_id code="" latency_ms=1491 result_len=51 err=<nil>
 ```
+
+**#157, the same check at Kai's real ceiling.** The runs above used #111's original 3,200-rune Latin size, chosen for that issue's scope; #119 later measured Kai's actual production ceiling at 18,200 CJK runes, where the abandoned call itself takes about 454 s (see "Apple, measured" above). Nothing established whether the drain tail (`CANCEL d` above) stays at the small size's 8–42 s or scales toward that full duration. `TestAppleCancelAtCeiling` (`cancel_test.go`) answers it: the same shape as `TestAppleCancelReachesSwift`'s (b)/(d), but on the `cjk` script at 18,200 runes. Recorded 2026-09-27, same host and bridge sha256 as #119's session, by:
+
+```sh
+KAI_ENGINE_PROBE=1 CGO_ENABLED=1 go test -tags enginelimits -ldflags=-linkmode=external -run TestAppleCancelAtCeiling -timeout 20m -count=1 -v ./internal/engine/enginelimits/
+```
+
+```text
+CANCEL ceiling cancel_after_ms=3000 returned_after_ms=3001 lag_ms=0 err=context canceled runes=18200
+CANCEL ceiling next_request_after_cancel latency_ms=91890 err=<nil> (this IS the #157 measurement: the drain tail behind an abandoned 18200-rune CJK request)
+```
+
+The cancel itself is still instant (`lag_ms=0`, matching #111's finding at every size). The drain tail is **91.9 s** — about 2–11x #111's small-size figure, and about a fifth of the abandoned call's own ~454 s duration. Not the full duration, but not negligible either: a user who cancels a near-ceiling request and immediately tries another Apple translation waits a real, user-visible amount of time before it starts.
 
 - **A request the old wait cut off completes** (`TestAppleNotCutOff`): 3,200 Latin runes, which failed at exactly 20.0 s under the old wait, translated in 27.0 s through `engine.NewApple()`, with every paragraph number in the output.
 - **A cancelled ctx frees the caller at once and reaches the bridge** (`TestAppleCancelReachesSwift`, line `b`): the ctx was cancelled 3 s into that request, `Translate` returned less than a millisecond later with `context.Canceled` itself, not error copy, and the bridge's own call returned the `cancelled` payload instead of running on.
