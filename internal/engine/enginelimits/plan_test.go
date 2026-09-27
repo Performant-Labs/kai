@@ -713,3 +713,258 @@ func TestIsSmokeRun(t *testing.T) {
 		}
 	}
 }
+
+// --- The quality probe's plan (#152/#153) ----------------------------------------------------
+
+func TestProbeConfigDeeplDefaultOffAndOverride(t *testing.T) {
+	if cfg := defaultConfig(t); cfg.deepl {
+		t.Errorf("default deepl = %t, want false: #153's DeepL calls must be opt-in", cfg.deepl)
+	}
+	cfg, err := probeConfigFromEnv(envOf(map[string]string{"KAI_ENGINE_PROBE_DEEPL": "1"}))
+	if err != nil || !cfg.deepl {
+		t.Errorf("KAI_ENGINE_PROBE_DEEPL=1: deepl=%t err=%v, want true and no error", cfg.deepl, err)
+	}
+	cfg, err = probeConfigFromEnv(envOf(map[string]string{"KAI_ENGINE_PROBE_DEEPL": "0"}))
+	if err != nil || cfg.deepl {
+		t.Errorf("KAI_ENGINE_PROBE_DEEPL=0: deepl=%t err=%v, want false and no error", cfg.deepl, err)
+	}
+	if cfg, err := probeConfigFromEnv(envOf(map[string]string{"KAI_ENGINE_PROBE_DEEPL": "yes"})); err == nil {
+		t.Errorf("probeConfigFromEnv(DEEPL=yes) = %+v, want an error", cfg)
+	}
+}
+
+func TestBuildQualityPlanAllPairsAllSizesOneRunEach(t *testing.T) {
+	cfg := defaultConfig(t)
+	plan := buildQualityPlan(cfg, false)
+	wantSizes := []int{400, 1600, 6400, 12800, 16400, 18200}
+	wantPairs := []string{"en>zh-Hans", "zh-Hans>en", "en>es"}
+	if len(plan) != len(wantPairs)*len(wantSizes) {
+		t.Fatalf("buildQualityPlan(includeJA=false) has %d points, want %d (%d pairs x %d sizes, one run each)",
+			len(plan), len(wantPairs)*len(wantSizes), len(wantPairs), len(wantSizes))
+	}
+	i := 0
+	for _, pair := range wantPairs {
+		for _, size := range wantSizes {
+			if plan[i].pair != pair || plan[i].runes != size {
+				t.Errorf("point %d = %+v, want {pair %s, runes %d} (cheapest size first, in pair order)", i, plan[i], pair, size)
+			}
+			i++
+		}
+	}
+	for _, p := range plan {
+		if p.pair == "ja>en" {
+			t.Errorf("ja>en planned without includeJA: %+v", p)
+		}
+	}
+}
+
+func TestBuildQualityPlanIncludesJapaneseWhenReady(t *testing.T) {
+	cfg := defaultConfig(t)
+	plan := buildQualityPlan(cfg, true)
+	got := 0
+	for _, p := range plan {
+		if p.pair == "ja>en" {
+			got++
+		}
+	}
+	if got != len(qualityLadderSizes) {
+		t.Errorf("ja>en points = %d, want %d (one per ladder size)", got, len(qualityLadderSizes))
+	}
+}
+
+func TestBuildQualityPlanMaxRunesFilter(t *testing.T) {
+	cfg := defaultConfig(t)
+	cfg.maxRunes = 1000
+	plan := buildQualityPlan(cfg, true)
+	for _, p := range plan {
+		if p.runes > 1000 {
+			t.Errorf("point %+v exceeds KAI_ENGINE_PROBE_MAX_RUNES=1000", p)
+		}
+	}
+	for _, pair := range []string{"en>zh-Hans", "zh-Hans>en", "en>es"} {
+		found := false
+		for _, p := range plan {
+			if p.pair == pair && p.runes == 400 {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("pair %s: the 400-rune point is missing under MAX_RUNES=1000", pair)
+		}
+	}
+}
+
+// --- Similarity (#152) --------------------------------------------------------------------------
+
+func TestSimilarity(t *testing.T) {
+	cases := []struct {
+		name    string
+		a, b    string
+		want    float64
+		wantAbs float64 // 0 means want exactly; otherwise the max acceptable |got-want|
+	}{
+		{"both empty", "", "", 1.0, 0},
+		{"identical latin", "the quick brown fox", "the quick brown fox", 1.0, 0},
+		{"identical cjk", "今天天气很好，所以我们打算步行去市场。", "今天天气很好，所以我们打算步行去市场。", 1.0, 0},
+		{"completely different, equal length", "aaaa", "bbbb", 0.0, 0},
+		{"one empty", "", "abcdef", 0.0, 0},
+		{"single edit out of ten", "abcdefghij", "abcdefghix", 0.9, 0.001},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := similarity(c.a, c.b)
+			if got < 0 || got > 1 {
+				t.Fatalf("similarity(%q, %q) = %v, out of [0,1]", c.a, c.b, got)
+			}
+			if c.wantAbs == 0 {
+				if got != c.want {
+					t.Errorf("similarity(%q, %q) = %v, want exactly %v", c.a, c.b, got, c.want)
+				}
+			} else if diff := got - c.want; diff > c.wantAbs || diff < -c.wantAbs {
+				t.Errorf("similarity(%q, %q) = %v, want %v +/- %v", c.a, c.b, got, c.want, c.wantAbs)
+			}
+		})
+	}
+	// Partial overlap: sharing half the runes scores strictly between 0 and 1.
+	if s := similarity("abcdefgh", "abcdwxyz"); s <= 0 || s >= 1 {
+		t.Errorf("similarity(partial overlap) = %v, want strictly between 0 and 1", s)
+	}
+	// CJK: compared by rune, not byte, so a one-character edit in a CJK string costs exactly the
+	// distance of one rune, the same weight a one-character Latin edit gets, not two or three (as a
+	// byte-wise comparison of UTF-8 would score a multi-byte character).
+	cjkA := "委员会审查了年度报告"
+	cjkB := "委员会审查了年度报告" // identical
+	if s := similarity(cjkA, cjkB); s != 1.0 {
+		t.Errorf("similarity(identical CJK) = %v, want 1.0", s)
+	}
+	cjkC := []rune(cjkA)
+	cjkC[len(cjkC)-1] = '批' // change exactly one rune
+	wantOneRuneEdit := 1 - 1.0/float64(len([]rune(cjkA)))
+	if s := similarity(cjkA, string(cjkC)); s != wantOneRuneEdit {
+		t.Errorf("similarity(CJK, one rune changed) = %v, want %v (1 - 1/%d runes)", s, wantOneRuneEdit, len([]rune(cjkA)))
+	}
+}
+
+// --- Structural integrity (#152) ------------------------------------------------------------------
+
+func TestCheckStructureCleanOutputHasNoDefect(t *testing.T) {
+	input := "1. First paragraph.\n\n2. Second paragraph.\n\n3. Third paragraph."
+	output := "1. Translated first.\n\n2. Translated second.\n\n3. Translated third."
+	if d := checkStructure(input, output, 3); d.any() {
+		t.Errorf("checkStructure(clean) = %+v, want no defect", d)
+	}
+}
+
+func TestCheckStructureDroppedParagraph(t *testing.T) {
+	input := "1. First paragraph.\n\n2. Second paragraph.\n\n3. Third paragraph."
+	output := "1. Translated first.\n\n3. Translated third." // paragraph 2 is missing entirely
+	d := checkStructure(input, output, 3)
+	if len(d.Dropped) != 1 || d.Dropped[0] != 2 {
+		t.Errorf("Dropped = %v, want [2]", d.Dropped)
+	}
+	if d.Reordered {
+		t.Errorf("Reordered = true, want false: the surviving markers (1, 3) are still in order")
+	}
+	if !d.any() {
+		t.Errorf("any() = false, a dropped paragraph is a defect")
+	}
+}
+
+func TestCheckStructureReorderedMarkers(t *testing.T) {
+	input := "1. First paragraph.\n\n2. Second paragraph.\n\n3. Third paragraph."
+	output := "1. Translated first.\n\n3. Translated third.\n\n2. Translated second." // 3 before 2
+	d := checkStructure(input, output, 3)
+	if !d.Reordered {
+		t.Errorf("Reordered = false, want true: markers appear as 1, 3, 2")
+	}
+	if len(d.Dropped) != 0 {
+		t.Errorf("Dropped = %v, want none: every marker is present", d.Dropped)
+	}
+}
+
+func TestCheckStructureRepeatedSentence(t *testing.T) {
+	input := "1. The cat sat on the mat. It was warm there.\n\n2. The dog ran in the park."
+	// The first sentence of paragraph 1 is duplicated in the output.
+	output := "1. The cat sat on the mat. The cat sat on the mat. It was warm there.\n\n2. The dog ran in the park."
+	d := checkStructure(input, output, 2)
+	if len(d.RepeatedSentences) != 1 || d.RepeatedSentences[0] != "The cat sat on the mat" {
+		t.Errorf("RepeatedSentences = %q, want exactly [%q]", d.RepeatedSentences, "The cat sat on the mat")
+	}
+	if !d.any() {
+		t.Errorf("any() = false, a repeated sentence is a defect")
+	}
+}
+
+func TestCheckStructureRepeatedParagraph(t *testing.T) {
+	input := "1. First paragraph text.\n\n2. Second paragraph text."
+	output := "1. First paragraph text.\n\n2. Second paragraph text.\n\n1. First paragraph text." // whole paragraph 1 repeated
+	d := checkStructure(input, output, 2)
+	if len(d.RepeatedParagraphs) != 1 {
+		t.Errorf("RepeatedParagraphs = %q, want exactly one repeated paragraph", d.RepeatedParagraphs)
+	}
+	if !d.any() {
+		t.Errorf("any() = false, a repeated paragraph is a defect")
+	}
+}
+
+func TestCheckStructureSentenceRepeatedOnceInInputIsNotFlagged(t *testing.T) {
+	// A sentence that already repeats in the INPUT (e.g. a refrain) is not itself a translation
+	// defect: only a sentence that is unique in the input but duplicated in the output counts.
+	input := "1. We agree. We agree.\n\n2. Something else entirely."
+	output := "1. We agree. We agree.\n\n2. Something else entirely."
+	d := checkStructure(input, output, 2)
+	if len(d.RepeatedSentences) != 0 {
+		t.Errorf("RepeatedSentences = %q, want none: \"We agree\" already repeats in the input", d.RepeatedSentences)
+	}
+}
+
+// #152's real defect was found and fixed before the probe's first real run: it compared OUTPUT text
+// (a translation) against INPUT text (the untranslated source) by exact string equality — but input
+// and output are never the same language, so that comparison can essentially never match, and the
+// repetition check could never fire on a real translation. The three tests below exercise the actual
+// cross-language case, standing in Chinese-shaped placeholder text for "a real translation" so the
+// fix is proven against text that genuinely shares nothing textual with the input, the way a real
+// Apple call's result does.
+
+func TestCheckStructureRepeatedSentenceCrossLanguage(t *testing.T) {
+	// Nothing in output is textually equal to anything in input — a real translation. Output's
+	// second sentence is degenerately duplicated; a same-string comparison against input could never
+	// catch this because no output sentence ever equals an input sentence.
+	input := "1. The cat sat on the mat. It was warm there.\n\n2. The dog ran in the park."
+	output := "1. 猫在垫子上. 猫在垫子上. 那里很暖和.\n\n2. 狗在公园里跑."
+	d := checkStructure(input, output, 2)
+	if len(d.RepeatedSentences) != 1 || d.RepeatedSentences[0] != "猫在垫子上" {
+		t.Errorf("RepeatedSentences = %q, want exactly [%q]", d.RepeatedSentences, "猫在垫子上")
+	}
+	if !d.any() {
+		t.Errorf("any() = false, a repeated sentence is a defect even across languages")
+	}
+}
+
+func TestCheckStructureLegitimatePoolCyclingIsNotFlagged(t *testing.T) {
+	// At a large probe size, script.paragraph/stream (probe_test.go) legitimately cycles the
+	// sentence pool ("(cursor+i)%len(s.sentences)"), so INPUT itself can legitimately repeat a
+	// sentence — here sentence A recurs, exactly as pool cycling would produce. A faithful
+	// translation repeats it proportionally too (same rate, different text). That is not a defect:
+	// output's self-repetition rate is no higher than input's own baseline.
+	input := "1. Sentence A. Sentence B.\n\n2. Sentence A. Sentence B." // A repeats once, by design (pool wraparound)
+	output := "1. 句子甲. 句子乙.\n\n2. 句子甲. 句子乙."                            // faithfully repeats it once too
+	d := checkStructure(input, output, 2)
+	if d.any() {
+		t.Errorf("checkStructure(faithful repeat of legitimately-cycled input) = %+v, want no defect", d)
+	}
+}
+
+func TestCheckStructureDegenerationBeyondInputsOwnRateIsFlagged(t *testing.T) {
+	// Input has some legitimate repetition (pool cycling), but output repeats far more than that
+	// baseline — real NMT degeneration, not a faithful echo of the source's own cycling.
+	input := "1. Sentence A. Sentence B. Sentence C. Sentence D.\n\n2. Sentence A. Sentence E. Sentence F. Sentence G."
+	output := "1. 句子甲. 句子甲. 句子甲. 句子甲.\n\n2. 句子甲. 句子甲. 句子甲. 句子甲." // collapsed to one sentence, repeated
+	d := checkStructure(input, output, 2)
+	if len(d.RepeatedSentences) == 0 {
+		t.Errorf("RepeatedSentences = none, want at least one: output collapsed far past input's own repetition rate")
+	}
+	if !d.any() {
+		t.Errorf("any() = false, want a defect: output's self-repetition rate is far above input's baseline")
+	}
+}

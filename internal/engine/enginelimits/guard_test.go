@@ -236,3 +236,48 @@ func TestRunGuideTimeoutAndKnobs(t *testing.T) {
 		}
 	}
 }
+
+// TestQualityProbeRunGuideTimeoutAndKnobs mirrors TestRunGuideTimeoutAndKnobs for the quality
+// probe (TestProbeQuality, epic #151, issues #152/#153): its run guide is docs/quality-limits.md.
+// It reuses most of the latency probe's knobs (never KAI_ENGINE_PROBE_REPEATS or
+// KAI_ENGINE_PROBE_SKIP_BOUNDARY: the quality probe never repeats a point and has no boundary
+// phase) and adds KAI_ENGINE_PROBE_DEEPL (#153's opt-in DeepL reference calls), which this test
+// checks is documented alongside the others.
+func TestQualityProbeRunGuideTimeoutAndKnobs(t *testing.T) {
+	cfg, err := probeConfigFromEnv(func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	floor := cfg.budget + pointCeiling
+	timeout := regexp.MustCompile(`-timeout\s+(\S+)`)
+	path := filepath.Join(repoRoot(t), "docs", "quality-limits.md")
+	text := readText(t, path)
+	found := 0
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, "-run TestProbeQuality") {
+			continue
+		}
+		m := timeout.FindStringSubmatch(line)
+		if m == nil {
+			t.Errorf("%s: probe command without -timeout: %s", path, strings.TrimSpace(line))
+			continue
+		}
+		found++
+		d, err := time.ParseDuration(strings.Trim(m[1], "`."))
+		if err != nil {
+			t.Errorf("%s: -timeout %q: %v", path, m[1], err)
+			continue
+		}
+		if d < floor {
+			t.Errorf("%s: probe -timeout %s, want at least the budget plus one point ceiling (%s)", path, d, floor)
+		}
+	}
+	if found == 0 {
+		t.Errorf("%s: no TestProbeQuality command with a -timeout", path)
+	}
+	for _, knob := range []string{"KAI_ENGINE_PROBE_BUDGET_MIN", "KAI_ENGINE_PROBE_MAX_RUNES", "KAI_ENGINE_PROBE_STATUS", "KAI_ENGINE_PROBE_DEEPL"} {
+		if !strings.Contains(text, knob) {
+			t.Errorf("%s: the run guide does not document %s", path, knob)
+		}
+	}
+}

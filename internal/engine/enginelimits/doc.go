@@ -62,4 +62,11 @@
 // internal/engine/input_budget.go. The apple row is not measured yet: until issue #119 records a
 // full probe run, its Limit is the largest Latin size seen to pass in the #111 throwaway checks and
 // its CJK figure is only a lower bound, so the smaller-of-two-maximums rule does not hold for it.
+//
+// quality_probe_test.go (TestProbeQuality, epic #151, issues #152/#153) asks a different question
+// on the same size ladder: not whether a call succeeds, but whether the translation is any good.
+// It reuses this file's session/script/prober infrastructure and plan.go's buildQualityPlan and
+// similarity/checkStructure helpers, under the same tag and gate. See docs/quality-limits.md for
+// its run guide and knobs, including KAI_ENGINE_PROBE_DEEPL (#153's opt-in DeepL reference calls;
+// unset or 0 costs nothing).
 package enginelimits

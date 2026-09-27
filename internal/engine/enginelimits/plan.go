@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,12 @@ const (
 	maxRunesEnv     = "KAI_ENGINE_PROBE_MAX_RUNES"     // drop planned sizes above it (the smoke run: 1000)
 	skipBoundaryEnv = "KAI_ENGINE_PROBE_SKIP_BOUNDARY" // 1 leaves out phase 2 (the second session)
 	statusEnv       = "KAI_ENGINE_PROBE_STATUS"        // the progress file (default: statusPath(""))
+
+	// qualityDeeplEnv gates issue #153's DeepL reference calls inside the quality probe
+	// (TestProbeQuality, quality_probe_test.go): 1 turns them on. Left unset (or 0), #152's
+	// structural and round-trip checks run and cost nothing — no DeepL call is ever made. It is
+	// read here, like every other knob, not by an ad hoc os.Getenv elsewhere.
+	qualityDeeplEnv = "KAI_ENGINE_PROBE_DEEPL"
 )
 
 const (
@@ -41,6 +48,7 @@ type probeConfig struct {
 	skipBoundary bool          // leave out phase 2 (the second session may)
 	includeJA    bool          // plan phase 3; the probe sets it when its precheck finds Japanese installed
 	statusPath   string        // the progress file
+	deepl        bool          // #153: the quality probe also calls DeepL as a reference and scores divergence
 }
 
 // probeConfigFromEnv reads the session's knobs through getenv (os.Getenv in the probe). A value
@@ -79,6 +87,13 @@ func probeConfigFromEnv(getenv func(string) string) (probeConfig, error) {
 		cfg.skipBoundary = true
 	default:
 		return probeConfig{}, fmt.Errorf("%s=%q: want 1 (leave out the boundary phase) or 0", skipBoundaryEnv, v)
+	}
+	switch v := getenv(qualityDeeplEnv); v {
+	case "", "0":
+	case "1":
+		cfg.deepl = true
+	default:
+		return probeConfig{}, fmt.Errorf("%s=%q: want 1 (call DeepL as a reference translator) or 0", qualityDeeplEnv, v)
 	}
 	return cfg, nil
 }
@@ -485,4 +500,255 @@ func settle(prevKind string, c probeClock, warm func() (time.Duration, error)) s
 		}
 	}
 	return drainTimeout
+}
+
+// --- The quality probe's plan (issues #152/#153, epic #151) --------------------------------------
+
+// qualityLadderSizes is the six input sizes both quality probes measure: the epic's own ladder
+// (#151), the same sizes #119 already measured latency at. Unlike the latency probe's ladders
+// (which vary by pair, and go to capRunes only for en>zh-Hans), every pair gets exactly these six
+// sizes, one run each — a quality trend across size, not a latency spread.
+var qualityLadderSizes = []int{400, 1_600, 6_400, 12_800, 16_400, 18_200}
+
+// qualityPairs is every pair the quality probes measure: all four scripts TestProbeApple already
+// knows (en>zh-Hans, zh-Hans>en, en>es, ja>en), ja>en included only when it is ready, the same way
+// TestProbeApple's own plan does.
+var qualityPairs = []string{pairENZH, pairZHEN, pairENES, pairJAEN}
+
+// qualityPoint is one planned quality-probe measurement: one pair at one size. There is no repeat
+// field (unlike planPoint): #151 wants one run per point, not #119's three.
+type qualityPoint struct {
+	pair  string
+	runes int
+}
+
+// buildQualityPlan returns every (pair, size) quality-probe point, cheapest size first within each
+// pair, for the pairs in qualityPairs that are ready (includeJA gates ja>en exactly as
+// TestProbeApple's own precheck does). cfg.maxRunes (KAI_ENGINE_PROBE_MAX_RUNES) drops sizes above
+// it, the same smoke-run convention buildPlan uses, so KAI_ENGINE_PROBE_MAX_RUNES=1000 leaves only
+// the 400-rune points. cfg.repeats plays no part: the quality probe never repeats a point.
+func buildQualityPlan(cfg probeConfig, includeJA bool) []qualityPoint {
+	fits := func(n int) bool { return cfg.maxRunes == 0 || n <= cfg.maxRunes }
+	var plan []qualityPoint
+	for _, pair := range qualityPairs {
+		if pair == pairJAEN && !includeJA {
+			continue
+		}
+		for _, n := range qualityLadderSizes {
+			if fits(n) {
+				plan = append(plan, qualityPoint{pair: pair, runes: n})
+			}
+		}
+	}
+	return plan
+}
+
+// --- Similarity (issue #152) ----------------------------------------------------------------------
+
+// similarity returns a deterministic likeness score in [0,1] between a and b: 1 minus the
+// Levenshtein edit distance (insertions, deletions and substitutions, each cost 1) between their
+// runes, normalized by the longer string's rune count. Two empty strings score 1.0 (identical, not
+// undefined); otherwise the score is exact — 1.0 only for identical strings, and it falls as the
+// strings diverge. It operates on runes, never bytes, so one CJK character counts as one unit the
+// same way one Latin character does; comparing UTF-8 bytes instead would let a single multi-byte
+// character's edit weigh two or three times a Latin one's, and would let byte-level slicing split a
+// character in the middle. This is deliberately not an LLM judge: no external call, no cost, fully
+// deterministic, so #152's round-trip score and #153's Apple/DeepL divergence score are free and
+// repeatable.
+func similarity(a, b string) float64 {
+	ra, rb := []rune(a), []rune(b)
+	if len(ra) == 0 && len(rb) == 0 {
+		return 1.0
+	}
+	longest := max(len(ra), len(rb))
+	return 1 - float64(levenshtein(ra, rb))/float64(longest)
+}
+
+// levenshtein returns the edit distance between a and b (insert, delete, substitute, each cost 1),
+// the classic two-row dynamic-programming form: O(len(a)*len(b)) time, O(min(len(a),len(b))) space.
+func levenshtein(a, b []rune) int {
+	if len(a) < len(b) {
+		a, b = b, a
+	}
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	cur := make([]int, len(b)+1)
+	for i := 1; i <= len(a); i++ {
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(cur[j-1]+1, min(prev[j]+1, prev[j-1]+cost))
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(b)]
+}
+
+// --- Structural integrity (issue #152) --------------------------------------------------------
+
+// structuralDefect summarizes the structural defects checkStructure found in one translation, each
+// a known NMT failure mode at scale (#151's epic). A zero value (any() false) means the checked
+// output has none of them.
+type structuralDefect struct {
+	Dropped            []int    // paragraph numbers 1..paragraphs present in the input's markers, absent from the output
+	Reordered          bool     // paragraph markers present in the output, but not in the input's order
+	RepeatedSentences  []string // sentences appearing more than once in the output, exactly once in the input
+	RepeatedParagraphs []string // paragraphs appearing more than once in the output, exactly once in the input
+}
+
+// any reports whether any defect fired.
+func (d structuralDefect) any() bool {
+	return len(d.Dropped) > 0 || d.Reordered || len(d.RepeatedSentences) > 0 || len(d.RepeatedParagraphs) > 0
+}
+
+// markerSequence returns every digit run in text, in the order it appears, using the same
+// digit-parsing rule firstMissingMarker uses (clamped so an absurdly long digit run cannot wrap
+// around into a false match). Unlike firstMissingMarker, which stops at the first gap, this keeps
+// the whole sequence, in order and with duplicates, so checkStructure can also detect reordering
+// and (via the paragraph text itself) repetition.
+func markerSequence(text string) []int {
+	var out []int
+	cur, in := 0, false
+	flush := func() {
+		if in {
+			out = append(out, cur)
+		}
+		cur, in = 0, false
+	}
+	for _, r := range text {
+		if r >= '0' && r <= '9' {
+			cur, in = min(cur*10+int(r-'0'), 1<<30), true
+			continue
+		}
+		flush()
+	}
+	flush()
+	return out
+}
+
+// splitParagraphs splits text on the blank line buildInput separates paragraphs with, dropping
+// empty pieces.
+func splitParagraphs(text string) []string {
+	var out []string
+	for _, p := range strings.Split(text, "\n\n") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// splitSentences splits text on the sentence terminators the probe's scripts use (Latin '.', '!',
+// '?' and their CJK full-width equivalents), dropping empty pieces. A heuristic, not a parser: good
+// enough to compare a sentence's presence and count between input and output.
+func splitSentences(text string) []string {
+	isTerminator := func(r rune) bool {
+		switch r {
+		case '.', '!', '?', '。', '！', '？':
+			return true
+		}
+		return false
+	}
+	var out []string
+	for _, s := range strings.FieldsFunc(text, isTerminator) {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// selfRepeatedUnits returns each unit (sentences or paragraphs, already split and trimmed) that
+// appears more than once within units, in first-occurrence order, each named once regardless of how
+// many times it recurs.
+func selfRepeatedUnits(units []string) []string {
+	count := map[string]int{}
+	var order []string
+	for _, u := range units {
+		if count[u] == 0 {
+			order = append(order, u)
+		}
+		count[u]++
+	}
+	var repeated []string
+	for _, u := range order {
+		if count[u] > 1 {
+			repeated = append(repeated, u)
+		}
+	}
+	return repeated
+}
+
+// selfRepeatFraction returns the share of units, by count, that are a second-or-later occurrence of
+// a unit already seen earlier in the same slice: (total - distinct) / total. 0 for an empty slice
+// (nothing to repeat), never negative, less than 1 unless every unit is identical.
+func selfRepeatFraction(units []string) float64 {
+	if len(units) == 0 {
+		return 0
+	}
+	seen := map[string]bool{}
+	distinct := 0
+	for _, u := range units {
+		if !seen[u] {
+			seen[u] = true
+			distinct++
+		}
+	}
+	return float64(len(units)-distinct) / float64(len(units))
+}
+
+// repeatMargin is how much higher the OUTPUT's own self-repetition rate must be than the INPUT's own
+// self-repetition rate before checkStructure counts it as translation-introduced repetition. Margin,
+// not a bare "any repeat", because the probe's own sentence pool legitimately cycles at large sizes
+// (script.paragraph/stream, probe_test.go: "(cursor+i)%len(s.sentences)"), so a large-size input can
+// legitimately repeat a source sentence — and a faithful translation of that repeated sentence then
+// legitimately repeats too. Comparing self-repetition RATES, not raw text across the two languages
+// (input and output are never the same language), is what makes this check work at every size: a
+// real degeneration shows up as output repeating distinctly more than its own source already did.
+const repeatMargin = 0.15
+
+// checkStructure extends firstMissingMarker's paragraph-marker check (probe_test.go) with the three
+// defects #152 asks for: dropped paragraphs (a marker in 1..paragraphs missing from the output),
+// reordered markers (present, but not in input order), and repeated sentences or paragraphs — the
+// known large-input NMT failure mode, detected via selfRepeatFraction: input and output are never
+// the same language, so a defect can never be "the same text appears in both"; it is "output repeats
+// noticeably more, within itself, than input already legitimately does within itself." input is the
+// untranslated probe text; output is the translation to check; paragraphs is buildInput's paragraph
+// count for this point.
+func checkStructure(input, output string, paragraphs int) structuralDefect {
+	var d structuralDefect
+	present := map[int]bool{}
+	var order []int
+	for _, n := range markerSequence(output) {
+		if n < 1 || n > paragraphs || present[n] {
+			continue
+		}
+		present[n] = true
+		order = append(order, n)
+	}
+	for n := 1; n <= paragraphs; n++ {
+		if !present[n] {
+			d.Dropped = append(d.Dropped, n)
+		}
+	}
+	for i := 1; i < len(order); i++ {
+		if order[i] < order[i-1] {
+			d.Reordered = true
+			break
+		}
+	}
+	inSent, outSent := splitSentences(input), splitSentences(output)
+	if selfRepeatFraction(outSent)-selfRepeatFraction(inSent) > repeatMargin {
+		d.RepeatedSentences = selfRepeatedUnits(outSent)
+	}
+	inPara, outPara := splitParagraphs(input), splitParagraphs(output)
+	if selfRepeatFraction(outPara)-selfRepeatFraction(inPara) > repeatMargin {
+		d.RepeatedParagraphs = selfRepeatedUnits(outPara)
+	}
+	return d
 }
