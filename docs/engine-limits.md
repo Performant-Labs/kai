@@ -83,11 +83,43 @@ Only the lines the test names "asserted" decide a verdict; every latency is logg
 
 ## How to re-run the apple probe (#119)
 
-1. Build the bridge: `(cd pkg/swiftbridge/scripts && bash ./build.sh)`.
-2. Install English and Chinese (Simplified) under System Settings > General > Language & Region > Translation Languages.
-3. Keep the Mac awake and otherwise idle (`caffeinate -is`). Every point costs its full translation time, so other work makes the run longer and noisier.
-4. From the repository root: `KAI_ENGINE_PROBE=1 CGO_ENABLED=1 go test -tags enginelimits -ldflags=-linkmode=external -run TestProbeApple -timeout 3h -count=1 -v ./internal/engine/enginelimits/`. `KAI_ENGINE_PROBE_MAX_RUNES=1000` gives a short smoke run. A first data point (52 minutes, not verified) is in `docs/handoffs/111/handoff-F.md`, "Data for #119".
+The probe (`TestProbeApple` in `internal/engine/enginelimits/probe_test.go`) goes through `engine.NewApple()`. Each session runs a fixed plan, cheapest first, so the time cap cuts the least valuable data:
+
+- **Phase 1, ladder** (the spread and the latency curve): `en>zh-Hans` at 400, 1,600, 6,400 and 20,000 runes; `zh-Hans>en` and `en>es` at 400, 1,600 and 6,400. Every size runs `KAI_ENGINE_PROBE_REPEATS` times (default 3; fewer is refused).
+- **Phase 2, boundary** (`zh-Hans>en` only, single runs): 12,800 runes, then the #111 sizes (16,400, 18,200, 19,100, 20,000) until one fails, then bisection until the bracket is within 5% of the passing size (at least 50 runes). When the answer lands inside the #111 bracket (18,200 passed, 19,100 failed), its two points run once more if the budget allows.
+- **Phase 3, Japanese** (optional): the `ja>en` ladder at 400, 1,600 and 6,400 runes, only when Japanese is installed and the session so far took under 60 minutes. The probe never installs a language.
+
+A session is capped at `KAI_ENGINE_PROBE_BUDGET_MIN` minutes (default 90). A point starts only if the elapsed time plus 1.25 times its projected time fits the cap. The projection is the point's size times the median milliseconds per rune so far for its pair. A point in flight is never cut off. At the cap the probe prints `PROBE budget_exhausted` with what it left out, and the session is partial. Between two runs that completed, the probe pauses 5 s. After an error it waits until a one-sentence request comes back in under 5 s, or until 60 s pass (`queue_drain=timeout`). It never cancels a measured run.
+
+1. Build the bridge: `(cd pkg/swiftbridge/scripts && bash ./build.sh)`. The build is deterministic, and the `PROBE host` line records the dylib's sha256: both sessions must show the same one.
+2. Install English, Chinese (Simplified) and Spanish (Japanese is optional) under System Settings > General > Language & Region > Translation Languages. The probe stops with the cause if a required one is missing.
+3. Quiet the Mac: nothing else running, and no other kai or pipeline session. The probe records the load average (`vm.loadavg`) at the start, at the start of every run and at the end. A session waits up to five minutes for a 1-minute load average of 10 or below, and stops if the Mac stays busy. A run that starts above 12 is marked `noisy` and left out of the statistics; its line is kept.
+4. From the repository root: `KAI_ENGINE_PROBE=1 CGO_ENABLED=1 caffeinate -is go test -tags enginelimits -ldflags=-linkmode=external -run TestProbeApple -timeout 115m -count=1 -v ./internal/engine/enginelimits/ 2>&1 | tee <scratch>/probe-<session>.log`. The timeout is the 90-minute budget, plus the 20-minute ceiling of a point that starts just inside it, plus slack. Record a second session at least an hour after the first one ended, with `KAI_ENGINE_PROBE_SKIP_BOUNDARY=1` (about 30 minutes). A first data point (52 minutes on a loaded machine, not verified) is in `git show 9c575ad^:docs/handoffs/111/handoff-F.md`, section "Data for #119".
 5. Put the result in the apple row of `internal/engine/input_budget.go` and of this page (Latin and CJK maximums, latency, host, date; `Verified` yes, `SourceMeasured`, follow-up gone). The limit is the smaller of the two maximums, the `apple_limit_runes` line the probe prints last. Then take the provisional-row wording out of "Reading the table" here and out of the last paragraph of `internal/engine/enginelimits/doc.go`; no test checks that prose.
 6. After any change to the bridge's cancel path, run the cancel checks (command above, about two minutes).
+
+The knobs are environment variables, read only by the gated test:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `KAI_ENGINE_PROBE_REPEATS` | 3 | runs per ladder size; fewer than 3 is refused |
+| `KAI_ENGINE_PROBE_BUDGET_MIN` | 90 | the session's cap in minutes; with a larger cap, raise the go test timeout to the cap plus 25 minutes |
+| `KAI_ENGINE_PROBE_MAX_RUNES` | no bound | drops every planned size above it; `1000` is the smoke run (the nine 400-rune points, about 3 minutes), which records the load but does not wait for a quiet Mac (any bound above 1,000 is a real capped session and waits like any other) |
+| `KAI_ENGINE_PROBE_SKIP_BOUNDARY` | off | `1` leaves out phase 2 |
+| `KAI_ENGINE_PROBE_STATUS` | `kai-probe-status.jsonl` in the temp dir | the progress file; the `PROBE config` line prints its path |
+
+**Progress file.** After every run the probe appends one JSON line with these fields: `time` (RFC 3339, with the zone), `elapsed_s`, `phase`, `pair`, `runes`, `utf8_bytes`, `repeat`, `latency_ms`, `out_bytes`, `kind`, `load1`, `next` (the next planned point) and `budget_left_s`. It appends one more line with `phase` `budget_exhausted` when the cap stops the run, and a last one with `phase` `done`. Run `tail -f` on the file to follow a session. The file lives outside the repository, so it is never committed.
+
+**Log lines.** A session opens with:
+
+- `PROBE host`: macOS version and build, chip, cores, memory, Go, bridge sha256.
+- `PROBE config`, `PROBE load` (at the start), `PROBE precheck` and `PROBE plan`.
+
+Each run then prints one `PROBE point` line. It carries the #111 keys plus `pair`, `phase`, `repeat`, `load1` and `noisy`; `runes` counts runes and `utf8_bytes` counts bytes. A `PROBE settle` line comes between runs, with a `PROBE warm` line for each drain request after an error. `PROBE boundary` marks the end of phase 2, and `PROBE phase3 skipped=true` a phase 3 left out at the 60-minute mark. At the end:
+
+- a `PROBE summary` per size: every latency, and min, median and max over the runs that are not noisy;
+- a `PROBE result` per pair: the largest size at which every run that is not noisy passed;
+- a `PROBE failure` per failed run: its output bytes, projected from the pair's passing runs, against the 65,535-byte buffer;
+- `PROBE load` (at the end), and `PROBE apple_limit_runes` last.
 
 The probe and the cancel checks are opt-in on purpose: they need the build tag `enginelimits` and `KAI_ENGINE_PROBE=1`, and they are not part of CI, the Makefile, the Taskfile or the pipeline's test command. They need external linking and a main-thread run loop (the `TestMain` in the probe parks the main OS thread in `dispatch_main`); without them a translation never returns. The probe checks the prerequisites first, puts a ceiling of its own on every call, and stops with the cause instead of reporting a limit.

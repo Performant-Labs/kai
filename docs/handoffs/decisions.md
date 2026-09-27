@@ -646,3 +646,94 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
 - **Assumed:** AC1's literal grep means non-test source, because the tests that forbid the name must name it (T's reading). AC8's "no new check errors" rests on `tsc`, since svelte-check crashes before reading any source (pre-existing, TS 7 gate).
 - **Hedged:** the test-helper duplication in `realTextPanes.test.ts` vs `sourceUndo.test.ts` (A-dup warn 1) and three minor overlapping assertions are advisory, not REWORK. The WebKit caret, scroll, IME, Apple break fidelity and narrow-pane look are unverifiable headlessly (#28).
 - **Evidence:** docs/handoffs/144/handoff-S.md. The authoritative command exits 0 (13 Go packages ok, 29 files / 386 tests). `tsc` is clean and `gofmt` is clean. The dead-code grep over non-test `frontend/src` is empty. The `input =` writers are only :277/:304/:312 (plus the :158 decl), and the #118 guard is unchanged. The key-literal grep over the added lines finds nothing.
+
+## #119 A (Phase 3, up-front plan review, part A only, 2026-09-26, 5:32 PM MDT): PASS
+- **Decided:** PASS, with 0 block and 7 warn. The plan extends `probe_test.go` (`prober`, `script`, `try`, `call`, `search`). It keeps both gates (`enginelimits && darwin`, `KAI_ENGINE_PROBE=1`), the `TestMain` run loop and external linking. It makes no bridge, engine or UI change. Dependency direction is one way: nothing imports `enginelimits`.
+- **Warns** (all in docs/handoffs/119/handoff-A.md):
+  1. An untagged `plan.go` breaks `doc.go`'s claim of "no production code". Prefer an untagged `_test.go` helper file, or rewrite that sentence.
+  2. The 65,535 constant can only mirror the inline `1<<16` in `apple_darwin.go:101`. Pin it with a source-contract test.
+  3. `out_bytes` is result text, not the JSON payload the buffer holds. Say which one the helper compares.
+  4. Do not add a `Pair` type that repeats `script`'s `from`/`to`. Add `pair=` to the lines and keep `search=`.
+  5. Keep one bisection with one tested stop rule. Do not copy `search`'s loop.
+  6. The status-file default must not be a hard-coded `.worktrees/0119-...` path: that path is not ignored inside the worktree. Use the temp dir and log the path.
+  7. `-timeout 100m` is less than the 90-minute cap plus the 20-minute point ceiling. Also, `KAI_ENGINE_PROBE_MAX_RUNES` must be a tested planner filter for the smoke run.
+- **Assumed:** this run is part A only (tooling, pure helpers, tests, run-guide procedure). The apple row, the `input_budget.go` constant, the drift-test rewrites and the provisional prose are part B, after `docs/handoffs/119/results.md` exists.
+- **Hedged:** read-only review; no build or tests run. The suite-guard test must match the build tag and the env name, not the package path, because `./internal/...` already covers the package.
+- **Evidence:** `grep -rn 'enginelimits\|KAI_ENGINE_PROBE' Makefile Taskfile.yml .github/workflows .opencode/pipeline.config.json` finds nothing. `git check-ignore .probe-status.jsonl` in the worktree finds nothing (`.worktrees/` is excluded only in `.git/info/exclude`). `apple_darwin.go:101` has `outBuf := make([]byte, 1<<16)`, and `writeCString` writes at most `cap-1`.
+
+## #119 T (Phase 4, author/RED, part A only, 2026-09-26, 5:43 PM MDT): PASS
+- **Decided:** RED is valid. 29 unit tests in two new untagged files. `internal/engine/enginelimits/plan_test.go` covers the planner, knobs, cap, stats, noisy load, maximum/sessions, bisection, the buffer and the status file, plus the queue drain on a fake clock. `guard_test.go` covers the suite/CI guard with a fixture that proves it has teeth, the buffer mirror source contract, the single-literal check, the `doc.go` claim, and the run-guide timeout and knobs. The helper names are fixed in handoff-T-red.md.
+- **Decided:** the helpers go in untagged `plan.go`, not an untagged `_test.go` as A preferred. F is hard-denied `**/*_test.go`, so A warn 1's option (a) cannot be implemented. `doc.go`'s "no production code" sentence therefore changes in part A, and a test pins it.
+- **Decided:** the probe `-timeout` is 115m (at least the budget plus the point ceiling, at most 2h), which settles A warn 7a over the brief's 100m. `MAX_RUNES` is a planner filter (1000 gives the nine 400-rune points; below 400 is an error). Boundary seeds 12,800/16,400/18,200/19,100/20,000, then the midpoint, with the one `bracketDone` stop rule.
+- **Assumed:** a size with only noisy runs is not a maximum (no evidence). `bufferBound` compares result bytes, not payload bytes (A warn 3). `ja>en` uses the CJK ladder (400/1,600/6,400; either reading of the brief gives the same sizes). The queue drain after truncated/short results is not pinned.
+- **Hedged:** the tagged probe changes (the `es`/`ja` scripts and digit guard, `precheck`, the `pair=`/`repeat=`/`load1=` fields) are not unit-testable. They are left to Phase 6 code reading, `go vet -tags enginelimits`, and O's go-ahead smoke run. T never ran the probe.
+- **Evidence:** the authoritative command exits 1, with only `internal/engine/enginelimits [build failed]` (undefined new names) and every other Go package ok. A throwaway zero-value stub gives 27/29 FAIL on their assertions; the 2 suite guards pass by design. A throwaway reference implementation gives 27/29 PASS; the remaining 2 are F's part A doc edits. This caught and fixed a scan that counted `cancel_test.go`'s own buffer. One vacuous test was dropped as redundant. Both throwaway files were deleted, and `git status` shows only the test files and the handoff.
+
+## #119 F (Phase 6, implement, part A only, 2026-09-26, 6:13 PM MDT)
+- **Decided:** implemented T's contract in a new untagged `internal/engine/enginelimits/plan.go` (standard library only). The authoritative command exits 0: 14 Go packages ok, `enginelimits` 29/29, frontend 29 files / 386 tests. No test was changed.
+  - `kind*`, `pointCeiling`, `stepFloor` and `stepPct` moved into `plan.go`. There is one bisection (`nextBoundary`/`bracketDone`) and one generic `median`. `appleOutBufPayloadMax = 1<<16 - 1` is the only buffer literal.
+  - `doc.go` no longer claims the package has no production code. It and the engine-limits.md run guide now carry the plan, `-timeout 115m`, the five knobs, the progress file and two sessions.
+  - Part B's text is untouched: the apple row, step 5, "Status", "Reading the table", "Apple, provisional", and doc.go's provisional sentences.
+- **Decided:** extended the tagged probe (`probe_test.go`), as the brief ("what F changes in the probe") and handoff-T-red direct. The constants moved out of it, so it had to change for the tagged build to compile. I left it **unstaged** per "stage no test files"; the driver's `git add -A` phase commit includes it.
+  - `search` is retired (A warn 5), and `apple_limit_runes` stays the last line, with `partial=`.
+  - `script` gains `pair()` and `withTarget()` (A warn 4): `latinES`, and a numeral-free `japanese` pool.
+  - `precheck()` keeps its lines and API for the cancel checks. The probe's `ready()` requires es and treats ja as optional.
+  - The digit guard now also rejects full-width digits and CJK numerals.
+  - A queue-based session does settle, then `shouldStart`, then the run, then the status line. The boundary bisects from the ladder, and a bracket inside #111's gets one confirmation repeat.
+  - A deferred `finish` logs the summaries, results, failures with `bufferBound` evidence, load and limit. `bridgeStamp` adds sha256. `loadAvg` reads `vm.loadavg`.
+  - `waitQuiet` waits up to 5 min for load1 ≤ 3 and then stops; a `MAX_RUNES` smoke run records the load and does not wait.
+- **Decided:** `done: true`, `archChanged: true`. The package gains non-test code and a new contract sentence, and the probe's control structure was replaced. Nothing exported, no new dependency, and nothing imports the package.
+- **Assumed:**
+  - The optional choices T left open: min and max over quiet runs; maxPassing's literal rule, even when a smaller size failed; 20% of the smaller session maximum; truncated and short count as completed calls (5 s pause); the seed of 40 ms per rune; only `""`/`0`/`1` accepted for SKIP_BOUNDARY.
+  - Per-pair projections rather than per-script: a new pair starts at the conservative seed.
+  - The budget clock starts at test start, so the quiet wait and the precheck count against it; worst case cap + ceiling = 110 min < 115m.
+- **Hedged:**
+  - The tagged code has not met the real framework. It was checked by vet and link (tag on), a gate-unset run where all 5 gated tests SKIP, and a throwaway fake-engine session check, deleted afterwards. The smoke run (`MAX_RUNES=1000`) is O's or the principal's with a go-ahead.
+  - The Japanese prose was not reviewed by a native speaker.
+  - en>es targets `es` (Castilian); a missing or failing Spanish model stops the run with its cause.
+  - `go vet ./internal/engine/` reports pre-existing `i18n.T` format findings in an untouched package; the suite runs with `-vet=off`.
+- **Evidence:** docs/handoffs/119/handoff-F.md.
+  - The fake-engine check: boundary 12,800 → 16,400 → 18,200 → 19,100 fail, done at (18,200, 19,100), both points confirmed, `buffer_bound=true` at a projected 74,835 bytes; the cap gives `budget_exhausted` and `partial=true`; phase 3 is skipped past 60 min; all 13 status keys are present and the last line is `done`.
+  - The load-noise fix to the bisection seed came from that run (load1 5.6 to 6.5).
+  - 39 sentence strings scanned clean. T's four test files are sha256-identical. gitleaks: no leaks.
+
+## #119 T (Phase 7, verify GREEN + Tier 2, part A only, 2026-09-26, 6:16 PM MDT): PASS
+- **Decided:** GREEN. The authoritative command (with `NODE_OPTIONS=--no-experimental-webstorage`, gate unset) exits 0: every Go package ok, `enginelimits` 29/29, frontend 29 files / 386 tests. No test repaired: F flagged none, and the diff of T's test files since `a3133c1` is empty.
+- **Decided:** Tier 2 has no blocker. `plan.go` matches the handoff-T-red contract. The tagged probe's digit guard, es-required / ja-optional precheck, PROBE fields and gate order were read and are correct. Tagged and untagged vet are clean, gofmt is clean, `-race -count=3` is ok, and the tagged binary links with every gated test SKIPping.
+- **Assumed:** three non-blocking notes are left for later, and none needs a production change in part A. (1) `msPerRune` includes failed and noisy runs, so a fast error makes a projection optimistic. (2) A smoke run's `apple_limit_runes` line does not mark the `MAX_RUNES` bound. (3) `maxPassing` applies the literal rule even when a smaller size failed.
+- **Hedged:** golangci-lint is not installed locally and was not run. The probe and the smoke run were not run (O's or the principal's with a go-ahead), so the harness has not met the real framework.
+- **Evidence:** docs/handoffs/119/handoff-T-green.md.
+
+## #119 A (Phase 7, anti-duplication gate, part A only, 2026-09-26, 6:18 PM MDT): PASS
+- **Decided:** PASS, with 0 block, 2 warn and 4 info. F extended the Reuse map's objects instead of building parallel paths:
+  - `script` gains `pair()`/`withTarget()`; there is no second pair type.
+  - `precheck()` wraps the new `ready()`.
+  - `search` is retired, leaving one bisection (`nextBoundary`/`bracketDone`) and one stop rule.
+  - One generic `median`, and one buffer mirror (`appleOutBufPayloadMax`) pinned to `apple_darwin.go`.
+  - `plan.go` is the new file the brief itself names. It uses only the standard library and nothing imports it.
+  - No diff under `pkg/`, `internal/engine/*.go`, `internal/translate`, CI or pipeline config.
+- **Warns** (docs/handoffs/119/handoff-A-dup.md):
+  1. The pair label has two sources: the `pair*` constants in `plan.go` and `script.pair()`. A mismatch is caught only at run time, after the quiet wait and the precheck, and for `ja>en` it silently drops phase 3. Add a startup assertion in `TestProbeApple` before any Apple call.
+  2. The session-limit rule in `session.results()` is pure logic, but it is in tagged, untested code. It also goes beyond the documented "smaller of the two maximums": an extra pair failing below the issue pairs lowers the limit. Part B must extract a tested `sessionLimit` into `plan.go` and align `doc.go`, run-guide step 5 and the drift tests to it.
+- **Assumed:** part B is out of scope for this run. Warn 2 is a required item for part B's brief, not a Phase 7 block, because the brief never mapped this rule to an existing object.
+- **Hedged:** read-only review; no build or tests run by A (T-green's authoritative exit 0 is relied on). The tagged session code has still not met the real framework; the `MAX_RUNES=1000` smoke run remains O's or the principal's with a go-ahead.
+- **Evidence:** `git diff master --stat` restricted to the out-of-scope paths is empty.
+  - Master `probe_test.go` compared against HEAD `69fafad`.
+  - A grep for `func median|vm.loadavg|O_APPEND|1<<16` found only `logutil` (not a reuse target), the engine buffer and the pre-existing literal in `cancel_test.go`.
+  - A grep for the pair literals: they appear in `plan.go` and the tests only.
+
+## #119 S (Phase 8, spec audit, part A only, 2026-09-26, 6:21 PM MDT): PASS
+- **Decided:** PASS. Part A matches the brief:
+  - the build tag `enginelimits && darwin` plus the `KAI_ENGINE_PROBE=1` gate (a tagged run with the gate unset SKIPs);
+  - the 90-minute cap with ×1.25, and `PROBE budget_exhausted`/`partial=true`;
+  - at least 3 repeats per ladder size;
+  - the boundary seeds and one bisection;
+  - the queue drain (5 s, or a warm call under 5 s / 60 s timeout);
+  - the 13-field status file, with `budget_exhausted` and `done` lines;
+  - the noisy flag above load 5 and the quiet start at 3 or below;
+  - the buffer evidence by bytes against the one named constant.
+- **Decided:** scope holds. `git diff master` over `pkg/`, `internal/engine/*.go`, `internal/translate`, CI, the Makefile, the Taskfile, `.opencode` and `.gitignore` is empty. The apple row, the constant and the provisional prose are untouched. No key-shaped literal is in the added lines.
+- **Decided:** test quality is acceptable. No test is assertion-free, tautological or mock-shaped. There are minor duplicate-signal pins (`TestBracketDone`'s constant check, the plan total count), and no delete or merge is required.
+- **Assumed:** `-timeout 115m` (over the brief's 100m) and the temp-dir status file are accepted deviations, settled by A warns 7a and 6 and pinned by T.
+- **Hedged:** PROBE lines carry no wall-clock time. results.md must take session dates and the one-hour gap from the status file's `time` field, split per session at the `done` line. There are four more advisories for O and the part B brief (brief step 3's stale 100m; A-dup warn 1 not folded in, though it holds today; noisy boundary runs are counted by the bracket but not by `maxPassing`; the smoke run's limit line is not a result).
+- **Evidence:** docs/handoffs/119/handoff-S.md. Untagged package tests ok. `go vet -tags enginelimits` clean. The digit scan of 52 script strings is clean.
