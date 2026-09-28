@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>#161 source-lang correct - wireframe</title>
+<title>#161 source-lang note - wireframe (rev 2)</title>
 <style>
   /* Tokens copied from frontend/src/app.css (:root and html.dark), same set as the #145 wireframe. Low-fi: only what these frames need. */
   .th-light { --app-bg:#ffffff; --app-fg:#1f2329; --app-muted:#8a8f99; --app-border:#e5e6eb; --app-card:#f7f8fa; --app-accent:#3b82f6; --app-accent-fg:#ffffff; --app-input-bg:#ffffff; --surface:#f2f3f5; --menu:#f6f6f7; --menu-hi:#3b82f6; }
@@ -12,6 +12,7 @@
   #zoomwrap { zoom:1.5; }
   h1 { font-size:16px; margin:0 0 4px; } h2 { font-size:13px; margin:28px 0 8px; } h3 { font-size:12px; margin:16px 0 6px; color:#374151; }
   .meta { color:#6b7280; font-size:12px; margin-bottom:12px; max-width:1000px; line-height:1.45; }
+  .override { font-size:12px; max-width:1000px; line-height:1.45; background:#fff8eb; border:1px solid #f3d9a4; border-radius:6px; padding:8px 10px; margin:8px 0 12px; color:#5b3a06; }
   .board { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
   .frame { background:#fff; border:1px solid #d9dce2; border-radius:8px; overflow:hidden; }
   .frame-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:#6b7280; padding:8px 10px; border-bottom:1px solid #e5e6eb; background:#fafbfc; }
@@ -24,8 +25,9 @@
   table { border-collapse:collapse; font-size:11px; background:#fff; max-width:1000px; }
   th, td { border:1px solid #e5e6eb; padding:5px 8px; text-align:left; vertical-align:top; line-height:1.4; }
   th { background:#fafbfc; }
-  .new { outline:2px solid #f59e0b; outline-offset:1px; }  /* wireframe marker: new or changed element */
-  .legend { display:inline-block; width:12px; height:12px; border-radius:3px; outline:2px solid #f59e0b; vertical-align:-2px; margin-right:4px; }
+  .new { outline:2px solid #f59e0b; outline-offset:1px; }      /* wireframe marker: new element */
+  .fixed { outline:2px dashed #16a34a; outline-offset:1px; }   /* wireframe marker: must never change */
+  .legend { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; }
   .viewbar { font-size:12px; margin:0 0 12px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
 
   /* ---- Window mock. Sizes follow the real Tailwind/app.css values of TranslateWindow.svelte ---- */
@@ -43,7 +45,6 @@
   .menu { position:absolute; left:0; top:calc(100% + 3px); z-index:6; background:var(--menu); border:1px solid var(--app-border); border-radius:7px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.22); font-size:13px; min-width:100%; }
   .menu div { padding:2px 10px 2px 22px; line-height:20px; white-space:nowrap; border-radius:4px; position:relative; }
   .menu div.chk::before { content:"✓"; position:absolute; left:7px; }
-  .menu div.hov { background:var(--menu-hi); color:#fff; }
   .menu div.sep { border-top:1px solid var(--app-border); margin:3px 0; padding:0; height:0; }
   .ib { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; flex:none; border-radius:8px; color:var(--app-muted); background:var(--app-card); border:1px solid var(--app-border); font-size:17px; line-height:1; padding:0; font-family:inherit; }
   .ib.off { opacity:.4; }
@@ -55,15 +56,15 @@
   .dot { width:8px; height:8px; border-radius:9999px; background:var(--app-accent); box-shadow:0 0 0 2px var(--app-accent); display:inline-block; }
   .body { flex:1; min-height:0; padding:16px; font-size:16px; line-height:1.625; overflow:hidden; white-space:pre-wrap; word-break:break-word; }
   .body.ph { color:var(--app-muted); }
-  .note { color:var(--app-muted); font-size:12px; line-height:16px; padding:16px 16px 0; }
+  /* result-pane muted notes: u-muted px-4 first:pt-4, stacked above the textarea exactly as the real markup does */
+  .notes { display:flex; flex-direction:column; }
+  .n { color:var(--app-muted); padding:0 16px; display:block; }
+  .n:first-child { padding-top:16px; }
+  .n.xs { font-size:12px; line-height:16px; }      /* text-xs  (phonetic, identity) */
+  .n.x11 { font-size:11px; line-height:15px; }     /* text-[11px] (cancelled; proposed for the new note) */
+  .n.new { outline:none; box-shadow:inset 3px 0 0 #f59e0b; }  /* marker drawn inside the note's own px-4 inset so it never overlaps the next line */
   .footer { border-top:1px solid var(--app-border); display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:8px 12px; flex:none; }
   .btn { border-radius:8px; font-weight:500; font-size:14px; line-height:20px; padding:6px 20px; white-space:nowrap; background:var(--app-accent); color:var(--app-accent-fg); border:0; }
-  /* .u-toast, copied from app.css (positioned relative to the mock window instead of the viewport) */
-  .toast { position:absolute; left:50%; bottom:20px; transform:translateX(-50%); padding:6.4px 14.4px; font-size:12.8px; font-weight:500; color:var(--app-accent-fg); background:var(--app-accent); border-radius:9999px; box-shadow:0 4px 14px rgba(0,0,0,.18); z-index:7; white-space:nowrap; }
-  .toast.inline { position:static; transform:none; display:inline-block; }
-  .strip { display:flex; gap:10px; align-items:stretch; }
-  .tile { width:250px; height:92px; position:relative; border-radius:6px; }
-  .tile .t { position:absolute; top:6px; left:8px; font-size:10px; color:var(--app-muted); font-family:ui-monospace, Menlo, monospace; }
 
   .zoombar { position:fixed; top:8px; right:8px; z-index:10; display:flex; gap:4px; align-items:center; background:#fff; border:1px solid #d9dce2; border-radius:6px; padding:4px 6px; font-size:13px; }
   .zoombar button { font:inherit; min-width:28px; padding:2px 6px; cursor:pointer; }
@@ -78,88 +79,95 @@
   <button type="button" id="zreset" aria-label="Reset zoom to 100%">0</button>
 </div>
 <div id="zoomwrap">
-<h1>#161 source-language correction + Auto landmark - wireframe (low-fi)</h1>
+<h1>#161 source-language note - wireframe (low-fi, revision 2)</h1>
+<div class="override">
+  <b>Revision 2, after the principal's override (2026-09-28).</b> The FROM dropdown never changes on its own. The Auto entry always reads bare "Auto" / "自动". A pinned entry is never reassigned or suffixed. That walks back #11's relabeled Auto row. Revision 1's relabeled Auto row ("Auto — detected: …"), its option A (reassign the pin), its option B, and the correction toast are all dropped. What replaces them is one persistent, muted line in the result pane, "Translated from auto-detected Spanish (Mexico)", shown when the language the engine actually used differs from what the dropdown shows.
+</div>
 <div class="meta">
-  Translate window only. Two changes: (b) the Auto entry of the source dropdown always keeps the word "Auto" (en-US) / "自动" (zh-CN, the existing <code>lang.auto</code> name) and appends the detection as a clause (sections A, B); (a) when a pinned source is overridden by detection the existing <code>.u-toast</code> announces it (sections C, D, E), and a pin that was right changes nothing (section C, frame "pinned, correct").
-  Frames are whole windows at the real widths: default 960 px and minimum 780 px (<code>main.go</code> MinWidth). Heights are cut down (the real minimum is 520 px); nothing here depends on height.
-  The open dropdown is drawn as the macOS menu WKWebView shows for a native <code>&lt;select&gt;</code>: ✓ marks the selected entry. The closed select is drawn at the width a native select takes, i.e. its <b>widest option</b> (measured by this page), never less than <code>min-width: 7rem</code>.
-  Language list and order are the real ones (<code>ALL_TRANSLATE_LANGS</code>, <code>frontend/src/constants/lang.ts</code>); names are the real <code>lang.*</code> strings.
-  <br />Glyphs are Unicode stand-ins (⇄ ⚙ ⧉ ▾ ✓) for the Lucide icons already in the build; nothing new is drawn. <span class="legend"></span>= new or changed element (the outline is a wireframe marker, not a style). The grey line under a frame is measured by the page when it loads. Zoom: the buttons at the top right, or the - / + / 0 keys (starts at 150%; <code>#z=1</code> in the URL starts at 100%).
+  Translate window only. Frames are whole windows at the real widths: the 960 px default and the 780 px minimum (<code>main.go</code> MinWidth). Heights are trimmed; nothing here depends on height.
+  The open dropdown is drawn as the macOS menu WKWebView shows for a native <code>&lt;select&gt;</code>. ✓ marks the selected entry. The closed select is drawn at the width a native select takes, which is its widest option (this page measures it), never less than <code>min-width: 7rem</code>. With the Auto entry always bare, the widest source option is "Portuguese (Portugal)", so the select's width no longer depends on detection.
+  The language list and its order are the real ones (<code>ALL_TRANSLATE_LANGS</code>). Names are the real <code>lang.*</code> strings.
+  Result-pane notes follow the real markup (<code>TranslateWindow.svelte</code> ≈ :1309-1322). Each is <code>u-muted px-4</code>, the first one takes <code>first:pt-4</code>, and they stack above the result textarea.
+  <br />Glyphs are Unicode stand-ins (⇄ ⚙ ⧉ ▾ ✓) for the Lucide icons already in the build. Nothing new is drawn.
+  <span class="legend" style="outline:2px solid #f59e0b"></span>= new element (on the note itself: an orange bar at its left edge).
+  <span class="legend" style="outline:2px dashed #16a34a"></span>= must stay exactly as the user left it (the rule this revision exists to prove).
+  These outlines are wireframe markers, not styling. The grey line under each frame is measured by the page when it loads.
+  Zoom: the buttons at the top right, or the - / + / 0 keys. It starts at 150%; <code>#z=1</code> in the URL starts it at 100%.
 </div>
 <div class="viewbar">
   <label><input type="checkbox" id="allcombos" /> Show all 8 combinations (2 widths × 2 themes × 2 locales) per state</label>
-  <span style="color:#6b7280">Default shows 4 per state, which together cover 960/780, light/dark, en-US/zh-CN.</span>
+  <span style="color:#6b7280">By default each state shows 4 frames, which together cover 960/780, light/dark and en-US/zh-CN.</span>
 </div>
 
-<h2>A. The Auto entry across its states (source = Auto)</h2>
-<div class="meta">Single chokepoint: <code>detectedSourceLabel</code> returns <code>t('translate.autoDetected', {lang})</code> instead of <code>nameOf(detected) + ' (detected)'</code>. When it returns <code>null</code> the entry falls back to <code>langName('auto')</code> = "Auto" / "自动", as today. No other entry is ever relabeled.</div>
-<h3>A1. No detection yet (window just opened, or text cleared): bare "Auto"; ⇄ disabled (nothing to exchange)</h3>
-<div id="A1"></div>
-<h3>A2. Detected as another language (Spanish text, target English): "Auto — detected: Spanish (Mexico)"</h3>
-<div id="A2"></div>
-<h3>A3. Detected as the target itself (identity, #80): "Auto — detected: English", source text shown with the existing identity note, no toast</h3>
-<div id="A3"></div>
-<h3>A4. Detection unusable / low-confidence: the engine echoed "auto" or reported a native code <code>Covers</code> cannot match (baidu/youdao) — falls back to bare "Auto", no claim, no toast</h3>
-<div id="A4"></div>
+<h2>1. The source dropdown never changes: the Auto entry is always bare, and a pin stays where the user put it</h2>
+<div class="meta"><code>detectedSourceLabel</code> no longer relabels anything. Every <code>&lt;option&gt;</code> reads <code>langName(value)</code>, so the Auto entry is always <code>lang.auto</code>. The four frames per state below show the same menu before and after a result. Only the ✓ position differs, and only because the <i>user</i> picked a different entry.</div>
+<h3>1a. Source = Auto, nothing translated yet: "Auto" ✓</h3>
+<div id="S1a"></div>
+<h3>1b. Source = Auto, result arrived, the engine detected Spanish (Mexico): still bare "Auto" ✓, with no suffix. The "Spanish (Mexico)" row stays plain.</h3>
+<div id="S1b"></div>
+<h3>1c. Source pinned to Spanish (Mexico), and the English text was translated from auto-detected English: ✓ stays on "Spanish (Mexico)" and nothing moves. The Auto row stays bare.</h3>
+<div id="S1c"></div>
+<h3>1d. Every state on one line: the first rows of the menu (en-US / zh-CN)</h3>
+<div id="S1d"></div>
 
-<h2>B. Same states side by side in one open menu, and the pinned entry for comparison</h2>
-<div class="meta">What the first rows of the menu read in each state (en-US / zh-CN). The pinned entry "Spanish (Mexico)" three rows below is never suffixed, so "Auto — detected: Spanish (Mexico)" and the plain pin can no longer be confused.</div>
-<div id="B"></div>
+<h2>2. The new persistent result-pane note in its three states</h2>
+<div class="meta">
+  The note is rendered from <code>activeResult.detected_from</code>, which the backend sets only when the engine-used language differs from the request's <code>from</code>. The frontend shows it when that field is non-empty and differs from the displayed FROM value. It stays for as long as that result is showing. It is not a toast, has no timer, and is not clickable. It follows the <b>active</b> engine's result, so switching engines in the pane dropdown can show or hide it. The source pane, <code>fromLang</code> and <code>default_from</code> are never touched.
+</div>
+<h3>2a. Not shown: the pin was correct (Spanish text, pin Spanish (Mexico))</h3>
+<div id="S2a"></div>
+<h3>2a′. Not shown: nothing translated yet, whatever the source setting</h3>
+<div id="S2a2"></div>
+<h3>2b. Shown under an Auto-mode result: dropdown "Auto", note "Translated from auto-detected Spanish (Mexico)"</h3>
+<div id="S2b"></div>
+<h3>2c. Shown under a pinned-but-wrong result: dropdown still "Spanish (Mexico)", unmoved; note "Translated from auto-detected English"; the result is a real translation, not the old echo</h3>
+<div id="S2c"></div>
 
-<h2>C. Pinned source: corrected vs. correct (source pinned to Spanish (Mexico), target Chinese / English)</h2>
-<div class="meta">Correction fires only when the whole trimmed text is ≥ 20 code points <b>and</b> the engine reports a recognized detection that differs from the pin (and is not the target, which stays the identity rule). It is decided once, from chunk 1. The toast is fired from the <code>EventTranslateResult</code> handler for the <b>active</b> engine's result carrying <code>corrected: true</code>, via the existing <code>showToast</code> (1.6 s). No call to <code>onLangPicked</code> / <code>learnLangVariant</code> / <code>persistLangs</code>: <code>default_from</code> stays es-MX in settings.</div>
-<h3>C1. Pinned but correct (Spanish text, pin Spanish (Mexico)): nothing changes — no toast, dropdown untouched, Auto entry bare</h3>
-<div id="C1"></div>
-<h3>C2. Pinned and wrong, OPTION A (recommended, brief's recommendation): dropdown reassigned to the detected language by direct assignment + toast "Source corrected to English"</h3>
-<div id="C2"></div>
-<h3>C3. Pinned and wrong, OPTION B (alternative): dropdown keeps showing the pin; toast only, worded so it explains the mismatch</h3>
-<div id="C3"></div>
-<h3>C4. Pinned and wrong but too short (&lt; 20 code points, "ok thanks" = 9): no correction, no toast, the pin is honored — result stays the echo (unchanged, accepted limitation per the brief)</h3>
-<div id="C4"></div>
+<h2>3. The note next to the existing notes in the same pane (no collision)</h2>
+<div class="meta">Proposed order: the new note goes <b>first</b>, above phonetic, cancelled and identity. It is about where the text came from, so it heads the stack, and the existing notes keep their current order relative to each other. It takes <code>first:pt-4</code> as the first line, and the lines after it drop their top inset, as today. The page measures that no note overlaps the next line or the textarea, and that none overflows the pane.</div>
+<h3>3a. With phonetic (target Chinese, pinyin line from the engine)</h3>
+<div id="S3a"></div>
+<h3>3b. With phonetic and "Cancelled" (a chunked translation cancelled part way, #84 / #109)</h3>
+<div id="S3b"></div>
+<h3>3c. Detected = target (identity, #80): RECOMMENDED: identity note only, the new note suppressed</h3>
+<div id="S3c"></div>
+<h3>3c′. Same identity case, ALTERNATIVE: both lines shown (for comparison; "Translated from …" over untranslated text reads as a contradiction)</h3>
+<div id="S3c2"></div>
+<h3>3d. The longest language name, "Portuguese (Portugal)", at both widths: it still fits on one line (measured)</h3>
+<div id="S3d"></div>
 
-<h2>D. The dropdown opened right after a correction (option A vs option B)</h2>
-<div class="meta">In both options the Auto entry reads bare "Auto" / "自动" (the source is not Auto, so <code>detectedSourceLabel</code> returns null) — it is the fixed landmark the user picks to escape back to Auto. Option A: ✓ on English (the corrected, now-selected value). Option B: ✓ stays on Spanish (Mexico) although the request used English.</div>
-<div id="D"></div>
-
-<h2>E. Source-corrected toast next to the Copied toast (same <code>.u-toast</code>, same 1.6 s, one at a time)</h2>
-<div class="meta">Both go through the one <code>toast</code> state string. A later <code>showToast</code> replaces the text and restarts the 1.6 s timer, so the two pills can never be visible together or stack; the sequence strip shows a Copy click 0.8 s into a correction toast. Pills are shown inline here for comparison; in the window they sit bottom-centre, 20 px up, <code>pointer-events: none</code>.</div>
-<div id="E"></div>
-<h3>E2. Sequence: correction result arrives, then the user clicks ⧉ Copy 0.8 s later</h3>
-<div id="E2"></div>
-
-<h2>F. Behaviour of each control (one line each)</h2>
+<h2>4. Behaviour of each control (one line each)</h2>
 <table>
-  <tr><th>Control / event</th><th>Does</th><th>Disabled / skipped when</th></tr>
-  <tr><td>Source select, Auto entry</td><td class="new">Label is "Auto" / "自动", plus " — detected: X" / " — 已识别：X" when source is Auto and the active engine reported a usable detection. Picking it sets the source to Auto (teaches nothing, as today).</td><td>Never disabled. Detection clause absent while nothing / nothing usable is detected, or while a concrete language is pinned.</td></tr>
-  <tr><td>Source select, any concrete entry</td><td>Plain <code>langName</code>, never suffixed. Picking it pins it and, as today, calls <code>onLangPicked</code> (teach + persist).</td><td>Never disabled (every engine accepts every source).</td></tr>
-  <tr><td>Result with <code>corrected: true</code> (active engine)</td><td class="new">Option A: <code>fromLang = corrected</code> by direct assignment, then <code>showToast(t('translate.sourceCorrected', {lang}))</code>. Option B: toast only.</td><td>Skipped for a non-active engine's result until it becomes active; skipped for identity results and for text &lt; 20 code points (backend never sets the flag).</td></tr>
-  <tr><td>Toast (correction)</td><td class="new">Accent pill, bottom centre, 1.6 s, not clickable.</td><td>Replaced at once by any later toast (Copied, Cancelled).</td></tr>
-  <tr><td>⇄ Swap</td><td>Unchanged; after an option-A correction it swaps the corrected pair (English ↔ Chinese), consistent with the dropdown.</td><td><code>swapPair === null</code> (source Auto with nothing usable detected), unchanged.</td></tr>
-  <tr><td>⧉ Copy (result)</td><td>Unchanged: copies and shows "Copied" / "已复制".</td><td>Unchanged.</td></tr>
-  <tr><td>Translate</td><td>Sends the dropdown's current source. Option A: after a correction that is the corrected language (see open question 2).</td><td>Unchanged.</td></tr>
+  <tr><th>Control / element</th><th>Does</th><th>Disabled / hidden when</th></tr>
+  <tr><td>Source select, Auto entry</td><td class="fixed">Always reads "Auto" / "自动" (<code>lang.auto</code>), in every state. Picking it sets the source to Auto and teaches nothing, as today.</td><td>Never disabled; never relabeled.</td></tr>
+  <tr><td>Source select, a language entry</td><td class="fixed">Plain <code>langName</code>, never suffixed. Picking it pins it and calls <code>onLangPicked</code> (teach + persist), as today. This feature never changes the selection.</td><td>Never disabled.</td></tr>
+  <tr><td>Result-pane note "Translated from auto-detected {lang}"</td><td class="new">Persistent muted line at the top of the result pane's note stack. <code>{lang}</code> = <code>langName(activeResult.detected_from)</code>. Informational only; not clickable.</td><td>Hidden when <code>detected_from</code> is empty (the pin was right, the text is under 20 code points, or there was no usable detection), when it equals the displayed FROM, when nothing is translated, when the pane shows the failed or cancelled-empty state, and (recommended) when <code>identity</code> is set.</td></tr>
+  <tr><td>Result-pane engine dropdown</td><td>Unchanged. Switching engines shows that engine's result and its own note state.</td><td>Unchanged.</td></tr>
+  <tr><td>⇄ Swap</td><td>Unchanged logic (<code>swapPair</code>). Under Auto it still uses the active result's detected source, as today. Under a pin it swaps the <b>pin</b>, not the detected language (open question 4).</td><td><code>swapPair === null</code>, unchanged.</td></tr>
+  <tr><td>Translate</td><td>Sends the dropdown's value, as today. A pinned mismatch is corrected per request in the backend, and the next request starts from the pin again.</td><td>Unchanged.</td></tr>
+  <tr><td>⧉ Copy (result)</td><td>Unchanged. It copies the result text only, never the note.</td><td>Unchanged.</td></tr>
 </table>
 
-<h2>G. Copy (en-US / zh-CN)</h2>
+<h2>5. Copy (en-US / zh-CN)</h2>
 <table>
   <tr><th>Key</th><th>en-US</th><th>zh-CN</th><th>Used as</th></tr>
-  <tr><td><code>translate.autoDetected</code> (new)</td><td>Auto — detected: {lang}</td><td>自动 — 已识别：{lang}</td><td>Auto entry label when a usable detection exists (replaces the <code>nameOf + translate.detected</code> call)</td></tr>
-  <tr><td><code>translate.sourceCorrected</code> (new, option A)</td><td>Source corrected to {lang}</td><td>源语言已更正为{lang}</td><td>correction toast; <code>{lang}</code> = <code>langName(result.from)</code></td></tr>
-  <tr><td><code>translate.sourceCorrected</code> (option B wording)</td><td>Translated from {lang}, not {pin}</td><td>已按{lang}翻译，而非{pin}</td><td>correction toast when the dropdown keeps the pin</td></tr>
-  <tr><td><code>lang.auto</code> (existing)</td><td>Auto</td><td>自动</td><td>bare Auto entry</td></tr>
-  <tr><td><code>common.copied</code> (existing)</td><td>Copied</td><td>已复制</td><td>comparison toast</td></tr>
-  <tr><td><code>translate.identity</code> (existing)</td><td colspan="2">unchanged</td><td>A3 note</td></tr>
-  <tr><td><code>translate.detected</code> (existing)</td><td colspan="2">no longer used by the Auto entry; key kept (brief)</td><td>-</td></tr>
+  <tr><td class="new"><code>translate.translatedFromDetected</code> (new)</td><td>Translated from auto-detected {lang}</td><td>译自自动识别的{lang}</td><td>result-pane note. The en-US text is the principal's own wording.</td></tr>
+  <tr><td><code>lang.auto</code> (existing)</td><td>Auto</td><td>自动</td><td>Auto entry, always</td></tr>
+  <tr><td><code>translate.identity</code> (existing)</td><td colspan="2">unchanged</td><td>3c note</td></tr>
+  <tr><td><code>translate.cancelled</code> (existing)</td><td colspan="2">unchanged</td><td>3b note</td></tr>
+  <tr><td><code>translate.detected</code> (existing: " (detected)" / "（已检测）")</td><td colspan="2">no longer used by the source select. F removes it if nothing else uses it, and <code>keys.test.ts</code> stays green.</td><td>-</td></tr>
+  <tr><td><s><code>translate.autoDetected</code>, <code>translate.sourceCorrected</code></s></td><td colspan="3">from revision 1; not added (superseded)</td></tr>
 </table>
 
-<h2>H. Open questions for approval</h2>
+<h2>6. Open questions for approval</h2>
 <table>
   <tr><th>#</th><th>Question</th><th>Designer recommendation</th></tr>
-  <tr><td>1</td><td>Does a correction reassign the visible dropdown (option A, C2/D-left) or leave the pin shown with only the toast (option B, C3/D-right)?</td><td>A: the dropdown and the request that ran never disagree; the toast explains the jump.</td></tr>
-  <tr><td>2</td><td>Under A, the in-window source <i>stays</i> English for the next Translate in this window (it is <code>fromLang</code>). Brief AC6 says the next translation "still starts from the user's original pin". Is AC6 satisfied by <code>default_from</code> staying es-MX (next window open / relaunch), or must the window revert to the pin before the next request?</td><td>Accept: AC6 holds via settings (<code>default_from</code> untouched, nothing taught); within the window the dropdown is the truth. Reverting silently would recreate a dropdown/request mismatch.</td></tr>
-  <tr><td>3</td><td>Wording: "Auto — detected: X" / "自动 — 已识别：X" (keeps the existing <code>lang.auto</code> "自动" rather than the brief's "自动检测"); toast "Source corrected to X" / "源语言已更正为X".</td><td>As drawn: a spaced em dash in both locales; zh-CN uses the full-width colon.</td></tr>
-  <tr><td>4</td><td>Multi-engine: engines can disagree (DeepL corrects, Apple reports nothing). The toast/reassignment follows the active engine only. Under A, switching the active engine to an uncorrected result leaves the dropdown on the corrected value (no re-revert). OK?</td><td>Yes — no second reassignment on engine switch; it is one-way per result arrival.</td></tr>
-  <tr><td>5</td><td>1.6 s is short for a sentence toast (option B wording especially). Keep the shared 1.6 s, or give <code>showToast</code> a duration argument for this toast only?</td><td>Keep 1.6 s with option A's short wording (no new plumbing); revisit only if option B is chosen.</td></tr>
-  <tr><td>6</td><td>C4: a short (&lt; 20 cp) mismatched paste still echoes silently. Confirm this stays out of scope (brief: decided).</td><td>Confirm; out of scope.</td></tr>
+  <tr><td>1</td><td>zh-CN wording of the note. "译自自动识别的{lang}" (drawn) mirrors the en-US sentence. "源语言自动识别为{lang}" reads more naturally but drops "translated".</td><td>As drawn: it keeps the principal's sentence shape.</td></tr>
+  <tr><td>2</td><td>Size: <code>text-[11px]</code> (drawn, as the brief suggests and matching the "Cancelled" status note) or <code>text-xs</code> 12 px (matching phonetic and identity)?</td><td>11 px: it is a status line like "Cancelled", and a step smaller than the phonetic reading keeps the two apart.</td></tr>
+  <tr><td>3</td><td>Identity case (detected = target): suppress the new note so only the identity note shows (3c), or show both (3c′)?</td><td>Suppress. "Translated from …" over text that was not translated contradicts the identity line directly below it.</td></tr>
+  <tr><td>4</td><td>⇄ after a pinned mismatch swaps the pin (Chinese → Spanish (Mexico)), not the language actually detected (English). The brief puts swap logic out of scope.</td><td>Leave it as it is (out of scope). The note makes the mismatch visible, and the user can re-pin by hand.</td></tr>
+  <tr><td>5</td><td>Position: first in the note stack (drawn) or last, next to the text?</td><td>First. It is about the text's origin, and the existing notes keep their relative order.</td></tr>
+  <tr><td>6</td><td>A mismatched paste under 20 code points ("ok thanks") still echoes silently, with no note. Confirm this stays out of scope (the brief decided it).</td><td>Confirm.</td></tr>
 </table>
 </div>
 
@@ -167,56 +175,59 @@
 const LANGS = ['auto','en','ja','ko','fr','de','es-MX','pt-BR','pt-PT','ru','zh'];
 const L = {
   en: { names:{auto:'Auto',en:'English',ja:'Japanese',ko:'Korean',fr:'French',de:'German','es-MX':'Spanish (Mexico)','pt-BR':'Portuguese (Brazil)','pt-PT':'Portuguese (Portugal)',ru:'Russian',zh:'Chinese'},
-        autoDetected:l=>`Auto — detected: ${l}`, corrected:l=>`Source corrected to ${l}`, correctedB:(l,p)=>`Translated from ${l}, not ${p}`,
-        copied:'Copied', identity:'Source and target language are the same — showing the source text', ph:'Type text to translate…', btn:'Translate', src:'Source', res:'Result' },
+        note:l=>`Translated from auto-detected ${l}`,
+        cancelled:'Cancelled', identity:'Source and target language are the same — showing the source text', ph:'Type text to translate…', btn:'Translate' },
   zh: { names:{auto:'自动',en:'英语',ja:'日语',ko:'韩语',fr:'法语',de:'德语','es-MX':'西班牙语（墨西哥）','pt-BR':'葡萄牙语（巴西）','pt-PT':'葡萄牙语（葡萄牙）',ru:'俄语',zh:'中文'},
-        autoDetected:l=>`自动 — 已识别：${l}`, corrected:l=>`源语言已更正为${l}`, correctedB:(l,p)=>`已按${l}翻译，而非${p}`,
-        copied:'已复制', identity:'源语言与目标语言相同，已显示原文', ph:'输入要翻译的文本…', btn:'翻译', src:'原文', res:'译文' },
+        note:l=>`译自自动识别的${l}`,
+        cancelled:'已取消', identity:'源语言与目标语言相同，已显示原文', ph:'输入要翻译的文本…', btn:'翻译' },
 };
 const ES = 'Hola, ¿cómo estás? Nos vemos mañana en la oficina a las diez.';
 const EN = 'Please send me the updated contract before Friday.';
-const TX = { 'es→en':'Hi, how are you? See you tomorrow at the office at ten.', 'es→zh':'你好，你好吗？明天十点在办公室见。', 'en→zh':'请在周五之前把更新后的合同发给我。' };
+const PT = 'Bom dia, podes enviar-me o contrato actualizado até sexta-feira?';
+const TX = { 'es→en':'Hi, how are you? See you tomorrow at the office at ten.', 'es→zh':'你好，你好吗？明天十点在办公室见。', 'en→zh':'请在周五之前把更新后的合同发给我。', 'pt→en':'Good morning, can you send me the updated contract by Friday?' };
+const PINYIN = { 'es→zh':'nǐ hǎo, nǐ hǎo ma? míngtiān shí diǎn zài bàngōngshì jiàn.', 'es→zh-half':'nǐ hǎo, nǐ hǎo ma?' };
 
-// state: from (selected code), detected (code or '' or 'auto'), to, src, res, note, toast(fn loc), open, menuHi, chk, marks
-function autoLabel(loc, st) {
-  const n = L[loc].names;
-  if (st.from === 'auto' && st.detected && st.detected !== 'auto') return L[loc].autoDetected(n[st.detected]);
-  return n.auto;
-}
-function optLabels(loc, st) { return LANGS.map(c => c === 'auto' ? autoLabel(loc, st) : L[loc].names[c]); }
+// The one rule this revision proves: the option label is langName(value), always.
+const optLabels = loc => LANGS.map(c => L[loc].names[c]);
 const ctx = document.createElement('canvas').getContext('2d');
 function tw(s, px) { ctx.font = `${px}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif`; return ctx.measureText(s).width; }
 function selW(labels) { return Math.max(112, Math.ceil(Math.max(...labels.map(s => tw(s, 14)))) + 12 + 26 + 2); }
 function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 
+// st: from, to, detected (backend detected_from, '' if none), src, res(loc), open, phonetic, cancelled, identity, showNoteOnIdentity
+function noteVisible(st) {
+  if (!st.res || !st.detected || st.detected === st.from) return false;
+  if (st.identity && !st.showNoteOnIdentity) return false;
+  return true;
+}
 function win(o) {
-  const { w, theme, loc, st, h = 340 } = o;
+  const { w, theme, loc, st, h = 320 } = o;
   const T = L[loc], n = T.names;
-  const labels = optLabels(loc, st);
-  const fromTxt = st.from === 'auto' ? autoLabel(loc, st) : n[st.from];
-  const toLabels = LANGS.slice(1).map(c => n[c]);
-  const fw = selW(labels), tw_ = selW(toLabels);
-  const autoChanged = st.from === 'auto' && st.detected && st.detected !== 'auto';
-  const menu = st.open ? `<div class="menu">${LANGS.map((c,i) => {
-      const cls = [c === st.from ? 'chk' : '', i === 0 && (st.markAuto ?? autoChanged) ? 'new' : '', c === st.menuHi ? 'hov' : ''].join(' ');
-      return `<div class="${cls}">${esc(labels[i])}</div>` + (i === 0 ? '<div class="sep"></div>' : '');
-    }).join('')}</div>` : '';
-  const toast = st.toast ? `<div class="toast ${st.toastNew ? 'new' : ''}">${esc(st.toast(loc))}</div>` : '';
-  const swapOff = st.from === 'auto' && (!st.detected || st.detected === 'auto');
-  const note = st.note ? `<div class="note">${esc(T.identity)}</div>` : '';
+  const fw = selW(optLabels(loc)), tw_ = selW(LANGS.slice(1).map(c => n[c]));
+  const menu = st.open ? `<div class="menu">${LANGS.map((c,i) =>
+      `<div class="${c === st.from ? 'chk' : ''} ${(i === 0 || c === 'es-MX') ? 'fixed' : ''}">${esc(n[c])}</div>` + (i === 0 ? '<div class="sep"></div>' : '')
+    ).join('')}</div>` : '';
+  const swapOff = st.from === 'auto' && !st.detected;
+  let notes = '';
+  if (st.res) {
+    if (noteVisible(st)) notes += `<span class="n x11 new" data-note="detected">${esc(T.note(n[st.detected]))}</span>`;
+    if (st.phonetic) notes += `<span class="n xs">${esc(st.phonetic)}</span>`;
+    if (st.cancelled) notes += `<span class="n x11">${esc(T.cancelled)}</span>`;
+    if (st.identity) notes += `<span class="n xs">${esc(T.identity)}</span>`;
+  }
   const srcBody = st.src ? `<div class="body">${esc(st.src)}</div>` : `<div class="body ph">${esc(T.ph)}</div>`;
-  const resBody = st.res ? `<div class="body">${esc(st.res(loc))}</div>` : `<div class="body"></div>`;
+  const resBody = `<div class="body" data-res>${st.res ? esc(st.res(loc)) : ''}</div>`;
   return `<div class="win th-${theme}" style="width:${w}px;height:${h}px"><div class="main">
     <div class="tb"><div class="mid">
-      <span class="selwrap"><div class="field ${st.open ? 'open' : ''} ${st.markFrom ? 'new' : ''}" style="width:${fw}px">${esc(fromTxt)}</div>${menu}</span>
+      <span class="selwrap"><div class="field fixed ${st.open ? 'open' : ''}" style="width:${fw}px">${esc(n[st.from])}</div>${menu}</span>
       <span class="ib ${swapOff ? 'off' : ''}">⇄</span>
       <span class="selwrap"><div class="field" style="width:${tw_}px">${esc(n[st.to])}</div></span>
     </div><div class="end"><span class="ib">⚙</span></div></div>
     <div class="row">
       <div class="card" style="flex:1">${srcBody}<div class="footer"><span class="btn">${esc(T.btn)}</span></div></div>
       <div class="divider"></div>
-      <div class="card" style="flex:1"><div class="head"><span class="u-label">DeepL ▾</span><span><span class="dot"></span></span></div>${note}${resBody}<div class="footer"><span class="ib" style="width:28px;height:28px;font-size:14px">⧉</span></div></div>
-    </div></div>${toast}</div>`;
+      <div class="card" style="flex:1" data-pane><div class="head"><span class="u-label">DeepL ▾</span><span><span class="dot"></span></span></div>${notes ? `<div class="notes">${notes}</div>` : ''}${resBody}<div class="footer"><span class="ib" style="width:28px;height:28px;font-size:14px">⧉</span></div></div>
+    </div></div></div>`;
 }
 
 function frame(o, label, annot, cls = '') {
@@ -225,16 +236,24 @@ function frame(o, label, annot, cls = '') {
   return el;
 }
 function measure(el) {
-  const tb = el.querySelector('.tb'), mid = el.querySelector('.tb .mid'), end = el.querySelector('.tb .end');
-  const m = el.querySelector('.measure');
-  const mr = mid.getBoundingClientRect(), er = end.firstElementChild.getBoundingClientRect(), tr = tb.getBoundingClientRect();
   const z = parseFloat(getComputedStyle(document.getElementById('zoomwrap')).zoom) || 1;
-  const fromW = Math.round(el.querySelector('.tb .field').getBoundingClientRect().width / z);
-  const overlap = mr.right > er.left - 1 || mr.left < tr.left - 1;
-  const menu = el.querySelector('.menu'); let mtxt = '';
-  if (menu) { const w = el.querySelector('.win').getBoundingClientRect(); const r = menu.getBoundingClientRect(); mtxt = ` · menu ${Math.round(r.width / z)} px, ${r.right <= w.right + 1 ? 'inside window' : 'CLIPPED at right'}`; if (r.right > w.right + 1) m.classList.add('bad'); }
-  m.textContent = `from-select ${fromW} px (widest option) · toolbar ${overlap ? 'OVERLAPS gear' : 'fits, ' + Math.round((er.left - mr.right) / z) + ' px to gear'}${mtxt}`;
-  if (overlap) m.classList.add('bad');
+  const tb = el.querySelector('.tb'), mid = el.querySelector('.tb .mid'), end = el.querySelector('.tb .end');
+  const m = el.querySelector('.measure'); const out = []; let bad = false;
+  const mr = mid.getBoundingClientRect(), er = end.firstElementChild.getBoundingClientRect(), tr = tb.getBoundingClientRect();
+  const overlap = mr.right > er.left - 1 || mr.left < tr.left - 1; bad ||= overlap;
+  out.push(`from-select ${Math.round(el.querySelector('.tb .field').getBoundingClientRect().width / z)} px · toolbar ${overlap ? 'OVERLAPS gear' : 'fits, ' + Math.round((er.left - mr.right) / z) + ' px to gear'}`);
+  const menu = el.querySelector('.menu');
+  if (menu) { const w = el.querySelector('.win').getBoundingClientRect(), r = menu.getBoundingClientRect(); const ok = r.right <= w.right + 1; bad ||= !ok; out.push(`menu ${ok ? 'inside window' : 'CLIPPED'}`); }
+  const pane = el.querySelector('[data-pane]'), ns = [...el.querySelectorAll('.n')], res = el.querySelector('[data-res]');
+  if (ns.length) {
+    const pr = pane.getBoundingClientRect(); let prev = null, ok = true, lines = [];
+    for (const nEl of ns) { const r = nEl.getBoundingClientRect(); if (r.right > pr.right + 1) ok = false; if (prev && r.top < prev.bottom - 0.5) ok = false; prev = r; }
+    if (res.getBoundingClientRect().top < prev.bottom - 0.5) ok = false;
+    const d = el.querySelector('[data-note="detected"]');
+    if (d) { const cs = getComputedStyle(d), lh = parseFloat(cs.lineHeight), pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom); lines.push(`new note wraps to ${Math.round((d.getBoundingClientRect().height / z - pad) / lh)} line(s)`); }
+    bad ||= !ok; out.push(`${ns.length} note line(s) stacked, ${ok ? 'no overlap, inside pane' : 'OVERLAP/OVERFLOW'}${lines.length ? ' · ' + lines.join('') : ''}`);
+  } else out.push('no notes in result pane');
+  m.textContent = out.join(' · '); if (bad) m.classList.add('bad');
 }
 
 const COMBOS4 = [[960,'light','en'],[960,'dark','zh'],[780,'dark','en'],[780,'light','zh']];
@@ -243,58 +262,33 @@ const lab = (w,t,l) => `${w} px · ${t} · ${l === 'en' ? 'en-US' : 'zh-CN'}`;
 const SECTIONS = [];
 function section(id, st, annot, opts = {}) { SECTIONS.push({ id, st, annot, opts }); }
 
-section('A1', { from:'auto', detected:'', to:'en', src:'', res:null, open:true, markAuto:false }, 'Auto entry reads "Auto"/"自动" (unchanged text; it is the landmark). ⇄ disabled: nothing to exchange yet.');
-section('A2', { from:'auto', detected:'es-MX', to:'en', src:ES, res:()=>TX['es→en'], open:true, menuHi:'auto' }, 'Auto entry: "Auto — detected: Spanish (Mexico)"; the closed select shows the same text. The plain "Spanish (Mexico)" row below is untouched. ⇄ enabled (swaps to Spanish (Mexico) ↔ English, as today).');
-section('A3', { from:'auto', detected:'en', to:'en', src:EN, res:()=>EN, note:true, open:true }, 'Identity (detected = target): Auto entry "Auto — detected: English"; result pane shows the existing identity note + the source text. No toast: identity is not a correction.');
-section('A4', { from:'auto', detected:'auto', to:'en', src:'ok', res:()=> 'ok', open:true, markAuto:false }, 'No usable detection: the entry stays bare "Auto" rather than claim a language. No toast. ⇄ stays disabled.');
-section('C1', { from:'es-MX', detected:'es-MX', to:'zh', src:ES, res:()=>TX['es→zh'] }, 'Pin was right: no toast, no reassignment, dropdown still reads Spanish (Mexico). Visually identical to today.', { label:'pinned, correct' });
-section('C2', { from:'en', detected:'en', to:'zh', src:EN, res:()=>TX['en→zh'], toast:loc=>L[loc].corrected(L[loc].names.en), toastNew:true, markFrom:true }, 'Was pinned to Spanish (Mexico). Result is a real translation from English. The closed select now reads English (direct assignment, not via onchange); the toast says why it jumped. default_from in settings stays es-MX.', { label:'OPTION A — recommended', cls:'rec' });
-section('C3', { from:'es-MX', detected:'en', to:'zh', src:EN, res:()=>TX['en→zh'], toast:loc=>L[loc].correctedB(L[loc].names.en, L[loc].names['es-MX']), toastNew:true }, 'Dropdown still reads Spanish (Mexico) while the result was translated from English; only the (longer) toast explains the mismatch, and only for 1.6 s.', { label:'OPTION B — alternative', cls:'alt' });
-section('C4', { from:'es-MX', detected:'es-MX', to:'zh', src:'ok thanks', res:()=>'ok thanks' }, 'Below the 20-code-point floor: the pin is honored, the engine echoes, no toast. Unchanged from today by decision (brief: a short fragment is where detection is least trustworthy).');
+section('S1a', { from:'auto', to:'en', detected:'', src:'', res:null, open:true }, 'Auto entry "Auto"/"自动" ✓. ⇄ disabled: nothing to exchange yet.');
+section('S1b', { from:'auto', to:'en', detected:'es-MX', src:ES, res:()=>TX['es→en'], open:true }, 'The same menu as 1a: the Auto entry is still bare. The detection shows only as the result-pane note (section 2). ⇄ enabled, unchanged (it swaps Spanish (Mexico) ↔ English using the detection, as today).');
+section('S1c', { from:'es-MX', to:'zh', detected:'en', src:EN, res:()=>TX['en→zh'], open:true }, 'The user pinned Spanish (Mexico) and pasted English. The backend translated from English for this request only. ✓ is still on Spanish (Mexico): no reassignment, no teaching, no persisting. The note explains what happened.');
+section('S2a', { from:'es-MX', to:'zh', detected:'', src:ES, res:()=>TX['es→zh'] }, 'The pin was right, so the backend leaves detected_from empty and no note appears. This looks exactly like today.', { label:'not shown' });
+section('S2a2', { from:'auto', to:'en', detected:'', src:'', res:null }, 'Nothing translated: the result pane is empty and there is no note. The same holds with a pinned source.', { label:'not shown' });
+section('S2b', { from:'auto', to:'en', detected:'es-MX', src:ES, res:()=>TX['es→en'] }, 'Auto mode: the dropdown says "Auto" and the note names what Auto found. It is informational; nothing was corrected.', { label:'shown · auto' });
+section('S2c', { from:'es-MX', to:'zh', detected:'en', src:EN, res:()=>TX['en→zh'] }, 'Pinned but wrong: the dropdown still reads Spanish (Mexico), unmoved. The result is a real English→Chinese translation, not an echo, and the note says it came from English. The next Translate starts from the Spanish (Mexico) pin again.', { label:'shown · pinned mismatch' });
+section('S3a', { from:'auto', to:'zh', detected:'es-MX', src:ES, res:()=>TX['es→zh'], phonetic:PINYIN['es→zh'] }, 'The new note (11 px) sits over the phonetic line (12 px). Two muted lines, visibly different in size, no overlap.');
+section('S3b', { from:'auto', to:'zh', detected:'es-MX', src:ES, res:()=>'你好，你好吗？', phonetic:PINYIN['es→zh-half'], cancelled:true }, 'Three stacked lines: note, phonetic, Cancelled. The detection came from chunk 1, so the note is still true for the part that was translated.');
+section('S3c', { from:'auto', to:'en', detected:'en', src:EN, res:()=>EN, identity:true }, 'Detected = target: the identity note alone. The new note is suppressed because nothing was translated.', { label:'recommended', cls:'rec' });
+section('S3c2', { from:'auto', to:'en', detected:'en', src:EN, res:()=>EN, identity:true, showNoteOnIdentity:true }, 'Both lines: "Translated from auto-detected English" sits over "…showing the source text". The two contradict each other.', { label:'alternative', cls:'alt' });
+section('S3d', { from:'auto', to:'en', detected:'pt-PT', src:PT, res:()=>TX['pt→en'], phonetic:'' }, 'The longest language name. The page measures one line at 780 px in both locales. If a longer name or a larger system font ever made it wrap, it would wrap inside the pane\'s px-4 inset and push the textarea down. It would never truncate or overflow (no nowrap).', { combos:[[780,'light','en'],[780,'dark','zh'],[960,'dark','en'],[960,'light','zh']] });
 
 function renderAll() {
   const all = document.getElementById('allcombos').checked;
   for (const s of SECTIONS) {
     const host = document.getElementById(s.id); host.innerHTML = ''; const b = document.createElement('div'); b.className = 'board'; host.appendChild(b);
-    for (const [w,t,l] of (all ? COMBOS8 : COMBOS4)) {
-      const el = frame({ w, theme:t, loc:l, st:s.st, h: s.st.open ? 360 : 300 }, (s.opts.label ? s.opts.label + ' · ' : '') + lab(w,t,l), s.annot, s.opts.cls || '');
-      b.appendChild(el);
+    for (const [w,t,l] of (all ? COMBOS8 : (s.opts.combos || COMBOS4))) {
+      b.appendChild(frame({ w, theme:t, loc:l, st:s.st, h: s.st.open ? 360 : 300 }, (s.opts.label ? s.opts.label + ' · ' : '') + lab(w,t,l), s.annot, s.opts.cls || ''));
     }
   }
-  // B: compact comparison table of menu first rows
-  const B = document.getElementById('B'); B.innerHTML = '';
-  const rows = [['No detection yet','auto',''],['Detected Spanish (Mexico)','auto','es-MX'],['Detected = target (identity, English)','auto','en'],['Detection unusable','auto','auto'],['Source pinned (any state, incl. just corrected)','es-MX','']];
-  let h = '<table><tr><th>State</th><th>Auto entry, en-US</th><th>Auto entry, zh-CN</th><th>"Spanish (Mexico)" entry, en-US / zh-CN</th></tr>';
-  for (const [name, from, det] of rows) h += `<tr><td>${name}</td><td class="${from==='auto'&&det&&det!=='auto'?'new':''}">${esc(autoLabel('en',{from,detected:det}))}</td><td>${esc(autoLabel('zh',{from,detected:det}))}</td><td>Spanish (Mexico) / 西班牙语（墨西哥） — never suffixed</td></tr>`;
-  B.innerHTML = h + '</table>';
-  // D: open menu after correction, A vs B
-  const D = document.getElementById('D'); D.innerHTML = ''; const db = document.createElement('div'); db.className = 'board'; D.appendChild(db);
-  const combosD = all ? COMBOS8 : [[960,'light','en'],[780,'dark','zh']];
-  for (const [w,t,l] of combosD) {
-    db.appendChild(frame({ w, theme:t, loc:l, h:360, st:{ from:'en', detected:'en', to:'zh', src:EN, res:()=>TX['en→zh'], open:true, markAuto:false, menuHi:'auto' } }, 'OPTION A · ' + lab(w,t,l), '✓ on English (corrected). Auto entry bare "Auto"/"自动", highlighted as the way back to Auto.', 'rec'));
-    db.appendChild(frame({ w, theme:t, loc:l, h:360, st:{ from:'es-MX', detected:'en', to:'zh', src:EN, res:()=>TX['en→zh'], open:true, markAuto:false, menuHi:'auto' } }, 'OPTION B · ' + lab(w,t,l), '✓ still on Spanish (Mexico), although the request ran as English.', 'alt'));
-  }
-  // E: toast comparison
-  const E = document.getElementById('E'); let eh = '<div class="board">';
-  for (const t of ['light','dark']) for (const l of ['en','zh']) {
-    eh += `<div class="frame"><div class="frame-label">${t} · ${l==='en'?'en-US':'zh-CN'}</div><div class="win th-${t}" style="padding:14px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
-      <span class="toast inline">${esc(L[l].copied)}</span>
-      <span class="toast inline new">${esc(L[l].corrected(L[l].names['es-MX']))}</span>
-      <span class="toast inline new">${esc(L[l].corrected(L[l].names['pt-PT']))}</span>
-      <span class="toast inline new" style="opacity:.75">${esc(L[l].correctedB(L[l].names.en, L[l].names['es-MX']))} <small>(opt. B)</small></span>
-    </div></div>`;
-  }
-  E.innerHTML = eh + '</div>';
-  const E2 = document.getElementById('E2'); let s2 = '<div class="board">';
-  for (const [t,l] of [['light','en'],['dark','zh']]) {
-    const c = L[l].corrected(L[l].names.en);
-    const tiles = [['t=0.0 s result arrives', c],['t=0.8 s ⧉ clicked', L[l].copied],['t=2.4 s', '']];
-    s2 += `<div class="frame"><div class="frame-label">${t} · ${l==='en'?'en-US':'zh-CN'}</div><div class="strip win th-${t}" style="padding:10px">` +
-      tiles.slice(0,3).map(([tt,msg]) => `<div class="tile" style="background:var(--app-bg);border:1px solid var(--app-border)"><span class="t">${tt}</span>${msg ? `<div class="toast">${esc(msg)}</div>` : ''}</div>`).join('<span style="align-self:center;color:var(--app-muted)">→</span>') +
-      `</div><p class="annot">One pill at a time: the Copy click replaces the correction text and restarts the timer (gone at 0.8 + 1.6 = 2.4 s). Without a click the correction pill clears at 1.6 s.</p></div>`;
-  }
-  E2.innerHTML = s2 + '</div>';
-  requestAnimationFrame(() => document.querySelectorAll('.frame').forEach(f => { if (f.querySelector('.tb')) measure(f); else f.querySelector('.measure')?.remove(); }));
+  const rows = [['Auto, nothing translated','auto','✓ Auto'],['Auto, detected Spanish (Mexico)','auto','✓ Auto'],['Auto, detected = target (identity)','auto','✓ Auto'],['Auto, no usable detection','auto','✓ Auto'],['Pinned Spanish (Mexico), text was Spanish','es-MX','✓ Spanish (Mexico)'],['Pinned Spanish (Mexico), text was English (corrected per request)','es-MX','✓ Spanish (Mexico)']];
+  let h = '<table><tr><th>State</th><th>Auto entry en-US / zh-CN</th><th>"Spanish (Mexico)" entry en-US / zh-CN</th><th>✓ on</th><th>Result-pane note</th></tr>';
+  const notes = ['none','Translated from auto-detected Spanish (Mexico)','none (identity note instead, recommended)','none','none','Translated from auto-detected English'];
+  rows.forEach(([name, , chk], i) => { h += `<tr><td>${name}</td><td class="fixed">Auto / 自动</td><td class="fixed">Spanish (Mexico) / 西班牙语（墨西哥）</td><td>${chk}</td><td class="${notes[i].startsWith('Translated') ? 'new' : ''}">${notes[i]}</td></tr>`; });
+  document.getElementById('S1d').innerHTML = h + '</table>';
+  requestAnimationFrame(() => document.querySelectorAll('.frame').forEach(f => { if (f.querySelector('.tb')) measure(f); }));
 }
 document.getElementById('allcombos').onchange = renderAll;
 
