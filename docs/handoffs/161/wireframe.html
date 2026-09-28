@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>#161 source-lang note - wireframe (rev 2)</title>
+<title>#161 source-lang note - wireframe (rev 3)</title>
 <style>
   /* Tokens copied from frontend/src/app.css (:root and html.dark), same set as the #145 wireframe. Low-fi: only what these frames need. */
   .th-light { --app-bg:#ffffff; --app-fg:#1f2329; --app-muted:#8a8f99; --app-border:#e5e6eb; --app-card:#f7f8fa; --app-accent:#3b82f6; --app-accent-fg:#ffffff; --app-input-bg:#ffffff; --surface:#f2f3f5; --menu:#f6f6f7; --menu-hi:#3b82f6; }
@@ -79,13 +79,13 @@
   <button type="button" id="zreset" aria-label="Reset zoom to 100%">0</button>
 </div>
 <div id="zoomwrap">
-<h1>#161 source-language note - wireframe (low-fi, revision 2)</h1>
+<h1>#161 source-language note - wireframe (low-fi, revision 3)</h1>
 <div class="override">
-  <b>Revision 2, after the principal's override (2026-09-28).</b> The FROM dropdown never changes on its own. The Auto entry always reads bare "Auto" / "自动". A pinned entry is never reassigned or suffixed. That walks back #11's relabeled Auto row. Revision 1's relabeled Auto row ("Auto — detected: …"), its option A (reassign the pin), its option B, and the correction toast are all dropped. What replaces them is one persistent, muted line in the result pane, "Translated from auto-detected Spanish (Mexico)", shown when the language the engine actually used differs from what the dropdown shows.
+  <b>Revision 3 (2026-09-28): the Auto entry is relabeled "Detected".</b> Per the principal, the source dropdown's Auto entry (value <code>auto</code>, unchanged) now always reads <b>"Detected"</b> / <b>"自动检测"</b>, from a new key <code>translate.sourceAuto</code>. The shared <code>lang.auto</code> ("Auto" / "自动") is not touched, because the General settings tab's interface-language picker (<code>GeneralTab.svelte:79</code>) still uses it and must keep reading "Auto". The label is fixed: it never changes with detection state.<br/><b>Carried from revision 2 (principal's override):</b> the FROM dropdown never changes on its own. A pinned entry is never reassigned or suffixed. That walks back #11's relabeled Auto row. Revision 1's relabeled Auto row ("Auto — detected: …"), its option A (reassign the pin), its option B, and the correction toast are all dropped. What replaces them is one persistent, muted line in the result pane, "Translated from auto-detected Spanish (Mexico)", shown when the language the engine actually used differs from what the dropdown shows.
 </div>
 <div class="meta">
   Translate window only. Frames are whole windows at the real widths: the 960 px default and the 780 px minimum (<code>main.go</code> MinWidth). Heights are trimmed; nothing here depends on height.
-  The open dropdown is drawn as the macOS menu WKWebView shows for a native <code>&lt;select&gt;</code>. ✓ marks the selected entry. The closed select is drawn at the width a native select takes, which is its widest option (this page measures it), never less than <code>min-width: 7rem</code>. With the Auto entry always bare, the widest source option is "Portuguese (Portugal)", so the select's width no longer depends on detection.
+  The open dropdown is drawn as the macOS menu WKWebView shows for a native <code>&lt;select&gt;</code>. ✓ marks the selected entry. The closed select is drawn at the width a native select takes, which is its widest option (this page measures it), never less than <code>min-width: 7rem</code>. With the Auto entry always reading "Detected", the widest source option is "Portuguese (Portugal)", so the select's width no longer depends on detection.
   The language list and its order are the real ones (<code>ALL_TRANSLATE_LANGS</code>). Names are the real <code>lang.*</code> strings.
   Result-pane notes follow the real markup (<code>TranslateWindow.svelte</code> ≈ :1309-1322). Each is <code>u-muted px-4</code>, the first one takes <code>first:pt-4</code>, and they stack above the result textarea.
   <br />Glyphs are Unicode stand-ins (⇄ ⚙ ⧉ ▾ ✓) for the Lucide icons already in the build. Nothing new is drawn.
@@ -99,13 +99,13 @@
   <span style="color:#6b7280">By default each state shows 4 frames, which together cover 960/780, light/dark and en-US/zh-CN.</span>
 </div>
 
-<h2>1. The source dropdown never changes: the Auto entry is always bare, and a pin stays where the user put it</h2>
-<div class="meta"><code>detectedSourceLabel</code> no longer relabels anything. Every <code>&lt;option&gt;</code> reads <code>langName(value)</code>, so the Auto entry is always <code>lang.auto</code>. The four frames per state below show the same menu before and after a result. Only the ✓ position differs, and only because the <i>user</i> picked a different entry.</div>
-<h3>1a. Source = Auto, nothing translated yet: "Auto" ✓</h3>
+<h2>1. The source dropdown never changes: the Auto entry always reads "Detected", and a pin stays where the user put it</h2>
+<div class="meta"><code>detectedSourceLabel</code> no longer relabels anything. Every language <code>&lt;option&gt;</code> reads <code>langName(value)</code>. The Auto entry (value <code>auto</code>) reads <code>t('translate.sourceAuto')</code>, a constant: "Detected" / "自动检测". Nothing about it depends on a result. The four frames per state below show the same menu before and after a result. Only the ✓ position differs, and only because the <i>user</i> picked a different entry.</div>
+<h3>1a. Source = Auto, nothing translated yet: "Detected" ✓</h3>
 <div id="S1a"></div>
-<h3>1b. Source = Auto, result arrived, the engine detected Spanish (Mexico): still bare "Auto" ✓, with no suffix. The "Spanish (Mexico)" row stays plain.</h3>
+<h3>1b. Source = Auto, result arrived, the engine detected Spanish (Mexico): still "Detected" ✓, with no language name and no suffix. The "Spanish (Mexico)" row stays plain.</h3>
 <div id="S1b"></div>
-<h3>1c. Source pinned to Spanish (Mexico), and the English text was translated from auto-detected English: ✓ stays on "Spanish (Mexico)" and nothing moves. The Auto row stays bare.</h3>
+<h3>1c. Source pinned to Spanish (Mexico), and the English text was translated from auto-detected English: ✓ stays on "Spanish (Mexico)" and nothing moves. The Auto row still reads "Detected".</h3>
 <div id="S1c"></div>
 <h3>1d. Every state on one line: the first rows of the menu (en-US / zh-CN)</h3>
 <div id="S1d"></div>
@@ -118,7 +118,7 @@
 <div id="S2a"></div>
 <h3>2a′. Not shown: nothing translated yet, whatever the source setting</h3>
 <div id="S2a2"></div>
-<h3>2b. Shown under an Auto-mode result: dropdown "Auto", note "Translated from auto-detected Spanish (Mexico)"</h3>
+<h3>2b. Shown under an Auto-mode result: dropdown "Detected", note "Translated from auto-detected Spanish (Mexico)"</h3>
 <div id="S2b"></div>
 <h3>2c. Shown under a pinned-but-wrong result: dropdown still "Spanish (Mexico)", unmoved; note "Translated from auto-detected English"; the result is a real translation, not the old echo</h3>
 <div id="S2c"></div>
@@ -139,7 +139,7 @@
 <h2>4. Behaviour of each control (one line each)</h2>
 <table>
   <tr><th>Control / element</th><th>Does</th><th>Disabled / hidden when</th></tr>
-  <tr><td>Source select, Auto entry</td><td class="fixed">Always reads "Auto" / "自动" (<code>lang.auto</code>), in every state. Picking it sets the source to Auto and teaches nothing, as today.</td><td>Never disabled; never relabeled.</td></tr>
+  <tr><td>Source select, Auto entry</td><td class="fixed">Always reads "Detected" / "自动检测" (new <code>translate.sourceAuto</code>), in every state, before and after any result. Never a language name. Picking it sets the source to Auto and teaches nothing, as today.</td><td>Never disabled; never relabeled.</td></tr>
   <tr><td>Source select, a language entry</td><td class="fixed">Plain <code>langName</code>, never suffixed. Picking it pins it and calls <code>onLangPicked</code> (teach + persist), as today. This feature never changes the selection.</td><td>Never disabled.</td></tr>
   <tr><td>Result-pane note "Translated from auto-detected {lang}"</td><td class="new">Persistent muted line at the top of the result pane's note stack. <code>{lang}</code> = <code>langName(activeResult.detected_from)</code>. Informational only; not clickable.</td><td>Hidden when <code>detected_from</code> is empty (the pin was right, the text is under 20 code points, or there was no usable detection), when it equals the displayed FROM, when nothing is translated, when the pane shows the failed or cancelled-empty state, and (recommended) when <code>identity</code> is set.</td></tr>
   <tr><td>Result-pane engine dropdown</td><td>Unchanged. Switching engines shows that engine's result and its own note state.</td><td>Unchanged.</td></tr>
@@ -152,7 +152,8 @@
 <table>
   <tr><th>Key</th><th>en-US</th><th>zh-CN</th><th>Used as</th></tr>
   <tr><td class="new"><code>translate.translatedFromDetected</code> (new)</td><td>Translated from auto-detected {lang}</td><td>译自自动识别的{lang}</td><td>result-pane note. The en-US text is the principal's own wording.</td></tr>
-  <tr><td><code>lang.auto</code> (existing)</td><td>Auto</td><td>自动</td><td>Auto entry, always</td></tr>
+  <tr><td class="new"><code>translate.sourceAuto</code> (new)</td><td>Detected</td><td>自动检测</td><td>source dropdown's Auto entry (value <code>auto</code>), always. Translate window only.</td></tr>
+  <tr><td><code>lang.auto</code> (existing, unchanged)</td><td>Auto</td><td>自动</td><td>no longer used by the translate window's source select. Still used by <code>GeneralTab.svelte:79</code> (interface language, "follow system"), where it keeps reading "Auto".</td></tr>
   <tr><td><code>translate.identity</code> (existing)</td><td colspan="2">unchanged</td><td>3c note</td></tr>
   <tr><td><code>translate.cancelled</code> (existing)</td><td colspan="2">unchanged</td><td>3b note</td></tr>
   <tr><td><code>translate.detected</code> (existing: " (detected)" / "（已检测）")</td><td colspan="2">no longer used by the source select. F removes it if nothing else uses it, and <code>keys.test.ts</code> stays green.</td><td>-</td></tr>
@@ -162,6 +163,7 @@
 <h2>6. Open questions for approval</h2>
 <table>
   <tr><th>#</th><th>Question</th><th>Designer recommendation</th></tr>
+  <tr><td>0</td><td>zh-CN wording of the "Detected" entry (<code>translate.sourceAuto</code>). Options: "自动检测" (drawn: "auto-detect", the usual zh-CN label for this entry in translators), "检测语言" ("detect language"), "已检测" (a literal "detected", which reads oddly before anything has been translated).</td><td>"自动检测": it reads right both before and after a translation, and it keeps the note's "自动识别" family recognizable.</td></tr>
   <tr><td>1</td><td>zh-CN wording of the note. "译自自动识别的{lang}" (drawn) mirrors the en-US sentence. "源语言自动识别为{lang}" reads more naturally but drops "translated".</td><td>As drawn: it keeps the principal's sentence shape.</td></tr>
   <tr><td>2</td><td>Size: <code>text-[11px]</code> (drawn, as the brief suggests and matching the "Cancelled" status note) or <code>text-xs</code> 12 px (matching phonetic and identity)?</td><td>11 px: it is a status line like "Cancelled", and a step smaller than the phonetic reading keeps the two apart.</td></tr>
   <tr><td>3</td><td>Identity case (detected = target): suppress the new note so only the identity note shows (3c), or show both (3c′)?</td><td>Suppress. "Translated from …" over text that was not translated contradicts the identity line directly below it.</td></tr>
@@ -174,10 +176,10 @@
 <script>
 const LANGS = ['auto','en','ja','ko','fr','de','es-MX','pt-BR','pt-PT','ru','zh'];
 const L = {
-  en: { names:{auto:'Auto',en:'English',ja:'Japanese',ko:'Korean',fr:'French',de:'German','es-MX':'Spanish (Mexico)','pt-BR':'Portuguese (Brazil)','pt-PT':'Portuguese (Portugal)',ru:'Russian',zh:'Chinese'},
+  en: { names:{auto:'Detected',en:'English',ja:'Japanese',ko:'Korean',fr:'French',de:'German','es-MX':'Spanish (Mexico)','pt-BR':'Portuguese (Brazil)','pt-PT':'Portuguese (Portugal)',ru:'Russian',zh:'Chinese'},
         note:l=>`Translated from auto-detected ${l}`,
         cancelled:'Cancelled', identity:'Source and target language are the same — showing the source text', ph:'Type text to translate…', btn:'Translate' },
-  zh: { names:{auto:'自动',en:'英语',ja:'日语',ko:'韩语',fr:'法语',de:'德语','es-MX':'西班牙语（墨西哥）','pt-BR':'葡萄牙语（巴西）','pt-PT':'葡萄牙语（葡萄牙）',ru:'俄语',zh:'中文'},
+  zh: { names:{auto:'自动检测',en:'英语',ja:'日语',ko:'韩语',fr:'法语',de:'德语','es-MX':'西班牙语（墨西哥）','pt-BR':'葡萄牙语（巴西）','pt-PT':'葡萄牙语（葡萄牙）',ru:'俄语',zh:'中文'},
         note:l=>`译自自动识别的${l}`,
         cancelled:'已取消', identity:'源语言与目标语言相同，已显示原文', ph:'输入要翻译的文本…', btn:'翻译' },
 };
@@ -262,12 +264,12 @@ const lab = (w,t,l) => `${w} px · ${t} · ${l === 'en' ? 'en-US' : 'zh-CN'}`;
 const SECTIONS = [];
 function section(id, st, annot, opts = {}) { SECTIONS.push({ id, st, annot, opts }); }
 
-section('S1a', { from:'auto', to:'en', detected:'', src:'', res:null, open:true }, 'Auto entry "Auto"/"自动" ✓. ⇄ disabled: nothing to exchange yet.');
-section('S1b', { from:'auto', to:'en', detected:'es-MX', src:ES, res:()=>TX['es→en'], open:true }, 'The same menu as 1a: the Auto entry is still bare. The detection shows only as the result-pane note (section 2). ⇄ enabled, unchanged (it swaps Spanish (Mexico) ↔ English using the detection, as today).');
+section('S1a', { from:'auto', to:'en', detected:'', src:'', res:null, open:true }, 'Auto entry reads "Detected"/"自动检测" ✓ (constant label). ⇄ disabled: nothing to exchange yet.');
+section('S1b', { from:'auto', to:'en', detected:'es-MX', src:ES, res:()=>TX['es→en'], open:true }, 'The same menu as 1a: the Auto entry still reads "Detected", with no language name. The detection shows only as the result-pane note (section 2). ⇄ enabled, unchanged (it swaps Spanish (Mexico) ↔ English using the detection, as today).');
 section('S1c', { from:'es-MX', to:'zh', detected:'en', src:EN, res:()=>TX['en→zh'], open:true }, 'The user pinned Spanish (Mexico) and pasted English. The backend translated from English for this request only. ✓ is still on Spanish (Mexico): no reassignment, no teaching, no persisting. The note explains what happened.');
 section('S2a', { from:'es-MX', to:'zh', detected:'', src:ES, res:()=>TX['es→zh'] }, 'The pin was right, so the backend leaves detected_from empty and no note appears. This looks exactly like today.', { label:'not shown' });
 section('S2a2', { from:'auto', to:'en', detected:'', src:'', res:null }, 'Nothing translated: the result pane is empty and there is no note. The same holds with a pinned source.', { label:'not shown' });
-section('S2b', { from:'auto', to:'en', detected:'es-MX', src:ES, res:()=>TX['es→en'] }, 'Auto mode: the dropdown says "Auto" and the note names what Auto found. It is informational; nothing was corrected.', { label:'shown · auto' });
+section('S2b', { from:'auto', to:'en', detected:'es-MX', src:ES, res:()=>TX['es→en'] }, 'Auto mode: the dropdown says "Detected" and the note names what Auto found. It is informational; nothing was corrected.', { label:'shown · auto' });
 section('S2c', { from:'es-MX', to:'zh', detected:'en', src:EN, res:()=>TX['en→zh'] }, 'Pinned but wrong: the dropdown still reads Spanish (Mexico), unmoved. The result is a real English→Chinese translation, not an echo, and the note says it came from English. The next Translate starts from the Spanish (Mexico) pin again.', { label:'shown · pinned mismatch' });
 section('S3a', { from:'auto', to:'zh', detected:'es-MX', src:ES, res:()=>TX['es→zh'], phonetic:PINYIN['es→zh'] }, 'The new note (11 px) sits over the phonetic line (12 px). Two muted lines, visibly different in size, no overlap.');
 section('S3b', { from:'auto', to:'zh', detected:'es-MX', src:ES, res:()=>'你好，你好吗？', phonetic:PINYIN['es→zh-half'], cancelled:true }, 'Three stacked lines: note, phonetic, Cancelled. The detection came from chunk 1, so the note is still true for the part that was translated.');
@@ -283,10 +285,10 @@ function renderAll() {
       b.appendChild(frame({ w, theme:t, loc:l, st:s.st, h: s.st.open ? 360 : 300 }, (s.opts.label ? s.opts.label + ' · ' : '') + lab(w,t,l), s.annot, s.opts.cls || ''));
     }
   }
-  const rows = [['Auto, nothing translated','auto','✓ Auto'],['Auto, detected Spanish (Mexico)','auto','✓ Auto'],['Auto, detected = target (identity)','auto','✓ Auto'],['Auto, no usable detection','auto','✓ Auto'],['Pinned Spanish (Mexico), text was Spanish','es-MX','✓ Spanish (Mexico)'],['Pinned Spanish (Mexico), text was English (corrected per request)','es-MX','✓ Spanish (Mexico)']];
+  const rows = [['Auto, nothing translated','auto','✓ Detected'],['Auto, detected Spanish (Mexico)','auto','✓ Detected'],['Auto, detected = target (identity)','auto','✓ Detected'],['Auto, no usable detection','auto','✓ Detected'],['Pinned Spanish (Mexico), text was Spanish','es-MX','✓ Spanish (Mexico)'],['Pinned Spanish (Mexico), text was English (corrected per request)','es-MX','✓ Spanish (Mexico)']];
   let h = '<table><tr><th>State</th><th>Auto entry en-US / zh-CN</th><th>"Spanish (Mexico)" entry en-US / zh-CN</th><th>✓ on</th><th>Result-pane note</th></tr>';
   const notes = ['none','Translated from auto-detected Spanish (Mexico)','none (identity note instead, recommended)','none','none','Translated from auto-detected English'];
-  rows.forEach(([name, , chk], i) => { h += `<tr><td>${name}</td><td class="fixed">Auto / 自动</td><td class="fixed">Spanish (Mexico) / 西班牙语（墨西哥）</td><td>${chk}</td><td class="${notes[i].startsWith('Translated') ? 'new' : ''}">${notes[i]}</td></tr>`; });
+  rows.forEach(([name, , chk], i) => { h += `<tr><td>${name}</td><td class="fixed">Detected / 自动检测</td><td class="fixed">Spanish (Mexico) / 西班牙语（墨西哥）</td><td>${chk}</td><td class="${notes[i].startsWith('Translated') ? 'new' : ''}">${notes[i]}</td></tr>`; });
   document.getElementById('S1d').innerHTML = h + '</table>';
   requestAnimationFrame(() => document.querySelectorAll('.frame').forEach(f => { if (f.querySelector('.tb')) measure(f); }));
 }
