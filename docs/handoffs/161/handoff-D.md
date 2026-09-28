@@ -63,4 +63,4 @@ Rendering rule drawn for T and F: the note shows when `activeResult.detected_fro
 - The phonetic line in 3a and 3b is illustrative pinyin. Which engines actually return `phonetic` for which targets wasn't checked; the frame only tests stacking.
 
 ## Approval
-[To be filled by O. D does not self-approve.]
+Approved by the principal, 2026-09-28 (revision 3): "Detected"/"自动检测" for the Auto entry, "自动检测" chosen for the zh-CN wording, "译自自动识别的{lang}" chosen for the note's zh-CN wording. The principal also confirmed, after review: the result-pane note is outside the result `<textarea>` (a separate note line, same as the existing phonetic/identity/cancelled notes), so it is never captured by the Copy button (`copy(activeDisplay)`, a plain string variable) or by Cmd+A in either focus state (a textarea's content is its own isolated selection scope in every browser engine).
