@@ -19,15 +19,17 @@ func TestVariantConstantsHaveBCP47Values(t *testing.T) {
 	}
 }
 
+// Issue #165 (principal, 2026-09-28): the selectable dropdowns lead with English, Spanish
+// (Mexico), Portuguese (Portugal); families stay adjacent (ES/ESMX, PT/PTPT/PTBR).
 func TestAllLanguagesIsRecognizedSetFamiliesAdjacent(t *testing.T) {
-	want := []Language{Auto, EN, JA, KO, FR, DE, ES, ESMX, PT, PTBR, PTPT, RU, ZH}
+	want := []Language{Auto, EN, ES, ESMX, PT, PTPT, PTBR, JA, KO, FR, DE, RU, ZH}
 	if got := AllLanguages(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("AllLanguages() = %v, want %v (recognized set, families adjacent)", got, want)
 	}
 }
 
 func TestSelectableLanguagesExcludesBareEsPtKeepsOrder(t *testing.T) {
-	want := []Language{Auto, EN, JA, KO, FR, DE, ESMX, PTBR, PTPT, RU, ZH}
+	want := []Language{Auto, EN, ESMX, PTPT, PTBR, JA, KO, FR, DE, RU, ZH}
 	if got := SelectableLanguages(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("SelectableLanguages() = %v, want %v", got, want)
 	}

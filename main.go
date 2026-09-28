@@ -323,10 +323,20 @@ func main() {
 			Handler: application.AssetFileServerFS(assets),
 		},
 		Mac: application.MacOptions{
-			// Accessory: agent app — no Dock icon and no menu bar from launch, tray only.
-			// Set by Wails during Cocoa initialization, earlier than a runtime HideAppIcon,
-			// so no flicker.
-			ActivationPolicy: application.ActivationPolicyAccessory,
+			// Regular (issue #165, principal decision, 2026-09-28): Kai gets a normal Dock icon
+			// and shows up in Cmd+Tab. ActivationPolicyAccessory (the prior setting) is the same
+			// switch that hides an app from BOTH the Dock and Cmd+Tab on macOS — there is no way
+			// to keep one without the other, so getting Cmd+Tab visibility means accepting a
+			// permanent Dock icon as a side effect (the principal was fine with the tradeoff
+			// either way). It also means Wails calls activateIgnoringOtherApps() on launch
+			// (application_darwin.go's run(), gated on ActivationPolicyRegular) instead of
+			// leaving activation alone, so Kai now foreground-activates once at startup instead
+			// of launching silently in the background.
+			// The Dock/Cmd+Tab icon itself needs no new asset: build/darwin/icons.icns is already
+			// wired into Info.plist (CFBundleIconFile/CFBundleIconName) and copied into the .app
+			// bundle's Resources by build/darwin/Taskfile.yml — it just wasn't shown anywhere
+			// while Accessory hid the app from the Dock and Cmd+Tab entirely.
+			ActivationPolicy: application.ActivationPolicyRegular,
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 		// Single instance: built into Wails v3 (macOS uses flock + NSDistributedNotification to
@@ -338,7 +348,7 @@ func main() {
 			UniqueID: "cnb.cool.dtapp.kai",
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 				slog.Info(i18n.T("log.single_instance_second_launch"))
-				// Kai is an Accessory app (no persistent main window, tray only); on second launch,
+				// Kai has no persistent main window (tray + Dock icon, issue #165); on second launch,
 				// bring the existing instance's translate window to the foreground (issue #69: the
 				// translate window, not Settings, matching a tray click's show). Go through
 				// WindowWrapper.ShowTranslateWindow (showAndFocus), never a bare Show().Focus(): the
@@ -419,8 +429,9 @@ func main() {
 		winTheme = application.Dark
 	}
 
-	// Settings window. Kai is a menu-bar app (ActivationPolicyAccessory): Settings starts hidden
-	// and opens only from the gear or the tray (see the Hide below).
+	// Settings window. Kai is a menu-bar app (tray, plus a Dock icon since issue #165's
+	// ActivationPolicyRegular): Settings starts hidden and opens only from the gear or the tray
+	// (see the Hide below).
 	settingsWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   model.WindowSettings,
 		Title:  i18n.T("window.settings_title"),

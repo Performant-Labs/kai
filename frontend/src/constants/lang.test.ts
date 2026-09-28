@@ -7,8 +7,9 @@ import { zh } from '../i18n/zh-CN.ts';
 // issue #52 (Tester, RED): the static fallback lists mirror backend SelectableLanguages()
 // (recognized bare es/pt are NOT selectable); display names exist in en + zh.
 
-// Chinese is listed last (principal, 2026-09-26).
-const SELECTABLE = ['auto', 'en', 'ja', 'ko', 'fr', 'de', 'es-MX', 'pt-BR', 'pt-PT', 'ru', 'zh'];
+// English, Spanish (Mexico), Portuguese (Portugal) lead the dropdowns (issue #165, principal,
+// 2026-09-28); Chinese is listed last (principal, 2026-09-26).
+const SELECTABLE = ['auto', 'en', 'es-MX', 'pt-PT', 'pt-BR', 'ja', 'ko', 'fr', 'de', 'ru', 'zh'];
 
 describe('static language lists', () => {
   it('has the same members as the generated Language enum minus $zero, bare es and pt', () => {

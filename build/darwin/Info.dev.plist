@@ -24,8 +24,8 @@
 		<string>0.0.1</string>
 		<key>LSMinimumSystemVersion</key>
 		<string>12.0.0</string>
-		<key>LSUIElement</key>
-		<true/>
+		<!-- LSUIElement removed (issue #165): see build/darwin/Info.plist's comment — this must
+		     stay in sync with main.go's Mac.ActivationPolicy (ActivationPolicyRegular). -->
 		<key>NSAppTransportSecurity</key>
 		<dict>
 			<key>NSAllowsLocalNetworking</key>

@@ -399,12 +399,27 @@
   // composition is open the key belongs to the IME.
   function onWindowKeydown(e: KeyboardEvent) {
     if (e.isComposing) return;
+    if (handleTranslateShortcut(e)) return;
     const action = shortcutAction(e);
     if (action === null) return;
     e.preventDefault();
     shortcutAt = Date.now();
     if (action === 'undo') applyUndo();
     else applyRedo();
+  }
+
+  // Cmd+Enter translates (issue #165). Mac-only (metaKey, never ctrlKey, matching the rest of
+  // this file's shortcut conventions), and only reachable via the svelte:window listener below,
+  // which only fires while this window has focus. Always prevents the default (Enter would
+  // otherwise insert a newline in the source textarea); the translate call itself only fires
+  // when the Translate button would currently be enabled (matches its disabled={awaiting ||
+  // !input.trim()} condition), so a request already in flight is never silently replaced by a
+  // stray Cmd+Enter.
+  function handleTranslateShortcut(e: KeyboardEvent): boolean {
+    if (e.key !== 'Enter' || !e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+    e.preventDefault();
+    if (!awaiting && input.trim()) doTranslate();
+    return true;
   }
 
   // Translating marquee: animated ellipsis (. → .. → ... → .... cycling)
@@ -978,7 +993,7 @@
         class="u-card u-card--panel flex min-w-0 flex-col overflow-hidden"
         style="width: {leftRatio * 100}%"
       >
-        <div class="u-border-b flex items-center justify-between px-3 py-2">
+        <div class="u-border-b u-pane-header flex items-center justify-between px-3 py-2">
           <span class="u-label">{t('translate.from')}</span>
           <div class="flex items-center gap-2">
             {#if activeEngines.length === 0}
@@ -989,11 +1004,12 @@
               >
             {/if}
             <button
-              class="u-icon-btn u-icon-btn--sm u-no-drag"
+              class="u-icon-btn u-icon-btn--sm u-no-drag u-tooltip"
               class:u-icon-btn--active={pinned}
               onclick={togglePin}
               aria-label={pinned ? t('translate.unpin') : t('translate.pin')}
               title={pinned ? t('translate.unpin') : t('translate.pin')}
+              data-tooltip={pinned ? t('translate.unpin') : t('translate.pin')}
             >
               <svg
                 width="14"
@@ -1012,11 +1028,12 @@
               </svg>
             </button>
             <button
-              class="u-icon-btn u-icon-btn--sm u-no-drag"
+              class="u-icon-btn u-icon-btn--sm u-no-drag u-tooltip"
               class:u-icon-btn--active={autoClipboard}
               onclick={() => applyAutoClipboard(!autoClipboard)}
               aria-label={t('translate.autoClipboard')}
               title={t('translate.autoClipboard')}
+              data-tooltip={t('translate.autoClipboard')}
             >
               <svg
                 width="14"
@@ -1158,7 +1175,7 @@
 
       <!-- Right pane: results (issue #9's active-engine pane: engine dropdown + status dots + the active engine's flat result text, #95) -->
       <section class="u-card u-card--panel flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div class="u-border-b flex items-center justify-between px-3 py-2">
+        <div class="u-border-b u-pane-header flex items-center justify-between px-3 py-2">
           <span class="u-label">{t('translate.result')}</span>
           <div class="flex items-center gap-2">
             {#if activeEngines.length > 0}
@@ -1166,8 +1183,16 @@
                  (last-used/primary derivation, see activeEngineFor); onchange writes last-used
                  (#8's setLastUsedEngine) and resets edits. Disabled engines (just toggled in
                  settings, before EventEnginesChanged lands) are listed as disabled. -->
+              <!-- pl-3 only (issue #165, re-investigated after a wrong first guess at #lang-sel):
+                   .u-select reserves padding-right: 2.25rem for its custom arrow icon
+                   (background-position right .75rem center), but Tailwind v4's utilities layer
+                   always wins over the components layer regardless of source order, so a plain
+                   px-3 here collapsed that to .75rem and let engine names (esp. the on-device
+                   engine, labelled "System") sit right under the arrow — the "out of proportion"
+                   dropdown. pl-3 supplies the left padding only, leaving u-select's own
+                   right-padding uncontested. -->
               <select
-                class="u-field u-select u-engine-select px-3 py-2 text-sm"
+                class="u-field u-select u-engine-select pl-3 py-2 text-sm"
                 value={selectValue}
                 onchange={handleEngineChange}
                 aria-label={t('translate.engineActive')}

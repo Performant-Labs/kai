@@ -22,8 +22,11 @@
 		<string>0.0.1</string>
 		<key>LSMinimumSystemVersion</key>
 		<string>12.0.0</string>
-		<key>LSUIElement</key>
-		<true/>
+		<!-- LSUIElement removed (issue #165): this key is LaunchServices' own bundle-level switch
+		     for "no Dock icon, no Cmd+Tab entry", read at launch before main.go's runtime
+		     Mac.ActivationPolicy (application_darwin.go's setActivationPolicy call) has a chance
+		     to run. Leaving it true here would fight the ActivationPolicyRegular change in
+		     main.go, so both must agree for Kai to reliably get a Dock icon and Cmd+Tab entry. -->
 		<key>NSHighResolutionCapable</key>
 		<string>true</string>
 		<key>NSHumanReadableCopyright</key>
