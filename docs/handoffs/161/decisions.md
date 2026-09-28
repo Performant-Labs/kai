@@ -107,3 +107,17 @@
 - **Assumed:** the principal keeps Deviation 1. To revert, drop the two conjuncts and the two tests.
 - **Hedged:** no live provider was called and no Apple bridge was exercised; the checks were loopback gtx and the scripted engine. No visual check (headless).
 - **Evidence:** handoff-T-green.md. Mutation runs showed `calls = map[1:auto]` with the chunk conjunct removed, and both tests failing with the service conjunct removed. Production was restored via `git checkout HEAD --`, and `git status` shows test files only.
+
+## A, Phase 7 (anti-duplication gate), 2026-09-28
+- **Decided:** PASS (docs/handoffs/161/handoff-A-dup.md, diff 096643a..d977ade), with 0 blocks, 3 warns and 4 passes.
+  - F extended the objects the Reuse map named: `translateWithEngine`, the single seam both `Translate` and the fan-out run use; `callEngineChunked`, through the one `pinFallback` parameter; and one `DetectedFrom` field sibling to `Identity`.
+  - `detectedSource`, `resultFrom`, `identityResult`, `ParseLanguage`, `SameAs` and `Covers` are reused unchanged.
+  - `detectedLang.ts` is deleted, not left parallel.
+  - Scope held: no change in engine, configstore, pkg, `chunk.go` or `requests.go`.
+- **Warns:**
+  - W1: Deviation 1's conjunct lives in two places, mirroring #84's twin identity points. A revert must drop both, plus both tests.
+  - W2: the `prettier-ignore` comment in `TranslateWindow.svelte` is stale since T-green's `,?` regex.
+  - W3: the ParseLanguage asymmetry between the two identity checks is unreachable via `Covers`, so it is informational only.
+- **Assumed:** the phase prompt's "fifth plan review" text was carried over from Phase 3. The brief and handoff-D are unchanged since the Phase-3 PASS at 4258c9f (empty diff), so that PASS stands, and this run did the Phase-7 gate its phase line names.
+- **Hedged:** read from source and the diff only. No tests or engines were run at this gate. T-green's run is the runtime evidence.
+- **Evidence:** `service.go:212`, `:649`, `:271-321`; `service_chunk.go:71`, `:118`, `:131-141`; `model.go` `Covers`/`canonical`.
