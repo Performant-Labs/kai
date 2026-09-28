@@ -543,7 +543,11 @@ body {
   /* Fast custom tooltip (issue #165): the native `title` tooltip in the Wails/WKWebView shell
      has a long hover delay, so an icon-only control whose glyph isn't self-evident at a glance
      (pin, auto-clipboard) gets an instant CSS tooltip as the primary visible affordance.
-     `title`/aria-label stay on the element for accessibility and as a fallback. */
+     `title`/aria-label stay on the element for accessibility and as a fallback.
+     Opens BELOW the trigger, not above (PR #166 review finding): both current uses sit in the
+     pane header row, right at the top edge of a `.u-card--panel` `overflow-hidden` ancestor —
+     a tooltip opening upward would be clipped by that boundary before it became visible. Below
+     has the whole pane body to expand into. */
   .u-tooltip {
     position: relative;
   }
@@ -551,9 +555,9 @@ body {
   .u-tooltip::after {
     content: attr(data-tooltip);
     position: absolute;
-    bottom: calc(100% + 6px);
+    top: calc(100% + 6px);
     left: 50%;
-    transform: translateX(-50%) translateY(2px);
+    transform: translateX(-50%) translateY(-2px);
     white-space: nowrap;
     padding: 0.25rem 0.5rem;
     border-radius: 0.375rem;

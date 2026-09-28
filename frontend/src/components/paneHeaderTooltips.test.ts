@@ -52,6 +52,16 @@ describe('pin and auto-clipboard buttons get an instant custom tooltip (issue #1
     expect(css).toMatch(/\.u-tooltip::after\s*\{[^}]*content:\s*attr\(data-tooltip\)/);
   });
 
+  // PR #166 review finding: both buttons sit at the very top of a `.u-card--panel
+  // overflow-hidden` pane, so a tooltip opening upward (`bottom: ...`) is clipped by that
+  // ancestor before it becomes visible. It must open downward instead, into the pane body.
+  it('the tooltip opens below its trigger, not above (would be clipped by the pane’s overflow-hidden top edge)', () => {
+    const m = css.match(/\.u-tooltip::after\s*\{([^}]*)\}/);
+    expect(m, '.u-tooltip::after rule not found in app.css').not.toBeNull();
+    expect(m![1]).toMatch(/top:\s*calc\(100% \+ [\d.]+(rem|px)\)/);
+    expect(m![1]).not.toMatch(/\bbottom:/);
+  });
+
   it('the pin button carries u-tooltip and a data-tooltip matching its title', () => {
     const btn = openTags(src, 'button').find((t) => t.includes('onclick={togglePin}'));
     expect(btn, 'pin button not found').toBeDefined();
