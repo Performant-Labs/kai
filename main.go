@@ -470,7 +470,13 @@ func main() {
 	// app.Run() — NativeWindow() is still nil here at creation time, so this must NOT be called
 	// synchronously in main()). See docs/handoffs/163-brief.md.
 	settingsWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) {
-		windowSvc.DisableRestoration(settingsWindow)
+		// WindowRuntimeReady fires on a background goroutine; DisableRestoration calls into
+		// AppKit directly (purego/objc), which must run on the main thread like every other
+		// native window call in this file (see showScreenshotWindow's InvokeAsync comment) —
+		// omitting this caused a SIGTRAP crash shortly after every launch, caught 2026-09-28.
+		application.InvokeAsync(func() {
+			windowSvc.DisableRestoration(settingsWindow)
+		})
 	})
 
 	// Input translate window: two-pane layout (issue #10, locked decision: always side by
@@ -502,7 +508,10 @@ func main() {
 	// Issue #163: opt out of macOS Secure State Restoration once the native window actually
 	// exists (see the settings-window comment above and docs/handoffs/163-brief.md).
 	translateWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) {
-		windowSvc.DisableRestoration(translateWindow)
+		// Main-thread dispatch required — see the settings-window comment above.
+		application.InvokeAsync(func() {
+			windowSvc.DisableRestoration(translateWindow)
+		})
 	})
 	// Red X = hide the window (don't quit): RegisterHook Cancels the close before WindowClosing's
 	// destroy listener and hides instead. This keeps the red X, keeps the window alive, and it
@@ -555,7 +564,10 @@ func main() {
 	// exists (see the settings-window comment above and docs/handoffs/163-brief.md). This is
 	// the window the issue was originally reported against.
 	screenshotWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) {
-		windowSvc.DisableRestoration(screenshotWindow)
+		// Main-thread dispatch required — see the settings-window comment above.
+		application.InvokeAsync(func() {
+			windowSvc.DisableRestoration(screenshotWindow)
+		})
 	})
 	_ = screenshotWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
