@@ -29,8 +29,8 @@ Two problems, deliberately scoped as one issue by the principal (comment on #161
 - `fromOptionLabel(value)` (:537-546) calls `detectedSourceLabel(value, TRANSLATE_LANG.Auto, detectedFrom, langName, t('translate.detected'))`; falls back to `langName(value)` when it returns `null`.
 - `detectedSourceLabel` (`detectedLang.ts:23-34`): returns `null` unless `fromLang === autoCode`; returns `null` if nothing detected (`detectedFrom === '' || detectedFrom === autoCode`); otherwise returns `nameOf(detectedFrom) + suffix` — a **full replacement** of the option's text, e.g. `"Spanish (Mexico) (detected)"`. This is exactly what #11's own follow-up comment flags: nothing in that string says "Auto".
 - The option list itself (:899-901, source select): `{#each languages as l}<option value={l.value}>{fromOptionLabel(l.value)}</option>{/each}`. `languages` (:160, loaded by `loadLanguages()`/`GetLanguages`) is the full list including the Auto entry (`TRANSLATE_LANG.Auto` is one of its values, per `GetLanguages`/`fallbackLanguages` at :717-722 which maps `ALL_TRANSLATE_LANGS`, and `ALL_TRANSLATE_LANGS` includes Auto — confirmed by `langName(value)` being called for it in the fallback branch same as every other entry). So the Auto option is rendered by the exact same `<option>` templated with `fromOptionLabel`, which is the single relabeling chokepoint — no separate "Auto row" markup exists to redesign around; the fix is entirely in what `fromOptionLabel`/`detectedSourceLabel` return for the Auto value.
-- `onLangPicked(ev)` (:706-709): fired **only** by the two selects' own `onchange` (:896, :932). Calls `learnLangVariant(value)` (→ `learnFromSelection` → the backend's `LearnLangVariant`/`langpref.Store`, issue #53) then `persistLangs()` (writes `default_from`/`default_to` to the settings file). `swap()` (:768-777) and `loadDefaults()` (:679-687) assign `fromLang`/`toLang` directly and deliberately never call `onLangPicked` — the existing, load-bearing rule is "assigning the state directly never teaches; only the select's own user-driven `onchange` teaches." This is precisely the rule (b)'s auto-correction must also follow: the correction must assign `fromLang` (and whatever pinned entry is affected) directly, never route through `onLangPicked`/`learnLangVariant`/`persistLangs`.
-- The toast mechanism already exists and is reused, not invented, across two windows: `TranslateWindow.svelte:842-847` — `let toast = $state('')`, `showToast(msg)` sets it and clears it after a fixed 1.6s timer (`toastTimer`), rendered at :1363-1364 as `{#if toast}<div class="u-toast">{toast}</div>{/if}`. Used today only by `copy()` with `t('common.copied')` (:854). `ScreenshotWindow.svelte` has an identical independent copy (:238-244, 638-642) — the two windows do not share a component, but the pattern (state string + timer + `u-toast` div) is identical and this issue's toast belongs in `TranslateWindow.svelte`'s own copy, the same as #145 (below) added the cancel toast to it.
+- `onLangPicked(ev)` (:706-709): fired **only** by the two selects' own `onchange` (:896, :932). Calls `learnLangVariant(value)` (→ `learnFromSelection` → the backend's `LearnLangVariant`/`langpref.Store`, issue #53) then `persistLangs()` (writes `default_from`/`default_to` to the settings file). `swap()` (:768-777) and `loadDefaults()` (:679-687) assign `fromLang`/`toLang` directly and deliberately never call `onLangPicked` — the existing, load-bearing rule is "assigning the state directly never teaches; only the select's own user-driven `onchange` teaches." **This issue's correction never assigns `fromLang` at all** (see "Visible-cue mechanism" below — the dropdown never changes), so it does not need to follow or imitate this convention; there is nothing to bypass.
+- The toast mechanism exists (`TranslateWindow.svelte:842-847` — `let toast = $state('')`, `showToast(msg)`, a 1.6s timer, rendered at :1363-1364), used today only by `copy()`. **This issue does not use it** (see "Visible-cue mechanism" below — a persistent note, not a toast).
 - `#53`'s variant-learning path (`learnLangVariant`/`persistLangs`) is the mechanism (a) must NOT feed: an engine-detected correction is not a user's deliberate pick, and teaching it back would let one auto-corrected guess silently become the new default pin for every future translation — the opposite of what a correction should do.
 
 ## Prior brief format/rigor conventions (`docs/handoffs/145-brief.md`, merged as c3a7d13)
@@ -90,46 +90,91 @@ func (s *Service) translateWithEngine(ctx, reg, engineName, req, progress) (*mod
 
     res, err := s.callEngineChunked(ctx, reg, engineName, sent, progress, pinFallback)
 
-    // CHANGED from today: gated on sent.From, not req.From. This is what makes the
-    // identity/covers-target case fire for a substituted pinned request too — sent.From is
-    // auto whenever substitute is true, exactly like a genuine auto request, so this same
-    // existing check now also catches "the pin was wrong and the text is actually the target
-    // language" (the reported bug), not just "the caller asked for auto and it happened to
-    // match the target."
-    if isAutoSource(sent.From) && ctx.Err() == nil:
-        if detected, ok := detectedSource(res, err); ok && detected.Covers(req.To):
-            return s.identityResult(engineName, req, detected), nil
-            // req (not sent) is passed here deliberately: identityResult's Text/To come from
-            // the caller's real request; only the detected From differs. DetectedFrom is NOT
-            // set on this path (WARN 6's own recommendation) — Identity already explains it;
-            // a redundant correction note would be confusing next to the identity note.
+    // A detection only counts if model.ParseLanguage recognizes it (fixes B1, second review's
+    // false-positive bug): detectedSource's ok==true only means "the engine reported SOME From",
+    // which includes an engine's own untranslated native code (Baidu's "jp", "kor" — baidu.go:120).
+    // SameAs("jp","ja") is false (canonical() does not normalize an unrecognized code), so without
+    // this gate, EVERY Baidu request pinned to Japanese would have been flagged as a false
+    // "correction" to "jp". A recognized-but-unparseable detection is treated exactly like no
+    // detection at all: fall through to the unusable-detection branch below.
+    detected, dok := detectedSource(res, err)
+    recognized := dok
+    if dok {
+        _, recognized = model.ParseLanguage(string(detected))
+    }
+
+    // Gated on sent.From, not req.From (unchanged from before): this is what makes the
+    // identity/covers-target case fire for a substituted pinned request too — sent.From is auto
+    // whenever substitute is true, exactly like a genuine auto request, so this same existing
+    // check now also catches "the pin was wrong and the text is actually the target language"
+    // (the reported bug), not just "the caller asked for auto and it happened to match the
+    // target."
+    if isAutoSource(sent.From) && ctx.Err() == nil && recognized && detected.Covers(req.To):
+        return s.identityResult(engineName, sent, detected), nil
+        // sent (NOT req — fixes B2, second review's bug): sent.Text/sent.To are identical to
+        // req's (only .From ever differs between them), so nothing about the identity result's
+        // content changes — but identityResult computes From as resultFrom(passed.From, detected),
+        // and resultFrom's PINNED branch ignores its second argument entirely and just returns the
+        // pin verbatim. Passing req here would have reported the WRONG, uncorrected pin (es-MX) as
+        // From even on a successful identity correction. Passing sent (whose .From is auto when
+        // substitute is true) takes resultFrom's AUTO branch instead, which correctly qualifies
+        // the real detected language. DetectedFrom is NOT set on this path (unchanged) — Identity
+        // already explains it.
 
     if err != nil:
         return nil, err
 
+    // DetectedFrom is set whenever the result is not identity AND a recognized detection exists —
+    // on BOTH paths, substituted-pinned and genuine Auto (fixes B3, second review's bug: the prior
+    // version left it empty for a genuine Auto result, contradicting the Visible-cue section and
+    // the approved wireframe's state 2(b), which both require the note on a plain Auto
+    // translation too). The 20-code-point floor does NOT apply here — the floor exists to gate
+    // overriding a user's deliberate pin, a real behavior change; showing what Auto already
+    // detected is purely informational and carries none of that risk. (Principal decision, made
+    // here per the second review's recommendation, not left open — see "Open decisions" below.)
     if !substitute:
         res.From = s.resultFrom(req.From, res.From)                // UNCHANGED path, byte-for-byte as today
+        if isAutoSource(req.From) && recognized:
+            res.DetectedFrom = res.From                             // mirrors the already-qualified From;
+                                                                     // same value, just exposed on the new field
         return res, nil
 
     // substitute == true, and this was not an identity result: decide whether it was a real
-    // correction or the pin turned out to be right (or detection came back unusable).
-    if detected, ok := detectedSource(res, err); ok && !detected.SameAs(req.From):
-        res.DetectedFrom = detected                                 // NEW field; this is what triggers the note
+    // correction, the pin turned out to be right, or the detection was unusable/unrecognized.
+    if recognized && !detected.SameAs(req.From):
+        res.DetectedFrom = detected                                 // this is what triggers the note
         res.From = s.resultFrom(model.Auto, detected)               // reuses resultFrom's EXISTING auto branch
                                                                      // (s.langPrefs.Qualify(detected)) — the
                                                                      // corrected language is qualified through
                                                                      // #53 exactly like a genuine auto result is;
                                                                      // no new qualification logic is written.
     else:
-        res.From = req.From                                         // detection matched the pin, or was
-                                                                     // unusable: report the pin, unchanged from
-                                                                     // what the caller asked for. DetectedFrom
-                                                                     // stays empty; no note.
+        res.From = req.From                                         // detection matched the pin, was unusable,
+                                                                     // or was an unrecognized native code:
+                                                                     // report the pin, unchanged from what the
+                                                                     // caller asked for. DetectedFrom stays
+                                                                     // empty; no note.
     return res, nil
 }
 ```
 
-**`callEngineChunked` gains one new parameter, `pinFallback model.Language`** (`service_chunk.go:66`'s signature), threaded through from the call above. Its existing chunk-1 block (`:103-128`) is otherwise untouched — it already runs correctly for `sent.From == auto` regardless of whether that came from a genuine auto caller or a substitution, including its own early identity-shortcut for the chunked case. The one addition: where it currently does `if l, ok := model.ParseLanguage(string(a.res.From)); ok { from = l }` with no `else` (so an unrecognized detection leaves `from` as the auto value, and chunks 2..N keep re-detecting — correct, unchanged, for a genuine auto caller), add `else if pinFallback != "" { from = pinFallback }` — only a substituted pinned call ever passes a non-empty `pinFallback`, so a genuine auto request's behavior is bit-for-bit unchanged.
+**`callEngineChunked` gains one new parameter, `pinFallback model.Language`** (`service_chunk.go:66`'s signature), threaded through from the call above. Its existing chunk-1 block (`:103-128`) is otherwise untouched except for one precision fix (W1, second review): where it currently does `if l, ok := model.ParseLanguage(string(a.res.From)); ok { from = l }` unconditionally, change it so a substituted-pinned request whose chunk-1 detection *matches the pin* keeps the pin's full dialect specificity for chunks 2..N, rather than downgrading to the bare parsed code:
+
+```
+if l, ok := model.ParseLanguage(string(a.res.From)); ok {
+    if pinFallback != "" && l.SameAs(pinFallback) {
+        from = pinFallback   // preserve the pin's dialect (es-MX), not the bare match (es)
+    } else {
+        from = l             // a genuine correction (or a genuine auto request): use what was detected
+    }
+} else if pinFallback != "" {
+    from = pinFallback        // unrecognized detection, substituted case: fall back to the pin
+}
+// else (unrecognized, pinFallback == ""): from stays the auto value, unchanged — a genuine auto
+// request's existing per-chunk-re-detect behavior on an unrecognized chunk-1 detection is untouched.
+```
+
+Only a substituted pinned call ever passes a non-empty `pinFallback`, so a genuine auto request's behavior — including this new middle branch, which can never fire for it — is bit-for-bit unchanged.
 
 **Why the short (non-chunked) and chunked paths don't diverge, despite looking like two code paths (this was the review's other concern):** `callEngineChunked`'s own single-call shortcut (`budget.Fits(req.Text)`, the common case for ordinary-length text) never runs its internal chunk-1 detection logic at all — it just calls `callEngine` once and returns. The identity/covers-target catch for that common case is `translateWithEngine`'s own post-call check above (now gated on `sent.From`), which already ran before this section existed, for genuine auto requests, and now also correctly covers the substituted case. `callEngineChunked`'s internal chunk-1 identity check only matters for genuinely long (actually-chunked) text, as a chunking-specific early exit — it converges on the exact same `s.identityResult(...)` call in `translateWithEngine` once it returns. One identity construction, one place, for every request shape.
 
@@ -207,7 +252,7 @@ The issue's original complaint (comment on #161, "Auto is nowhere for the user t
 - **No numeric confidence.** The 20-code-point floor is the entire threshold; do not invent a confidence score or heuristic beyond it.
 - **`ScreenshotTranslate`'s capture flow is untouched** — it always sends `from = model.Auto` (:790); a pinned mismatch cannot occur there. **`ScreenshotRetranslate` IS in scope and DOES get the fix** (accepted in writing, see acceptance criterion (a)7): it reaches `translateWithEngine` via `translateAllStream` with an explicit `from`/`to` (:865), so the same substitution/correction logic applies to it automatically, with no separate wiring. What's explicitly out of scope is fixing `TranslateCard`'s rendering to show the note there too — the correction happens correctly, it's just invisible on that surface today. Flag that gap as a known follow-up in the PR body, don't build it here.
 - **No change to `learnLangVariant`/`langpref.Store`/`persistLangs` themselves** — the correction must route around them, not modify their contracts.
-- **No change to the swap button's logic** (`swap()`, `swapLanguages`) beyond whatever direct-assignment convention it already demonstrates being followed by the correction handler; `swapPair`'s derivation is untouched.
+- **No change to the swap button's logic** (`swap()`, `swapLanguages`) at all — the correction never assigns `fromLang`, so there is no interaction with `swap()`'s convention to preserve; `swapPair`'s derivation and its existing `detectedFrom` input are both untouched (see WARN 5's fix in the Reuse map).
 
 ## Tests to author (T, before F writes code — in-session pipeline, no dual-review gate)
 
@@ -233,10 +278,11 @@ Frontend (vitest, pure + source-contract, matching #145's two-tier convention):
 
 ## Rigor
 
-**in-session.** Not raised to `second-opinion` despite touching both the backend detection seam and a hand-tested user-facing window, because: the backend change is a bounded, well-precedented extension of an existing, already-tested pattern (#84's chunk-1 detection decision, extended from the auto branch to the pinned branch with one new gate) rather than new architecture; the frontend change is a label/cue change to a simplified mechanism (`fromOptionLabel` now trivial, no toast) with a strict "never teach the variant store" contract this codebase already contract-tests for an analogous case (`swap()`). Both #11 and #145 — the two closest precedents on this exact file/area — shipped at `in-session` themselves. If the wireframe review or T's RED phase turns up a design question this brief didn't anticipate (most likely: the open "does the dropdown reassign or stay put" call, if the principal's answer implies deeper swap/session-retention interaction), raise rigor then rather than pre-guessing it now.
+**in-session.** Not raised to `second-opinion` despite touching both the backend detection seam and a hand-tested user-facing window, because: the backend change is a bounded, well-precedented extension of an existing, already-tested pattern (#84's chunk-1 detection decision, extended from the auto branch to the pinned branch with one new gate) rather than new architecture; the frontend change is a label/cue change to a simplified mechanism (`fromOptionLabel` now trivial, no toast) with a strict "never teach the variant store" contract this codebase already contract-tests for an analogous case (`swap()`). Both #11 and #145 — the two closest precedents on this exact file/area — shipped at `in-session` themselves. Every design question this brief raised (the dropdown-never-changes rule, the wording, the Auto-note floor) has been settled by the principal or by architecture review, not left open into T/F — if T's RED phase turns up something genuinely new, raise rigor then rather than pre-guessing it now.
 
 ## Open decisions left in this brief (for the D-phase wireframe / principal sign-off)
 
 1. **Settled by the principal, 2026-09-28 (no longer open): the dropdown never changes, for either Auto or a pinned correction.** A persistent muted result-pane note carries the detected-language information instead — see "Visible-cue mechanism" above. This also reverts #11's shipped Auto-row relabeling.
 2. Exact wording/punctuation of the result-pane note. The principal's own wording, "Translated from auto-detected Spanish (Mexico)," is the brief's proposal; F/D may tighten it, but keep the shape (states the actual source, names it as auto-detected, lightly colored/muted).
-3. Whether `TranslateCard`'s missing note (the fix applies to `ScreenshotRetranslate` but nothing shows it there — see acceptance criterion (a)7 and the scope-limits entry above) is worth a follow-up issue — left to F to notice and flag, not pre-filed.
+3. **Settled here, per the second architecture review's recommendation (no longer open): the 20-code-point floor does not apply to showing the note on a genuine Auto result.** The floor exists to gate overriding a deliberate pin — a real behavior change with a real cost if wrong. Displaying what Auto already detected carries none of that risk; it's the same information the engine already used, just not previously surfaced now that #11's relabeling is reverted. So a short Auto-mode translation (under 20 code points) still shows the note if a recognized detection came back, even though a short PINNED mismatch still gets no correction and no note.
+4. `TranslateCard`'s missing note (the fix applies to `ScreenshotRetranslate`, per acceptance criterion (a)7, but nothing renders it there) is a known, accepted gap for this PR to flag in its body — not pre-filed as a separate issue, and not something F should spend time deciding; just say it plainly.
