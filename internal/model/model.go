@@ -50,10 +50,11 @@ const (
 
 // allLanguages is the RECOGNIZED set (including Auto): every value the app understands, i.e.
 // what engines and detection may emit and what has a display name. Dialect variants sit right
-// after their base so language families stay adjacent (…, ES, ESMX, PT, PTBR, PTPT, RU).
+// after their base so language families stay adjacent (…, ES, ESMX, PT, PTPT, PTBR, RU).
 // Recognized is a superset of selectable: see selectableExcluded.
-// Chinese is last on purpose (principal, 2026-09-26): the dropdowns list it at the bottom.
-var allLanguages = []Language{Auto, EN, JA, KO, FR, DE, ES, ESMX, PT, PTBR, PTPT, RU, ZH}
+// The selectable dropdowns lead with English, Spanish (Mexico), Portuguese (Portugal) (issue
+// #165, principal, 2026-09-28); Chinese stays last (principal, 2026-09-26).
+var allLanguages = []Language{Auto, EN, ES, ESMX, PT, PTPT, PTBR, JA, KO, FR, DE, RU, ZH}
 
 // selectableExcluded lists recognized languages that are NOT offered in the language
 // dropdowns: the bare bases of a dialect family. Detection emits them on every auto send and
@@ -184,19 +185,23 @@ func ParseLanguage(code string) (Language, bool) {
 	return "", false
 }
 
+// selectableOrDefault is the fixed default dialect a bare base coerces to (es → es-MX,
+// pt → pt-BR), independent of the dropdowns' display order (allLanguages / SelectableLanguages):
+// issue #165 reordered the dropdowns to lead with pt-PT, but persisted legacy "pt" values must
+// keep resolving to the same dialect they always have, not silently switch with a display reorder.
+var selectableOrDefault = map[Language]Language{ES: ESMX, PT: PTBR}
+
 // SelectableOr returns l unless it is a recognized language that is not selectable (bare es /
-// pt); that is replaced by the first selectable variant of its family (es → es-MX,
-// pt → pt-BR), or by fallback when the family offers none. Codes outside the recognized set are
-// returned unchanged and stay the engines' business, as before.
+// pt); that is replaced by its fixed default selectable variant (es → es-MX, pt → pt-BR, see
+// selectableOrDefault), or by fallback when the family offers none. Codes outside the recognized
+// set are returned unchanged and stay the engines' business, as before.
 // It is the read-path coercion for persisted choices that predate the dialect variants.
 func (l Language) SelectableOr(fallback Language) Language {
 	if !selectableExcluded[l] {
 		return l
 	}
-	for _, s := range SelectableLanguages() {
-		if s.Base() == l {
-			return s
-		}
+	if d, ok := selectableOrDefault[l]; ok {
+		return d
 	}
 	return fallback
 }

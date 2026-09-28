@@ -34,14 +34,16 @@ export const Lang = {
 // which engine can translate into which option is backend-owned too (AllEngineItem.target_languages).
 export const ALL_TRANSLATE_LANGS: TranslateLang[] = [
   Language.Auto,
+  // English, Spanish (Mexico), Portuguese (Portugal) lead the list (issue #165, principal,
+  // 2026-09-28), matching the backend's SelectableLanguages() order.
   Language.EN,
+  Language.ESMX,
+  Language.PTPT,
+  Language.PTBR,
   Language.JA,
   Language.KO,
   Language.FR,
   Language.DE,
-  Language.ESMX,
-  Language.PTBR,
-  Language.PTPT,
   Language.RU,
   // Chinese last, matching the backend order (principal, 2026-09-26).
   Language.ZH,

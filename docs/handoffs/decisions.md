@@ -861,3 +861,64 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
   - docs/handoffs/161/handoff-D.md.
   - Headless Chrome `--dump-dom`: every toolbar fits (at least 93 px of room before the gear at 780 px), and every open menu stays inside the window.
   - I looked at the screenshot renders of sections A and C.
+
+## #165 O (rigor: in-session, single-shot, 2026-09-28, 2:55 PM MDT): one PR, all 7 items addressed
+- **Decided:** ship all 7 checklist items in one PR (default per the batch's own bundling; nothing
+  investigated below turned out risky/distinct enough to split).
+  1. Reordered the selectable language dropdowns (backend `allLanguages` in
+     `internal/model/model.go` and the frontend static fallback `ALL_TRANSLATE_LANGS` in
+     `frontend/src/constants/lang.ts`) to lead with English, Spanish (Mexico), Portuguese
+     (Portugal), matching the issue's literal wording.
+  2. Tooltip clarity: `title`/`aria-label` were already present and correct for the pin and
+     auto-clipboard buttons (`TranslateWindow.svelte`) — nothing was suppressing them, they just
+     rely on the WKWebView's native hover-delay tooltip. Added a fast, always-visible CSS tooltip
+     (`.u-tooltip`/`data-tooltip` in `app.css`) to both buttons as the primary affordance; native
+     `title` stays for accessibility.
+  3. Cmd+Enter translates: added `handleTranslateShortcut` to `TranslateWindow.svelte`'s existing
+     `onWindowKeydown` (wired via `<svelte:window onkeydown={onWindowKeydown}>`, so it only fires
+     while this window has focus). Mirrors the Translate button's own
+     `disabled={awaiting || !input.trim()}` guard so it can't silently replace an in-flight
+     request.
+  4. Pane header heights: both the source and result pane header rows already used identical
+     Tailwind classes, but the result header's `<select>` (px-3 py-2, ~36-38px tall) is
+     intrinsically taller than the source header's `u-icon-btn--sm` (24px) buttons, so the rows
+     sized to different heights. Added `.u-pane-header` (fixed height) to both.
+  5. "System" dropdown proportions: there is no control literally labeled "System" that is a
+     `<select>` — the theme picker's "System" option (`settings.themeAuto`) is a segmented
+     *button*, not a dropdown. The only real `<select>` in General settings is `#lang-sel`
+     (interface language), which had a one-off `w-full max-w-[240px]` stretch not used by any
+     other select in the app. Treated that as the most likely candidate (only literal dropdown +
+     concrete in-code sizing outlier) and normalized it to `u-lang-select`, matching every other
+     select's sizing convention. **Open question, not resolved by guessing further**: if the
+     principal meant a different control, say which.
+  6. Translate speed: investigated, no code change forced (issue explicitly allows this outcome).
+     `Service.TranslateMulti` (`internal/translate/service.go:490`) fires all active engines in
+     parallel goroutines and streams each engine's result back via its own
+     `EventTranslateResult` — it is not a single call blocked on the slowest engine. The
+     structural latency driver is which engine(s) are active: the on-device Apple engine
+     (`internal/engine/apple_darwin.go`, Translation.framework via the Swift bridge) is the same
+     underlying framework macOS's contextual-menu Translate uses and should be comparably fast; a
+     configured cloud/LLM engine (Google/DeepL/OpenAI/Anthropic/Gemini/Tencent/Youdao) pays real
+     network RTT plus, for the LLM engines, chat-completion overhead, which is inherently slower
+     than an on-device call and not something a Kai-side code change can close. Could not
+     benchmark live latency in this session (headless-only tooling, no GUI automation per
+     project convention) — this is a code-grounded structural finding, not a timed benchmark.
+  7. Cmd+Tab icon: **flagged as a decision point, not implemented.** `main.go:329` sets
+     `ActivationPolicy: application.ActivationPolicyAccessory` specifically so Kai has no Dock
+     icon and stays tray-only; on macOS, `ActivationPolicyAccessory` vs `.Regular` is the exact
+     same switch that controls both "no Dock icon" and "absent from Cmd+Tab" — there is no way to
+     get Cmd+Tab presence while keeping the current no-Dock-icon tray-only behavior. Changing this
+     is a real product tradeoff, not just adding an icon asset, so it was left for the principal's
+     call rather than silently changed.
+- **Assumed:** `SelectableOr`'s bare-`pt`→`pt-BR` / bare-`es`→`es-MX` coercion (used to normalize
+  legacy persisted language codes) must stay independent of display order. Reordering
+  `allLanguages` to put `pt-PT` before `pt-BR` broke `SelectableOr` (it originally picked "first
+  selectable variant in list order"), caught by
+  `TestSelectableOrCoercesBareBaseOnly` and `TestPersistedBareLanguagesCoercedOnLoad` going RED.
+  Fixed by decoupling the two concerns: added an explicit `selectableOrDefault` map
+  (`internal/model/model.go`) for the fixed default dialect, independent of
+  `SelectableLanguages()`'s display order.
+- **Hedged:** item 5 ("System" dropdown) is a best-guess grounded in the actual code (see above),
+  not a confirmed match to what the principal saw; flagged explicitly in the PR body.
+- **Evidence:** full authoritative suite green (`go test ./internal/... ./pkg/... -count=1` +
+  `pnpm --dir frontend test`, 408/408 frontend tests including 12 new ones for items 1/3/4/5/6).
