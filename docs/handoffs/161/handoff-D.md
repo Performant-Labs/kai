@@ -47,7 +47,7 @@ Everything is in the Translate window. Frames are whole windows at the real widt
 - New key: `translate.translatedFromDetected`, "Translated from auto-detected {lang}" / "译自自动识别的{lang}". `translate.detected` is no longer used by the select; F removes it if nothing else uses it.
 - **Not used:** `showToast` / `.u-toast`, `translate.autoDetected`, `translate.sourceCorrected`. Nothing assigns `fromLang` either.
 
-Rendering rule drawn for T and F: the note shows when `activeResult.detected_from` is non-empty, differs from the displayed FROM value, a result is showing, and (recommended) `identity` is false. It follows the active engine, so switching engines can show or hide it. It has no timer and is not clickable, and Copy never includes it.
+Rendering rule drawn for T and F (corrected, fourth architecture review, W4 — the brief's acceptance criterion (a)4 forbids any frontend comparison; `detected_from` is already a backend-decided value): the note shows when `activeResult.detected_from` is non-empty and `identity` is false. No frontend comparison against the displayed FROM value — the backend has already decided whether a note is warranted before setting the field. It follows the active engine, so switching engines can show or hide it. It has no timer and is not clickable, and Copy never includes it.
 
 ## Open questions for approval
 0. **zh-CN wording for "Detected"** (`translate.sourceAuto`). Drawn: "自动检测" ("auto-detect", the usual zh-CN label for this entry). Alternatives: "检测语言" ("detect language") or "已检测" (a literal "detected", which reads oddly before anything has been translated). Recommendation: "自动检测". It reads right both before and after a translation, and it echoes the note's "自动识别".
