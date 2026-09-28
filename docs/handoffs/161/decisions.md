@@ -40,3 +40,12 @@
 - **Assumed:** Baidu's `br.From` is a native code (`jp`, `kor`) per the existing comments in `detectedSource`/`resultFrom`. The live API was not called. Recommended: no 20-code-point floor on the Auto-case note; O or the principal confirms.
 - **Hedged:** Read from source only. No engine was called.
 - **Evidence:** `service.go:279-287` and the `identityResult` `From` line; `model.go` `SameAs`/`canonical`; `baidu.go:120-122`; `service_chunk.go:103-128`.
+
+## A, Phase 3 (re-review #3), 2026-09-28
+- **Decided:** BLOCK, narrowly: 2 block findings, 4 warns and 3 passes (docs/handoffs/161/handoff-A.md). The pseudocode now resolves every prior finding against the real code: the `ParseLanguage` gate (B1), `sent` passed to the identity branch (B2), the Auto-path `DetectedFrom` (B3), the stale text removed (B4), the pin's dialect preserved for chunks 2..N (W1), and open decision 3 settled (W2). The surrounding contract text was not updated to match:
+  - B1: :19, :189 and :263 still say `detectedSource` returns `ok=false` for a native code, and Reuse row :235 omits the gate.
+  - B2: (a)4 :53 and Reuse row :239 still say `DetectedFrom` is "empty always on the non-substituted path". :208 still applies the 20-code-point floor to the note. The substituted path stores bare `detected` while the Auto path stores the qualified `From`.
+- **Passed:** Scope limits held: no engine, chunker, registry, `resultFrom` or `detectedSource` change beyond the named `pinFallback` extension point and the one model field. `c.from` carries chunk 1's raw detection (`service_chunk.go:183-186`), so the chunked post-call decision is consistent.
+- **Assumed:** The Auto path's qualified value is the one both paths should use, per the prior review's B3 fix and wireframe 2(b)'s "Spanish (Mexico)".
+- **Hedged:** Read from source only. No engine was called.
+- **Evidence:** `service.go:279-287`, `service_chunk.go:103-128` and `:183-186`, `model.go:113-185`, `handoff-D.md:50`.
