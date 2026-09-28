@@ -52,6 +52,7 @@
   "log.screenshot_ocr_start": "[screenshot] OCR recognition started",
   "log.screenshot_ocr_failed": "[screenshot] OCR failed",
   "log.window_handle_failed": "Failed to get window handle",
+  "log.window_restoration_disable_failed": "[window] failed to disable macOS window state restoration (recovered)",
   "log.screenshot_ocr_done": "[screenshot] OCR completed",
   "log.ocr_cost": "[OCR] recognition cost engine={{.Engine}} ms={{.Ms}} ok={{.Ok}} err={{.Err}}",
   "log.screenshot_ocr_empty": "[screenshot] OCR recognized no text",

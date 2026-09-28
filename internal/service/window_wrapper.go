@@ -154,3 +154,17 @@ func (w *WindowWrapper) ShowSettings() {
 func (w *WindowWrapper) ShowScreenshotWindow() {
 	showAndFocus(w.screenshotWindow())
 }
+
+// setWindowNotRestorable defaults to the real SetWindowNotRestorable (darwin: purego/objc
+// setRestorable:NO; non-darwin: no-op) — package-level and swappable so tests can inject a
+// fake without a real Wails/AppKit window (application.Window has unexported methods and
+// cannot be faked directly; see window_restoration_test.go).
+var setWindowNotRestorable = SetWindowNotRestorable
+
+// DisableRestoration opts win out of macOS's Secure State Restoration ("Resume", issue #163):
+// see docs/handoffs/163-brief.md. Must be called after the window's native handle exists
+// (win.NativeWindow() is non-nil only once WebviewWindow.Run() has executed) — wire it to
+// events.Common.WindowRuntimeReady, never at window-creation time, or it silently no-ops.
+func (w *WindowWrapper) DisableRestoration(win application.Window) {
+	disableRestoration(win, setWindowNotRestorable)
+}
