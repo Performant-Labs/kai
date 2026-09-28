@@ -294,7 +294,7 @@ func (s *Service) translateWithEngine(ctx context.Context, reg engine.Translator
 	// sent, not req: its From is auto on a checked pin too, so From is the qualified detection
 	// (resultFrom), never the pin that turned out wrong.
 	if isAutoSource(sent.From) && ctx.Err() == nil && recognized && detected.Covers(req.To) &&
-		!(substitute && detected.SameAs(req.From)) {
+		(!substitute || !detected.SameAs(req.From)) {
 		return s.identityResult(engineName, sent, detected), nil
 	}
 	if err != nil {

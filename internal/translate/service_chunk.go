@@ -115,7 +115,7 @@ func (s *Service) callEngineChunked(ctx context.Context, reg engine.Translator, 
 			// A checked pin's detection that is the pin's own language is no identity even when it
 			// covers the target (a pt-BR pin into pt-PT): translateWithEngine lets that pin stand, so
 			// the whole text is translated, as it is unchunked.
-			if d, ok := detectedSource(a.res, a.err); ok && d.Covers(req.To) && !(pinFallback != "" && d.SameAs(pinFallback)) {
+			if d, ok := detectedSource(a.res, a.err); ok && d.Covers(req.To) && (pinFallback == "" || !d.SameAs(pinFallback)) {
 				if a.err != nil {
 					return nil, a.err
 				}
