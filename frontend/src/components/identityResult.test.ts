@@ -12,9 +12,10 @@ const card = read('TranslateCard.svelte');
 const win = read('TranslateWindow.svelte');
 const shot = read('ScreenshotWindow.svelte');
 
-// The {#if ... identity} ... {/if} block carrying the identity paragraph.
+// The {#if ... identity} ... {/if} block carrying the identity paragraph. The condition must read
+// identity positively: #161's detected-source note is gated on !identity and is not this block.
 function identityBlock(src: string): string {
-  const m = src.match(/\{#if [^}]*\bidentity\b[^}]*\}[\s\S]*?\{\/if\}/);
+  const m = src.match(/\{#if [^}!]*\bidentity\b[^}]*\}[\s\S]*?\{\/if\}/);
   return m ? m[0] : '';
 }
 

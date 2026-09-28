@@ -261,8 +261,14 @@ func TestChunkedTranslateMultiSplitsAndReassemblesInOrder(t *testing.T) {
 	seen := map[string]bool{}
 	for _, c := range calls {
 		seen[strings.TrimSpace(c.Text)] = true
-		if c.To != model.EN || c.From != model.ES {
-			t.Errorf("chunk request %q has From=%q To=%q, want es→en", c.Text, c.From, c.To)
+		// #161: a pinned request over the 20-code-point floor sends chunk 1 as auto; this engine
+		// reports no detection, so every later chunk falls back to the pin.
+		wantFrom := model.ES
+		if paraIndex(c.Text) == 1 {
+			wantFrom = model.Auto
+		}
+		if c.To != model.EN || c.From != wantFrom {
+			t.Errorf("chunk request %q has From=%q To=%q, want %s→en", c.Text, c.From, c.To, wantFrom)
 		}
 	}
 	for i := 1; i <= 3; i++ {

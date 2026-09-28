@@ -846,3 +846,18 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
 - **Assumed:** filing the batch-API follow-up issue and writing the PR body are O's pre-PR actions, not F rework. A read-only search found no such issue filed yet.
 - **Hedged:** golangci-lint was not run locally, so CI is the check. `TestChunkSourcePinnedFromChunkOne`'s "chunk 1 alone" check relies on a 30 ms sleep, which can pass wrongly but never fail wrongly, and other tests cover the same behavior.
 - **Evidence:** `git diff --stat eabfd60..HEAD -- pkg/ frontend/ internal/engine/ internal/events/ internal/translate/requests.go internal/model/` is empty. A grep of the added lines for key-shaped strings finds none, only test names in handoff prose.
+
+## #161 D (Phase 2, design, 2026-09-28, 6:21 AM MDT): wireframe produced, awaiting operator approval
+- **Decided:**
+  - Mode (a) generated low-fi: docs/handoffs/161/wireframe.html, with a zoom control that starts at 150% (buttons and the - / + / 0 keys).
+  - The Auto entry is "Auto — detected: X" / "自动 — 已识别：X" through `detectedSourceLabel` only. It falls back to bare "Auto" / "自动" when nothing is detected, when the detection is unusable, and whenever the source is pinned.
+  - The correction toast reuses `.u-toast` / `showToast` (1.6 s). It fires only for the active engine's `corrected: true` result.
+  - Recommendation: option A. A correction reassigns `fromLang` directly and never teaches.
+- **Assumed:** the zh-CN landmark keeps the existing `lang.auto` "自动", not the brief's "自动检测".
+- **Hedged:**
+  - AC6 vs option A (the next Translate in the same window sends the corrected language) is raised as open question 2.
+  - Rendering was headless Chrome, not WKWebView, and the native menu is drawn as a stand-in.
+- **Evidence:**
+  - docs/handoffs/161/handoff-D.md.
+  - Headless Chrome `--dump-dom`: every toolbar fits (at least 93 px of room before the gear at 780 px), and every open menu stays inside the window.
+  - I looked at the screenshot renders of sections A and C.

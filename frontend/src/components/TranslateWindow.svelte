@@ -135,7 +135,6 @@
     type ProgressLine,
     type ProgressState,
   } from '../utils/translateProgress.ts';
-  import { detectedSourceLabel } from '../utils/detectedLang.ts';
   import { swapLanguages } from '../utils/swapLangs.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import {
@@ -530,19 +529,14 @@
   // (the select never points at nothing).
   const firstEnabledName = $derived(activeEngines[0]?.value ?? '');
   const selectValue = $derived(activeEngine || firstEnabledName);
-  // Auto-detect feedback (issue #11): when the source language is auto and the active engine has
-  // returned a result, the language bar's auto option shows an "English (detected)"-style label;
-  // it never overrides a pinned language.
+  // The source language the active engine's result reports (its From: the pin, or the language the
+  // engine detected, issue #53). The swap below reads it (issue #13).
   const detectedFrom = $derived(String(activeResult?.from ?? ''));
+  // The source select's option labels (issue #161): the Auto entry always reads "Detected", whatever
+  // the result, and every other entry its language name. The select never changes with a result;
+  // the language a text was actually translated from is the result pane's note instead.
   function fromOptionLabel(value: string): string {
-    const label = detectedSourceLabel(
-      value,
-      TRANSLATE_LANG.Auto,
-      detectedFrom,
-      langName,
-      t('translate.detected'),
-    );
-    return label ?? langName(value);
+    return value === TRANSLATE_LANG.Auto ? t('translate.sourceAuto') : langName(value);
   }
   // The label of the pane's per-engine Cancel (issue #109), worded here so the pane markup names no
   // engine (issue #95: the dropdown above does).
@@ -1303,9 +1297,21 @@
                on leaving the textarea); displayed text = edited ?? result. On engine switch edited
                is discarded wholesale and the new engine starts from its own result. The
                activeResult check is redundant at runtime (a result for the active engine implies
-               it); it only narrows the type for the markup below. The phonetic, cancelled and
-               identity notes are small muted lines above the text: whichever comes first adds the
-               top inset (first:pt-4), the text below brings its own p-4. -->
+               it); it only narrows the type for the markup below. The detected-source, phonetic,
+               cancelled and identity notes are small muted lines above the text: whichever comes
+               first adds the top inset (first:pt-4), the text below brings its own p-4. -->
+            {#if activeResult.detected_from && !activeResult.identity}
+              <!-- The language the engine auto-detected and translated from (issue #161): on an
+                 auto source, or on a pinned source the backend corrected because the text was in
+                 another language. The backend decides when it is set; nothing is compared here.
+                 Display only: it never changes either select, and Copy never includes it. The
+                 ignore keeps the call on one line: the #161 source-contract test reads it without
+                 the trailing comma prettier adds when it wraps the line. -->
+              <!-- prettier-ignore -->
+              <p class="u-muted px-4 text-[11px] first:pt-4" data-testid="detected-from-note">
+                {t('translate.translatedFromDetected', { lang: langName(activeResult.detected_from) })}
+              </p>
+            {/if}
             {#if activeResult.phonetic}
               <span class="u-muted px-4 text-xs first:pt-4">{activeResult.phonetic}</span>
             {/if}
