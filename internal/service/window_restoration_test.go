@@ -26,7 +26,11 @@ func (f *fakeNativeWindow) NativeWindow() unsafe.Pointer { return f.ptr }
 
 func TestDisableRestorationCallsSetNotRestorableWithNativeHandle(t *testing.T) {
 	var handle byte
-	win := &fakeNativeWindow{ptr: unsafe.Pointer(&handle)}
+	// gosec G103: unsafe.Pointer is exactly what nativeWindowHandle/disableRestoration
+	// contract on (a real NSWindow* on darwin); taking the address of a local test byte is the
+	// standard stand-in for an opaque native handle here, never freed/reused unsafely.
+	handlePtr := unsafe.Pointer(&handle) //nolint:gosec
+	win := &fakeNativeWindow{ptr: handlePtr}
 
 	calls := 0
 	var got unsafe.Pointer
@@ -40,8 +44,8 @@ func TestDisableRestorationCallsSetNotRestorableWithNativeHandle(t *testing.T) {
 	if calls != 1 {
 		t.Errorf("setNotRestorable called %d times, want exactly 1", calls)
 	}
-	if got != unsafe.Pointer(&handle) {
-		t.Errorf("setNotRestorable called with %v, want %v", got, unsafe.Pointer(&handle))
+	if got != handlePtr {
+		t.Errorf("setNotRestorable called with %v, want %v", got, handlePtr)
 	}
 }
 
@@ -70,7 +74,8 @@ func TestDisableRestorationNoopsOnNilNativeHandle(t *testing.T) {
 
 func TestDisableRestorationNoopsOnNilCallback(t *testing.T) {
 	var handle byte
-	win := &fakeNativeWindow{ptr: unsafe.Pointer(&handle)}
+	handlePtr := unsafe.Pointer(&handle) //nolint:gosec // see the identical justification above
+	win := &fakeNativeWindow{ptr: handlePtr}
 
 	disableRestoration(win, nil) // must not panic
 }
