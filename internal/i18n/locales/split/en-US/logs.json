@@ -37,6 +37,7 @@
   "log.translate_multi_engine_failed": "Multi-engine translation failed",
   "log.translate_screenshot_engine_failed": "[screenshot] Screenshot translation engine failed",
   "log.translate_engine_cost": "[translate] engine cost engine={{.Engine}} ms={{.Ms}} ok={{.Ok}} err={{.Err}}",
+  "log.translate_chunked": "[translate] translating in chunks engine={{.Engine}} chunks={{.Chunks}} parts={{.Parts}} target={{.Target}} unit={{.Unit}}",
   "log.translate_engine_cancelled": "[translate] engine ended without a result (cancelled or superseded)",
   "log.translate_engine_panic": "[translate] translation engine panicked",
   "log.translate_duplicate_report": "[translate] duplicate terminal report ignored",

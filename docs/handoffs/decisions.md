@@ -737,3 +737,112 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
 - **Assumed:** `-timeout 115m` (over the brief's 100m) and the temp-dir status file are accepted deviations, settled by A warns 7a and 6 and pinned by T.
 - **Hedged:** PROBE lines carry no wall-clock time. results.md must take session dates and the one-hour gap from the status file's `time` field, split per session at the `done` line. There are four more advisories for O and the part B brief (brief step 3's stale 100m; A-dup warn 1 not folded in, though it holds today; noisy boundary runs are counted by the bracket but not by `maxPassing`; the smoke run's limit line is not a result).
 - **Evidence:** docs/handoffs/119/handoff-S.md. Untagged package tests ok. `go vet -tags enginelimits` clean. The digit scan of 52 script strings is clean.
+
+## #84 A (Phase 3, up-front plan review, 2026-09-27, 5:14 PM MDT): BLOCK
+- **Decided:** BLOCK, 3 block / 7 warn. Handoff: docs/handoffs/84/handoff-A.md. The extension target is right: `translateWithEngine` → `callEngine` in `internal/translate/service.go`, the existing `reportProgress`/`ProgressPhaseChunk`, the per-engine `run.ctx`, and read-only `Budget` rows. The scope limits are consistent with the code.
+- **Block 1 (layering):** the brief puts the chunk loop in two places. Settled: it replaces the single `s.callEngine` call **inside** `translateWithEngine` and returns one bare assembled result. Identity, `detectedSource` and `resultFrom` stay once per request. An auto request whose chunk 1 detection covers the target sends no further chunks.
+- **Block 2 (payload contract):** a failure payload carrying a partial `Result` renders as a complete translation on today's frontend (`paneState`, `TranslateCard`). The brief's "cancel already carries partial text today" is false (`service.go:467,873`), and `outcomeOf` drops `res` on failed/cancelled. Recommended: the partial prefix goes on cancel only; a failure puts "part N of M" in `Error` with an empty `Result`; showing the prefix on failure goes to #85.
+- **Block 3 (source pinning):** pinning an unrecognized native code (youdao's `yr.L` direction pair, baidu's `jp`/`kor`) breaks chunk 2. Pin only on a `model.ParseLanguage`-recognized, non-auto detection.
+- **Settled seams (warns):** an unexported `budgetOf` func field on `Service` (default `engine.InputBudget`, `SetEmitter`-style test setter); an engine with no row is sent whole. The progress callback is built in `runEngine` from `ar.id`/`run.name`, since the screenshot `req` has no `RequestID`. The 100k cap is checked before `requests.open`, in runes, with a typed error in `errors.go`. On an auto request, chunk 1 is sent alone before the 2-in-flight dispatch. Apple's Latin/CJK target is chosen from the text's script. A hard-split sentence counts as one part. A multi-chunk result has empty `Phonetic`/`Dict`.
+- **Hedged:** read-only review, nothing built or run. Filing the batch-API follow-up is O/F's outward action.
+
+## #84 A (Phase 3, re-review of amended brief `6fddc47`, 2026-09-27, 5:21 PM MDT): BLOCK
+- **Decided:** BLOCK, 2 block / 5 warn / 1 info. Handoff: docs/handoffs/84/handoff-A.md (overwrites the first review; that one is at `a810689`). Prior status: block 3 and warns 4, 7, 8, 9, 10 resolved; blocks 1 and 2 partly resolved; warn 5 mis-amended; warn 6 mostly resolved.
+- **Block 1 (from prior block 1, early stop dropped):** on an auto request whose chunk 1 detection covers the target, the new pinning rule sends chunks 2..N as same-language requests (`From == To`). Engines can reject those (`service.go:220-221`), and `detectedSource(nil, err)` then yields a failure where today's unchunked path gives identity (#80). Fix: stop dispatch after chunk 1 when its bare detection (result or `DetectedSourceOf`) covers `req.To`, keep the `%w` chain, and add a 1-call identity test.
+- **Block 2 (from prior block 2, half-amended):** criterion 8 and test l.114 still say the failure prefix is "kept", which contradicts l.88's empty-`Result` failure. No carrier exists for the cancel prefix: `translateWithEngine` returns `nil, err`, and `outcomeOf` drops `res` on cancel. Fix: a typed `chunkedError{Prefix, Done, Total, Err}` with `Unwrap`, passed through an unchanged `translateWithEngine`, read in `outcomeOf` via `errors.As` into new `engineOutcome` fields; the two cancel sites set `Result` from it.
+- **Warns:** the youdao / early-stop / cancel-prefix tests must be listed in "Tests to author". Screenshot flows DO emit progress through `ar.id`; the brief's "no-op" is false, so test it over `ScreenshotRetranslate`. `ScreenshotTranslate` opens at `:660` before OCR, so its cap check goes after OCR through the existing error push. Backend i18n keys are allowed (all locales, parity test); `errors.go` has no typed-error precedent, so name the new type. Use a child cancel ctx so an in-flight sibling chunk (Apple drain) stops on failure.
+- **Assumed:** this is the second BLOCK. Under the role doc, a third means O escalates to the operator. Both blocks are brief-text fixes inside the existing scope limits, which were re-verified: no swiftbridge change, no `Budget` row or field, no `requests.go` change, no event field, batch API deferred.
+- **Hedged:** read-only review; nothing built or run. The engine rejection of same-language pairs is cited from `translateWithEngine`'s own doc and `engine.ErrUnsupportedPair`. It was not reproduced against a real engine.
+
+## #84 A (Phase 3, third review of amended brief `863db1d`, 2026-09-27, 5:27 PM MDT): PASS
+- **Decided:** PASS, 0 block, 4 warn, 3 info. Handoff: docs/handoffs/84/handoff-A.md. It overwrites the first two reviews, which are at `a810689` and `71d96e4`.
+- **Prior blocks, all resolved and checked against the code.** The layering is right (`callEngineChunked` sits inside `translateWithEngine`). The payload contract holds: a failure has an empty `Result` and "part N of M" in `Error`, and a cancel carries the prefix. The carrier is named (`chunkedError` with `Unwrap`, read by `outcomeOf` via `errors.As`; `DetectedSourceOf` uses `errors.As`, so it stays transparent). Pinning uses `ParseLanguage`. The chunk-1 early stop hands off to the existing auto-identity branch, which builds from the whole `req.Text`.
+- **Prior warns:** all resolved except the i18n allowance, which covers the cap error but not the "part N of M" text (new warn 4).
+- **New warns.**
+  - (1) With 2 chunks in flight, "every chunk that finished" can leave a gap in the cancel prefix. Define the prefix, and the failure's N, as the contiguous run from part 1, and add an out-of-order test.
+  - (2) Test l.124 wrongly makes `ScreenshotRetranslate` deliver the cap error through `pushScreenshot` after `open`. Its check runs before `open` and returns the error.
+  - (3) Chunking starts at `Max()`, not at the target, so a 14k-rune Apple request is still one long call. Keep criterion 1 for parity, and say in the brief that this is deliberate.
+  - (4) "part N of M" is a backend i18n key, built at the payload site so that `SanitizeDetail`'s truncation cannot drop it.
+- **Scope limits hold:** no `pkg/swiftbridge` change, no `Budget` row or field change, no batch-API implementation, no frontend or event field, no request-registry change. The child cancel ctx is local to the chunk loop.
+- **Hedged:** this was a read-only review; nothing was built or run. The warns are wording fixes that T can apply as the contract as written in the handoff's "Notes for O".
+
+## #84 T (Phase 4, RED, 2026-09-27, 5:41 PM MDT): PASS (valid RED)
+- **Decided:** 39 tests in three new files: `internal/translate/chunk_test.go` (14, the splitter and chunk-size rule), `service_chunk_test.go` (19, the chunk loop over fake engines) and `service_input_cap_test.go` (6, the 100,000-character cap). Handoff: docs/handoffs/84/handoff-T-red.md.
+  - Pinned names: `Chunk{Text, Sep, Part}`, `Split(text, budget, target)`, `chunkTarget(engine, budget, text)`, `Service.budgetOf`, `Service.captureRegion`, `*InputTooLongError{Limit, Length}`.
+  - A's four warns are applied as the contract: the prefix and N are contiguous from part 1; `ScreenshotRetranslate` returns the cap error before `open` and `ScreenshotTranslate` pushes it after OCR, before the cache write; chunking starts only above `Max()`; "part N of M" survives an 800-character reason and the cap message is localized.
+- **Decided:** added a `captureRegion` seam that the brief does not list. It is the minimum needed to test `ScreenshotTranslate`'s post-OCR cap without the interactive `screencapture`, and it changes no behaviour.
+- **Assumed:** a hard split falls between words when the sentence has no clause marks. The pieces of a hard-split sentence share `Part`, and chunks never carry whitespace-only `Text`. The Apple target ranges are 3000..4000 (Latin) and 1000..1500 (CJK). The concurrency test accepts either a count window or an oldest-unfinished window.
+- **Hedged:** the RED is a compile failure on the new names, the #96 precedent. The per-test reasons were checked against a throwaway shim, now removed. Four guards (single-chunk parity, row-less engine, exactly 100,000 accepted, the `budgetOf` default) pass on the shim by design. The zh-CN "part N of M" text is left to the parity test and T-green's diff review.
+- **Evidence:** the authoritative suite exits 1, with only `internal/translate [build failed]` and every other package ok. `-gcflags=-e` shows only `Split`/`Chunk`/`chunkTarget`/`InputTooLongError` undefined and `budgetOf`/`captureRegion` missing. On the shim, all pre-existing tests pass and every new non-guard test fails on its feature assertion.
+
+## #84 F (Phase 6, implement, 2026-09-27, 6:28 PM MDT)
+- **Decided:** implemented T's contract. The authoritative command exits 0 locally (with `NODE_OPTIONS=--no-experimental-webstorage`): every Go package ok, all 39 new tests pass, and the frontend passes 29 files / 386 tests. No test was changed (`git diff 3896072 -- '*_test.go'` is empty). Handoff: docs/handoffs/84/handoff-F.md.
+  - New `internal/translate/chunk.go` (pure): `Chunk`, `Split` and `chunkTarget`.
+  - New `internal/translate/service_chunk.go`: `callEngineChunked`, `chunkedError` with `Unwrap`, and the private `chunkedCall`.
+  - `service.go`: `translateWithEngine` calls the chunked helper and gains a `progress` parameter. `runEngine` builds the callback from `ar.id`/`run.name`; `Translate` passes nil. `engineOutcome` gains prefix, done and total, read in `outcomeOf` with `errors.AsType`. Both payload sites changed: a cancel carries the prefix in `Result`; a failure puts "Stopped after part N of M" in `Error`, after `SanitizeDetail`. There are two field seams, `budgetOf` and `captureRegion`, and the cap is placed per A warn 2.
+  - `errors.go`: `InputTooLongError` counts runes. Three backend i18n keys are in both locales, merged with `scripts/merge-go-i18n.sh`.
+- **Decided:** the chunk targets.
+  - Apple: 3,500 Latin runes and 1,200 CJK runes, chosen from the text's own letters (mixed text blends the two by per-rune cost) and capped at 50% of Max.
+  - Every other engine: 50% of Max (`chunkTargetPercent`), provisional until #87-#94 measure latency.
+  - Chunking starts only above Max (A warn 3).
+- **Decided:** at most 2 chunks in flight, counted from the oldest unanswered chunk, so progress, the failure's N and the cancel prefix stay within one chunk of each other.
+- **Decided:** progress reports each part as it finishes. N and the prefix are the contiguous run from part 1 (A warn 1).
+- **Decided:** a cut with no separator after a CJK character, into a language that uses spaces (not zh/ja), is joined with one space. Otherwise translated sentences run together. No test pins this, and T is asked to add one.
+- **Decided:** `done: true`, `archChanged: true`. The per-engine seam now chunks. `Split`, `Chunk` and `InputTooLongError` are new exported names in `translate`. `translateWithEngine`'s signature gains `progress`. No new dependency.
+- **Assumed:**
+  - The brief's `budgetOf` test setter is not needed, since the tests assign the field in-package.
+  - "Stopped after part N of M" is the brief's "or equivalent" wording.
+  - The chunk-1 identity path returns the whole source as its answer, so a cancel that lands before `translateWithEngine`'s check can never show chunk 1 alone.
+  - The Apple en/CJK blend counts Hangul as CJK.
+- **Hedged:**
+  - golangci-lint is not installed locally, so it was not run. `go vet` is clean for the new code.
+  - T's `chunk_test.go:217` (`%q` on `[]Chunk`) is a vet finding that CI's golangci-lint (which lints tests) will likely report. T should use `%+v`.
+  - #109's `TestCancelOneEngineOthersKeepRunning` reads `a.sawCtxEr` once, which races `callEngine`'s deliberate no-wait on cancel. At GOMAXPROCS=1 it failed 1 in 100 runs on the branch and 0 in 200 on master; at the default GOMAXPROCS it passed 60 of 60. T should poll it with `waitUntil`.
+  - The batch-API follow-up issue is drafted in the handoff for O to file (proposed parent #86). F filed nothing outward.
+  - The frontend shows no message for a rejected `TranslateMulti` (only `console.error`). This is flagged for #86/#85, not built.
+- **Evidence:**
+  - A throwaway real-path program (deleted, never staged) ran the real `engine.InputBudget` rows. tencent sent 16 calls of up to 798 runes; google sent calls of up to 221 CJK runes; apple sent 3,464-rune Latin chunks and 1,190-rune CJK chunks with `en` pinned; baidu, failing on call 3, returned "Stopped after part 1 of 16" with an empty Result. Goroutines were 1 before and 1 after.
+  - `-race -count=5` is ok. gofmt is clean. gitleaks finds no leaks.
+  - The scope diff over `pkg/`, `frontend/`, `internal/engine/` and `requests.go` is empty.
+
+## #84 T (Phase 7, GREEN + Tier 2, 2026-09-27, 6:36 PM MDT): PASS
+- **Decided:** the suite is GREEN. The authoritative command exits 0 before and after T's test repairs: 14 Go packages ok, and the frontend passes 29 files / 386 tests. No production change is needed. Handoff: docs/handoffs/84/handoff-T-green.md.
+- **Decided:** applied F's three test flags, in T-owned files only.
+  - `chunk_test.go`: `%q` on `[]Chunk` changed to `%+v`, a vet finding CI's golangci-lint would hit.
+  - `TestCancelOneEngineOthersKeepRunning`: polls `a.sawCtxEr` with `waitUntil` instead of reading it once, because `callEngine` does not wait for the engine goroutine on cancel.
+  - Added `TestChunkedJoinAfterCJKCutSpacesOnlySpacedTargets`: zh to en gets one space at a cut after `。`; zh to ja gets none.
+- **Assumed:** the 4 `fmt.Errorf(i18n.T(...))` vet findings in service.go are master's and not #84's to fix. Master has the same 4 sites, and the diff adds none.
+- **Hedged:** golangci-lint is not installed locally and was not run; CI runs it. The progress count and the failure's N can differ by one part (F's accepted window design), noted as advisory.
+- **Evidence:**
+  - 18 production mutants applied one at a time, and all 18 were killed: sibling cancel, cancel prefix, identity short-circuit, pinning, ParseLanguage guard, in-flight 1 and 3, chunk 1 sent alone, progress, part N (both flows), cap (both screenshot flows), the Fits shortcut, prefix contiguity, and both CJK-join mutants.
+  - `-race -count=5` is ok. `GOMAXPROCS=1 -count=300` on the repaired test is ok, and `GOMAXPROCS=1 -count=20` on the package is ok.
+  - gofmt is clean, and gitleaks finds no leaks. The scope diff over `pkg/`, `frontend/`, `internal/engine/` and `requests.go` is empty.
+
+## #84 A (Phase 7, anti-duplication gate, 2026-09-27): PASS
+- **Decided:** PASS, with no blocks. F extended every object in the Reuse map: `callEngine` (called per chunk inside `translateWithEngine`), `reportProgress`/`ProgressPhaseChunk` (hook only), `run.ctx` (a child ctx local to the loop), `engineOutcome`/`outcomeOf` (3 fields, no parallel type), `failurePayload`/`SanitizeDetail`, and `detectedSource`/`ParseLanguage`/`Covers`. Every new object (`Split`, `chunkTarget`, `callEngineChunked`, `chunkedError`, `InputTooLongError`, `budgetOf`) is named and justified in the brief. Handoff: docs/handoffs/84/handoff-A-dup.md.
+- **Decided:** the Phase-3 blocks and warns from all three rounds hold in the code (carrier, contiguous prefix, chunk-1 identity, pinning, cap placement per flow, chunking above Max only, the part-N i18n key after SanitizeDetail).
+- **Assumed:** `enginelimits/plan.go:splitSentences` is not something `Split` should have reused. It is a probe-only heuristic that drops separators, and cannot give a round trip.
+- **Hedged:** two info items, neither blocking. `spacedLanguage` cuts the primary subtag by hand, not through a `model.Language` helper (defensible, because `Normalize` does not fold every zh-* variant). `checkInputLength` counts runes directly, not through `Budget`, which is correct because the cap is not an engine budget.
+- **Evidence:** `git diff --stat eabfd60..e3a1382 -- pkg/ frontend/ internal/engine/ internal/events/ internal/translate/requests.go` is empty. T-green's `e3a1382` touches only tests and handoffs.
+
+## #84 S (Phase 8, spec audit, 2026-09-27, 6:40 PM MDT): PASS
+- **Decided:** PASS. Every mechanic in the twice-amended brief, and A's warns 1-4, is built as specified. Handoff: docs/handoffs/84/handoff-S.md.
+  - the seam inside `translateWithEngine`
+  - the `Fits` parity shortcut
+  - boundary order and grapheme safety in the splitter
+  - the per-engine targets (Apple 3,500/1,200 by script, others 50%, never `Max()`)
+  - chunk 1 alone on auto, then at most 2 in flight under a child `WithCancelCause`
+  - sibling cancel on failure
+  - the chunk-1 identity short-circuit
+  - `ParseLanguage`-gated pinning
+  - the `chunkedError` carrier into `engineOutcome`
+  - the contiguous prefix and N
+  - cancel `Result` = prefix and failure `Result` empty with "part N of M", at both payload sites
+  - the i18n part text built after `SanitizeDetail`
+  - progress through `reportProgress` keyed on `ar.id`
+  - the cap placed per flow, with a typed and localized `InputTooLongError`
+- **Decided:** test quality PASS. Every case the brief's "Tests to author" list requires is present, plus A's out-of-order cases. There is no delete-or-merge finding.
+- **Decided:** F's CJK-join space (decision 4) is an accepted refinement. The splitter's verbatim round trip still holds, and only the joined translation gains a space. It is tested.
+- **Assumed:** filing the batch-API follow-up issue and writing the PR body are O's pre-PR actions, not F rework. A read-only search found no such issue filed yet.
+- **Hedged:** golangci-lint was not run locally, so CI is the check. `TestChunkSourcePinnedFromChunkOne`'s "chunk 1 alone" check relies on a 30 ms sleep, which can pass wrongly but never fail wrongly, and other tests cover the same behavior.
+- **Evidence:** `git diff --stat eabfd60..HEAD -- pkg/ frontend/ internal/engine/ internal/events/ internal/translate/requests.go internal/model/` is empty. A grep of the added lines for key-shaped strings finds none, only test names in handoff prose.

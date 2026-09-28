@@ -58,6 +58,14 @@ type Service struct {
 	// emitter, when set through SetEmitter, receives every app event instead of the wails app.
 	// The tests use it to observe what the service emits (issue #109, D8).
 	emitter emitter
+
+	// budgetOf looks up an engine's input budget for the chunked translation (issue #84):
+	// engine.InputBudget, the one table of limits. It is a field so a test can give its fake
+	// engines a budget; an engine without one is sent its text whole.
+	budgetOf func(engineName string) (engine.Budget, bool)
+	// captureRegion takes the interactive region screenshot ScreenshotTranslate starts from:
+	// engine.CaptureRegion. It is a field so a test can drive that flow without screencapture.
+	captureRegion func(ctx context.Context) ([]byte, error)
 }
 
 // emitter is the one outlet for app events (issue #109, D8). *application.EventManager satisfies
@@ -81,6 +89,8 @@ func NewService(reg *engine.Registry, hist *historystore.Store, st *settings.Ser
 		settings:        st,
 		app:             app,
 		screenshotCache: make(map[string]ocrCache),
+		budgetOf:        engine.InputBudget,
+		captureRegion:   engine.CaptureRegion,
 	}
 }
 
@@ -186,14 +196,19 @@ func (s *Service) SetLangPrefs(p *langpref.Store) {
 // Translate performs a single-engine translation: looks up the registered translator by
 // engine name, falling back to the default engine on failure;
 // on success the result is written to history (failures are only logged, not surfaced).
-// It has no request id and no cancel handle (issue #109): the engine runs until it answers.
+// It has no request id and no cancel handle (issue #109): the engine runs until it answers, and a
+// chunked translation (#84) reports no progress, having no request to report it for. Text over the
+// input cap is rejected with an *InputTooLongError before any engine call.
 func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult, error) {
+	if err := checkInputLength(req.Text); err != nil {
+		return nil, err
+	}
 	engineName := req.EngineName
 	reg, ok := s.registry.GetTranslator(engineName)
 	if !ok {
 		return nil, fmt.Errorf("%s: %s", i18n.T("err.translate_engine_not_registered"), engineName)
 	}
-	res, err := s.translateWithEngine(context.Background(), reg, engineName, req)
+	res, err := s.translateWithEngine(context.Background(), reg, engineName, req, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -228,12 +243,17 @@ func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult,
 // requested one. The identity result carries none of the engine's text (a paraphrase, phonetic or
 // dictionary belongs to a translation, and this is not one), and callers do not save it to history
 // (saveHistory).
-func (s *Service) translateWithEngine(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest) (*model.TranslateResult, error) {
+//
+// Text over the engine's input budget is translated in chunks (callEngineChunked, issue #84), which
+// comes back as one assembled result, so every decision here is still made once per request. On an
+// auto request the detection is chunk 1's, the only chunk sent when it already covers the target.
+// progress receives each finished part of a chunked translation (nil: nobody listens).
+func (s *Service) translateWithEngine(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest, progress func(done, total int)) (*model.TranslateResult, error) {
 	if strings.TrimSpace(req.Text) != "" && req.From.SameAs(req.To) {
 		return s.identityResult(engineName, req, ""), nil
 	}
 
-	res, err := s.callEngine(ctx, reg, engineName, req)
+	res, err := s.callEngineChunked(ctx, reg, engineName, req, progress)
 	// A ctx that ended is a cancel, decided by outcomeOf from context.Cause before anything else: a
 	// detection an engine attached to a failure it raced the cancel with is not an identity result.
 	if isAutoSource(req.From) && ctx.Err() == nil {
@@ -406,7 +426,13 @@ func failurePayload(name string, req model.TranslateRequest, err error) model.Tr
 // when none is sent), and it ends when every engine started has reported once, whether with a
 // translation, a failure or a cancel, or when the user cancels it (CancelTranslate). Starting one
 // supersedes the translate window's running request: that one emits nothing more.
+//
+// Text over the input cap is rejected with an *InputTooLongError (issue #84) before the request
+// opens: nothing starts, nothing is emitted, and the running request is left as it was.
 func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMultiResult, error) {
+	if err := checkInputLength(req.Text); err != nil {
+		return nil, err
+	}
 	all := s.registry.AllEngines()
 	type task struct {
 		name string
@@ -463,8 +489,8 @@ func (s *Service) translateMultiEngine(ar *activeRequest, run *engineRun, reg en
 		// analytics.Error, no error log, and no history row.
 		logEngineEnded(run.name, ar, errUserCancelled)
 		// From is left empty, as for a failure: the payload does not claim a detected source
-		// language.
-		payload = model.TranslateResult{Engine: run.name, To: req.To, Text: req.Text, Cancelled: true}
+		// language. Result is what a chunked translation (#84) had finished, empty otherwise.
+		payload = model.TranslateResult{Engine: run.name, To: req.To, Text: req.Text, Result: out.prefix, Cancelled: true}
 	case outcomeFailed:
 		slog.Error(i18n.T("log.translate_multi_engine_failed"), slog.String("engine", run.name), slog.Any("error", out.err))
 		analytics.Error("translate_failed", map[string]any{"engine": run.name})
@@ -474,6 +500,7 @@ func (s *Service) translateMultiEngine(ar *activeRequest, run *engineRun, reg en
 		// From is left empty: the failure payload doesn't claim a "detected source
 		// language", avoiding misuse of the auto-detect label.
 		payload = failurePayload(run.name, req, out.err)
+		payload.Error = partReached(payload.Error, out)
 	default:
 		s.saveHistory(out.res)
 		payload = *out.res
@@ -497,29 +524,54 @@ type engineOutcome struct {
 	kind outcomeKind
 	res  *model.TranslateResult // outcomeSuccess
 	err  error                  // outcomeFailed
+
+	// How far a chunked translation (issue #84) got before it was cancelled or failed, from its
+	// *chunkedError: the translated parts from part 1 on, joined (prefix, what a cancelled
+	// payload shows), how many parts that is (done), and the parts in all (total). All zero when
+	// the engine was called once for the whole text.
+	prefix      string
+	done, total int
 }
 
 // outcomeOf decides how an engine ended from the engine's ctx and what it returned. The ctx's
 // cause decides, never the error text: engines lose the error chain on the way out, so a
 // cancelled LLM call comes back as plain text. A translation the engine did return stands even if
-// a cancel arrived a moment later, but a superseded request drops everything.
+// a cancel arrived a moment later, but a superseded request drops everything. A chunked
+// translation that stopped early says how far it got through its *chunkedError; that never
+// changes which outcome it is.
 func outcomeOf(ctx context.Context, res *model.TranslateResult, err error) engineOutcome {
 	cause := context.Cause(ctx)
+	var chunked chunkedError
+	if ce, ok := errors.AsType[*chunkedError](err); ok {
+		chunked = *ce
+	}
 	switch {
 	case errors.Is(cause, errSuperseded):
 		return engineOutcome{kind: outcomeSuperseded}
 	case err == nil:
 		return engineOutcome{kind: outcomeSuccess, res: res}
 	case errors.Is(cause, errUserCancelled):
-		return engineOutcome{kind: outcomeCancelled}
+		return engineOutcome{kind: outcomeCancelled, prefix: chunked.Prefix, done: chunked.Done, total: chunked.Total}
 	default:
-		return engineOutcome{kind: outcomeFailed, err: err}
+		return engineOutcome{kind: outcomeFailed, err: err, prefix: chunked.Prefix, done: chunked.Done, total: chunked.Total}
 	}
+}
+
+// partReached puts how far a failed chunked translation got (issue #84) in front of its failure
+// detail: "Stopped after part N of M: <detail>", N the parts translated from part 1 on. The detail
+// is already sanitized and cut to length (failurePayload), so a long engine reason cannot push the
+// part out of the text. A failure of an engine called once for the whole text is left as it is.
+func partReached(detail string, out engineOutcome) string {
+	if out.total == 0 {
+		return detail
+	}
+	return i18n.T("err.translate_stopped_after_part", "Done", out.done, "Total", out.total) + ": " + detail
 }
 
 // runEngine is the per-engine step both fan-outs share: it announces the engine (the started
 // progress event, before any result), runs it under its own cancel-only ctx through the one
 // per-engine seam, and says how it ended. The fan-outs build their own payloads from the outcome.
+// A chunked translation (#84) reports each finished part as a chunk progress event of the request.
 func (s *Service) runEngine(ar *activeRequest, run *engineRun, reg engine.Translator, req model.TranslateRequest) engineOutcome {
 	// A request replaced before this engine began has nothing to announce or report.
 	if errors.Is(context.Cause(run.ctx), errSuperseded) {
@@ -535,7 +587,8 @@ func (s *Service) runEngine(ar *activeRequest, run *engineRun, reg engine.Transl
 			StartedAtMs: now,
 		})
 	})
-	res, err := s.translateWithEngine(run.ctx, reg, run.name, req)
+	progress := func(done, total int) { s.reportProgress(ar.id, run.name, done, total) }
+	res, err := s.translateWithEngine(run.ctx, reg, run.name, req, progress)
 	return outcomeOf(run.ctx, res, err)
 }
 
@@ -572,9 +625,9 @@ func (s *Service) CancelTranslate(requestID, engineName string) bool {
 }
 
 // reportProgress announces that done of total parts of an engine's work are finished (issue
-// #109). It is the hook the chunked translation (#84) calls between its parts; #109 builds no
-// chunker and only defines and tests the event. It emits while the engine is still working and
-// says nothing for an unknown request, a finished engine or a cancelled one.
+// #109). The chunked translation (#84) calls it as each part finishes, through the callback
+// runEngine builds. It emits while the engine is still working and says nothing for an unknown
+// request, a finished engine or a cancelled one.
 func (s *Service) reportProgress(requestID, engineName string, done, total int) {
 	ar, run := s.requests.running(requestID, engineName)
 	if ar == nil {
@@ -642,7 +695,7 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	defer cancel()
 
 	slog.Debug(i18n.T("log.screenshot_start"), slog.String("step", "capture_region"))
-	img, err := engine.CaptureRegion(ctx)
+	img, err := s.captureRegion(ctx)
 	if err != nil {
 		slog.Error(i18n.T("log.screenshot_capture_region_failed"), slog.Any("error", err))
 		return nil, fmt.Errorf("%s: %w", i18n.T("err.ocr_region_capture_failed"), err)
@@ -709,6 +762,19 @@ func (s *Service) ScreenshotTranslate(session string) (*model.ScreenshotResult, 
 	if text == "" {
 		slog.Warn(i18n.T("log.screenshot_ocr_empty"))
 		return nil, fmt.Errorf(i18n.T("err.ocr_no_text"))
+	}
+	// Over the input cap (issue #84). The request was opened before OCR, when the length of the
+	// text was not known yet, so the rejection reaches the window the way an OCR failure does. The
+	// text is not cached: a retranslate could only be rejected again.
+	if err := checkInputLength(text); err != nil {
+		s.pushScreenshot(ar, model.ScreenshotResult{
+			Image:        imageURL,
+			Text:         "",
+			Translations: nil,
+			To:           to,
+			Error:        err.Error(),
+		})
+		return nil, err
 	}
 	// A newer capture replaced this run while OCR was running: it neither caches its text (that
 	// would clobber the newer run's retranslate cache) nor translates.
@@ -791,7 +857,8 @@ func (s *Service) enabledTranslatorNames() []string {
 // stages, and directly re-invokes each engine with the passed from/to, pushing
 // EventScreenshotOCR incrementally.
 // Returns the accumulated translation results. Errors when the session has no OCR cache yet
-// (no screenshot taken).
+// (no screenshot taken), or with an *InputTooLongError when the cached text is over the input cap
+// (issue #84); either way no request is opened.
 // Like ScreenshotTranslate it is a request of its session (issue #109): it replaces the running
 // one, and its first push, which carries the request id and no translations yet, opens the run
 // for the window.
@@ -801,6 +868,10 @@ func (s *Service) ScreenshotRetranslate(session string, from, to model.Language)
 	s.screenshotCacheMu.RUnlock()
 	if !ok || cache.text == "" || cache.imageURL == "" {
 		return fmt.Errorf(i18n.T("err.screenshot_no_cache"))
+	}
+	// Over the input cap (issue #84): rejected like a missing cache, before the request opens.
+	if err := checkInputLength(cache.text); err != nil {
+		return err
 	}
 	req := model.TranslateRequest{Text: cache.text, From: from, To: to}
 	slog.Debug(i18n.T("log.screenshot_retranslate_start"),
@@ -864,13 +935,13 @@ func (s *Service) translateAllStream(ar *activeRequest, req model.TranslateReque
 			case outcomeCancelled:
 				logEngineEnded(meta.Name, ar, errUserCancelled)
 				// A cancelled engine is a placeholder card like a failed one, marked Cancelled and
-				// carrying no error.
+				// carrying no error. Result is what a chunked translation (#84) had finished.
 				item = model.TranslateResult{
 					Engine:    meta.Name,
 					From:      req.From,
 					To:        req.To,
 					Text:      req.Text,
-					Result:    "",
+					Result:    outcome.prefix,
 					Cancelled: true,
 				}
 			case outcomeFailed:
@@ -881,6 +952,7 @@ func (s *Service) translateAllStream(ar *activeRequest, req model.TranslateReque
 				// failed ones included, so the placeholder keeps the requested source.
 				item = failurePayload(meta.Name, req, outcome.err)
 				item.From = req.From
+				item.Error = partReached(item.Error, outcome)
 			default:
 				s.saveHistory(outcome.res)
 				item = *outcome.res

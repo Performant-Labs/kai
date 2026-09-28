@@ -372,9 +372,13 @@ func TestCancelOneEngineOthersKeepRunning(t *testing.T) {
 		t.Fatal("CancelTranslate(r-one, a) = false")
 	}
 	waitUntil(t, "a's cancelled payload", func() bool { return len(em.resultsFor("r-one", "a")) == 1 })
-	if err, _ := a.sawCtxEr.Load().(error); err == nil {
-		t.Error("engine a never saw its ctx cancelled")
-	}
+	// callEngine returns on ctx.Done() without waiting for the engine goroutine (pinned by
+	// TestCancelDoesNotWaitForAnEngineThatIgnoresItsContext), so a may record the cancel a
+	// moment after its payload lands: poll rather than read once.
+	waitUntil(t, "engine a to see its ctx cancelled", func() bool {
+		err, _ := a.sawCtxEr.Load().(error)
+		return err != nil
+	})
 	if got := em.resultsFor("r-one", "b"); len(got) != 0 {
 		t.Fatalf("b reported %v after a's cancel; it must keep running", got)
 	}

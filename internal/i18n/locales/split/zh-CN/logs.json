@@ -37,6 +37,7 @@
   "log.translate_multi_engine_failed": "多引擎翻译失败",
   "log.translate_screenshot_engine_failed": "[截图翻译] 截图翻译引擎失败",
   "log.translate_engine_cost": "[翻译] 引擎耗时 引擎={{.Engine}} 耗时={{.Ms}}ms 成功={{.Ok}} 错误={{.Err}}",
+  "log.translate_chunked": "[翻译] 分段翻译 引擎={{.Engine}} 分段={{.Chunks}} 部分={{.Parts}} 目标={{.Target}} 单位={{.Unit}}",
   "log.translate_engine_cancelled": "[翻译] 引擎未产生结果（已取消或被新请求取代）",
   "log.translate_engine_panic": "[翻译] 翻译引擎发生 panic",
   "log.translate_duplicate_report": "[翻译] 已忽略重复的终态上报",

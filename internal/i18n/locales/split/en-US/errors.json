@@ -41,6 +41,8 @@
   "err.translate_engine_not_registered": "Translation engine not registered",
   "err.translate_failed": "Translation failed",
   "err.translate_engine_panic": "Translation engine crashed",
+  "err.translate_stopped_after_part": "Stopped after part {{.Done}} of {{.Total}}",
+  "err.input_too_long": "The text is too long to translate: {{.Length}} characters, the limit is {{.Limit}}",
   "err.ocr_engine_not_registered": "OCR engine not registered",
   "err.screenshot_failed": "Screenshot failed",
   "err.ocr_no_text": "OCR found no text",

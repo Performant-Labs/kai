@@ -41,6 +41,8 @@
   "err.translate_engine_not_registered": "翻译引擎未注册",
   "err.translate_failed": "翻译失败",
   "err.translate_engine_panic": "翻译引擎异常终止",
+  "err.translate_stopped_after_part": "已翻译 {{.Done}}/{{.Total}} 部分后停止",
+  "err.input_too_long": "文本过长，无法翻译：共 {{.Length}} 个字符，上限为 {{.Limit}} 个字符",
   "err.ocr_engine_not_registered": "OCR 引擎未注册",
   "err.screenshot_failed": "截图失败",
   "err.ocr_no_text": "OCR 未识别到文字",

@@ -6,10 +6,42 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"cnb.cool/dtapp/kai/internal/engine"
+	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
 )
+
+// maxInputChars is the longest source text a request may carry, in characters (issue #84): the
+// backend's own limit, whatever the frontend shows. Longer text is rejected before any engine is
+// called; shorter text is chunked per engine as its budget requires.
+const maxInputChars = 100000
+
+// InputTooLongError rejects a request whose source text is over maxInputChars (issue #84). Limit is
+// the cap and Length the text's length, both in characters (Unicode code points), so 100,000
+// Chinese characters pass although they are 300,000 bytes. Callers read it with errors.As; its
+// message is localized.
+type InputTooLongError struct {
+	Limit  int
+	Length int
+}
+
+func (e *InputTooLongError) Error() string {
+	return i18n.T("err.input_too_long", "Limit", e.Limit, "Length", e.Length)
+}
+
+// checkInputLength returns an *InputTooLongError when text is over maxInputChars, else nil. Every
+// entry point calls it once per request, before any engine call.
+func checkInputLength(text string) error {
+	if len(text) <= maxInputChars { // a character is at least one byte
+		return nil
+	}
+	if n := utf8.RuneCountInString(text); n > maxInputChars {
+		return &InputTooLongError{Limit: maxInputChars, Length: n}
+	}
+	return nil
+}
 
 // ClassifyEngineError sorts an engine failure into the user-facing category the frontend renders
 // (model.ErrorKind*, issues #42 and #96). It is the only classifier: engines attach structured
