@@ -52,6 +52,7 @@
   "log.screenshot_ocr_start": "[截图翻译] 开始 OCR 识别",
   "log.screenshot_ocr_failed": "[截图翻译] OCR 失败",
   "log.window_handle_failed": "获取窗口句柄失败",
+  "log.window_restoration_disable_failed": "[窗口] 禁用 macOS 窗口状态恢复失败（已恢复）",
   "log.screenshot_ocr_done": "[截图翻译] OCR 完成",
   "log.ocr_cost": "[OCR] 识别耗时 引擎={{.Engine}} 耗时={{.Ms}}ms 成功={{.Ok}} 错误={{.Err}}",
   "log.screenshot_ocr_empty": "[截图翻译] OCR 未识别到文字",
