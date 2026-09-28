@@ -30,3 +30,13 @@
 - **Assumed:** The recommended outcome when the detection covers the target is an identity result with `DetectedFrom` empty, consistent with D's rule that the note is suppressed on identity. O or the principal confirms.
 - **Hedged:** Read from source only. No engine was called.
 - **Evidence:** `service_chunk.go:103-116`, `service.go:259`, `engine.go:30-35`, `apple_darwin.go:72`, `variants.e2e.test.ts:34-49`.
+
+## A, Phase 3 (re-review #2), 2026-09-28
+- **Decided:** BLOCK. 4 block findings, 2 warns and 3 passes (docs/handoffs/161/handoff-A.md). The brief closes the prior B2's structure: the named `sent` seam, the identity/covers-target branch, `pinFallback`, and `Qualify` via `resultFrom(auto, d)`. The prior W1 and W3 are fixed, and the scope limits held. Checked against the code, the brief still fails on four counts:
+  - B1: `detectedSource` returns `ok=true` for a native code (Baidu `jp`), and `SameAs("jp","ja")` is false, so every Baidu request of 20 or more code points pinned to `ja` gets a false correction. The fix is to gate the correction on `ParseLanguage`.
+  - B2: `identityResult(…, req, …)` reports the wrong pin as `From`, via `resultFrom(req.From, …)`. The fix is to pass `sent`.
+  - B3: `DetectedFrom` is "empty always on the non-substituted path", which kills the Auto-mode note that the Visible-cue section and the approved wireframe 2(b) require.
+  - B4: stale text remains at brief :32, :33, :210 and :236.
+- **Assumed:** Baidu's `br.From` is a native code (`jp`, `kor`) per the existing comments in `detectedSource`/`resultFrom`. The live API was not called. Recommended: no 20-code-point floor on the Auto-case note; O or the principal confirms.
+- **Hedged:** Read from source only. No engine was called.
+- **Evidence:** `service.go:279-287` and the `identityResult` `From` line; `model.go` `SameAs`/`canonical`; `baidu.go:120-122`; `service_chunk.go:103-128`.
