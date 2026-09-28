@@ -79,3 +79,23 @@
   - `fromOptionLabel` stays a named `function` with a `(value: string): string` signature, because the test evaluates it.
 - **Hedged:** Satisfiability was proven with a throwaway prototype of the brief's pseudocode, reverted before handoff (`git status` shows test files only). With it, the Go and frontend suites were fully green, the new Go tests passed 3× with `-race`, and 11 targeted mutations were each killed. No real engine was called: google runs against loopback, and chunked cases use the scripted engine. The Apple bridge was not exercised.
 - **Evidence:** the authoritative command exits 1 on `internal/translate` only. `pnpm --dir frontend test` gives 13 failed / 383 passed, all 13 in `detectedSourceNote.test.ts`.
+
+## F, Phase 5 (implement), 2026-09-28
+- **Decided:** Implemented the brief's pseudocode (docs/handoffs/161/handoff-F.md).
+  - Backend: `sent := req`; the trimmed code-point gate `>= minPinCheckRunes` (20); `pinFallback` threaded into `callEngineChunked` with its two branches (dialect kept, pin as the fallback); the `ParseLanguage` recognition gate; identity re-gated on `sent.From` and built from `sent`; `DetectedFrom` holds the qualified `From` on both paths (Auto: always, no floor; pin: only on `!SameAs`).
+  - Frontend: `detectedLang.ts` deleted; `fromOptionLabel` is trivial; the note is `{#if activeResult.detected_from && !activeResult.identity}`, first in the stack; `translate.sourceAuto` and `translate.translatedFromDetected` added and `translate.detected` removed; the three comments repointed; the binding regenerated (the #161 delta only).
+- **Decided (deviation 1, for O/principal):** one conjunct at each identity point (`service.go:296-297`, `service_chunk.go:118`), so a checked pin the detection confirms (`SameAs`) never becomes identity.
+  - Verbatim, a pinned pt-BR → pt-PT request of 20+ code points became "same language — showing the source text", discarding the engine's pt-PT translation. That breaks AC (a)2 and #80's pinned dialect-pair rule, and it is reachable from the selects.
+  - The real-path probe (Google over loopback) shows the flip at the floor. No test pins it either way; T should add one. Revert = drop the two conjuncts.
+- **Decided (deviation 2):** `<!-- prettier-ignore -->` on the note's `<p>`. `detectedSourceNote.test.ts:174-176` rejects the trailing comma prettier adds when it wraps the 103-column line. T should allow `,?`; then the directive goes.
+- **Assumed:** `archChanged: false`. The field and the parameter are the ones A reviewed; the deviation is behavior, not structure.
+- **Hedged:**
+  - `svelte-check` doesn't start here (TS 7 without TS 6), so the `.svelte` expressions were type-checked through a temporary `.ts` with negative controls.
+  - golangci-lint wasn't run locally.
+  - Linux cross-compile needs cgo (Wails GTK).
+  - No live provider was called; the WKWebView layout was not seen (headless jsdom only).
+- **Evidence:**
+  - The authoritative command exits 0 (8:08 AM MDT): 14 Go packages ok, vitest 396/396.
+  - The new Go tests pass 3× under `-race`.
+  - A jsdom mount of the real `TranslateWindow` passed 10 checks, and 2 component mutations were caught.
+  - `tsc` exits 0; gofmt is clean; `go vet` has only the 4 existing diagnostics; prettier is clean on the production files.

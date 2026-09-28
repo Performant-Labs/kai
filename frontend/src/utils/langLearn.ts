@@ -2,7 +2,7 @@
 //
 // Both translate windows call the Wails `Learn` binding from a language select's change handler.
 // The call is injected (not imported here) so this module stays free of the generated bindings and
-// vitest can run it directly, the same seam detectedLang.ts uses. A failing binding must never
+// vitest can run it directly, the same seam swapLangs.ts uses. A failing binding must never
 // break the select itself, so the error goes to the caller's own logger instead of being thrown.
 
 /**

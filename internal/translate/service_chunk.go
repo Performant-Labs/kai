@@ -52,6 +52,11 @@ func (e *chunkedError) Unwrap() error { return e.Err }
 //     (#80). Otherwise a detection model.ParseLanguage recognizes is pinned as From for every later
 //     chunk, so the source language is decided once per request; a code it does not recognize (an
 //     engine's native code) is not pinned, and the later chunks keep the request's own From.
+//   - pinFallback is set only for a pinned source that translateWithEngine sends as auto to check
+//     it (issue #161), and names that pin. Chunk 1 decides for it as above, with two differences:
+//     a detection that is the pin's language (es for an es-MX pin) sends the later chunks the pin
+//     itself, keeping its dialect, and a detection that is no use sends them the pin, not auto.
+//     A detection that is the pin's language never ends the request as identity either.
 //   - At most maxChunksInFlight chunks run at once, under a child of ctx. progress(done, total)
 //     reports each part as its last chunk answers; the pieces of a sentence cut below sentence
 //     level are one part.
@@ -63,7 +68,7 @@ func (e *chunkedError) Unwrap() error { return e.Err }
 // The result has the shape callEngine returns: From as the engine reported it for chunk 1 (bare),
 // Text the whole input, Result the answers joined in source order with the recorded separators,
 // and no Phonetic or Dict, which do not combine across chunks. A nil progress reports nothing.
-func (s *Service) callEngineChunked(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest, progress func(done, total int)) (*model.TranslateResult, error) {
+func (s *Service) callEngineChunked(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest, progress func(done, total int), pinFallback model.Language) (*model.TranslateResult, error) {
 	budget, ok := s.budgetOf(engineName)
 	if !ok || budget.Fits(req.Text) {
 		return s.callEngine(ctx, reg, engineName, req)
@@ -107,7 +112,10 @@ func (s *Service) callEngineChunked(ctx context.Context, reg engine.Translator, 
 		next = 1
 		a := <-answers
 		if ctx.Err() == nil {
-			if d, ok := detectedSource(a.res, a.err); ok && d.Covers(req.To) {
+			// A checked pin's detection that is the pin's own language is no identity even when it
+			// covers the target (a pt-BR pin into pt-PT): translateWithEngine lets that pin stand, so
+			// the whole text is translated, as it is unchunked.
+			if d, ok := detectedSource(a.res, a.err); ok && d.Covers(req.To) && !(pinFallback != "" && d.SameAs(pinFallback)) {
 				if a.err != nil {
 					return nil, a.err
 				}
@@ -123,7 +131,13 @@ func (s *Service) callEngineChunked(ctx context.Context, reg engine.Translator, 
 		}
 		record(0, a.res)
 		if l, ok := model.ParseLanguage(string(a.res.From)); ok {
-			from = l
+			if pinFallback != "" && l.SameAs(pinFallback) {
+				from = pinFallback // the pin was right: keep its dialect (es-MX), not the bare match (es)
+			} else {
+				from = l
+			}
+		} else if pinFallback != "" {
+			from = pinFallback // no usable detection for a checked pin: the pin, not auto again
 		}
 	}
 

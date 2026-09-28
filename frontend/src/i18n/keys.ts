@@ -60,8 +60,9 @@ export type Dict = {
     from: string;
     to: string;
     swap: string;
-    detected: string;
+    sourceAuto: string;
     identity: string;
+    translatedFromDetected: string;
     failedPair: string;
     failedNetwork: string;
     failedAuth: string;

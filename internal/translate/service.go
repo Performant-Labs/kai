@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"cnb.cool/dtapp/kai/internal/analytics"
 	"cnb.cool/dtapp/kai/internal/configstore"
@@ -231,7 +232,8 @@ func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult,
 //
 //  1. Pinned source, SameAs(From, To): the engine is not called at all. Whitespace-only text is
 //     left to the engine, which answers it with its own empty-text error.
-//  2. Auto source, and the language the engine reports for the text, D, is the target's language
+//  2. Auto source, or a checked pin the text overrode (see below), and the language the engine
+//     reports for the text, D, is a recognized language that is the target's language
 //     (D.Covers(To)): identity, whether the engine translated the text anyway, echoed it, or
 //     failed because it cannot translate a language into itself. D is what the engine reported,
 //     bare and before resultFrom qualifies it through the variant preference: a detection cannot
@@ -248,27 +250,83 @@ func (s *Service) Translate(req model.TranslateRequest) (*model.TranslateResult,
 // comes back as one assembled result, so every decision here is still made once per request. On an
 // auto request the detection is chunk 1's, the only chunk sent when it already covers the target.
 // progress receives each finished part of a chunked translation (nil: nobody listens).
+//
+// A pinned source is checked against the text (issue #161) when the trimmed text is at least
+// minPinCheckRunes code points long: the engine is sent auto instead of the pin, in the same one
+// call, so it detects the language as it does for an auto request. req keeps the pin; sent is what
+// the engine is given. The detection is then compared with the pin. A different language (not
+// SameAs) overrides the pin, and the request is decided like an auto one: identity by branch 2,
+// else a correction, where the translation the engine made stands and From is qualified like an
+// auto detection. A match (es for an es-MX pin), or no detection the app recognizes, lets the pin
+// stand: it is reported as requested, and branch 2 does not apply even when the target is a
+// dialect of the pin's language, since a dialect pair (a pt-BR pin into pt-PT) is the engine's to
+// translate, as for any pin. A chunked request decides this once, from chunk 1 (pinFallback).
+// Shorter text is sent with the pin as given.
+//
+// A detection counts only when model.ParseLanguage recognizes it: detectedSource also returns an
+// engine's own native code (baidu's jp), which names no language to compare, correct to or show.
+// DetectedFrom carries the detected language a translation was made from, the same value as From:
+// on an auto request with a recognized detection (whatever the text's length) and on a corrected
+// pin. It is never set on an identity result, whose own note already explains the text.
 func (s *Service) translateWithEngine(ctx context.Context, reg engine.Translator, engineName string, req model.TranslateRequest, progress func(done, total int)) (*model.TranslateResult, error) {
 	if strings.TrimSpace(req.Text) != "" && req.From.SameAs(req.To) {
 		return s.identityResult(engineName, req, ""), nil
 	}
 
-	res, err := s.callEngineChunked(ctx, reg, engineName, req, progress)
+	sent := req
+	substitute := !isAutoSource(req.From) && utf8.RuneCountInString(strings.TrimSpace(req.Text)) >= minPinCheckRunes
+	// pinFallback is the language chunks 2..N of a checked pin are sent with when chunk 1's
+	// detection is no use: the pin itself, never auto. Empty for every other request.
+	var pinFallback model.Language
+	if substitute {
+		sent.From = model.Auto
+		pinFallback = req.From
+	}
+
+	res, err := s.callEngineChunked(ctx, reg, engineName, sent, progress, pinFallback)
+	detected, recognized := detectedSource(res, err)
+	if recognized {
+		_, recognized = model.ParseLanguage(string(detected))
+	}
 	// A ctx that ended is a cancel, decided by outcomeOf from context.Cause before anything else: a
 	// detection an engine attached to a failure it raced the cancel with is not an identity result.
-	if isAutoSource(req.From) && ctx.Err() == nil {
-		if detected, ok := detectedSource(res, err); ok && detected.Covers(req.To) {
-			return s.identityResult(engineName, req, detected), nil
-		}
+	// A checked pin the detection confirms stood, and keeps the pinned rule decided at the top.
+	// sent, not req: its From is auto on a checked pin too, so From is the qualified detection
+	// (resultFrom), never the pin that turned out wrong.
+	if isAutoSource(sent.From) && ctx.Err() == nil && recognized && detected.Covers(req.To) &&
+		!(substitute && detected.SameAs(req.From)) {
+		return s.identityResult(engineName, sent, detected), nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	// callEngine leaves From as the engine reported it (the decision above needs the bare
-	// detection); it is qualified here, once, for the results that are shown as translations.
-	res.From = s.resultFrom(req.From, res.From)
+	if !substitute {
+		// callEngine leaves From as the engine reported it (the decision above needs the bare
+		// detection); it is qualified here, once, for the results that are shown as translations.
+		res.From = s.resultFrom(req.From, res.From)
+		if isAutoSource(req.From) && recognized {
+			res.DetectedFrom = res.From
+		}
+		return res, nil
+	}
+	if recognized && !detected.SameAs(req.From) {
+		// The text is not in the pinned language: it was translated from the detected one, which is
+		// reported the way an auto request reports its detection.
+		res.From = s.resultFrom(model.Auto, detected)
+		res.DetectedFrom = res.From
+	} else {
+		// The pin was right, or nothing usable was detected: the pin is reported as requested.
+		res.From = req.From
+	}
 	return res, nil
 }
+
+// minPinCheckRunes is the shortest text, in code points after trimming, whose pinned source
+// language is checked against the language the engine detects (issue #161). Detection is
+// unreliable below about 20 characters (Apple's guidance, epic #151), and a wrong correction would
+// be worse than the pin, so shorter text is sent with the pin as given. It is the whole threshold:
+// no engine reports a detection confidence.
+const minPinCheckRunes = 20
 
 // detectedSource is the source language an engine reported for an auto request: the detected
 // language a successful result carries (res.From as the engine returned it, still auto when the

@@ -18,7 +18,7 @@
 // Whatever storage hands back is untrusted: a previous version, a hand edit or a truncated write
 // can leave anything there (persisted() only parses the JSON, it validates nothing). So
 // restoreSession never trusts its argument and falls back to the empty session instead of
-// throwing or half-applying. Pure function of a plain value, like swapLangs.ts / detectedLang.ts:
+// throwing or half-applying. Pure function of a plain value, like swapLangs.ts / targetCapability.ts:
 // no bindings import (the result type is the structural PaneResult, imported as a type only), no
 // storage access, no DOM.
 

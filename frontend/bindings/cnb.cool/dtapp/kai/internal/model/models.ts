@@ -345,4 +345,14 @@ export interface TranslateResult {
      * Result may hold a partial translation (the contract chunked translation, #84, fills).
      */
     "cancelled"?: boolean;
+
+    /**
+     * DetectedFrom is the auto-detected language a translation was made from, the same qualified
+     * value as From (issue #161; set by the translate service only, never by an engine, like
+     * Identity). It is set when an auto request's engine detected a recognized language, and when
+     * the service corrected a pinned source because the text was in another language. It is empty
+     * otherwise: on an identity result, when a pin stood, and when nothing usable was detected.
+     * The translate window shows it as a note.
+     */
+    "detected_from"?: Language;
 }
