@@ -276,6 +276,28 @@ func TestPinnedDetectionCoveringTargetIsIdentity(t *testing.T) {
 	}
 }
 
+// A checked pin the detection confirms keeps the pinned dialect-pair rule (#80) even when the bare
+// detection Covers the target (F's deviation 1, handoff-F.md): pin pt-BR, target pt-PT, Portuguese
+// text over the floor. The engine reports the bare pt, which is SameAs the pin (so the pin stood,
+// AC (a)2) and also Covers pt-PT. The result must be the engine's pt-PT translation reported from
+// the pin, exactly as the same request below the floor is: never "same language, showing the
+// source text". Without the !(substitute && SameAs) conjunct in translateWithEngine this is identity.
+func TestPinnedDialectPairConfirmedByDetectionIsNotIdentity(t *testing.T) {
+	svc, g := newSLService(t, `"pt"`, "EUROPEAN-PT", langpref.New())
+	text := "Você pode me dizer onde fica a estação de trem mais próxima, por favor?"
+	res := translatePinned(t, svc, text, model.PTBR, model.PTPT)
+	oneAutoCall(t, g)
+	if res.Identity || res.Result != "EUROPEAN-PT" {
+		t.Errorf("Identity = %v, Result = %q, want the engine's pt-PT translation (a confirmed pin's dialect pair is the engine's to translate)", res.Identity, res.Result)
+	}
+	if res.From != model.PTBR {
+		t.Errorf("From = %q, want the pin pt-BR (the detection confirmed it)", res.From)
+	}
+	if hasDetectedFromKey(t, res) {
+		t.Errorf("detected_from = %q, want absent: the pin stood", detectedFromOf(t, res))
+	}
+}
+
 // ---- no usable detection on the substituted call -------------------------------------------
 
 // Two distinct gates, one outcome. (i) The engine echoes auto: detectedSource's own ok=false.
@@ -593,6 +615,36 @@ func TestChunkedPinnedDetectionCoveringTargetIsIdentity(t *testing.T) {
 	}
 	if !res.Identity || res.Result != chunkDoc(3) || res.From != model.EN || hasDetectedFromKey(t, res) {
 		t.Errorf("result = %+v, want identity over the whole text, From en, no detected_from", res)
+	}
+}
+
+// The chunked twin of TestPinnedDialectPairConfirmedByDetectionIsNotIdentity: pin pt-BR into
+// pt-PT, chunk 1 detects the bare pt (SameAs the pin, Covers the target). callEngineChunked must
+// not take its chunk-1 identity exit; every later chunk is sent with the pin pt-BR, and the whole
+// text is translated and reported from the pin. Without the pinFallback conjunct on the chunk-1
+// exit this ends after one call with the source text.
+func TestChunkedPinnedDialectPairConfirmedByDetectionIsNotIdentity(t *testing.T) {
+	res, calls, err := chunkedPinned(t, 3, model.PTBR, model.PTPT, model.PT, model.PT, nil)
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	froms := chunkFroms(calls)
+	if len(froms) != 3 {
+		t.Fatalf("calls = %v, want all 3 chunks translated (no chunk-1 identity exit)", froms)
+	}
+	if froms[1] != model.Auto {
+		t.Errorf("chunk 1 From = %q, want auto (substituted)", froms[1])
+	}
+	for idx := 2; idx <= 3; idx++ {
+		if froms[idx] != model.PTBR {
+			t.Errorf("chunk %d From = %q, want pt-BR (the confirmed pin)", idx, froms[idx])
+		}
+	}
+	if res.Identity || res.Result != bracketedDoc(1, 3) {
+		t.Errorf("Identity = %v, Result = %q, want the reassembled translation", res.Identity, res.Result)
+	}
+	if res.From != model.PTBR || hasDetectedFromKey(t, res) {
+		t.Errorf("From = %q, detected_from = %q, want the pin pt-BR and absent", res.From, detectedFromOf(t, res))
 	}
 }
 

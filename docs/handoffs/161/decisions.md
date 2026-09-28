@@ -99,3 +99,11 @@
   - The new Go tests pass 3× under `-race`.
   - A jsdom mount of the real `TranslateWindow` passed 10 checks, and 2 component mutations were caught.
   - `tsc` exits 0; gofmt is clean; `go vet` has only the 4 existing diagnostics; prettier is clean on the production files.
+
+## T, Phase 7 (GREEN + Tier 2), 2026-09-28
+- **Decided:** GREEN, PASS (docs/handoffs/161/handoff-T-green.md). The authoritative command exits 0 at F's head and on the final tree: 14 Go packages ok, vitest 396/396. The #161 and chunk tests pass `-race -count=3`.
+- **Decided:** repaired `detectedSourceNote.test.ts`'s note regex to accept prettier's trailing comma (`,?`), per F's flag. F's `prettier-ignore` is now optional and harmless.
+- **Decided:** accepted F's Deviation 1 (a pin its detection confirms, e.g. pt-BR → pt-PT with a detected bare pt, is never identity), because the literal pseudocode violates AC (a)2 and #80's pinned dialect-pair rule. Pinned it with `TestPinnedDialectPairConfirmedByDetectionIsNotIdentity` and its chunked twin. Removing either conjunct on its own is killed. Flagged for O, S and the principal as a behavior departure from the literal pseudocode.
+- **Assumed:** the principal keeps Deviation 1. To revert, drop the two conjuncts and the two tests.
+- **Hedged:** no live provider was called and no Apple bridge was exercised; the checks were loopback gtx and the scripted engine. No visual check (headless).
+- **Evidence:** handoff-T-green.md. Mutation runs showed `calls = map[1:auto]` with the chunk conjunct removed, and both tests failing with the service conjunct removed. Production was restored via `git checkout HEAD --`, and `git status` shows test files only.

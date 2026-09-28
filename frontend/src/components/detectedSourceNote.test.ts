@@ -172,7 +172,7 @@ describe('result-pane note: translated from the auto-detected language', () => {
     const { body } = noteBlock();
     expect(body).toMatch(/data-testid="detected-from-note"/);
     expect(body).toMatch(
-      /t\(\s*'translate\.translatedFromDetected'\s*,\s*\{\s*lang:\s*langName\(\s*activeResult\??\.detected_from\s*\)\s*\}\s*\)/,
+      /t\(\s*'translate\.translatedFromDetected'\s*,\s*\{\s*lang:\s*langName\(\s*activeResult\??\.detected_from\s*\)\s*,?\s*\}\s*\)/,
     );
     const cls = body.match(/class="([^"]*)"/);
     expect(cls, 'note element has no class').not.toBeNull();
