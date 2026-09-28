@@ -132,3 +132,29 @@
 - **Assumed:** the principal's live hand test covers what jsdom can't: the real Apple substitute-as-auto call on a wrong pin, the identity case (pin wrong and text in the target language), and the note's WKWebView rendering at 960 and 780 px, light and dark, in both locales.
 - **Hedged:** no live engine, no Apple bridge and no WKWebView. The backend was covered only by T's loopback tests.
 - **Evidence:** the authoritative command exits 0 at 348bb4f (8:18 AM MDT): Go ok, vitest 396/396. The mount log `[A1]…[U3]` is in handoff-U.md.
+
+## S, Phase 9 (spec audit), 2026-09-28
+- **Decided:** PASS (docs/handoffs/161/handoff-S.md), audited headless on the production diff 096643a..d977ade. Everything after d977ade is docs only.
+  - F built the brief's exact mechanism from "Where a pinned request's detection comes from":
+    - `sent := req` with `req` never mutated, and the trimmed ≥20-code-point gate.
+    - `pinFallback`, with both of its branches.
+    - The `ParseLanguage` recognition gate.
+    - Identity gated on `sent.From` and built from `sent`.
+    - `DetectedFrom` = the qualified `From` on both paths.
+  - The reported bug's identity/covers-target case resolves to `identityResult(sent, en)` with `DetectedFrom` empty.
+  - `detectedFrom` and `swapPair` are untouched.
+  - `detectedLang.ts`, its test and the stale `variants.e2e.test.ts` block are deleted.
+  - `translate.detected` is gone from en-US, zh-CN and `keys.ts`.
+  - There is no toast plumbing, and the scope limits held (engine, configstore, langpref, pkg, `chunk.go`, `requests.go`, `TranslateCard`, `GeneralTab` untouched).
+  - No key-shaped literals were found.
+- **Decided:** accepted F's Deviation 1 (a confirmed pin never becomes identity) rather than issue ADVISORY-HOLD.
+  - The brief's literal pseudocode contradicts its own AC (a)2 and #80's pinned dialect-pair rule. The deviation is the minimal fix toward the governing criterion.
+  - It is tested, with both conjuncts mutation-killed.
+- **Assumed:** O's PR body will carry four items: Deviation 1, the `ScreenshotRetranslate`/`TranslateCard` note gap (AC (a)7), the #11 relabel walk-back, and S's hand-confirmation list.
+- **Hedged:**
+  - S did not re-run Tier 1, and relies on the run U made at 348bb4f.
+  - No live engine or Apple bridge was called, and nothing was rendered in WKWebView. Seven cells are listed for the principal's hand test.
+- **Advisories (non-blocking):**
+  - The `prettier-ignore` comment above the note is stale since T-green's regex fix (A-dup W2).
+  - `TestResultFromBranchesUnchanged` tests an unmodified function, a duplicate signal.
+  - The sleep-based negative check in `TestChunkedPinnedMismatchDecidedFromChunkOne`.
