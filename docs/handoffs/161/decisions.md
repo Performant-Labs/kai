@@ -63,3 +63,19 @@
 - **Passed:** Scope held. The diff since base is docs only. The only extension points are `pinFallback` and the one model field. `resultFrom` and `detectedSource` are unmodified.
 - **Hedged:** Read from source only. No engine was called.
 - **Evidence:** `service.go:279-287`, `:389-393`; `service_chunk.go:103-128`, `:183-186`; `model.go:113-185`; `handoff-D.md:50`.
+
+## T, Phase 4 (RED), 2026-09-28
+- **Decided:** RED valid (docs/handoffs/161/handoff-T-red.md).
+  - New backend suite: `internal/translate/service_source_correct_test.go`, 15 tests. It uses a loopback gtx server that records `sl` for single-call cases, and the #84 scripted engine for chunked cases.
+  - New frontend suite: `frontend/src/components/detectedSourceNote.test.ts`, 19 tests, source-contract plus an evaluated `fromOptionLabel`.
+  - Deleted per the brief: `detectedLang.test.ts` and the `variants.e2e.test.ts` detected-label block.
+  - Two existing tests adjusted, because the brief's mandated behaviour changes what they encoded:
+    - `TestChunkedTranslateMultiSplitsAndReassemblesInOrder`: chunk 1 of a pinned request is now `auto`.
+    - `identityResult.test.ts` `identityBlock`: it now skips the note's `!identity` guard.
+  - All four of A's warns are covered: the trimmed boundary, the Auto-under-floor `detected_from == Qualify("es")`, `detected_from == From` with a variant preference, and the frontend condition as non-empty plus `!identity` with no comparison.
+- **Assumed:**
+  - `DetectedFrom` is read through its JSON key `detected_from` (omitempty), per the Reuse map. The Go file therefore compiles pre-F, and RED fails on assertions.
+  - The note's test id is `detected-from-note`, and it sits first in the note stack (wireframe revision 3, as drawn and approved).
+  - `fromOptionLabel` stays a named `function` with a `(value: string): string` signature, because the test evaluates it.
+- **Hedged:** Satisfiability was proven with a throwaway prototype of the brief's pseudocode, reverted before handoff (`git status` shows test files only). With it, the Go and frontend suites were fully green, the new Go tests passed 3× with `-race`, and 11 targeted mutations were each killed. No real engine was called: google runs against loopback, and chunked cases use the scripted engine. The Apple bridge was not exercised.
+- **Evidence:** the authoritative command exits 1 on `internal/translate` only. `pnpm --dir frontend test` gives 13 failed / 383 passed, all 13 in `detectedSourceNote.test.ts`.
