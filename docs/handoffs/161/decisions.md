@@ -19,3 +19,14 @@
 - **Assumed:** Google gtx may report a real detection on pinned requests. Not verified against the live API.
 - **Hedged:** Engine behaviour was read from source only. No engine was called.
 - **Evidence:** handoff-A.md findings #1-#10, with file:line citations.
+
+## A, Phase 3 (re-review #1), 2026-09-28
+- **Decided:** BLOCK again. 3 block findings, 3 warns and 3 passes (docs/handoffs/161/handoff-A.md).
+  - The substituted-auto mechanism resolves the prior #1: one call, no detector, and every engine accepts auto.
+  - But the stale toast, `Corrected` and `fromLang`-assignment text is still there: brief :32, :33, :91, :93, :131, :147, :151, :158, :167 and :175.
+  - The data flow omits the case where the detection covers the target, which is the likely bug shape. The seam, what chunks 2..N receive, and the qualification of the corrected `From` are unnamed.
+  - Reuse map :135 still has a frontend "differs from displayed FROM" comparison, and (a)4 has no Auto-case rule.
+- **Passed:** Scope limits held: no engine, chunker or registry change. `detectedLang.ts` deletion and the ScreenshotRetranslate acceptance are in the brief, though contradicted at :115, :149 and :180.
+- **Assumed:** The recommended outcome when the detection covers the target is an identity result with `DetectedFrom` empty, consistent with D's rule that the note is suppressed on identity. O or the principal confirms.
+- **Hedged:** Read from source only. No engine was called.
+- **Evidence:** `service_chunk.go:103-116`, `service.go:259`, `engine.go:30-35`, `apple_darwin.go:72`, `variants.e2e.test.ts:34-49`.
