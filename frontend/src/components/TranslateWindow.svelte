@@ -1183,8 +1183,16 @@
                  (last-used/primary derivation, see activeEngineFor); onchange writes last-used
                  (#8's setLastUsedEngine) and resets edits. Disabled engines (just toggled in
                  settings, before EventEnginesChanged lands) are listed as disabled. -->
+              <!-- pl-3 only (issue #165, re-investigated after a wrong first guess at #lang-sel):
+                   .u-select reserves padding-right: 2.25rem for its custom arrow icon
+                   (background-position right .75rem center), but Tailwind v4's utilities layer
+                   always wins over the components layer regardless of source order, so a plain
+                   px-3 here collapsed that to .75rem and let engine names (esp. the on-device
+                   engine, labelled "System") sit right under the arrow — the "out of proportion"
+                   dropdown. pl-3 supplies the left padding only, leaving u-select's own
+                   right-padding uncontested. -->
               <select
-                class="u-field u-select u-engine-select px-3 py-2 text-sm"
+                class="u-field u-select u-engine-select pl-3 py-2 text-sm"
                 value={selectValue}
                 onchange={handleEngineChange}
                 aria-label={t('translate.engineActive')}

@@ -72,7 +72,7 @@
   <div class="flex items-center">
     <select
       id="lang-sel"
-      class="u-field u-select u-lang-select px-3 py-2 text-sm"
+      class="u-field u-select w-full max-w-[240px] px-3 py-2 text-sm"
       value={curLang}
       onchange={(e) => changeLang((e.target as HTMLSelectElement).value as LangCode)}
     >

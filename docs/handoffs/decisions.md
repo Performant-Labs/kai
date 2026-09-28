@@ -922,3 +922,43 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
   not a confirmed match to what the principal saw; flagged explicitly in the PR body.
 - **Evidence:** full authoritative suite green (`go test ./internal/... ./pkg/... -count=1` +
   `pnpm --dir frontend test`, 408/408 frontend tests including 12 new ones for items 1/3/4/5/6).
+
+## #165 O follow-up (principal correction round, 2026-09-28, 4:21 PM MDT): item 6 re-investigated, item 7 implemented
+- **Decided (item 6, corrected):** the principal clarified "System" dropdown means the
+  target-side ENGINE picker (`t('engine.apple')` displays the on-device engine as "System"), not
+  a language selector. Reverted the wrong-guess `#lang-sel` change in
+  `frontend/src/components/settings/GeneralTab.svelte` back to its original classes and deleted
+  the test that pinned it. Re-investigated and found a real, verifiable bug in the actual
+  control: `.u-select` (`app.css`) reserves `padding-right: 2.25rem` for its custom arrow icon,
+  but Tailwind v4's `utilities` layer always cascade-wins over `components` regardless of source
+  order (confirmed by building the frontend and grepping the emitted `@layer` order in
+  `dist/assets/service-*.css`), so the plain `px-3` utility on the engine `<select>` collapsed
+  that reserved padding to `.75rem`, crowding option text (including "System") under the arrow.
+  Fixed by changing that one select's class to `pl-3` (left padding only), leaving `.u-select`'s
+  own right padding uncontested. Scoped to the engine select only, per the principal's explicit
+  "fix ITS height/proportion, not #lang-sel" — the same collapse exists on the language-bar
+  selects too (they also combine `u-select` with `px-3`), left untouched as out of scope for this
+  correction.
+- **Decided (item 7):** the principal said the Dock-icon-vs-Cmd+Tab tradeoff is fine either way,
+  so implemented: `main.go`'s `Mac.ActivationPolicy` switched from `ActivationPolicyAccessory` to
+  `ActivationPolicyRegular`. Discovered mid-implementation that this alone would not have been
+  reliable: `build/darwin/Info.plist` and `Info.dev.plist` both set `LSUIElement = true`,
+  LaunchServices' own bundle-level switch for "no Dock icon, no Cmd+Tab", read before Wails'
+  runtime `setActivationPolicy` call (`application_darwin.go`'s `run()`, on
+  `ApplicationDidFinishLaunching`) has a chance to override it — the two would have fought each
+  other. Removed `LSUIElement` from both plists so they agree with `main.go`.
+  No new icon asset was needed: `build/darwin/icons.icns` was already fully wired into both
+  plists (`CFBundleIconFile`/`CFBundleIconName`) and copied into the `.app` bundle's Resources by
+  `build/darwin/Taskfile.yml` — it simply wasn't shown anywhere while the app was hidden from the
+  Dock and Cmd+Tab entirely.
+- **Hedged:** `ActivationPolicyRegular` also makes Wails call `activateIgnoringOtherApps()` once
+  on launch (same gated block in `application_darwin.go`), so Kai now foreground-activates at
+  startup instead of launching silently in the background — a real behavioral side effect of the
+  same tradeoff the principal already accepted, called out explicitly in the PR body rather than
+  left implicit.
+- **Evidence:** full authoritative suite green after this round (`go test
+  ./internal/... ./pkg/... -count=1` + `pnpm --dir frontend test`, 409/409 frontend tests,
+  including the corrected item-6 test and two new item-7 guard tests
+  `TestMacActivationPolicyIsRegularForCmdTabVisibility` /
+  `TestMacInfoPlistsDoNotSetLSUIElement`). `plutil -lint` confirms both edited plists are still
+  well-formed XML.
