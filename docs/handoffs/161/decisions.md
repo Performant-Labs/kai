@@ -121,3 +121,14 @@
 - **Assumed:** the phase prompt's "fifth plan review" text was carried over from Phase 3. The brief and handoff-D are unchanged since the Phase-3 PASS at 4258c9f (empty diff), so that PASS stands, and this run did the Phase-7 gate its phase line names.
 - **Hedged:** read from source and the diff only. No tests or engines were run at this gate. T-green's run is the runtime evidence.
 - **Evidence:** `service.go:212`, `:649`, `:271-321`; `service_chunk.go:71`, `:118`, `:131-141`; `model.go` `Covers`/`canonical`.
+
+## U, Phase 8 (UI walkthrough), 2026-09-28
+- **Decided:** PASS (docs/handoffs/161/handoff-U.md). The UI conforms to wireframe revision 3:
+  - The Auto entry always reads "Detected" / "自动检测", and pinned entries are never suffixed.
+  - The note shows when `detected_from` is set and `identity` is not. It is 11 px, first in the note stack and outside the textarea.
+  - The select never moves, and neither SaveConfig nor Learn is called.
+  - Swap after a pinned correction exchanges the pin.
+- **Decided:** used a jsdom mount of the real `TranslateWindow` as the headless stand-in for a browser, because this is a Wails app (issue #28) and the rule is headless only. I re-ran F's 10 mount checks at HEAD and added 3 U checks: the stack order with phonetic and cancelled, the note following the active engine, and swap after a correction. 13/13 pass, and the throwaway files were removed, so the tree is clean.
+- **Assumed:** the principal's live hand test covers what jsdom can't: the real Apple substitute-as-auto call on a wrong pin, the identity case (pin wrong and text in the target language), and the note's WKWebView rendering at 960 and 780 px, light and dark, in both locales.
+- **Hedged:** no live engine, no Apple bridge and no WKWebView. The backend was covered only by T's loopback tests.
+- **Evidence:** the authoritative command exits 0 at 348bb4f (8:18 AM MDT): Go ok, vitest 396/396. The mount log `[A1]…[U3]` is in handoff-U.md.
