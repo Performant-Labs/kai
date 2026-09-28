@@ -49,3 +49,17 @@
 - **Assumed:** The Auto path's qualified value is the one both paths should use, per the prior review's B3 fix and wireframe 2(b)'s "Spanish (Mexico)".
 - **Hedged:** Read from source only. No engine was called.
 - **Evidence:** `service.go:279-287`, `service_chunk.go:103-128` and `:183-186`, `model.go:113-185`, `handoff-D.md:50`.
+
+## A, Phase 3 (re-review #4), 2026-09-28
+- **Decided:** PASS (docs/handoffs/161/handoff-A.md at head 4258c9f), with 0 blocks, 4 warns and 4 passes.
+  - B1 residual is fixed in the prose. :19, :200, :246 and :274 now put native-code exclusion on the `ParseLanguage` gate, and `detectedSource` is `ok=false` only for the auto echo.
+  - B2 residual is fixed. (a)4, Reuse row :250, pseudocode :140-161 and open decision 3 state one `DetectedFrom` contract. The value is always the qualified `From`. Auto: always set, with no floor. Substituted pin: set only on `!SameAs`. Identity, match and unusable: empty. :219 no longer floor-gates the note.
+  - The W1, W2 and W4 fixes are in. `handoff-D.md:50` now has no frontend comparison.
+- **Warns handed to T:**
+  - Reuse row :245 still shows the untrimmed length. The pseudocode :78 governs.
+  - Missing test: an Auto request under the floor must return `DetectedFrom == Qualify("es")`.
+  - Missing assertion: `DetectedFrom == From` on the real-mismatch test.
+  - The frontend render condition should be non-empty and `!identity`, with no `fromLang` comparison.
+- **Passed:** Scope held. The diff since base is docs only. The only extension points are `pinFallback` and the one model field. `resultFrom` and `detectedSource` are unmodified.
+- **Hedged:** Read from source only. No engine was called.
+- **Evidence:** `service.go:279-287`, `:389-393`; `service_chunk.go:103-128`, `:183-186`; `model.go:113-185`; `handoff-D.md:50`.
