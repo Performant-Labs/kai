@@ -262,6 +262,30 @@ describe('app.css: text follows the scale, layout does not', () => {
     for (const d of decls) expect(d, d).toContain('var(--kai-text-scale)');
   });
 
+  it('a scaled font-size never sits beside a fixed-length line-height (wrapped lines would collide)', () => {
+    const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const offenders: string[] = [];
+    let scaled = 0;
+    for (const m of code.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const body = m[2];
+      if (!/font-size:[^;]*var\(--kai-text-scale\)/.test(body)) continue;
+      scaled++;
+      for (const lh of body.matchAll(/line-height:\s*([^;]+);/g)) {
+        // Unitless ratios follow the font size; any length (rem, px, em) does not.
+        if (/^-?[\d.]+(rem|px|em|pt|vh|vw)\b/.test(lh[1].trim()))
+          offenders.push(`${m[1].trim()} { line-height: ${lh[1].trim()} }`);
+      }
+    }
+    expect(scaled).toBeGreaterThan(8);
+    expect(offenders).toEqual([]);
+  });
+
+  it('every --text-* token keeps a unitless (or scale-relative) line-height', () => {
+    for (const m of css.matchAll(/--text-[\w]+--line-height:\s*([^;]+);/g)) {
+      expect(m[1], m[0]).not.toMatch(/\d(rem|px|em)\b/);
+    }
+  });
+
   it('the root font size is left alone (rem spacing and widths must not scale)', () => {
     const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
     expect(code).not.toMatch(/(^|\})\s*html\s*\{[^}]*font-size/);

@@ -90,7 +90,7 @@ body {
     padding: 0.125rem 0.5rem;
     border-radius: 9999px;
     font-size: calc(0.75rem * var(--kai-text-scale));
-    line-height: 1rem;
+    line-height: 1.3333;
     background: var(--app-card);
     border: 1px solid var(--app-border);
     color: var(--app-fg);
@@ -98,7 +98,7 @@ body {
 
   .u-label {
     font-size: calc(0.75rem * var(--kai-text-scale));
-    line-height: 1rem;
+    line-height: 1.3333;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -302,7 +302,7 @@ body {
     border-radius: 0.5rem;
     padding: 0.5rem 0.75rem;
     font-size: calc(0.875rem * var(--kai-text-scale));
-    line-height: 1.25rem;
+    line-height: 1.4286;
     font-weight: 500;
     transition:
       background-color 0.15s ease,
@@ -332,7 +332,7 @@ body {
     padding: 0.5rem 0.75rem;
     text-align: left;
     font-size: calc(0.875rem * var(--kai-text-scale));
-    line-height: 1.25rem;
+    line-height: 1.4286;
     transition: background-color 0.15s ease;
   }
 
@@ -361,7 +361,7 @@ body {
     border-radius: 0.375rem;
     padding: 0.375rem 0.75rem;
     font-size: calc(0.875rem * var(--kai-text-scale));
-    line-height: 1.25rem;
+    line-height: 1.4286;
     font-weight: 500;
     color: var(--app-muted);
     white-space: nowrap;
