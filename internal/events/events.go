@@ -24,6 +24,10 @@ const (
 	// EventThemeChanged is broadcast on theme change, payload: ThemeChangedPayload
 	EventThemeChanged = "kai:theme:changed"
 
+	// EventFontSizeChanged is broadcast after the text size changes (issue #195), payload: int,
+	// the new size in percent (one of settings.FontSizeSteps). Every window applies it live.
+	EventFontSizeChanged = "kai:fontsize:changed"
+
 	// EventHotkeysChanged is broadcast after hotkeys re-register, payload: []string
 	EventHotkeysChanged = "kai:hotkeys:changed"
 

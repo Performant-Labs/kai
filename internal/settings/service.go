@@ -61,6 +61,11 @@ type Settings struct {
 	// off. Read through readDoubleCopyTranslate, not mapstructure, so a garbled value cannot fail
 	// the whole settings load.
 	DoubleCopyTranslate bool `json:"double_copy_translate" mapstructure:"-"`
+	// FontSize is the text size in percent of the pre-#195 size (issue #195). One of
+	// FontSizeSteps, 120 (DefaultFontSize) by default: a fresh install, an old settings.json
+	// without the key, and any value that is not one of the six all read as 120. Read through
+	// readFontSize, not mapstructure, so a garbled value cannot fail the whole settings load.
+	FontSize int `json:"font_size" mapstructure:"-"`
 	// CopyKeySnapshot records the copy key's prior state (enabled/fallback) when
 	// AutoClipboard is switched on, restoring from it when AutoClipboard is switched off;
 	// nil when never enabled.
@@ -268,6 +273,7 @@ func DefaultSettings() *Settings {
 		// Dev builds and unconfigured keys never report even when enabled.
 		AnalyticsEnabled: false,
 		AutoSwitchSource: true,
+		FontSize:         DefaultFontSize,
 	}
 }
 
@@ -381,6 +387,7 @@ func NewService(dataDir string) (*Service, error) {
 	s.cfg.Path = filePath
 	s.cfg.AutoSwitchSource = readAutoSwitchSource(v)
 	s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(v)
+	s.cfg.FontSize = readFontSize(v)
 	s.cfg.normalizeLanguages()
 	s.cfg.normalizeUpdaterSource()
 
@@ -442,6 +449,7 @@ func (s *Service) startWatching() {
 			s.cfg.Path = s.filePath
 			s.cfg.AutoSwitchSource = readAutoSwitchSource(s.v)
 			s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(s.v)
+			s.cfg.FontSize = readFontSize(s.v)
 			s.cfg.normalizeLanguages()
 			s.cfg.normalizeUpdaterSource()
 
@@ -484,6 +492,7 @@ func (s *Service) writeConfig() error {
 	w.Set("auto_clipboard", s.cfg.AutoClipboard)
 	w.Set(autoSwitchSourceKey, s.cfg.AutoSwitchSource)
 	w.Set(doubleCopyTranslateKey, s.cfg.DoubleCopyTranslate)
+	w.Set(fontSizeKey, NormalizeFontSize(s.cfg.FontSize))
 	w.Set("copy_key_snapshot", s.cfg.CopyKeySnapshot)
 	w.Set("tts", s.cfg.TTS)
 	w.Set("http_log", s.cfg.HttpLog)

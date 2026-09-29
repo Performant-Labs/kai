@@ -98,6 +98,8 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	cur.AutoClipboard = cfg.AutoClipboard
 	cur.AutoSwitchSource = cfg.AutoSwitchSource
 	cur.DoubleCopyTranslate = cfg.DoubleCopyTranslate
+	fontSizeChanged := cur.FontSize != settings.NormalizeFontSize(cfg.FontSize)
+	cur.FontSize = settings.NormalizeFontSize(cfg.FontSize)
 	cur.CopyKeySnapshot = cfg.CopyKeySnapshot
 	cur.AnalyticsEnabled = cfg.AnalyticsEnabled
 	if err := w.settingsSvc.Save(); err != nil {
@@ -122,6 +124,9 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 				Mode:  cur.Theme,
 				Theme: w.GetSystemTheme(),
 			})
+		}
+		if fontSizeChanged {
+			w.app.Event.Emit(events.EventFontSizeChanged, cur.FontSize)
 		}
 	}
 	return nil

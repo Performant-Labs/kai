@@ -16,6 +16,15 @@ import (
 // this long" means one write per resize gesture, right after the user lets go.
 const resizePersistDebounce = 400 * time.Millisecond
 
+// widthForDefaultText scales a window width that was chosen for the pre-#195 text size to the
+// default text size (settings.DefaultFontSize percent, issue #195), so toolbars and language rows
+// that grew 20% wider with their text still fit at the default size. Only widths grow: the panes
+// scroll vertically, so heights are left alone. The settings window keeps its fixed 1280x800
+// (deliberately non-resizable since #165). Sizes a user saved by resizing are honored as they are.
+func widthForDefaultText(w int) int {
+	return w * settings.DefaultFontSize / 100
+}
+
 // translateWindowSize resolves the width/height to create the translate window with:
 // the last size the user resized it to (persisted in settings.json, issue #173 item 5), or
 // (defaultW, defaultH) when nothing was saved yet, or when a saved value is invalid — zero

@@ -87,6 +87,7 @@ func init() {
 	// otherwise Wails3 validateCustomEvent panics.
 	application.RegisterEvent[kevents.LocaleChangedPayload](kevents.EventLocaleChanged)
 	application.RegisterEvent[kevents.ThemeChangedPayload](kevents.EventThemeChanged)
+	application.RegisterEvent[int](kevents.EventFontSizeChanged)
 	application.RegisterEvent[string](kevents.EventWindowShow)
 	application.RegisterEvent[string](kevents.EventWindowClosing)
 	application.RegisterEvent[bool](kevents.EventAutoClipboardChanged)
@@ -512,13 +513,13 @@ func main() {
 	// last size is persisted to settings.json and restored here. translateWindowSize falls
 	// back to the 960x640 default below when nothing was saved yet, or when a saved value
 	// would be smaller than the window's own MinWidth/MinHeight (e.g. an old/corrupt value).
-	translateWidth, translateHeight := translateWindowSize(settingsService, 960, 640, 780, 520)
+	translateWidth, translateHeight := translateWindowSize(settingsService, widthForDefaultText(960), 640, widthForDefaultText(780), 520)
 	translateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      model.WindowTranslate,
 		Title:     i18n.T("window.translate_title"),
 		Width:     translateWidth,
 		Height:    translateHeight,
-		MinWidth:  780,
+		MinWidth:  widthForDefaultText(780),
 		MinHeight: 520,
 		URL:       "/translate.html",
 		Mac: application.MacWindow{
@@ -575,9 +576,9 @@ func main() {
 	screenshotWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      model.WindowScreenshot,
 		Title:     i18n.T("window.screenshot_title"),
-		Width:     900,
+		Width:     widthForDefaultText(900),
 		Height:    600,
-		MinWidth:  600,
+		MinWidth:  widthForDefaultText(600),
 		MinHeight: 400,
 		URL:       "/screenshot.html",
 		Mac: application.MacWindow{

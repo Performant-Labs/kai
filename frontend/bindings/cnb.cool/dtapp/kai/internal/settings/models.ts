@@ -241,6 +241,14 @@ export interface Settings {
     "double_copy_translate": boolean;
 
     /**
+     * FontSize is the text size in percent of the pre-#195 size (issue #195). One of
+     * FontSizeSteps, 120 (DefaultFontSize) by default: a fresh install, an old settings.json
+     * without the key, and any value that is not one of the six all read as 120. Read through
+     * readFontSize, not mapstructure, so a garbled value cannot fail the whole settings load.
+     */
+    "font_size": number;
+
+    /**
      * CopyKeySnapshot records the copy key's prior state (enabled/fallback) when
      * AutoClipboard is switched on, restoring from it when AutoClipboard is switched off;
      * nil when never enabled.
