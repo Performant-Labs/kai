@@ -19,11 +19,14 @@ function gearButton(): string | null {
 }
 
 describe('translate window gear button', () => {
-  it('exists, labelled and titled with titlebar.settings', () => {
+  it('exists, labelled with titlebar.settings and titled with titlebar.settingsHint', () => {
     const btn = gearButton();
     expect(btn, "a <button> using t('titlebar.settings')").not.toBeNull();
     expect(btn).toMatch(/aria-label=\{t\('titlebar\.settings'\)\}/);
-    expect(btn).toMatch(/title=\{t\('titlebar\.settings'\)\}/);
+    // issue #173: the tooltip is the more descriptive settingsHint key, distinct from the
+    // plain "Settings" label so the error-panel's visible button text (elsewhere in this file)
+    // stays short.
+    expect(btn).toMatch(/title=\{t\('titlebar\.settingsHint'\)\}/);
   });
 
   it('calls the existing ShowSettings binding and nothing else opens Settings', () => {

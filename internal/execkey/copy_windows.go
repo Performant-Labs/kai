@@ -173,8 +173,7 @@ func (e *ExecKeyController) copyDefaultKey() string {
 	}
 	e.log.Debug(i18n.T("log.copykey_exec_makc_default_done"))
 
-	time.Sleep(120 * time.Millisecond)
-	text := e.selection.ReadClipboardText()
+	text := pollClipboardText(e.selection.ReadClipboardText)
 	if text == "" {
 		e.log.Warn(i18n.T("log.copykey_default_empty"))
 	}
@@ -233,8 +232,7 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 
 	e.log.Debug(i18n.T("log.copykey_exec_makc_done"), slog.String(i18n.T("log.field_key"), hotkey))
 
-	time.Sleep(120 * time.Millisecond)
-	text := e.selection.ReadClipboardText()
+	text := pollClipboardText(e.selection.ReadClipboardText)
 	if text == "" {
 		e.log.Warn(i18n.T("log.copykey_send_combo_empty"),
 			slog.String(i18n.T("log.field_key"), hotkey))

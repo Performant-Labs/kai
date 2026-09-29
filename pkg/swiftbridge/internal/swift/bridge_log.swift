@@ -95,6 +95,10 @@ func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
     "translate.detect_fail": "系统翻译自动检测失败且无已安装语言回退 dst=%@",
     "translate.fail": "系统翻译失败: %@",
     "translate.done": "系统翻译完成 from=%@ dst=%@ 译文长度=%d",
+    "translate.timing":
+      "系统翻译耗时明细(ms) 已安装语言查询=%d 语言检测=%d 获取已就绪会话(含首次prepareTranslation)=%d translate()=%d 总计=%d",
+    "translate.warm_start": "正在预热系统翻译会话 src=%@ dst=%@",
+    "translate.warm_done": "系统翻译会话预热完成 src=%@ dst=%@ 耗时(ms)=%d",
     "translate.cancel": "系统翻译取消 token=%lld 状态=%@",
     "translate.drain": "系统翻译取消后，被弃用的任务已结束 取消后耗时=%@s",
     "lang.query_done": "系统已安装语言列表查询完成 总数=%d 已安装=%d",
@@ -134,6 +138,10 @@ func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
       "system translate auto-detect failed and no installed language fallback dst=%@",
     "translate.fail": "translate failed: %@",
     "translate.done": "system translate done from=%@ dst=%@ result_len=%d",
+    "translate.timing":
+      "system translate timing(ms) installed_langs=%d detect=%d session_ready(incl. first prepareTranslation)=%d translate_call=%d total=%d",
+    "translate.warm_start": "warming system translate session src=%@ dst=%@",
+    "translate.warm_done": "system translate session warm done src=%@ dst=%@ elapsed_ms=%d",
     "translate.cancel": "system translate cancel token=%lld state=%@",
     "translate.drain": "system translate: cancelled task finished unwinding %@s after the cancel",
     "lang.query_done": "installed language list query done total=%d installed=%d",

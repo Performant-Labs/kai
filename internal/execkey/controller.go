@@ -8,12 +8,54 @@ package execkey
 
 import (
 	"log/slog"
+	"time"
 
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/selection"
 	"cnb.cool/dtapp/kai/internal/settings"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+// pollClipboardDelay/pollClipboardTimeout/pollClipboardInterval govern how long copyWithHotkey
+// (both platforms) waits for the target app to actually populate the pasteboard after the
+// simulated copy key is injected.
+//
+// Issue #173 items 2/3: a single fixed 120ms sleep-then-read-once was reliable for native
+// AppKit/Win32 text fields (whose Cmd+C/Ctrl+C handling writes the pasteboard synchronously,
+// inline with the key event), but returned an empty clipboard for a Chrome tab (e.g. a Google
+// Sheets cell) and for WhatsApp's Electron window — both log
+// "[CopyKey] Send combo succeeded but clipboard empty". Neither is native: Chrome's copy
+// handling runs a JS `copy` event listener inside the page's renderer process, and Electron
+// (also Chromium) routes the synthetic key through its own input pipeline before any
+// clipboard write happens — both add IPC/event-loop hops a native NSResponder never needs, so
+// a single fixed 120ms read can race ahead of the write. pollClipboardTimeout is a generous
+// upper bound (chosen well above every observed Chrome/Electron latency while staying under
+// the time a user would notice as "nothing happened"); pollClipboardInterval keeps the common
+// native-field case (which already has the text within the first tick) just as fast as
+// before.
+const (
+	pollClipboardInterval = 40 * time.Millisecond
+	pollClipboardTimeout  = 600 * time.Millisecond
+)
+
+// pollClipboardText polls read (selection.Service.ReadClipboardText) every pollClipboardInterval
+// until it returns non-empty text or pollClipboardTimeout elapses, whichever comes first. It
+// always performs at least one read. This replaces a single fixed-delay read so that apps whose
+// copy handling is asynchronous (a Chrome tab, an Electron app) get enough time to populate the
+// pasteboard, without slowing down the common case where a native text field already has it on
+// the first read.
+func pollClipboardText(read func() string) string {
+	deadline := time.Now().Add(pollClipboardTimeout)
+	for {
+		if text := read(); text != "" {
+			return text
+		}
+		if time.Now().After(deadline) {
+			return ""
+		}
+		time.Sleep(pollClipboardInterval)
+	}
+}
 
 // ExecKeyController is the exec key controller: it carries all "program actively simulates a
 // keypress" exec key logic (strictly distinct from RegisteredHotkeyConfig-style "listened-for

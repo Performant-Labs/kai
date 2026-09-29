@@ -41,3 +41,8 @@ func SetLogConfig(dir, level string, _ int, _ bool) {
 // SetBridgeLocale: non-darwin platforms have no Swift bridge layer, so there is nothing to
 // sync; empty implementation keeps the signature consistent.
 func SetBridgeLocale(_ string) {}
+
+// WarmTranslate: non-darwin platforms have no Apple engine (system translation is macOS-only,
+// see Translate above); empty implementation keeps the signature consistent with
+// apple_darwin.go's so main.go can call it unconditionally.
+func WarmTranslate(_, _ string) {}

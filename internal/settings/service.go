@@ -70,6 +70,16 @@ type Settings struct {
 	AnalyticsInstalled bool `json:"analytics_installed" mapstructure:"analytics_installed"`
 	// DNSConfigs is the custom DNS resolver config list.
 	DNSConfigs []DNSConfig `json:"dns_configs" mapstructure:"dns_configs"`
+	// TranslateWindowWidth/Height persist the input-translate window's last user-resized size
+	// (issue #173 item 5), read back into WebviewWindowOptions.Width/Height at window
+	// creation in main.go so a resize survives a relaunch. Zero means "never resized yet" —
+	// main.go falls back to the hardcoded default in that case. Window size is a native
+	// (Go-side) property, not frontend state, so unlike Theme/Language above this is written
+	// directly by main.go's resize listener (debounced), not via SaveConfig/the frontend.
+	// Scoped to the translate window only (the window users actually resize); the settings
+	// and screenshot windows keep their fixed defaults — see docs/handoffs/173-brief.md.
+	TranslateWindowWidth  int `json:"translate_window_width" mapstructure:"translate_window_width"`
+	TranslateWindowHeight int `json:"translate_window_height" mapstructure:"translate_window_height"`
 	// Path is the config file path (not persisted; json:"-").
 	Path string `json:"-"`
 }
@@ -416,6 +426,8 @@ func (s *Service) writeConfig() error {
 	w.Set("updater", s.cfg.Updater)
 	w.Set("analytics_enabled", s.cfg.AnalyticsEnabled)
 	w.Set("analytics_installed", s.cfg.AnalyticsInstalled)
+	w.Set("translate_window_width", s.cfg.TranslateWindowWidth)
+	w.Set("translate_window_height", s.cfg.TranslateWindowHeight)
 
 	return w.WriteConfigAs(s.filePath)
 }

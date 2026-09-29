@@ -77,3 +77,16 @@ describe('Cmd+Enter translates while the window has focus (issue #165)', () => {
     expect(markup).toMatch(/<svelte:window\s+onkeydown=\{onWindowKeydown\}/);
   });
 });
+
+describe('Translate button shows a Cmd+Enter hint (issue #173 item 4)', () => {
+  it('the primary Translate button includes a muted ⌘⏎ hint, only while actionable', () => {
+    const btnStart = markup.indexOf("onclick={doTranslate}");
+    expect(btnStart, 'Translate button not found').toBeGreaterThan(-1);
+    const tagEnd = markup.indexOf('</button>', btnStart);
+    const region = markup.slice(Math.max(0, btnStart - 400), tagEnd);
+    expect(region).toMatch(/!awaiting\s*&&\s*input\.trim\(\)/);
+    expect(region).toContain('⌘');
+    expect(region).toContain('⏎');
+    expect(region).toMatch(/opacity-70/);
+  });
+});

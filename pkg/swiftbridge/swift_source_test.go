@@ -52,8 +52,13 @@ func TestTranslateWaitHasNoTimer(t *testing.T) {
 		t.Error("apple_translate.swift still contains \".now() + 20\"")
 	}
 	waits := regexp.MustCompile(`(?m)^.*sema\.wait.*$`).FindAllString(src, -1)
-	if len(waits) != 2 {
-		t.Fatalf("%d sema.wait lines, want exactly 2 (translate: no timeout; kai_available_languages: .now() + 30): %q", len(waits), waits)
+	// Issue #173 item 8 added kai_warm_translate, a third blocking entry point (bare wait, no
+	// timeout — Go calls it off the main goroutine at launch, so blocking here is fine): it
+	// warms TranslationSessionCache for the default language pair. That's 2 bare waits now
+	// (kai_translate's job.sema.wait, kai_warm_translate's sema.wait) plus the one timed wait
+	// (kai_available_languages, unchanged and out of scope).
+	if len(waits) != 3 {
+		t.Fatalf("%d sema.wait lines, want exactly 3 (kai_translate + kai_warm_translate: no timeout; kai_available_languages: .now() + 30): %q", len(waits), waits)
 	}
 	var bare, thirty int
 	for _, w := range waits {
@@ -64,8 +69,8 @@ func TestTranslateWaitHasNoTimer(t *testing.T) {
 			bare++
 		}
 	}
-	if bare != 1 || thirty != 1 {
-		t.Errorf("waits = %q: want one without timeout: and one still .now() + 30 (kai_available_languages is out of scope)", waits)
+	if bare != 2 || thirty != 1 {
+		t.Errorf("waits = %q: want two without timeout: and one still .now() + 30 (kai_available_languages is out of scope)", waits)
 	}
 }
 

@@ -62,6 +62,11 @@ var (
 	KaiSetLocale              func(locale string)
 	KaiTranslate              func(src string, dst string, text string, token int64, out unsafe.Pointer, outCap int32) int32
 	KaiTranslateCancel        func(token int64) int32
+	// KaiWarmTranslate warms (creates + prepareTranslation()s) the Apple engine's cached
+	// TranslationSession for (src, dst) — issue #173 item 8. Blocks the calling goroutine
+	// until warming finishes or fails; main.go calls it in its own goroutine at launch so
+	// startup is never blocked on it.
+	KaiWarmTranslate func(src string, dst string) int32
 )
 
 // The dylib defaults to the same directory as this .go source file (build.sh copies the
@@ -173,6 +178,7 @@ func registerAll(h uintptr) {
 	register(&KaiSetLocale, "kai_set_locale")
 	register(&KaiTranslate, "kai_translate")
 	register(&KaiTranslateCancel, "kai_translate_cancel")
+	register(&KaiWarmTranslate, "kai_warm_translate")
 }
 
 // Available reports whether the Swift bridge loaded successfully (dylib Dlopen'ed and the

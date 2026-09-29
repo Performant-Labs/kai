@@ -451,7 +451,7 @@
           <button
             class="u-btn u-btn--ghost u-no-drag px-2.5 py-1 text-xs"
             onclick={recapture}
-            title={t('screenshot.recapture')}
+            title={t('screenshot.recaptureHint')}
           >
             {t('screenshot.recapture')}
           </button>
