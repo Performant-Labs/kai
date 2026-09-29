@@ -24,13 +24,8 @@ func feedAll(d *Detector, evs ...Event) (fired []int) {
 
 func assertFired(t *testing.T, got []int, want ...int) {
 	t.Helper()
-	if len(got) != len(want) {
+	if !slices.Equal(got, want) {
 		t.Fatalf("fired at %v, want %v", got, want)
-	}
-	for i, g := range got {
-		if g != want[i] {
-			t.Fatalf("fired at %v, want %v", got, want)
-		}
 	}
 }
 
