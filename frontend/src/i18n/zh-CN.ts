@@ -128,7 +128,8 @@ export const zh: Dict = {
     autoSwitchSourceHint:
       '当文本的语言与源语言不同时，自动把源语言切换为该语言，把原来的源语言设为目标语言，并直接翻译。',
     fontSize: '文字大小',
-    fontSizeHint: '缩小或放大应用中的所有文字，立即应用于所有窗口。默认为 120%。',
+    fontSizeHint:
+      '缩小或放大应用中的所有文字，立即应用于所有窗口。默认为 120%。',
     fontSizeSmaller: '缩小文字',
     fontSizeLarger: '放大文字',
     fontSizeReset: '恢复为 120%',
