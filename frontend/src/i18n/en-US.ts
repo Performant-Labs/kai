@@ -58,6 +58,19 @@ export const en: Dict = {
     identity: 'Source and target language are the same — showing the source text',
     translatedFromDetected: 'Translated from auto-detected {lang}',
     sourceSwitched: 'Source switched to {from}, target is now {to}. Swap to undo.',
+    correctSource: 'Correct grammar and wording',
+    correctSourceHint:
+      "Before translating, fix the grammar and word choice of the text, and replace mixed-in foreign words, with Apple's on-device model. The text never leaves your Mac.",
+    correctUnavailable:
+      "Not available: Apple's on-device model cannot be used on this Mac right now.",
+    correctUnavailableAppleIntelligence:
+      'Not available: turn on Apple Intelligence in System Settings to use this.',
+    correctUnavailableNotReady:
+      "Not available yet: Apple's on-device model is still getting ready. Try again in a few minutes.",
+    correctUnavailableHardware: "Not available: this Mac cannot run Apple's on-device model.",
+    correctUnavailablePlatform: 'Not available: this needs macOS with Apple Intelligence.',
+    textCorrected: 'The text was corrected before translating.',
+    translateOriginal: 'Translate the original instead',
     failedPair:
       'Language pair unavailable — add it in System Settings > General > Language & Region',
     failedNetwork: "Can't reach {engine}: check your network or proxy",
@@ -361,6 +374,9 @@ export const en: Dict = {
     loadLangListFailed: '[input] Failed to load language list',
     translateRequestFailed: '[input] Translation request failed',
     sourceSwitchFailed: '[input] Automatic source-language check failed',
+    correctFailed: '[input] Correcting the text failed; translating it as it came',
+    correctAvailabilityFailed: '[input] Checking whether the correction is available failed',
+    generalSaveCorrectFailed: '[input] Failed to save the correct grammar and wording setting',
     translateCancelFailed: '[input] Cancelling the translation request failed',
     screenshotRecaptureFailed: '[screenshot] Failed to recapture screenshot',
     screenshotRetranslateEmit: '[dynamic-bridge] retranslate triggered',

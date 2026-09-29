@@ -600,6 +600,21 @@ body {
     z-index: 60;
   }
 
+  /* Left-anchored variant (issue #208): for a trigger at the window's edge, where the centred
+     tooltip would run off the left side. The text may wrap so a long explanation stays on screen. */
+  .u-tooltip--start::after {
+    left: 0;
+    transform: translateY(-2px);
+    white-space: normal;
+    width: max-content;
+    max-width: min(24rem, 90vw);
+  }
+
+  .u-tooltip--start:hover::after,
+  .u-tooltip--start:focus-visible::after {
+    transform: translateY(0);
+  }
+
   .u-tooltip:hover::after,
   .u-tooltip:focus-visible::after {
     opacity: 1;

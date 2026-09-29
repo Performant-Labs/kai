@@ -66,6 +66,15 @@ export type Dict = {
     identity: string;
     translatedFromDetected: string;
     sourceSwitched: string;
+    correctSource: string;
+    correctSourceHint: string;
+    correctUnavailable: string;
+    correctUnavailableAppleIntelligence: string;
+    correctUnavailableNotReady: string;
+    correctUnavailableHardware: string;
+    correctUnavailablePlatform: string;
+    textCorrected: string;
+    translateOriginal: string;
     failedPair: string;
     failedNetwork: string;
     failedAuth: string;
@@ -347,6 +356,9 @@ export type Dict = {
     loadLangListFailed: string;
     translateRequestFailed: string;
     sourceSwitchFailed: string;
+    correctFailed: string;
+    correctAvailabilityFailed: string;
+    generalSaveCorrectFailed: string;
     translateCancelFailed: string;
     screenshotRecaptureFailed: string;
     screenshotRetranslateEmit: string;

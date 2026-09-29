@@ -10,6 +10,11 @@
 // and the caller supplies none that persist or teach.
 
 import {
+  acceptCorrection,
+  type AppliedCorrection,
+  type CorrectionAnswer,
+} from '../utils/sourceCorrection.ts';
+import {
   acceptSwitch,
   isDeclined,
   makeCue,
@@ -23,6 +28,12 @@ export interface SourceSwitchRequest {
   text: string;
   from: string;
   to: string;
+  detected: string;
+}
+
+export interface CorrectionRequest {
+  text: string;
+  from: string;
   detected: string;
 }
 
@@ -46,11 +57,77 @@ export interface SourceSwitchDeps {
   /** Told when the cue changes (null: none). */
   onCue: (cue: SwitchCue | null) => void;
   onError?: (e: unknown) => void;
+  /**
+   * The correction step (issue #208), optional: with `correct` and `isCorrectionEnabled` given, every
+   * arrival is corrected FIRST (translate.Service.CorrectSource through the binding), and the
+   * switch planner and the translation go on with the corrected text. The backend decides
+   * everything (setting, language, length, guards, diff); this only calls it, applies its answer
+   * through `onCorrection`, and never persists or teaches anything.
+   */
+  correct?: (req: CorrectionRequest) => Promise<CorrectionAnswer>;
+  /** Whether the checkbox is on (and the provider available); off never asks the backend. */
+  isCorrectionEnabled?: () => boolean;
+  /** Told the correction that applies to the arrival (null: none). */
+  onCorrection?: (c: AppliedCorrection | null) => void;
+  /** Told when the model starts and stops working, so the window can show it. */
+  onCorrecting?: (busy: boolean) => void;
 }
 
 export function createSourceSwitcher(deps: SourceSwitchDeps) {
   let cue: SwitchCue | null = null;
   let declined = '';
+  // The text whose correction the user turned down ("translate the original"): not corrected again
+  // until a new arrival. And the last answer, so a paste followed by Translate, or the engine
+  // detection retry, does not run the model twice for the same text.
+  let correctionDeclined = '';
+  let memo: { key: string; answer: CorrectionAnswer } | null = null;
+
+  const memoKey = (from: string, text: string) => `${from}\u0000${text}`;
+
+  function setCorrection(c: AppliedCorrection | null) {
+    deps.onCorrection?.(c);
+  }
+
+  /**
+   * The text the rest of the arrival works on: the corrected text when the backend corrected it,
+   * else the text as it came. Records the correction with the window either way, so a stale one
+   * never survives into an arrival that has none.
+   */
+  async function workingText(text: string, detected: string): Promise<string> {
+    const from = deps.getPair().from;
+    const off =
+      !deps.correct ||
+      !deps.isCorrectionEnabled?.() ||
+      from === deps.autoCode ||
+      correctionDeclined.trim() === text.trim();
+    if (off || !deps.correct) {
+      setCorrection(null);
+      return text;
+    }
+    const key = memoKey(from, text);
+    let answer: CorrectionAnswer | null = memo?.key === key ? memo.answer : null;
+    if (!answer) {
+      deps.onCorrecting?.(true);
+      try {
+        answer = await deps.correct({ text, from, detected });
+      } catch (e) {
+        deps.onError?.(e);
+        answer = null;
+      } finally {
+        deps.onCorrecting?.(false);
+      }
+      // Only an answer that is a fact about the text is remembered: an "off" or "unavailable" one
+      // must be asked again once the setting or the model changes.
+      if (answer && (answer.status === 'corrected' || answer.status === 'unchanged')) {
+        memo = { key, answer };
+      }
+    }
+    // The user moved on while the model worked: this answer is not for the text on screen.
+    if (deps.getText() !== text) return text;
+    const applied = acceptCorrection(answer, text);
+    setCorrection(applied);
+    return applied ? applied.text : text;
+  }
 
   function setCue(next: SwitchCue | null) {
     cue = next;
@@ -59,11 +136,17 @@ export function createSourceSwitcher(deps: SourceSwitchDeps) {
 
   /** Switches the pair for `text` when the backend says so; returns whether it did. */
   async function autoSwitch(text: string, detected = ''): Promise<boolean> {
-    if (deps.getPair().from === deps.autoCode || isDeclined(declined, text)) return false;
+    if (deps.getPair().from === deps.autoCode) {
+      setCorrection(null);
+      return false;
+    }
+    // Correct first (issue #208); the switch is planned on the text that will be translated.
+    const working = await workingText(text, detected);
+    if (isDeclined(declined, text)) return false;
     const prev = { ...deps.getPair() };
     let plan: SourceSwitchPlan;
     try {
-      plan = await deps.plan({ text, from: prev.from, to: prev.to, detected });
+      plan = await deps.plan({ text: working, from: prev.from, to: prev.to, detected });
     } catch (e) {
       deps.onError?.(e);
       return false;
@@ -78,6 +161,8 @@ export function createSourceSwitcher(deps: SourceSwitchDeps) {
       isSelectableTarget: deps.canBeTarget,
     });
     if (!pair) return false;
+    // The switch changed the source the answer was asked under: it is still the answer for this text.
+    if (memo?.key === memoKey(prev.from, text)) memo.key = memoKey(pair.from, text);
     setCue(makeCue(text, prev, pair));
     deps.setPair(pair);
     return true;
@@ -97,6 +182,20 @@ export function createSourceSwitcher(deps: SourceSwitchDeps) {
     /** A new text arrived: an undo of an earlier text's switch does not carry over. */
     newArrival() {
       declined = '';
+      correctionDeclined = '';
+    },
+    /**
+     * "Translate the original instead" (issue #208): drops the correction of the text on screen and
+     * does not correct it again until a new arrival. The caller translates.
+     */
+    useOriginal() {
+      correctionDeclined = deps.getText();
+      setCorrection(null);
+    },
+    /** The checkbox was switched: what was remembered about earlier answers is forgotten. */
+    resetCorrection() {
+      memo = null;
+      correctionDeclined = '';
     },
     /**
      * The swap button while the cue is active: restores the pair before the switch, keeps the text,
