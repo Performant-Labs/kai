@@ -66,11 +66,30 @@ func SetBridgeLocale(locale string) {
 	swiftbridge.KaiSetLocale(locale)
 }
 
+// warmTranslatePair decides whether (src, dst) is warmable and, if so, normalizes it to the
+// BCP-47 codes the Swift bridge accepts. Pulled out of WarmTranslate as a pure function (no
+// swiftbridge dependency) so this decision is unit-testable without a loaded dylib — see
+// apple_darwin_test.go. src="auto" (or empty: no fixed source) is not warmable and is
+// reported via ok=false, never passed through as the literal string "auto"; likewise an
+// empty or unsupported dst.
+func warmTranslatePair(src, dst string) (sl, tl string, ok bool) {
+	// normalizeLang returns "" for "auto"/empty (no fixed source to warm); normalizeTarget
+	// likewise returns "" (no error) for "auto"/empty, and an error for an unsupported target.
+	sl = normalizeLang(src)
+	if sl == "" || dst == "" {
+		return "", "", false
+	}
+	tl, err := normalizeTarget(dst)
+	if err != nil || tl == "" {
+		return "", "", false
+	}
+	return sl, tl, true
+}
+
 // WarmTranslate warms the Apple engine's cached TranslationSession for (src, dst) — issue
 // #173 item 8. Intended to be called once at launch, in its own goroutine (main.go), for the
 // user's current default_from/default_to language pair, so the first real translate() call
-// for that pair skips the prepareTranslation() cost. src="auto" (no fixed source) is not
-// warmable and is skipped rather than passed through as the literal string "auto".
+// for that pair skips the prepareTranslation() cost.
 // Best-effort: swallows a missing dylib (Available()==false) and any Swift-side failure
 // (e.g. the pair's language pack isn't installed) without returning an error — a failed warm
 // never blocks or breaks translation, it just means the first call pays the usual cost.
@@ -78,14 +97,8 @@ func WarmTranslate(src, dst string) {
 	if !swiftbridge.Available() || swiftbridge.KaiWarmTranslate == nil {
 		return
 	}
-	// normalizeLang returns "" for "auto"/empty (no fixed source to warm); normalizeTarget
-	// likewise returns "" (no error) for "auto"/empty, and an error for an unsupported target.
-	sl := normalizeLang(src)
-	if sl == "" || dst == "" {
-		return
-	}
-	tl, err := normalizeTarget(dst)
-	if err != nil || tl == "" {
+	sl, tl, ok := warmTranslatePair(src, dst)
+	if !ok {
 		return
 	}
 	swiftbridge.KaiWarmTranslate(sl, tl)
