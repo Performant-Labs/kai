@@ -67,6 +67,9 @@ type Service struct {
 	// captureRegion takes the interactive region screenshot ScreenshotTranslate starts from:
 	// engine.CaptureRegion. It is a field so a test can drive that flow without screencapture.
 	captureRegion func(ctx context.Context) ([]byte, error)
+	// detect is the local language detector the automatic source switch (issue #200) reads:
+	// engine.DetectLanguage. It is a field so a test can give it a language and a confidence.
+	detect func(text string) (lang model.Language, confidence float64, ok bool)
 }
 
 // emitter is the one outlet for app events (issue #109, D8). *application.EventManager satisfies
@@ -92,6 +95,7 @@ func NewService(reg *engine.Registry, hist *historystore.Store, st *settings.Ser
 		screenshotCache: make(map[string]ocrCache),
 		budgetOf:        engine.InputBudget,
 		captureRegion:   engine.CaptureRegion,
+		detect:          engine.DetectLanguage,
 	}
 }
 

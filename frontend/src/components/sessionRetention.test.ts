@@ -105,7 +105,8 @@ describe('requested flag and Clear', () => {
     expect(i).toBeGreaterThan(-1);
     const body = src.slice(i, src.indexOf('\n    });', i));
     expect(body).toMatch(/setSource\(\s*text\s*,\s*'program'\s*\)/);
-    expect(body).toMatch(/doTranslate\(\)/);
+    // Since #200 the fill translates through the switch-aware wrapper, which calls doTranslate.
+    expect(body).toMatch(/translateWithSwitch\(\)/);
   });
 });
 

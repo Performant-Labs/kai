@@ -65,6 +65,7 @@ export type Dict = {
     sourceAuto: string;
     identity: string;
     translatedFromDetected: string;
+    sourceSwitched: string;
     failedPair: string;
     failedNetwork: string;
     failedAuth: string;
@@ -119,6 +120,8 @@ export type Dict = {
     themeDark: string;
     analytics: string;
     analyticsHint: string;
+    autoSwitchSource: string;
+    autoSwitchSourceHint: string;
     engines: string;
     enginesTitle: string;
     engineList: string;
@@ -334,6 +337,7 @@ export type Dict = {
     loadEngineListFailed: string;
     loadLangListFailed: string;
     translateRequestFailed: string;
+    sourceSwitchFailed: string;
     translateCancelFailed: string;
     screenshotRecaptureFailed: string;
     screenshotRetranslateEmit: string;
@@ -359,6 +363,7 @@ export type Dict = {
     engineLoadAddFieldsFailed: string;
     generalSaveLangFailed: string;
     generalSaveAnalyticsFailed: string;
+    generalSaveAutoSwitchFailed: string;
     shortcutCheckAccessibilityFailed: string;
     shortcutOpenAccessibilityFailed: string;
     shortcutCheckScreenRecordingFailed: string;

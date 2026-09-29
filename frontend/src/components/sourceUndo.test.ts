@@ -197,7 +197,7 @@ describe('one writer: setSource (criterion 5)', () => {
     const body = code.slice(i, code.indexOf('\n    });', i));
     const at = body.search(/setSource\(\s*text\s*,\s*'program'\s*\)/);
     expect(at).toBeGreaterThan(-1);
-    expect(at).toBeLessThan(body.indexOf('doTranslate()'));
+    expect(at).toBeLessThan(body.indexOf('translateWithSwitch()'));
     expect(body).not.toMatch(/\binput\s*=(?!=)/);
   });
 

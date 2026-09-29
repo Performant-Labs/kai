@@ -16,6 +16,9 @@
   // Anonymous analytics toggle: initial value read from config; changes persist via SaveConfig
   // (the Go-side analytics uses this to decide whether to report).
   let analyticsEnabled = $state(false);
+  // Auto-switch source language (issue #200): ON by default, and a config without the value reads as
+  // on; the Go side owns the default, this only mirrors it.
+  let autoSwitchSource = $state(true);
 
   const themeOptions = $derived.by<{ mode: ThemeMode; label: string }[]>(() => [
     { mode: THEME.Auto, label: t('settings.themeAuto') },
@@ -27,6 +30,7 @@
     try {
       const cfg = await GetConfig();
       if (cfg) analyticsEnabled = cfg.analytics_enabled ?? false;
+      if (cfg) autoSwitchSource = cfg.auto_switch_source ?? true;
     } catch {
       /* Ignore read failures; fall back to the default (off) */
     }
@@ -57,6 +61,18 @@
       track('feature_toggled', { feature: 'anonymous_analytics', enabled });
     } catch (err) {
       console.error(t('log.generalSaveAnalyticsFailed'), err);
+    }
+  }
+
+  async function toggleAutoSwitchSource(e: Event) {
+    const enabled = (e.target as HTMLInputElement).checked;
+    autoSwitchSource = enabled;
+    try {
+      const cfg = (await GetConfig()) ?? ({} as any);
+      await SaveConfig({ ...cfg, auto_switch_source: enabled });
+      track('feature_toggled', { feature: 'auto_switch_source', enabled });
+    } catch (err) {
+      console.error(t('log.generalSaveAutoSwitchFailed'), err);
     }
   }
 </script>
@@ -103,6 +119,19 @@
   <p class="u-muted mb-3 text-xs">{t('settings.analyticsHint')}</p>
   <label class="u-switch" aria-label={t('settings.analytics')}>
     <input type="checkbox" checked={analyticsEnabled} onchange={toggleAnalytics} />
+    <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
+  </label>
+</div>
+
+<div class="u-card u-card--panel mt-5 p-5">
+  <div class="mb-1 text-sm font-medium">{t('settings.autoSwitchSource')}</div>
+  <p class="u-muted mb-3 text-xs">{t('settings.autoSwitchSourceHint')}</p>
+  <label
+    class="u-switch"
+    aria-label={t('settings.autoSwitchSource')}
+    title={t('settings.autoSwitchSourceHint')}
+  >
+    <input type="checkbox" checked={autoSwitchSource} onchange={toggleAutoSwitchSource} />
     <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
   </label>
 </div>

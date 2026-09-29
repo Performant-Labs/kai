@@ -354,6 +354,25 @@ type HistoryItem struct {
 	CreatedAt int64    `json:"created_at"` // Creation time (millisecond timestamp)
 }
 
+// SourceSwitchRequest asks translate.Service.PlanSourceSwitch whether text that arrived should
+// change the language pair (issue #200): the text, the pair the window shows now, and optionally a
+// detection the caller already holds (the one a translation result carried, issue #161).
+type SourceSwitchRequest struct {
+	Text     string   `json:"text"`
+	From     Language `json:"from"`
+	To       Language `json:"to"`
+	Detected Language `json:"detected"`
+}
+
+// SourceSwitch is the answer to a SourceSwitchRequest. When Switched, From is the language the text
+// is in (a variant the dropdown offers) and To is the old source, which replaces the old target;
+// otherwise the pair stays as it is and From / To are empty.
+type SourceSwitch struct {
+	Switched bool     `json:"switched"`
+	From     Language `json:"from"`
+	To       Language `json:"to"`
+}
+
 // ScreenshotResult is the full screenshot translate result, pushed to the screenshot
 // window via EventScreenshotOCR.
 type ScreenshotResult struct {

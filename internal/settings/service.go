@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,13 @@ type Settings struct {
 	// input on change; it also automatically disables the copy key (avoiding double
 	// triggering), snapshotting its prior state in CopyKeySnapshot.
 	AutoClipboard bool `json:"auto_clipboard" mapstructure:"auto_clipboard"`
+	// AutoSwitchSource is the "auto switch source language" switch (issue #200): when text arrives
+	// in another language than the pinned source dropdown shows, the dropdown follows the text
+	// and the old source becomes the target. ON by default, and a settings.json without the key,
+	// or with a value that is not a boolean, reads as ON: only an explicit false turns it off. It
+	// is read through readAutoSwitchSource, not mapstructure, so a garbled value cannot fail the
+	// whole settings load.
+	AutoSwitchSource bool `json:"auto_switch_source" mapstructure:"-"`
 	// CopyKeySnapshot records the copy key's prior state (enabled/fallback) when
 	// AutoClipboard is switched on, restoring from it when AutoClipboard is switched off;
 	// nil when never enabled.
@@ -252,7 +260,26 @@ func DefaultSettings() *Settings {
 		// the settings page.
 		// Dev builds and unconfigured keys never report even when enabled.
 		AnalyticsEnabled: false,
+		AutoSwitchSource: true,
 	}
+}
+
+// autoSwitchSourceKey is the settings.json key of Settings.AutoSwitchSource.
+const autoSwitchSourceKey = "auto_switch_source"
+
+// readAutoSwitchSource reads Settings.AutoSwitchSource from the loaded file: a boolean is taken as
+// it is (a "true"/"false" string too, as viper's own weak decoding would), and everything else,
+// a missing key, null, a number, an object, a word, is ON, the default.
+func readAutoSwitchSource(v *viper.Viper) bool {
+	switch x := v.Get(autoSwitchSourceKey).(type) {
+	case bool:
+		return x
+	case string:
+		if b, err := strconv.ParseBool(strings.TrimSpace(x)); err == nil {
+			return b
+		}
+	}
+	return true
 }
 
 // normalizeLanguages coerces persisted language choices that predate the dialect variants
@@ -326,6 +353,7 @@ func NewService(dataDir string) (*Service, error) {
 		return nil, fmt.Errorf("failed to parse settings: %w", err)
 	}
 	s.cfg.Path = filePath
+	s.cfg.AutoSwitchSource = readAutoSwitchSource(v)
 	s.cfg.normalizeLanguages()
 	s.cfg.normalizeUpdaterSource()
 
@@ -385,6 +413,7 @@ func (s *Service) startWatching() {
 				return
 			}
 			s.cfg.Path = s.filePath
+			s.cfg.AutoSwitchSource = readAutoSwitchSource(s.v)
 			s.cfg.normalizeLanguages()
 			s.cfg.normalizeUpdaterSource()
 
@@ -425,6 +454,7 @@ func (s *Service) writeConfig() error {
 	w.Set("hotkeys", s.cfg.Hotkeys)
 	w.Set("execkeys", s.cfg.ExecKeys)
 	w.Set("auto_clipboard", s.cfg.AutoClipboard)
+	w.Set(autoSwitchSourceKey, s.cfg.AutoSwitchSource)
 	w.Set("copy_key_snapshot", s.cfg.CopyKeySnapshot)
 	w.Set("tts", s.cfg.TTS)
 	w.Set("http_log", s.cfg.HttpLog)

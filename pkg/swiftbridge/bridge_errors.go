@@ -87,6 +87,13 @@ type AvailableLanguages struct {
 	Langs []string `json:"langs"`
 }
 
+// DetectedLanguage mirrors Swift DetectedLanguage (kai_detect_language, issue #200):
+// {"lang":"es","confidence":0.99}. Lang is empty when nothing was recognized.
+type DetectedLanguage struct {
+	Lang       string  `json:"lang"`
+	Confidence float64 `json:"confidence"`
+}
+
 // SelectionPoint mirrors Swift SelectionPoint: {"x":0,"y":0}.
 type SelectionPoint struct {
 	X float64 `json:"x"`

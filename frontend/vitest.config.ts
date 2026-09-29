@@ -16,12 +16,16 @@
 // Local development must export the same before running `make test-frontend`, otherwise it
 // always fails on Node 26.
 import { resolve } from 'node:path';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 
+// Issue #200: the svelte plugin lets a test mount a real component (mountedSourceSwitch.test.ts); the
+// 'browser' condition makes svelte resolve its client build, which mount() needs.
 export default defineConfig({
+  plugins: [svelte()],
   // issue #52: lang.ts / i18n import the generated model enum via @bindings (a plain,
   // runtime-light TS file), so unit tests need the same alias vite.config.ts declares.
-  resolve: { alias: { '@bindings': resolve(__dirname, 'bindings') } },
+  resolve: { alias: { '@bindings': resolve(__dirname, 'bindings') }, conditions: ['browser'] },
   test: {
     environment: 'jsdom',
     // Give jsdom an origin: otherwise some web globals need a window origin during initialization.

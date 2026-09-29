@@ -298,3 +298,20 @@ func normalizeTarget(code string) (string, error) {
 	}
 	return targetCode("apple", code, identity)
 }
+
+// DetectLanguage detects the language of text locally with NaturalLanguage (issue #200) and
+// returns it as the bare language code (es, zh) with its confidence in [0, 1]. ok is false
+// when the text is blank, the Swift bridge is not loaded, or nothing was recognized. The Swift
+// entry point is a pure synchronous computation (no AppKit, no main-thread rule), so this may be
+// called from any goroutine.
+func DetectLanguage(text string) (model.Language, float64, bool) {
+	if strings.TrimSpace(text) == "" || !swiftbridge.Available() || swiftbridge.KaiDetectLanguage == nil {
+		return "", 0, false
+	}
+	outBuf := make([]byte, 1<<10)
+	n := swiftbridge.KaiDetectLanguage(text, unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // required for the Swift interop; buffer is allocated on the Go side
+	if n < 0 {
+		return "", 0, false
+	}
+	return parseDetection(outBuf[:n])
+}

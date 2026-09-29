@@ -1,0 +1,248 @@
+import { mount, unmount, flushSync } from 'svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Issue #200: the REAL TranslateWindow.svelte, mounted in jsdom with real localStorage. Only the
+// Wails boundary is faked: the runtime (events, window), and the generated bindings. The planner
+// binding answers what the backend would for a mismatching arrival; its decisions are tested in Go.
+
+const h = vi.hoisted(() => {
+  const handlers = new Map<string, Array<(e: { data: unknown }) => void>>();
+  return {
+    handlers,
+    fire(name: string, data: unknown) {
+      for (const cb of handlers.get(name) ?? []) cb({ data });
+    },
+    plan: vi.fn(),
+    translate: vi.fn(),
+    learn: vi.fn(),
+    saveConfig: vi.fn(),
+    config: { default_from: 'en', default_to: 'fr', auto_clipboard: false } as Record<
+      string,
+      unknown
+    >,
+  };
+});
+
+vi.mock('@wailsio/runtime', () => ({
+  Events: {
+    On: (name: string, cb: (e: { data: unknown }) => void) => {
+      h.handlers.set(name, [...(h.handlers.get(name) ?? []), cb]);
+      return () =>
+        h.handlers.set(
+          name,
+          (h.handlers.get(name) ?? []).filter((x) => x !== cb),
+        );
+    },
+    Emit: vi.fn(),
+  },
+  Window: { SetAlwaysOnTop: vi.fn(async () => {}), Name: async () => 'translate' },
+  Clipboard: { SetText: vi.fn(async () => {}) },
+  System: { IsDarkMode: async () => false },
+}));
+
+vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts', () => ({
+  TranslateMulti: (req: unknown) => h.translate(req),
+  CancelTranslate: vi.fn(async () => true),
+  PlanSourceSwitch: (req: unknown) => h.plan(req),
+}));
+vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts', () => ({
+  Learn: (l: string) => h.learn(l),
+}));
+vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts', () => ({
+  ShowSettings: vi.fn(),
+}));
+vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts', () => ({
+  GetEngines: async () => [{ value: 'google', name: 'Google', kind: 'translate', supported: true }],
+  GetAllEngines: async () => [
+    {
+      id: 0,
+      value: 'google',
+      name: 'Google',
+      kind: 'translate',
+      enabled: true,
+      supported: true,
+      target_languages: ['en', 'fr', 'es-MX'],
+    },
+  ],
+}));
+vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts', () => ({
+  GetLanguages: async () => ['auto', 'en', 'fr', 'es-MX'].map((v) => ({ value: v, name: v })),
+  GetConfig: async () => ({ ...h.config }),
+  SaveConfig: (c: unknown) => h.saveConfig(c),
+  GetTheme: async () => 'light',
+  SetTheme: async () => {},
+}));
+
+import TranslateWindow from './TranslateWindow.svelte';
+
+const SPANISH = 'Hola, necesito que me ayudes con este documento hoy';
+let app: Record<string, unknown> | undefined;
+let target: HTMLElement;
+
+const settle = async () => {
+  for (let i = 0; i < 8; i++) {
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  flushSync();
+};
+const select = (label: string) =>
+  target.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
+const swapBtn = () => target.querySelector('button[aria-label^="Swap"]') as HTMLButtonElement;
+
+beforeEach(async () => {
+  localStorage.clear();
+  h.handlers.clear();
+  h.plan.mockReset();
+  h.learn.mockReset();
+  h.saveConfig.mockReset();
+  h.translate.mockReset();
+  h.translate.mockImplementation(async (req: { request_id: string }) => {
+    return { engines: ['google'], request_id: req.request_id };
+  });
+  target = document.createElement('div');
+  document.body.appendChild(target);
+  app = mount(TranslateWindow, { target });
+  await settle();
+});
+
+afterEach(() => {
+  if (app) unmount(app);
+  target.remove();
+});
+
+describe('TranslateWindow, mounted', () => {
+  it('starts on the saved pair', () => {
+    expect(select('From').value).toBe('en');
+    expect(select('To').value).toBe('fr');
+  });
+
+  it('a mismatching fill switches the source, swaps the target, translates once, shows the cue, and swap undoes it', async () => {
+    h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
+
+    h.fire('kai:input:fill', SPANISH);
+    await settle();
+
+    expect(h.plan).toHaveBeenCalledTimes(1);
+    expect(h.plan.mock.calls[0][0]).toMatchObject({ text: SPANISH, from: 'en', to: 'fr' });
+    expect(select('From').value).toBe('es-MX');
+    expect(select('To').value).toBe('en');
+    expect(h.translate).toHaveBeenCalledTimes(1);
+    expect(h.translate.mock.calls[0][0]).toMatchObject({ text: SPANISH, from: 'es-MX', to: 'en' });
+
+    // A result lands, so the result pane (which carries the cue) is shown.
+    const req = h.translate.mock.calls[0][0] as { request_id: string };
+    h.fire('kai:translate:result', {
+      engine: 'google',
+      request_id: req.request_id,
+      result: 'Hello, I need you to help me with this document today',
+      from: 'es-MX',
+      to: 'en',
+    });
+    await settle();
+    expect(target.querySelector('[data-testid="source-switched-note"]')).not.toBeNull();
+
+    // The switch neither taught the variant store nor saved the pair.
+    expect(h.learn).not.toHaveBeenCalled();
+    expect(h.saveConfig).not.toHaveBeenCalled();
+    expect(JSON.stringify(Object.entries(localStorage))).not.toContain('default_');
+
+    // Swap restores the previous pair exactly, keeps the text, translates again, drops the cue.
+    swapBtn().click();
+    await settle();
+    expect(select('From').value).toBe('en');
+    expect(select('To').value).toBe('fr');
+    expect(h.translate).toHaveBeenCalledTimes(2);
+    expect(h.translate.mock.calls[1][0]).toMatchObject({ text: SPANISH, from: 'en', to: 'fr' });
+    expect(target.querySelector('textarea')).not.toBeNull();
+    expect(target.querySelector('[data-testid="source-switched-note"]')).toBeNull();
+    expect(h.learn).not.toHaveBeenCalled();
+    expect(h.saveConfig).not.toHaveBeenCalled();
+  });
+
+  it('a fill the planner does not switch changes nothing and translates with the pinned pair', async () => {
+    h.plan.mockResolvedValue({ switched: false, from: '', to: '' });
+    h.fire('kai:input:fill', SPANISH);
+    await settle();
+    expect(select('From').value).toBe('en');
+    expect(select('To').value).toBe('fr');
+    expect(h.translate).toHaveBeenCalledTimes(1);
+    expect(h.translate.mock.calls[0][0]).toMatchObject({ from: 'en', to: 'fr' });
+  });
+
+  it('an Auto source never asks the planner', async () => {
+    select('From').value = 'auto';
+    select('From').dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    h.learn.mockReset();
+    h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
+    h.fire('kai:input:fill', SPANISH);
+    await settle();
+    expect(h.plan).not.toHaveBeenCalled();
+    expect(select('From').value).toBe('auto');
+    expect(h.translate).toHaveBeenCalledTimes(1);
+  });
+
+  const source = () => target.querySelector('textarea') as HTMLTextAreaElement;
+  const type = (text: string, inputType: string) => {
+    source().value = text;
+    source().dispatchEvent(new InputEvent('input', { bubbles: true, inputType }));
+  };
+  const translateBtn = () =>
+    [...target.querySelectorAll('button')].find((b) =>
+      b.className.includes('u-btn--primary'),
+    ) as HTMLButtonElement;
+
+  it('typed text is checked when Translate is pressed, not per keystroke', async () => {
+    h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
+    type(SPANISH, 'insertText');
+    await settle();
+    expect(h.plan).not.toHaveBeenCalled();
+    expect(select('From').value).toBe('en');
+    translateBtn().click();
+    await settle();
+    expect(h.plan).toHaveBeenCalledTimes(1);
+    expect(select('From').value).toBe('es-MX');
+    expect(select('To').value).toBe('en');
+    expect(h.translate).toHaveBeenCalledTimes(1);
+    expect(h.translate.mock.calls[0][0]).toMatchObject({ from: 'es-MX', to: 'en' });
+  });
+
+  it('Cmd+Enter switches like the button', async () => {
+    h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
+    type(SPANISH, 'insertText');
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }),
+    );
+    await settle();
+    expect(select('From').value).toBe('es-MX');
+    expect(h.translate).toHaveBeenCalledTimes(1);
+  });
+
+  it('a paste translates only if it switched', async () => {
+    h.plan.mockResolvedValue({ switched: false, from: '', to: '' });
+    type(SPANISH, 'insertFromPaste');
+    await settle();
+    expect(h.plan).toHaveBeenCalledTimes(1);
+    expect(h.translate).not.toHaveBeenCalled();
+
+    h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
+    type(SPANISH + ' otra vez', 'insertFromPaste');
+    await settle();
+    expect(select('From').value).toBe('es-MX');
+    expect(h.translate).toHaveBeenCalledTimes(1);
+  });
+
+  it('the same text is not switched again after the undo', async () => {
+    h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
+    h.fire('kai:input:fill', SPANISH);
+    await settle();
+    swapBtn().click();
+    await settle();
+    h.plan.mockClear();
+    translateBtn().click();
+    await settle();
+    expect(h.plan).not.toHaveBeenCalled();
+    expect(select('From').value).toBe('en');
+  });
+});
