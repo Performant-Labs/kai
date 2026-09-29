@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"cnb.cool/dtapp/kai/internal/settings"
@@ -95,5 +96,35 @@ func TestTranslateWindowSize_PersistsAcrossServiceReload(t *testing.T) {
 	}
 	if len(raw) == 0 {
 		t.Fatal("settings.json is empty")
+	}
+}
+
+// Issue #195: the default text is 120%, so the resizable windows' widths (default and minimum)
+// grow with it; the fixed settings window does not.
+func TestWidthForDefaultText(t *testing.T) {
+	for in, want := range map[int]int{960: 1152, 780: 936, 900: 1080, 600: 720} {
+		if got := widthForDefaultText(in); got != want {
+			t.Errorf("widthForDefaultText(%d) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestResizableWindowsUseTheScaledWidths(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{
+		"translateWindowSize(settingsService, widthForDefaultText(960), 640, widthForDefaultText(780), 520)",
+		"MinWidth:  widthForDefaultText(780),",
+		"Width:     widthForDefaultText(900),",
+		"MinWidth:  widthForDefaultText(600),",
+		"Width:  1280,",
+		"MaxWidth:      1280,",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("main.go lacks %q", want)
+		}
 	}
 }

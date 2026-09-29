@@ -595,9 +595,9 @@
                       >{engineName(eng)}</span
                     >
                     <div class="flex items-center gap-2">
-                      <span class="text-[11px] text-[var(--app-muted)]">{pendingText(eng)}</span>
+                      <span class="text-2xs text-[var(--app-muted)]">{pendingText(eng)}</span>
                       <button
-                        class="u-btn u-btn--ghost u-no-drag px-2 py-0.5 text-[11px]"
+                        class="u-btn u-btn--ghost u-no-drag px-2 py-0.5 text-2xs"
                         onclick={() => cancelEngine(eng)}
                       >
                         <span aria-hidden="true">✕</span>

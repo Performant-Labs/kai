@@ -11,6 +11,8 @@
   import { Lang, type LangCode } from '../../constants/lang';
   import { THEME, type ThemeMode } from '../../constants/theme';
   import { track } from '../../utils/analytics';
+  import { fontSize, saveFontSize } from '../../stores/fontSize';
+  import { DEFAULT_FONT_SIZE, FONT_SIZE_STEPS, stepFontSize } from '../../constants/fontSize';
 
   let { curLang = $bindable<LangCode>(Lang.ZHCN) }: { curLang: LangCode } = $props();
 
@@ -61,6 +63,16 @@
     } catch (e) {
       console.error(t('log.generalSaveLangFailed'), e);
     }
+  }
+
+  // Text size (issue #195): stepped one notch at a time; saveFontSize applies it at once and the
+  // backend broadcasts it to the other windows.
+  const atSmallest = $derived($fontSize <= FONT_SIZE_STEPS[0]);
+  const atLargest = $derived($fontSize >= FONT_SIZE_STEPS[FONT_SIZE_STEPS.length - 1]);
+
+  async function changeFontSize(next: number) {
+    await saveFontSize(next);
+    track('feature_toggled', { feature: 'font_size', value: next });
   }
 
   async function changeTheme(m: ThemeMode) {
@@ -129,7 +141,7 @@
   </div>
 </div>
 
-<div class="u-card u-card--panel p-5">
+<div class="u-card u-card--panel mb-5 p-5">
   <div class="mb-3 text-sm font-medium">{t('settings.theme')}</div>
   <div class="u-segment">
     {#each themeOptions as opt}
@@ -141,6 +153,49 @@
         {opt.label}
       </button>
     {/each}
+  </div>
+</div>
+
+<div class="u-card u-card--panel mb-5 p-5">
+  <div class="mb-1 text-sm font-medium">{t('settings.fontSize')}</div>
+  <p class="u-muted mb-3 text-xs">{t('settings.fontSizeHint')}</p>
+  <div class="flex items-center gap-2">
+    <button
+      class="u-btn u-btn--ghost u-tooltip px-3 py-1.5 text-sm"
+      data-testid="font-size-smaller"
+      aria-label={t('settings.fontSizeSmaller')}
+      title={t('settings.fontSizeSmaller')}
+      data-tooltip={t('settings.fontSizeSmaller')}
+      disabled={atSmallest}
+      onclick={() => changeFontSize(stepFontSize($fontSize, -1))}
+    >
+      A−
+    </button>
+    <span class="min-w-[3.5rem] text-center text-sm font-medium" data-testid="font-size-value"
+      >{$fontSize}%</span
+    >
+    <button
+      class="u-btn u-btn--ghost u-tooltip px-3 py-1.5 text-sm"
+      data-testid="font-size-larger"
+      aria-label={t('settings.fontSizeLarger')}
+      title={t('settings.fontSizeLarger')}
+      data-tooltip={t('settings.fontSizeLarger')}
+      disabled={atLargest}
+      onclick={() => changeFontSize(stepFontSize($fontSize, 1))}
+    >
+      A+
+    </button>
+    <button
+      class="u-btn u-btn--ghost u-tooltip px-3 py-1.5 text-sm"
+      data-testid="font-size-reset"
+      aria-label={t('settings.fontSizeReset')}
+      title={t('settings.fontSizeReset')}
+      data-tooltip={t('settings.fontSizeReset')}
+      disabled={$fontSize === DEFAULT_FONT_SIZE}
+      onclick={() => changeFontSize(DEFAULT_FONT_SIZE)}
+    >
+      ↺
+    </button>
   </div>
 </div>
 

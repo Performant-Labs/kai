@@ -28,6 +28,10 @@ export const ScreenshotSessionInput = 'input';
 // EventThemeChanged: theme change broadcast, payload: ThemeChangedPayload
 export const EventThemeChanged = 'kai:theme:changed';
 
+// EventFontSizeChanged: broadcast after the text size changes (issue #195), payload: number, the
+// new size in percent. Every window applies it live (stores/fontSize.ts).
+export const EventFontSizeChanged = 'kai:fontsize:changed';
+
 // EventHotkeysChanged: broadcast after hotkeys are re-registered, payload: string[]
 export const EventHotkeysChanged = 'kai:hotkeys:changed';
 

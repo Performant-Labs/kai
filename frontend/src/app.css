@@ -2,7 +2,29 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Text size (issue #195). --kai-text-scale is set on <html> by stores/fontSize.ts (1.2 = 120%, the
+   default; the value here is what the first paint uses before the saved size is applied).
+   Only TEXT scales: every Tailwind text size below, the hand-written font-size rules in this
+   file and the inherited body size are multiplied by it. The root font size is deliberately left
+   alone, because Tailwind spacing, widths, icons and pane proportions are rem-based and scaling
+   the root would resize the whole layout (a blunt html { font-size: 120% } broke narrow windows
+   before). --text-2xs / --text-3xs replace the old text-[11px] / text-[10px] pixel sizes. These two never drop below
+   0.625rem (10px), so the smallest text stays readable at the smallest size (80%). */
+@theme {
+  --text-3xs: max(0.625rem, calc(0.625rem * var(--kai-text-scale)));
+  --text-3xs--line-height: 1.3;
+  --text-2xs: max(0.625rem, calc(0.6875rem * var(--kai-text-scale)));
+  --text-2xs--line-height: calc(1 / 0.6875);
+  --text-xs: calc(0.75rem * var(--kai-text-scale));
+  --text-sm: calc(0.875rem * var(--kai-text-scale));
+  --text-base: calc(1rem * var(--kai-text-scale));
+  --text-lg: calc(1.125rem * var(--kai-text-scale));
+  --text-xl: calc(1.25rem * var(--kai-text-scale));
+  --text-2xl: calc(1.5rem * var(--kai-text-scale));
+}
+
 :root {
+  --kai-text-scale: 1.2;
   --app-bg: #ffffff;
   --app-fg: #1f2329;
   --app-muted: #8a8f99;
@@ -46,6 +68,11 @@ body {
     sans-serif;
 }
 
+/* Inherited text (no text-* class) follows the scale too. */
+body {
+  font-size: calc(1rem * var(--kai-text-scale));
+}
+
 #app {
   height: 100%;
 }
@@ -62,16 +89,16 @@ body {
     align-items: center;
     padding: 0.125rem 0.5rem;
     border-radius: 9999px;
-    font-size: 0.75rem;
-    line-height: 1rem;
+    font-size: calc(0.75rem * var(--kai-text-scale));
+    line-height: 1.3333;
     background: var(--app-card);
     border: 1px solid var(--app-border);
     color: var(--app-fg);
   }
 
   .u-label {
-    font-size: 0.75rem;
-    line-height: 1rem;
+    font-size: calc(0.75rem * var(--kai-text-scale));
+    line-height: 1.3333;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -274,8 +301,8 @@ body {
     gap: 0.75rem;
     border-radius: 0.5rem;
     padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    font-size: calc(0.875rem * var(--kai-text-scale));
+    line-height: 1.4286;
     font-weight: 500;
     transition:
       background-color 0.15s ease,
@@ -304,8 +331,8 @@ body {
     border-radius: 0.5rem;
     padding: 0.5rem 0.75rem;
     text-align: left;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    font-size: calc(0.875rem * var(--kai-text-scale));
+    line-height: 1.4286;
     transition: background-color 0.15s ease;
   }
 
@@ -333,8 +360,8 @@ body {
     justify-content: center;
     border-radius: 0.375rem;
     padding: 0.375rem 0.75rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    font-size: calc(0.875rem * var(--kai-text-scale));
+    line-height: 1.4286;
     font-weight: 500;
     color: var(--app-muted);
     white-space: nowrap;
@@ -409,7 +436,7 @@ body {
     width: 1.5rem;
     align-items: center;
     justify-content: center;
-    font-size: 0.7rem;
+    font-size: max(0.625rem, calc(0.7rem * var(--kai-text-scale)));
     line-height: 1;
     color: var(--app-muted);
     cursor: pointer;
@@ -561,7 +588,7 @@ body {
     white-space: nowrap;
     padding: 0.25rem 0.5rem;
     border-radius: 0.375rem;
-    font-size: 0.6875rem;
+    font-size: max(0.625rem, calc(0.6875rem * var(--kai-text-scale)));
     font-weight: 500;
     background: var(--app-fg);
     color: var(--app-bg);
@@ -592,7 +619,7 @@ body {
     bottom: 1.25rem;
     transform: translateX(-50%);
     padding: 0.4rem 0.9rem;
-    font-size: 0.8rem;
+    font-size: calc(0.8rem * var(--kai-text-scale));
     font-weight: 500;
     color: var(--app-accent-fg);
     background: var(--app-accent);
@@ -657,7 +684,7 @@ body {
   /* Multi-select chips (e.g. Tesseract recognition language selection) */
   .u-chip {
     padding: 0.3rem 0.7rem;
-    font-size: 0.8rem;
+    font-size: calc(0.8rem * var(--kai-text-scale));
     font-weight: 500;
     line-height: 1.2;
     color: var(--app-fg);

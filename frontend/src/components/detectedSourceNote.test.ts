@@ -178,7 +178,7 @@ describe('result-pane note: translated from the auto-detected language', () => {
     );
     const cls = body.match(/class="([^"]*)"/);
     expect(cls, 'note element has no class').not.toBeNull();
-    for (const c of ['u-muted', 'px-4', 'text-[11px]', 'first:pt-4']) {
+    for (const c of ['u-muted', 'px-4', 'text-2xs', 'first:pt-4']) {
       expect(cls![1].split(/\s+/), c).toContain(c);
     }
   });

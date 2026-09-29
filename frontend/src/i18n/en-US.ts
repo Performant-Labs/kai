@@ -119,6 +119,12 @@ export const en: Dict = {
     autoSwitchSource: 'Auto-switch source language',
     autoSwitchSourceHint:
       'When text arrives in another language than the source shows, switch the source to it, make the old source the target, and translate.',
+    fontSize: 'Text size',
+    fontSizeHint:
+      'Make all text in the app smaller or larger. Applies to every window right away. 120% is the default.',
+    fontSizeSmaller: 'Smaller text',
+    fontSizeLarger: 'Larger text',
+    fontSizeReset: 'Reset to 120%',
     doubleCopy: 'Translate on double Cmd+C',
     doubleCopyHint:
       'Press Cmd+C twice quickly in any app to translate what you copied. Needs the Input Monitoring permission. Copies from password managers and keychain apps, and copies marked as secret, are never translated.',
@@ -382,6 +388,7 @@ export const en: Dict = {
     generalSaveAnalyticsFailed: '[general] Failed to save anonymous analytics toggle',
     generalSaveAutoSwitchFailed: '[general] Failed to save auto-switch source language toggle',
     generalSaveDoubleCopyFailed: '[general] Failed to save double Cmd+C toggle',
+    generalSaveFontSizeFailed: '[general] Failed to save text size',
     shortcutCheckAccessibilityFailed: '[shortcut] Failed to check Accessibility permission',
     shortcutOpenAccessibilityFailed: '[shortcut] Failed to open Accessibility settings',
     shortcutCheckScreenRecordingFailed: '[shortcut] Failed to check Screen Recording permission',

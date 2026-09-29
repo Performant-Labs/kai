@@ -19,6 +19,20 @@ type ConfigWrapper struct {
 	settingsSvc *settings.Service
 	app         *application.App
 	hotkeyMgr   *hotkey.Manager
+	// emit, when set, receives the events SaveConfig broadcasts through emitEvent instead of the
+	// app's event bus. It is a test seam (nil in production, where emitEvent uses w.app).
+	emit func(name string, data any)
+}
+
+// emitEvent broadcasts an event to every window: to the test seam when one is set, else through
+// the app when it is ready, else nowhere.
+func (w *ConfigWrapper) emitEvent(name string, data any) {
+	switch {
+	case w.emit != nil:
+		w.emit(name, data)
+	case w.app != nil:
+		w.app.Event.Emit(name, data)
+	}
 }
 
 // NewConfigWrapper constructs the config Wrapper. app and hotkeyMgr may be injected after
@@ -98,6 +112,8 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	cur.AutoClipboard = cfg.AutoClipboard
 	cur.AutoSwitchSource = cfg.AutoSwitchSource
 	cur.DoubleCopyTranslate = cfg.DoubleCopyTranslate
+	fontSizeChanged := cur.FontSize != settings.NormalizeFontSize(cfg.FontSize)
+	cur.FontSize = settings.NormalizeFontSize(cfg.FontSize)
 	cur.CopyKeySnapshot = cfg.CopyKeySnapshot
 	cur.AnalyticsEnabled = cfg.AnalyticsEnabled
 	if err := w.settingsSvc.Save(); err != nil {
@@ -123,6 +139,9 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 				Theme: w.GetSystemTheme(),
 			})
 		}
+	}
+	if fontSizeChanged {
+		w.emitEvent(events.EventFontSizeChanged, cur.FontSize)
 	}
 	return nil
 }
