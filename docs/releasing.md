@@ -228,31 +228,35 @@ Manual, on demand. No cadence and no automated trigger.
 All version and changelog work lands on ONE branch, `release/vX.Y.Z`, in one PR. Kai's PRs go
 to `Performant-Labs/kai-private`, never upstream.
 
-1. Confirm the release commit (usually `master`'s tip) has a green CI run.
-2. Gather known issues now, before writing the CHANGELOG (see "Known issues": both labels, the
+1. Run `scripts/release-preflight.sh vX.Y.Z` on the release Mac, in a clean checkout of `master`. It
+   checks the machine (Apple Silicon macOS, tools, Go version, Kai not running) and the commit
+   (clean, at `origin/master`, `origin` is the fork, CI green on that exact commit, the version
+   free, `gh` able to push). Fix every FAIL first; record each WARN.
+2. Confirm the release commit (usually `master`'s tip) has a green CI run.
+3. Gather known issues now, before writing the CHANGELOG (see "Known issues": both labels, the
    whole open list, confirm each is still live, plus the standing lines).
-3. Run `scripts/changelog-check.sh`. Give every PR it lists an entry under `[Unreleased]`, or a
+4. Run `scripts/changelog-check.sh`. Give every PR it lists an entry under `[Unreleased]`, or a
    reasoned skip, until it prints `ok`.
-4. Branch `release/vX.Y.Z` off the release commit.
-5. Decide the bump from `CHANGELOG.md`'s `## [Unreleased]` (the first release is `0.1.0`).
-6. `scripts/release-bump.sh X.Y.Z`.
-7. Restructure `CHANGELOG.md`: `[Unreleased]` becomes `[X.Y.Z] - date`, Known Issues verbatim
-   from step 2 (standing lines included), a fresh empty `[Unreleased]` above.
-8. Commit, open a PR, get PR-Agent above 90, merge, confirm CI is green on the merge commit.
-9. `git tag -a vX.Y.Z -m "vX.Y.Z"` on the merge commit, `git push origin vX.Y.Z`. (Holler signs
+5. Branch `release/vX.Y.Z` off the release commit.
+6. Decide the bump from `CHANGELOG.md`'s `## [Unreleased]` (the first release is `0.1.0`).
+7. `scripts/release-bump.sh X.Y.Z`.
+8. Restructure `CHANGELOG.md`: `[Unreleased]` becomes `[X.Y.Z] - date`, Known Issues verbatim
+   from step 3 (standing lines included), a fresh empty `[Unreleased]` above.
+9. Commit, open a PR, get PR-Agent above 90, merge, confirm CI is green on the merge commit.
+10. `git tag -a vX.Y.Z -m "vX.Y.Z"` on the merge commit, `git push origin vX.Y.Z`. (Holler signs
    its tags; no signing key is configured for this repo, so these are annotated only.)
-10. Build on Apple Silicon **from that tag**, in a clean checkout:
+11. Build on Apple Silicon **from that tag**, in a clean checkout:
     `make darwin-package VERSION=X.Y.Z`, then `scripts/release-tree-check.sh vX.Y.Z`.
-11. Quit any running Kai, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`. It must print PASS.
+12. Quit any running Kai, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`. It must print PASS.
     (It launches the app, so the Dock icon bounces and Kai briefly takes focus.)
-12. Run the manual smoke matrix (checklist) against the same `bin/Kai.app`.
-13. `ditto -c -k --keepParent bin/Kai.app Kai-X.Y.Z-darwin-arm64.zip`, then
+13. Run the manual smoke matrix (checklist) against the same `bin/Kai.app`.
+14. `ditto -c -k --keepParent bin/Kai.app Kai-X.Y.Z-darwin-arm64.zip`, then
     `shasum -a 256 Kai-X.Y.Z-darwin-arm64.zip > SHA256SUMS`.
-14. Extract the CHANGELOG's `## [X.Y.Z]` section into a standalone notes file. Extraction only,
+15. Extract the CHANGELOG's `## [X.Y.Z]` section into a standalone notes file. Extraction only,
     no new content: the standing lines are already in its Known Issues.
-15. **Confirm before publishing**, then
+16. **Confirm before publishing**, then
     `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip SHA256SUMS --notes-file <notes>`.
-16. **Verify the published artifact, not just the local build.** In a clean directory,
+17. **Verify the published artifact, not just the local build.** In a clean directory,
     `gh release download vX.Y.Z`, check the checksum, unzip with `ditto -x -k`, and run
     `scripts/release-verify.sh <that Kai.app> X.Y.Z` again.
 
