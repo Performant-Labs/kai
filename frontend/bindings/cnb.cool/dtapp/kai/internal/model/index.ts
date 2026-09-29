@@ -11,6 +11,8 @@ export type {
     OcrRequest,
     OcrResult,
     ScreenshotResult,
+    SourceSwitch,
+    SourceSwitchRequest,
     TranslateMultiResult,
     TranslateRequest,
     TranslateResult

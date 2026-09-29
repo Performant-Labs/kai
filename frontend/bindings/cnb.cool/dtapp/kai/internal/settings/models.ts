@@ -221,6 +221,16 @@ export interface Settings {
     "auto_clipboard": boolean;
 
     /**
+     * AutoSwitchSource is the "auto switch source language" switch (issue #200): when text arrives
+     * in another language than the pinned source dropdown shows, the dropdown follows the text
+     * and the old source becomes the target. ON by default, and a settings.json without the key,
+     * or with a value that is not a boolean, reads as ON: only an explicit false turns it off. It
+     * is read through readAutoSwitchSource, not mapstructure, so a garbled value cannot fail the
+     * whole settings load.
+     */
+    "auto_switch_source": boolean;
+
+    /**
      * CopyKeySnapshot records the copy key's prior state (enabled/fallback) when
      * AutoClipboard is switched on, restoring from it when AutoClipboard is switched off;
      * nil when never enabled.

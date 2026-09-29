@@ -213,6 +213,29 @@ export interface ScreenshotResult {
 }
 
 /**
+ * SourceSwitch is the answer to a SourceSwitchRequest. When Switched, From is the language the text
+ * is in (a variant the dropdown offers) and To is the old source, which replaces the old target;
+ * otherwise the pair stays as it is and From / To are empty.
+ */
+export interface SourceSwitch {
+    "switched": boolean;
+    "from": Language;
+    "to": Language;
+}
+
+/**
+ * SourceSwitchRequest asks translate.Service.PlanSourceSwitch whether text that arrived should
+ * change the language pair (issue #200): the text, the pair the window shows now, and optionally a
+ * detection the caller already holds (the one a translation result carried, issue #161).
+ */
+export interface SourceSwitchRequest {
+    "text": string;
+    "from": Language;
+    "to": Language;
+    "detected": Language;
+}
+
+/**
  * TranslateMultiResult confirms the start of a multi-engine parallel translation; Count is
  * the number of engines started.
  * Actual results stream to the frontend one by one via the EventTranslateResult event.

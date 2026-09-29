@@ -30,6 +30,15 @@ export function Ocr(req: model$0.OcrRequest): $CancellablePromise<model$0.OcrRes
     return $Call.ByID(1768998496, req);
 }
 
+/**
+ * PlanSourceSwitch decides whether text that just arrived changes the language pair (issue #200):
+ * the source follows the text and the old source replaces the target. Every way text arrives asks
+ * through this one call; the answer is applied, never learned or persisted, by the window.
+ */
+export function PlanSourceSwitch(req: model$0.SourceSwitchRequest): $CancellablePromise<model$0.SourceSwitch> {
+    return $Call.ByID(2226517286, req);
+}
+
 export function ScreenshotOCR(engineName: string): $CancellablePromise<model$0.OcrResult | null> {
     return $Call.ByID(3318430308, engineName);
 }
