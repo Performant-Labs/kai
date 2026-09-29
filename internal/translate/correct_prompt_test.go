@@ -65,10 +65,12 @@ func TestCorrectionInstructionsStateEveryRule(t *testing.T) {
 
 func TestCorrectionInstructionsAreOneFunction(t *testing.T) {
 	// The same language always gets the same instructions (no time, no randomness in the prompt).
-	if CorrectionInstructions(model.ESMX) != CorrectionInstructions(model.ESMX) {
+	first := CorrectionInstructions(model.ESMX)
+	second := CorrectionInstructions(model.ESMX)
+	if first != second {
 		t.Fatal("instructions are not deterministic")
 	}
-	if CorrectionInstructions(model.ESMX) == CorrectionInstructions(model.PTBR) {
+	if first == CorrectionInstructions(model.PTBR) {
 		t.Fatal("two languages get identical instructions")
 	}
 }
