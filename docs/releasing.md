@@ -29,6 +29,11 @@ version today.)
 Format: SemVer, plain `X.Y.Z` in files, `vX.Y.Z` as the tag. This fork starts its own line at
 `0.1.0`. It does not track upstream's numbers (see "The in-app updater" for why that matters).
 
+**The first release has no earlier release tag.** Treat everything in `[Unreleased]` as its
+content and cut `0.1.0`. The one tag on the remote, `backup/master-before-subject-rewrite-2026-09-26`,
+is a backup unreachable from `master`; ignore it. From the second release on, "since the last
+release" means since the latest `v*` tag.
+
 ## Were the tests run? What proves it?
 
 **The release commit is `master` at a commit where every CI check is green** on that exact
@@ -39,7 +44,11 @@ commit (`gh pr checks <merging PR>` or the Actions run for the merge commit). Ka
 | `ci / go / build-lint-test` | sqlc, i18n merge, real frontend build, golangci-lint, Go tests |
 | `ci / frontend / typecheck` | Svelte / TypeScript typecheck |
 | `ci / Secret scan`, `Pre-flight (actionlint)`, `Release conformance` | Repo hygiene |
-| `pr-review / pr-agent` | Automated review. The standing bar is a score above 90, with every finding read and fixed or dismissed with a reason |
+
+PR-Agent is not in that table on purpose. It runs on pull requests, not on `master`: on the
+release commit `pr-review / pr-agent` shows as skipped. Every PR merged into the release already
+cleared it. What is left to check is the **release PR itself**, whose score must be above 90
+with every finding read and fixed or dismissed with a reason.
 
 Do not tag off a commit whose run you have not looked at.
 
@@ -121,6 +130,25 @@ signing secrets this fork does not have (empty tokens would be baked into the bi
 release step targets a channel no installed app watches. Revisit it if this fork gains a
 Developer ID and a working update channel.
 
+## What a build changes in the tree
+
+Building from a clean checkout of the tag leaves two files different, always:
+
+- `build/darwin/icons.icns` (tracked) is rewritten, and
+- `build/darwin/Assets.car` (untracked) is created,
+
+because `make darwin-package` always runs icon generation with the Icon Composer flags
+(`build/Taskfile.yml`, `generate:icons`). Checked when this was written: the rewritten `icons.icns`
+is the same every run but differs from the committed one (a small fallback icns; the icon current
+macOS shows comes from `Assets.car`), and `Assets.car` differs on every run. Committing either
+would not make a build reproducible, and it would change the app icon in a process change, so
+they are allowed to differ. The icon itself is fixed by the tracked sources (`build/appicon.png`,
+`build/appicon.icon`).
+
+Anything **else** changed after the build means the app was not built from the tag as committed.
+`scripts/release-tree-check.sh vX.Y.Z` checks that HEAD is exactly the tag and that only those two
+files differ.
+
 ## CHANGELOG entry structure
 
 Same four sections as Holler, in this order, each omitted when empty:
@@ -141,13 +169,55 @@ Same four sections as Holler, in this order, each omitted when empty:
 - Real, still-open gaps a user should know before they hit them. Link the issue.
 ```
 
+## Changelog coverage
+
+A changelog only helps if every change that merged is in it, and nothing forces that at merge
+time. The first dry run of this process found 21 of the 39 merged PRs it considers missing,
+including #174 and #176, whose changes were absent even though their issue numbers appeared in
+Known Issues. So each release runs `scripts/changelog-check.sh`, which lists merged PRs the
+`[Unreleased]` section does not cover.
+
+- A PR is **covered** when its number, an issue number in its title, or a "Closes/Fixes/Resolves
+  #N" in its body appears in `[Unreleased]`, **outside** Known Issues. Known Issues names issues
+  that are still open, so it says nothing about a fix having been recorded.
+- A PR that deliberately gets no entry (CI, test-harness and similar plumbing) goes in the
+  `<!-- changelog-skip: ... -->` comment at the top of `[Unreleased]`, with a reason. Bot PRs and
+  titles starting `ci`, `chore`, `docs` or `test` are ignored without a skip line.
+- **Do not write an entry from a title alone.** "Implements #NN" pipeline PRs say nothing about
+  what changed; read the issue's acceptance section and the diff, and check the current code when
+  the issue allowed more than one outcome.
+- The script prints and exits 0. It is a checklist step, not a CI gate: gating every PR on a
+  changelog line would change how all pipeline PRs pass, and that is a separate decision.
+- `bash scripts/changelog-check.test.sh` tests the script against a canned PR list.
+
 ## Known issues
 
-A documented issue is not by itself a release blocker; silence is the failure. Before writing
-the CHANGELOG, skim open `bug` issues (`gh issue list --repo Performant-Labs/kai-private
---label bug --state open`) and anything plainly a defect without the label. One line each: what
-it is, when it bites, a link. The list for a specific release lives in that release's checklist
-issue, not here.
+A documented issue is not by itself a release blocker; silence is the failure. But the issue
+tracker is not a reliable list of them, so build the list deliberately:
+
+- Search **both** labels: `gh issue list --repo Performant-Labs/kai-private --label bug --state
+  open` and `--label known-issue --state open`. `known-issue` means "a real, accepted gap worth
+  naming in the next release's Known Issues, not necessarily a defect"; apply it when an issue
+  qualifies. Then skim the whole open list anyway: real defects have been filed with no label.
+- **Open does not mean live.** An issue can already be fixed by a later change (#154 was filed
+  against the old menu-bar-only mode and may be fixed by the Dock icon change), or stay open
+  after its PR merged because the PR did not say "Closes" (#161). For each candidate, confirm it
+  still happens on the build you are releasing, or write it as "unverified" with the reason.
+- One line each: what it is, when it bites, a link.
+- Carry the **standing lines** below into every release until their cause is fixed. They are not
+  issues to skim for; they are consequences of how this fork ships.
+
+Standing Known Issues lines (verbatim, in the CHANGELOG's Known Issues):
+
+- The in-app updater is hardcoded to upstream `dtapps/kai` and can offer an upstream build over
+  this one. Decline the update prompt (#178).
+- Every new build is a new identity to macOS, so the Accessibility grant must be removed and
+  added again after installing one.
+
+Because release notes are extracted from the CHANGELOG, this is how the signing and updater
+warnings reach the notes without anyone writing them separately at publish time.
+
+The list for a specific release lives in that release's checklist issue, not here.
 
 ## Who cuts a release, and when
 
@@ -158,26 +228,31 @@ Manual, on demand. No cadence and no automated trigger.
 All version and changelog work lands on ONE branch, `release/vX.Y.Z`, in one PR. Kai's PRs go
 to `Performant-Labs/kai-private`, never upstream.
 
-1. Confirm the release commit (usually `master`'s tip) has a green CI run, PR-Agent above 90.
-2. Gather known issues now, before writing the CHANGELOG.
-3. Branch `release/vX.Y.Z` off the release commit.
-4. Decide the bump from `CHANGELOG.md`'s `## [Unreleased]`.
-5. `scripts/release-bump.sh X.Y.Z`.
-6. Restructure `CHANGELOG.md`: `[Unreleased]` becomes `[X.Y.Z] - date`, Known Issues verbatim
-   from step 2, a fresh empty `[Unreleased]` above.
-7. Commit, open a PR, merge, confirm CI is green on the merge commit.
-8. `git tag -a vX.Y.Z -m "vX.Y.Z"` on the merge commit, `git push origin vX.Y.Z`.
-9. Build on Apple Silicon **from that tag**, in a clean checkout:
-   `make darwin-package VERSION=X.Y.Z`.
-10. Quit any running Kai, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`. It must print PASS.
-11. Run the manual smoke matrix (checklist) against the same `bin/Kai.app`.
-12. `ditto -c -k --keepParent bin/Kai.app Kai-X.Y.Z-darwin-arm64.zip`, then
+1. Confirm the release commit (usually `master`'s tip) has a green CI run.
+2. Gather known issues now, before writing the CHANGELOG (see "Known issues": both labels, the
+   whole open list, confirm each is still live, plus the standing lines).
+3. Run `scripts/changelog-check.sh`. Give every PR it lists an entry under `[Unreleased]`, or a
+   reasoned skip, until it prints `ok`.
+4. Branch `release/vX.Y.Z` off the release commit.
+5. Decide the bump from `CHANGELOG.md`'s `## [Unreleased]` (the first release is `0.1.0`).
+6. `scripts/release-bump.sh X.Y.Z`.
+7. Restructure `CHANGELOG.md`: `[Unreleased]` becomes `[X.Y.Z] - date`, Known Issues verbatim
+   from step 2 (standing lines included), a fresh empty `[Unreleased]` above.
+8. Commit, open a PR, get PR-Agent above 90, merge, confirm CI is green on the merge commit.
+9. `git tag -a vX.Y.Z -m "vX.Y.Z"` on the merge commit, `git push origin vX.Y.Z`. (Holler signs
+   its tags; no signing key is configured for this repo, so these are annotated only.)
+10. Build on Apple Silicon **from that tag**, in a clean checkout:
+    `make darwin-package VERSION=X.Y.Z`, then `scripts/release-tree-check.sh vX.Y.Z`.
+11. Quit any running Kai, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`. It must print PASS.
+    (It launches the app, so the Dock icon bounces and Kai briefly takes focus.)
+12. Run the manual smoke matrix (checklist) against the same `bin/Kai.app`.
+13. `ditto -c -k --keepParent bin/Kai.app Kai-X.Y.Z-darwin-arm64.zip`, then
     `shasum -a 256 Kai-X.Y.Z-darwin-arm64.zip > SHA256SUMS`.
-13. Extract the CHANGELOG's `## [X.Y.Z]` section into a standalone notes file. Add the signing
-    and updater notes from above.
-14. **Confirm before publishing**, then
+14. Extract the CHANGELOG's `## [X.Y.Z]` section into a standalone notes file. Extraction only,
+    no new content: the standing lines are already in its Known Issues.
+15. **Confirm before publishing**, then
     `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip SHA256SUMS --notes-file <notes>`.
-15. **Verify the published artifact, not just the local build.** In a clean directory,
+16. **Verify the published artifact, not just the local build.** In a clean directory,
     `gh release download vX.Y.Z`, check the checksum, unzip with `ditto -x -k`, and run
     `scripts/release-verify.sh <that Kai.app> X.Y.Z` again.
 
