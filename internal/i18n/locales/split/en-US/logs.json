@@ -137,5 +137,6 @@
   "log.analytics_track_failed": "Failed to report event",
   "log.analytics_identify_failed": "Failed to report identify",
   "log.analytics_write_device_id_failed": "Failed to write device ID",
-  "log.analytics_device_id_failed": "Failed to get machine ID, anonymous analytics disabled"
+  "log.analytics_device_id_failed": "Failed to get machine ID, anonymous analytics disabled",
+  "log.hotkey_trigger_busy": "[Hotkey] Input-translate hotkey triggered again while a copy-key simulation was already in flight; skipped to avoid racing the clipboard"
 }

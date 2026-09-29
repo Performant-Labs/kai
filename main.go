@@ -445,15 +445,23 @@ func main() {
 		Title:  i18n.T("window.settings_title"),
 		Width:  1280,
 		Height: 800,
-		// Issue #173 item 7: the translate and screenshot windows below both declare a
-		// MinWidth/MinHeight floor; Settings had none, so it could be shrunk until its own
-		// layout broke. Matching their approach (resizable with a floor, not DisableResize)
-		// for consistency rather than making Settings the one fixed-size window: 900x600 is
-		// comfortably below the 1280x800 default while still fitting the settings tabs'
-		// content without their own internal scroll fighting the window's.
-		MinWidth:  900,
-		MinHeight: 600,
-		URL:       "/settings.html",
+		// Issue #173 item 7 first tried a MinWidth/MinHeight floor (900x600) to keep Settings
+		// resizable-with-a-floor like the translate/screenshot windows. Issue #175 item 3:
+		// the user wants Settings fully locked at 1280x800 instead — a floor still let it be
+		// shrunk (or grown) away from the size its tab layout is designed for, unlike
+		// translate/screenshot where resizing is an intentional, used feature. DisableResize
+		// removes AppKit's resizable style mask entirely (native — no resize cursor/handles at
+		// the edges, not just a programmatic clamp); MaxWidth/MaxHeight pinned to the same
+		// 1280x800 as Width/Height are belt-and-braces against any other path (e.g. a future
+		// zoom/fullscreen toggle) growing it, and MinWidth/MinHeight are kept for
+		// symmetry/documentation of the intended fixed size, though DisableResize alone is
+		// sufficient.
+		MinWidth:      900,
+		MinHeight:     600,
+		MaxWidth:      1280,
+		MaxHeight:     800,
+		DisableResize: true,
+		URL:           "/settings.html",
 		Mac: application.MacWindow{
 			Appearance: macAppearance,
 		},

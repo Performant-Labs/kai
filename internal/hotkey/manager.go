@@ -10,6 +10,7 @@ package hotkey
 
 import (
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -43,6 +44,20 @@ type Manager struct {
 	screenshotTranslate func() error              // Screenshot translate main flow: region screenshot→OCR→translate→deliver to screenshot window
 	screenshotWindow    func() application.Window // Screenshot translate window
 	emitHotkeysChanged  func([]string)            // Broadcast the currently active list to the frontend
+
+	// triggerInputBusy guards TriggerInput's copy-key branch against reentrancy (issue #175
+	// item 5). A real ~/.kai/logs/kai.log capture showed two "[Hotkey] Hotkey triggered" lines
+	// well under a second apart for what the user experienced as one press (macOS occasionally
+	// redelivers a global-hotkey keydown, and a fast double-tap does the same) — with nothing
+	// serializing them, the two calls' CopySelection() invocations raced on the one shared
+	// system clipboard: one call's step 2 clear, step 3 copy, or step 4 restore could interleave
+	// with another's, so a hotkey press could legitimately-looking capture text that was never
+	// actually the current selection. That is a stronger, more general explanation for "returns
+	// stale content, not what was highlighted" than a slow/failed copy alone (which is already
+	// covered by EventCopyKeyFailed above) — it also explains a *non-empty* wrong capture, which
+	// an empty-capture check can never catch. An overlapping call now backs off immediately
+	// instead of racing.
+	triggerInputBusy atomic.Bool
 }
 
 // SetApp injects app once it is ready (startup orchestration phase).
@@ -116,18 +131,19 @@ func (h *Manager) TriggerInput() {
 			h.app.Event.Emit(events.EventInputFill, text)
 		}
 	case cfg.ExecKeys.Copy.Key != "" && cfg.ExecKeys.Copy.Enabled:
-		// Copy-key branch: the order is strictly "simulate Cmd+C copy first → then
-		// Show/Focus".
-		// If Focus ran first, focus would move to Kai, the simulated Cmd+C would land on the
-		// Kai window (nothing selected), the clipboard would keep its old value, and the wrong
-		// content would be picked up.
-		sel := h.execKeyCtrl.CopySelection()
-		h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_copy_key")), slog.Int(i18n.T("log.field_length"), len(sel)), slog.String(i18n.T("log.field_content"), sel))
-		w.Show()
-		w.Focus()
-		if sel != "" {
-			h.app.Event.Emit(events.EventInputFill, sel)
+		// Issue #175 item 5: CopySelection backs up/clears/copies/restores the one shared
+		// system clipboard, which is only safe as an atomic sequence. A second overlapping
+		// TriggerInput (a redelivered global-hotkey event or a fast double-tap; see
+		// triggerInputBusy's doc comment) would race its own backup/clear/copy/restore against
+		// this one's, and the loser can walk away with whatever the winner's step happened to
+		// leave on the clipboard — non-empty, plausible-looking, and wrong. CompareAndSwap
+		// claims the guard atomically; an overlapping call backs off immediately instead of
+		// racing.
+		var emitter eventEmitter
+		if h.app != nil {
+			emitter = h.app.Event
 		}
+		h.triggerCopyKey(w, emitter, h.execKeyCtrl.CopySelection)
 		// TODO(2026-08-11): the "system text capture (macOS Swift bridge kai_selected_text)"
 		// branch is temporarily disabled.
 		// Reason: users reported odd machine issues after enabling this path (suspected to
@@ -157,6 +173,67 @@ func (h *Manager) TriggerInput() {
 		// 		}
 		// 		})
 	}
+}
+
+// windowShower is the slice of application.Window that triggerCopyKey drives (fakeable).
+type windowShower interface {
+	Show() application.Window
+	Focus()
+}
+
+// triggerCopyKey is TriggerInput's copy-key branch, with its dependencies injected so the
+// reentrancy guard and the outcome emission can be tested by calling it (issue #175 item 5).
+// Order matters: copy first, then Show/Focus (see TriggerInput). emitter may be nil.
+func (h *Manager) triggerCopyKey(w windowShower, emitter eventEmitter, copySelection func() string) {
+	// An overlapping call would race its own backup/clear/copy/restore of the shared system
+	// clipboard against the in-flight one (see triggerInputBusy); back off instead.
+	if !h.triggerInputBusy.CompareAndSwap(false, true) {
+		h.log.Warn(i18n.T("log.hotkey_trigger_busy"))
+		return
+	}
+	defer h.triggerInputBusy.Store(false)
+
+	sel := copySelection()
+	h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_copy_key")), slog.Int(i18n.T("log.field_length"), len(sel)), slog.String(i18n.T("log.field_content"), sel))
+	w.Show()
+	w.Focus()
+	if emitter != nil {
+		emitCopyKeyOutcome(emitter, sel)
+	}
+}
+
+// eventEmitter is the slice of *application.App that emitCopyKeyOutcome drives, so the
+// decision can be exercised with a fake and no running Wails app (same style as
+// window_wrapper.go's windowToggler/levelWindow).
+type eventEmitter interface {
+	Emit(name string, data ...any) bool
+}
+
+// copyKeyOutcome decides which event TriggerInput's copy-key branch should emit for the result
+// of ExecKeyController.CopySelection, given sel: EventInputFill with sel as payload when
+// something was actually captured, or EventCopyKeyFailed (no payload) when the simulated copy
+// captured nothing.
+//
+// Issue #175 item 5: before this existed, a failed capture (sel == "") emitted nothing at all.
+// TriggerInput's w.Show()/w.Focus() always run regardless, so the window still comes to the
+// front — but with no EventInputFill, the input box keeps showing whatever text a previous
+// session left in it (issue #81's retained-session design: it is cleared only by Clear, a new
+// EventInputFill, or a new translate — never just by the window closing and reopening). A user
+// who doesn't notice the text didn't change has no way to tell that apart from the old text
+// genuinely being the new selection — "translates the wrong, stale content with no indication
+// anything is wrong" is exactly the bug report. Pure and side-effect-free so the mapping itself
+// (not the Emit call) is what gets tested.
+func copyKeyOutcome(sel string) (event string, args []any) {
+	if sel != "" {
+		return events.EventInputFill, []any{sel}
+	}
+	return events.EventCopyKeyFailed, nil
+}
+
+// emitCopyKeyOutcome emits whatever copyKeyOutcome decides for sel on emitter.
+func emitCopyKeyOutcome(emitter eventEmitter, sel string) {
+	event, args := copyKeyOutcome(sel)
+	emitter.Emit(event, args...)
 }
 
 // TriggerScreenshot is equivalent to pressing the "screenshot translate" hotkey: hide the

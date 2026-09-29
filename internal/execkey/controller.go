@@ -33,9 +33,29 @@ import (
 // the time a user would notice as "nothing happened"); pollClipboardInterval keeps the common
 // native-field case (which already has the text within the first tick) just as fast as
 // before.
+//
+// Issue #175 item 1: 600ms was still not enough for a Google Sheets grid-cell copy
+// specifically, as opposed to the plain Chrome text field #174's original 600ms was verified
+// against. A cell/range copy in Sheets writes several clipboard representations at once (plain
+// text, HTML, and its own internal spreadsheet format) through the same async JS `copy` handler
+// pollClipboardTimeout already accounts for above — just with more work to do before the
+// pasteboard is fully populated, so the existing ceiling could still lose the race on a slower
+// machine or a larger selection. Raised to 1200ms: still well under the ~2s a user would read as
+// "the app is unresponsive", and pollClipboardInterval already returns as soon as the text
+// lands, so this only adds latency to the genuinely-slow case, never the common one. Real
+// synthetic-Cmd+C testing during this issue's investigation (a standalone robotgo.KeyTap probe
+// against a Chrome textarea, independent of Kai's own clipboard clear/restore dance) showed
+// Chrome-based copies are inherently less reliable than native fields regardless of the delay
+// between the synthetic keydown and keyup (robotgo.KeySleep 10/25/40/60ms all showed the same
+// failure pattern) — so unlike KeySleep, which was tested and found to make no difference and
+// was deliberately NOT changed, a longer poll window is the one lever here that's both provably
+// safe (bounded added latency, no behavior change on success) and plausibly helpful for exactly
+// the multi-representation-write case Sheets exercises. Paired with EventCopyKeyFailed (see
+// hotkey/manager.go) as a second line of defense: if 1200ms still isn't enough, the user now
+// sees a clear failure instead of stale silence.
 const (
 	pollClipboardInterval = 40 * time.Millisecond
-	pollClipboardTimeout  = 600 * time.Millisecond
+	pollClipboardTimeout  = 1200 * time.Millisecond
 )
 
 // pollClipboardText polls read (selection.Service.ReadClipboardText) every pollClipboardInterval

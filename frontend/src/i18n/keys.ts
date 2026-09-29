@@ -95,6 +95,7 @@ export type Dict = {
     pin: string;
     unpin: string;
     autoClipboard: string;
+    copyKeyFailed: string;
     cancel: string;
     cancelEngine: string;
     cancelled: string;

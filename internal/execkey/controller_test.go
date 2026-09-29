@@ -123,3 +123,22 @@ func TestPollClipboardText_GivesUpWhenValueNeverChangesFromStale(t *testing.T) {
 		t.Fatalf("expected more than one attempt before giving up, got %d", calls)
 	}
 }
+
+// Issue #175 item 1: a Google Sheets cell copy can populate the pasteboard later than the old
+// 600ms ceiling. A value that lands at ~900ms must still be returned; this fails if
+// pollClipboardTimeout is reverted to 600ms.
+func TestPollClipboardText_CapturesValueLandingAfterOldSixHundredMsCeiling(t *testing.T) {
+	if pollClipboardTimeout < 1200*time.Millisecond {
+		t.Fatalf("pollClipboardTimeout = %v, want >= 1200ms (issue #175 item 1)", pollClipboardTimeout)
+	}
+	start := time.Now()
+	got := pollClipboardText(func() string {
+		if time.Since(start) >= 900*time.Millisecond {
+			return "sheets cell"
+		}
+		return ""
+	}, "")
+	if got != "sheets cell" {
+		t.Fatalf("got %q, want the value that landed at ~900ms", got)
+	}
+}

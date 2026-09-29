@@ -78,6 +78,21 @@ const (
 	// Aligned with the frontend's EventAutoClipboardChanged in frontend/src/utils/events.ts —
 	// the single source of truth.
 	EventAutoClipboardChanged = "kai:auto-clipboard:changed"
+
+	// EventCopyKeyFailed is emitted when the copy-key branch of TriggerInput (issue #175 item
+	// 5) simulates the copy key but pollClipboardText never sees the clipboard change —
+	// CopySelection returns "". No payload.
+	//
+	// Before this event existed, that failure was silent on the frontend: the translate
+	// window still Show()/Focus()es (so the user sees it come to the front), but with nothing
+	// new to fill, EventInputFill never fires and the window keeps showing whatever text was
+	// already in it (issue #81's retained-session design: the input box is only replaced by
+	// Clear, a new EventInputFill or a new translate — never cleared just because the window
+	// was hidden and reshown). A user who doesn't notice the input didn't change believes the
+	// old text IS the new selection — "translates the wrong text with no indication anything
+	// is wrong" is exactly the bug report. This event lets the frontend show a toast instead,
+	// so a failed capture is visibly a failure, not indistinguishable from a stale success.
+	EventCopyKeyFailed = "kai:copykey:failed"
 )
 
 // Session identifiers for the screenshot/OCR cache: separating entry points so they never
