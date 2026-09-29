@@ -214,8 +214,23 @@ Standing Known Issues lines (verbatim, in the CHANGELOG's Known Issues):
 - Every new build is a new identity to macOS, so the Accessibility grant must be removed and
   added again after installing one.
 
-Because release notes are extracted from the CHANGELOG, this is how the signing and updater
-warnings reach the notes without anyone writing them separately at publish time.
+Because release notes are extracted from the CHANGELOG, this is how the updater and Accessibility
+warnings reach the notes without anyone writing them separately at publish time. The third
+consequence of ad-hoc signing, the Gatekeeper quarantine, is not a known issue but an install
+instruction, so it lives in the release notes preface (next section).
+
+## Release notes preface
+
+The release notes are the CHANGELOG's `## [X.Y.Z]` section, minus the internal
+`<!-- changelog-skip: ... -->` comment, with this one paragraph in front and nothing else. It
+answers the first question a reader has (how do I install it, and why does Alt+A not work) and
+carries the Gatekeeper warning. Fill in the version:
+
+```markdown
+**Installing.** macOS on Apple Silicon only. Download with `gh release download vX.Y.Z --repo Performant-Labs/kai-private`: a browser download is quarantined by macOS and blocked as coming from an unidentified developer (if that happens, run `xattr -dr com.apple.quarantine /Applications/Kai.app`). Unzip, move `Kai.app` to `/Applications`, and check the zip against `SHA256SUMS`. This build is ad-hoc signed, so remove Kai from Privacy & Security and add it again (on macOS 27 the list is "Device Control and Data Access") before Alt+A can copy text.
+```
+
+After publishing, add a last line linking the release checklist issue.
 
 The list for a specific release lives in that release's checklist issue, not here.
 
@@ -252,8 +267,9 @@ to `Performant-Labs/kai-private`, never upstream.
 13. Run the manual smoke matrix (checklist) against the same `bin/Kai.app`.
 14. `ditto -c -k --keepParent bin/Kai.app Kai-X.Y.Z-darwin-arm64.zip`, then
     `shasum -a 256 Kai-X.Y.Z-darwin-arm64.zip > SHA256SUMS`.
-15. Extract the CHANGELOG's `## [X.Y.Z]` section into a standalone notes file. Extraction only,
-    no new content: the standing lines are already in its Known Issues.
+15. Build the notes file: the CHANGELOG's `## [X.Y.Z]` section (minus the `changelog-skip`
+    comment) with the Installing paragraph from "Release notes preface" in front. Nothing else
+    is added: the updater and Accessibility warnings are already in its Known Issues.
 16. **Confirm before publishing**, then
     `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip SHA256SUMS --notes-file <notes>`.
 17. **Verify the published artifact, not just the local build.** In a clean directory,
