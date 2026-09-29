@@ -94,9 +94,10 @@ CI and the verify script cannot see these. Install the built app to `/Applicatio
 - [ ] 23. **Package**
   - `ditto -c -k --keepParent bin/Kai.app Kai-X.Y.Z-darwin-arm64.zip` (not plain `zip`: it can break the signature)
   - `shasum -a 256 Kai-X.Y.Z-darwin-arm64.zip > SHA256SUMS`
-- [ ] 24. **Extract the release notes**: the CHANGELOG's `## [X.Y.Z]` section into a standalone
-  file. Extraction only, no new content (the standing lines are already in its Known Issues).
-  Read it once as a stranger would
+- [ ] 24. **Build the release notes**: the CHANGELOG's `## [X.Y.Z]` section into a standalone
+  file, minus the `<!-- changelog-skip -->` comment, with the **Installing** paragraph from
+  `docs/releasing.md` ("Release notes preface") in front. Nothing else is added (the updater and
+  Accessibility warnings are already in its Known Issues). Read it once as a stranger would
 - [ ] 25. **Explicit go-ahead obtained** to publish
 - [ ] 26. **Create the release**
   - `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip SHA256SUMS --notes-file <notes> --repo Performant-Labs/kai-private`
