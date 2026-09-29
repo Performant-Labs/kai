@@ -311,6 +311,11 @@ func TestCorrectSourceGuardsTheOutput(t *testing.T) {
 		svc := newCorrectService(t, fc, det)
 		got := correct(svc, c.text, model.ESMX)
 		assertNoCorrection(t, c.name, got, c.text, c.want)
+		// The guard that caught it is the one that should have: a second guard catching it by
+		// accident would leave the first one untested.
+		if got.Reason != c.guard {
+			t.Errorf("%s: Reason = %q, want %q", c.name, got.Reason, c.guard)
+		}
 		if fc.callCount() != 1 {
 			t.Errorf("%s: model calls = %d, want 1", c.name, fc.callCount())
 		}

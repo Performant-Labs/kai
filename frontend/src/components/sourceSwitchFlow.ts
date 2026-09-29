@@ -95,11 +95,8 @@ export function createSourceSwitcher(deps: SourceSwitchDeps) {
    */
   async function workingText(text: string, detected: string): Promise<string> {
     const from = deps.getPair().from;
-    const off =
-      !deps.correct ||
-      !deps.isCorrectionEnabled?.() ||
-      from === deps.autoCode ||
-      correctionDeclined.trim() === text.trim();
+    // (An Auto source never gets here: autoSwitch returns first, and clears the correction.)
+    const off = !deps.isCorrectionEnabled?.() || correctionDeclined.trim() === text.trim();
     if (off || !deps.correct) {
       setCorrection(null);
       return text;

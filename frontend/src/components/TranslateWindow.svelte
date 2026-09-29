@@ -141,7 +141,6 @@
     type ProgressState,
   } from '../utils/translateProgress.ts';
   import { swapLanguages } from '../utils/swapLangs.ts';
-  import type { CorrectionAnswer } from '../utils/sourceCorrection.ts';
   import { cueActive, type SwitchCue } from '../utils/sourceSwitch.ts';
   import { createSourceSwitcher } from './sourceSwitchFlow.ts';
   import {
@@ -888,7 +887,7 @@
         text: req.text,
         from: req.from as TranslateLang,
         detected: req.detected as TranslateLang,
-      }) as unknown as Promise<CorrectionAnswer>,
+      }),
     isCorrectionEnabled: () => correctionOn,
     onCorrection: (c) => (correction = c),
     onCorrecting: (busy) => (correcting = busy),
