@@ -157,6 +157,8 @@ func (e *ExecKeyController) copyDefaultKey() string {
 		parentCtx = e.app.Context()
 	}
 
+	// Snapshot the clipboard before injecting the key — see pollClipboardText's doc comment.
+	before := e.selection.ReadClipboardText()
 	comboErr := application.InvokeSyncWithError(func() error {
 		// Attach Kai's thread to the foreground target thread before injecting, avoiding the
 		// sporadic failures caused by the foreground lock.
@@ -173,8 +175,7 @@ func (e *ExecKeyController) copyDefaultKey() string {
 	}
 	e.log.Debug(i18n.T("log.copykey_exec_makc_default_done"))
 
-	time.Sleep(120 * time.Millisecond)
-	text := e.selection.ReadClipboardText()
+	text := pollClipboardText(e.selection.ReadClipboardText, before)
 	if text == "" {
 		e.log.Warn(i18n.T("log.copykey_default_empty"))
 	}
@@ -214,6 +215,8 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 		slog.String(i18n.T("log.field_key"), hotkey),
 		slog.Any("keys", keys),
 	)
+	// Snapshot the clipboard before injecting the key — see pollClipboardText's doc comment.
+	before := e.selection.ReadClipboardText()
 	// Run on the main thread
 	comboErr := application.InvokeSyncWithError(func() error {
 		// Attach Kai's thread to the foreground target thread before injecting, avoiding the
@@ -233,8 +236,7 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 
 	e.log.Debug(i18n.T("log.copykey_exec_makc_done"), slog.String(i18n.T("log.field_key"), hotkey))
 
-	time.Sleep(120 * time.Millisecond)
-	text := e.selection.ReadClipboardText()
+	text := pollClipboardText(e.selection.ReadClipboardText, before)
 	if text == "" {
 		e.log.Warn(i18n.T("log.copykey_send_combo_empty"),
 			slog.String(i18n.T("log.field_key"), hotkey))

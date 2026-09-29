@@ -234,6 +234,14 @@ func main() {
 	// layer so kai-bridge.log matches kai.log.
 	applyLogConfig(logRotator, frontendLogSvc, settingsService.Get().Log, homeDir)
 
+	// Issue #173 item 8: warm the Apple (System) engine's TranslationSession for the user's
+	// current default language pair at launch, so the first real System-engine translate call
+	// doesn't pay Translation.framework's prepareTranslation() cost. Runs in its own
+	// goroutine (WarmTranslate's Swift-side call blocks until done or failed) so it never
+	// delays startup; best-effort (WarmTranslate swallows every failure — missing dylib,
+	// unsupported platform, language pack not installed).
+	go engine.WarmTranslate(settingsService.Get().DefaultFrom, settingsService.Get().DefaultTo)
+
 	// Explicit dependency injection for domain packages and thin wrappers (replaces the old
 	// ServiceContext mega-container). At construction time app does not exist yet, so nil is
 	// passed as a placeholder; after application.New, AppService.SetApp injects it uniformly.
@@ -437,7 +445,15 @@ func main() {
 		Title:  i18n.T("window.settings_title"),
 		Width:  1280,
 		Height: 800,
-		URL:    "/settings.html",
+		// Issue #173 item 7: the translate and screenshot windows below both declare a
+		// MinWidth/MinHeight floor; Settings had none, so it could be shrunk until its own
+		// layout broke. Matching their approach (resizable with a floor, not DisableResize)
+		// for consistency rather than making Settings the one fixed-size window: 900x600 is
+		// comfortably below the 1280x800 default while still fitting the settings tabs'
+		// content without their own internal scroll fighting the window's.
+		MinWidth:  900,
+		MinHeight: 600,
+		URL:       "/settings.html",
 		Mac: application.MacWindow{
 			Appearance: macAppearance,
 		},
@@ -482,11 +498,18 @@ func main() {
 	// Input translate window: two-pane layout (issue #10, locked decision: always side by
 	// side) — default/minimum widths enlarged, no longer pinned to 420 (old MaxWidth removed);
 	// height is left to the window itself, with each pane scrolling internally.
+	//
+	// Issue #173 item 5: the translate window is the one window users actually resize day to
+	// day (settings and screenshot stay at their defaults, see main_windowsize.go), so its
+	// last size is persisted to settings.json and restored here. translateWindowSize falls
+	// back to the 960x640 default below when nothing was saved yet, or when a saved value
+	// would be smaller than the window's own MinWidth/MinHeight (e.g. an old/corrupt value).
+	translateWidth, translateHeight := translateWindowSize(settingsService, 960, 640, 780, 520)
 	translateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      model.WindowTranslate,
 		Title:     i18n.T("window.translate_title"),
-		Width:     960,
-		Height:    640,
+		Width:     translateWidth,
+		Height:    translateHeight,
 		MinWidth:  780,
 		MinHeight: 520,
 		URL:       "/translate.html",
@@ -513,6 +536,12 @@ func main() {
 			windowSvc.DisableRestoration(translateWindow)
 		})
 	})
+	// Issue #173 item 5: persist the translate window's size across relaunches. WindowDidResize
+	// fires on every intermediate frame of a drag, so the actual settings write is debounced
+	// (see persistTranslateWindowSize) — otherwise a single resize gesture could write the
+	// config file dozens of times.
+	stopResizePersist := persistTranslateWindowSize(translateWindow, settingsService)
+	defer stopResizePersist()
 	// Red X = hide the window (don't quit): RegisterHook Cancels the close before WindowClosing's
 	// destroy listener and hides instead. This keeps the red X, keeps the window alive, and it
 	// can be Shown again anytime.

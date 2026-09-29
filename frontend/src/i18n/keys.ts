@@ -22,6 +22,7 @@ export type Dict = {
     original: string;
     result: string;
     recapture: string;
+    recaptureHint: string;
     close: string;
     empty: string;
     recognizing: string;
@@ -41,6 +42,7 @@ export type Dict = {
     maximize: string;
     close: string;
     settings: string;
+    settingsHint: string;
   };
   common: {
     cancel: string;
@@ -101,6 +103,7 @@ export type Dict = {
     stillWaiting: string;
     stillWaitingMin: string;
     part: string;
+    translateShortcutHint: string;
   };
   settings: {
     title: string;

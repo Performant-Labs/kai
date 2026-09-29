@@ -40,6 +40,7 @@ var (
 	KaiSetLocale              func(locale string)
 	KaiTranslate              func(src string, dst string, text string, token int64, out unsafe.Pointer, outCap int32) int32
 	KaiTranslateCancel        func(token int64) int32
+	KaiWarmTranslate          func(src string, dst string) int32
 )
 
 // Init is the non-macOS empty implementation: no dylib is loaded, nil is returned directly.

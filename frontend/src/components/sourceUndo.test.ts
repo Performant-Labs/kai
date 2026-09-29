@@ -426,12 +426,16 @@ describe('Undo and Redo buttons (criterion 8, Decision E)', () => {
     expect(copy).toBeGreaterThan(r);
   });
 
-  it('the catalogs carry the labels: Undo / Redo and 撤销 / 重做', () => {
+  it('the catalogs carry non-empty, distinct undo/redo tooltips per language (issue #173: expanded to be more descriptive)', () => {
     const enT = en.translate as unknown as Record<string, string>;
     const zhT = zh.translate as unknown as Record<string, string>;
-    expect(enT.undo).toBe('Undo');
-    expect(enT.redo).toBe('Redo');
-    expect(zhT.undo).toBe('撤销');
-    expect(zhT.redo).toBe('重做');
+    expect(enT.undo).toBeTruthy();
+    expect(enT.redo).toBeTruthy();
+    expect(enT.undo).not.toBe(enT.redo);
+    expect(zhT.undo).toBeTruthy();
+    expect(zhT.redo).toBeTruthy();
+    expect(zhT.undo).not.toBe(zhT.redo);
+    expect(zhT.undo).not.toBe(enT.undo);
+    expect(zhT.redo).not.toBe(enT.redo);
   });
 });

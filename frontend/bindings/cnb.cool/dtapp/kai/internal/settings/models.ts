@@ -170,8 +170,8 @@ export interface RegisteredHotkeyConfig {
  */
 export interface Settings {
     /**
-     * Language is the UI language: auto / zh-CN / en-US (auto resolves from the system
-     * language).
+     * Language is the UI language: auto / zh-CN / en-US. New installs default to en-US;
+     * auto follows the system language (a Chinese system selects Chinese, anything else English).
      * Note: this is the app's display language — separate from the translation languages
      * (model.Language: auto/zh/en/...). Two independent systems; never mix them.
      */
@@ -271,6 +271,19 @@ export interface Settings {
      * DNSConfigs is the custom DNS resolver config list.
      */
     "dns_configs": DNSConfig[] | null;
+
+    /**
+     * TranslateWindowWidth/Height persist the input-translate window's last user-resized size
+     * (issue #173 item 5), read back into WebviewWindowOptions.Width/Height at window
+     * creation in main.go so a resize survives a relaunch. Zero means "never resized yet" —
+     * main.go falls back to the hardcoded default in that case. Window size is a native
+     * (Go-side) property, not frontend state, so unlike Theme/Language above this is written
+     * directly by main.go's resize listener (debounced), not via SaveConfig/the frontend.
+     * Scoped to the translate window only (the window users actually resize); the settings
+     * and screenshot windows keep their fixed defaults — see docs/handoffs/173-brief.md.
+     */
+    "translate_window_width": number;
+    "translate_window_height": number;
 }
 
 /**

@@ -66,6 +66,44 @@ func SetBridgeLocale(locale string) {
 	swiftbridge.KaiSetLocale(locale)
 }
 
+// warmTranslatePair decides whether (src, dst) is warmable and, if so, normalizes it to the
+// BCP-47 codes the Swift bridge accepts. Pulled out of WarmTranslate as a pure function (no
+// swiftbridge dependency) so this decision is unit-testable without a loaded dylib — see
+// apple_darwin_test.go. src="auto" (or empty: no fixed source) is not warmable and is
+// reported via ok=false, never passed through as the literal string "auto"; likewise an
+// empty or unsupported dst.
+func warmTranslatePair(src, dst string) (sl, tl string, ok bool) {
+	// normalizeLang returns "" for "auto"/empty (no fixed source to warm); normalizeTarget
+	// likewise returns "" (no error) for "auto"/empty, and an error for an unsupported target.
+	sl = normalizeLang(src)
+	if sl == "" || dst == "" {
+		return "", "", false
+	}
+	tl, err := normalizeTarget(dst)
+	if err != nil || tl == "" {
+		return "", "", false
+	}
+	return sl, tl, true
+}
+
+// WarmTranslate warms the Apple engine's cached TranslationSession for (src, dst) — issue
+// #173 item 8. Intended to be called once at launch, in its own goroutine (main.go), for the
+// user's current default_from/default_to language pair, so the first real translate() call
+// for that pair skips the prepareTranslation() cost.
+// Best-effort: swallows a missing dylib (Available()==false) and any Swift-side failure
+// (e.g. the pair's language pack isn't installed) without returning an error — a failed warm
+// never blocks or breaks translation, it just means the first call pays the usual cost.
+func WarmTranslate(src, dst string) {
+	if !swiftbridge.Available() || swiftbridge.KaiWarmTranslate == nil {
+		return
+	}
+	sl, tl, ok := warmTranslatePair(src, dst)
+	if !ok {
+		return
+	}
+	swiftbridge.KaiWarmTranslate(sl, tl)
+}
+
 // SupportsAutoSource: system translation (Translation.framework) supports auto-detecting the
 // source language. With from=auto, Go passes an empty string to Swift, which uses
 // NaturalLanguage to detect the language and constrain it to the installed list.
@@ -80,6 +118,19 @@ func (s *appleTranslator) SupportsAutoSource() bool { return true }
 // context.Cause(ctx), never error copy: the translate service decides cancelled or superseded from
 // that cause. The framework itself keeps working on the abandoned text for a while and queues the
 // next request behind it, which nothing here can shorten.
+//
+// Issue #173 item 1, investigated and NOT fixed here: a screenshot showed a blank line
+// inserted after every line of a 9-line System-engine result. Neither this file, the Swift
+// bridge (apple_translate.swift), the Go translate service, nor the frontend split or
+// rejoin lines/paragraphs for a call this size — the #84 chunker in service_chunk.go only
+// runs for over-budget (long) text, which a 9-line input is not, and its sepAfter/join logic
+// is not on this call path at all. req.Text is passed to Swift verbatim (see kai_translate
+// above) and session.translate(inputText)'s targetText is returned verbatim, with no
+// post-processing on either side. The extra blank lines therefore come from
+// TranslationSession.translate itself reflowing multi-paragraph input — an on-device
+// Translation.framework behavior, not a Kai bug — and there is no Kai-side hook to suppress
+// it (nothing else engine-side reflows or joins the framework's own targetText). Left
+// undone deliberately; re-open if Apple ever exposes a per-line/no-reflow translation mode.
 func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
 	text := strings.TrimSpace(req.Text)
 	if text == "" {

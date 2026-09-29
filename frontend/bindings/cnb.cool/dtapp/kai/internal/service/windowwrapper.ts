@@ -19,6 +19,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as application$0 from "../../../../../github.com/wailsapp/wails/v3/pkg/application/models.js";
 
 /**
+ * DisableRestoration opts win out of macOS's Secure State Restoration ("Resume", issue #163):
+ * see docs/handoffs/163-brief.md. Must be called after the window's native handle exists
+ * (win.NativeWindow() is non-nil only once WebviewWindow.Run() has executed) — wire it to
+ * events.Common.WindowRuntimeReady, never at window-creation time, or it silently no-ops.
+ */
+export function DisableRestoration(win: application$0.Window): $CancellablePromise<void> {
+    return $Call.ByID(3453614084, win);
+}
+
+/**
  * SetApp injects the app once it is ready.
  */
 export function SetApp(app: application$0.App | null): $CancellablePromise<void> {
@@ -37,7 +47,7 @@ export function ShowScreenshotWindow(): $CancellablePromise<void> {
 }
 
 /**
- * ShowSettings opens settings
+ * ShowSettings opens settings, in front of a pinned translate window.
  */
 export function ShowSettings(): $CancellablePromise<void> {
     return $Call.ByID(2264317276);

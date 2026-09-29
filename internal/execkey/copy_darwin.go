@@ -5,7 +5,6 @@ package execkey
 import (
 	"log/slog"
 	"strings"
-	"time"
 
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"github.com/go-vgo/robotgo"
@@ -69,6 +68,10 @@ func (e *ExecKeyController) copySelection(fallback bool) string {
 // Used only as the Fallback path: when the custom copy key didn't take effect, fall back to
 // the system-native copy key.
 func (e *ExecKeyController) copyDefaultKey() string {
+	// Snapshot the clipboard before injecting the key, so pollClipboardText can tell a genuinely
+	// new value from a stale one still sitting there when the target app's copy handler hasn't
+	// run yet (see pollClipboardText's doc comment).
+	before := e.selection.ReadClipboardText()
 	comboErr := application.InvokeSyncWithError(func() error {
 		return robotgo.KeyTap("c", "cmd")
 	})
@@ -80,8 +83,7 @@ func (e *ExecKeyController) copyDefaultKey() string {
 	}
 	e.log.Debug(i18n.T("log.copykey_exec_default_done"))
 
-	time.Sleep(120 * time.Millisecond)
-	text := e.selection.ReadClipboardText()
+	text := pollClipboardText(e.selection.ReadClipboardText, before)
 	if text == "" {
 		e.log.Warn(i18n.T("log.copykey_default_empty"))
 	}
@@ -116,6 +118,8 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 		slog.Any("modifiers", modifiers),
 		slog.Any("mods", mods),
 	)
+	// Snapshot the clipboard before injecting the key — see pollClipboardText's doc comment.
+	before := e.selection.ReadClipboardText()
 	// Run on the main thread
 	comboErr := application.InvokeSyncWithError(func() error {
 		return robotgo.KeyTap(key, mods...)
@@ -131,8 +135,7 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 		slog.String(i18n.T("log.field_key"), hotkey),
 	)
 
-	time.Sleep(120 * time.Millisecond)
-	text := e.selection.ReadClipboardText()
+	text := pollClipboardText(e.selection.ReadClipboardText, before)
 	if text == "" {
 		e.log.Warn(i18n.T("log.copykey_send_combo_empty"),
 			slog.String(i18n.T("log.field_key"), hotkey),

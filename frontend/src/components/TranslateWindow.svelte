@@ -957,13 +957,15 @@
            outside both cards. Opens the Settings window through the existing WindowWrapper
            binding (ShowSettings, no new Go API); this window stays open. Not a toggle, so it never
            gets the --active styling. Glyph: Lucide "settings" (ISC), inline like the swap
-           button's. Label and tooltip reuse the titlebar.settings key. -->
+           button's. Label reuses the titlebar.settings key (issue #69); the tooltip (issue #173)
+           is the more descriptive titlebar.settingsHint, distinct so the error-panel's visible
+           "Settings" button text (below) stays short. -->
       <div class="col-start-3 flex justify-end">
         <button
           class="u-icon-btn u-no-drag"
           onclick={() => ShowSettings()}
           aria-label={t('titlebar.settings')}
-          title={t('titlebar.settings')}
+          title={t('titlebar.settingsHint')}
         >
           <svg
             width="16"
@@ -1155,11 +1157,23 @@
                  until the first result lands, so a second press cannot silently replace the
                  request that is still running. -->
             <button
-              class="u-btn u-btn--primary u-no-drag px-5 py-1.5 text-sm"
+              class="u-btn u-btn--primary u-no-drag flex items-center gap-1.5 px-5 py-1.5 text-sm"
               onclick={doTranslate}
               disabled={awaiting || !input.trim()}
+              title={t('translate.translateShortcutHint')}
             >
               {awaiting ? t('common.loading') : t('translate.button')}
+              <!-- Cmd+Enter hint (issue #173), matching Claude Desktop's muted send-shortcut glyph:
+                   Cmd+Enter already submits (issue #165); this only surfaces it visually, and only
+                   while the button is actually actionable (not awaiting, not empty input). -->
+              {#if !awaiting && input.trim()}
+                <span
+                  class="u-shortcut-hint flex items-center gap-0.5 text-[11px] opacity-70"
+                  aria-hidden="true"
+                >
+                  <span>⌘</span><span>⏎</span>
+                </span>
+              {/if}
             </button>
           </div>
         </div>

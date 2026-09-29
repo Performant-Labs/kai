@@ -154,6 +154,117 @@ final class TranslateRegistry: @unchecked Sendable {
 
 let translateRegistry = TranslateRegistry()
 
+// MARK: - Session cache (issue #173 item 8)
+//
+// Before this, kai_translate created a brand-new TranslationSession and called
+// prepareTranslation() on it on every single call — confirmed by measurement (see the
+// "translate.timing" log line kai_translate emits below) to be the dominant cost of a
+// System-engine translation, well above session.translate() itself for short text.
+//
+// TranslationSessionCache caches one prepared session per (source, target) pair and reuses
+// it across calls, and also warms (creates + prepares) a session ahead of time via warm().
+// It is a Swift actor specifically to make reuse safe: Apple's docs do not guarantee
+// TranslationSession is safe to use from two concurrent translate() calls, and an actor's
+// default isolation serializes every call into this cache — including two concurrent
+// session(...) or translate(...) calls for the SAME pair — so two overlapping requests queue
+// behind each other instead of racing inside one TranslationSession. Two DIFFERENT pairs also
+// queue behind each other under this design (a deliberate, conservative trade against the
+// unknown concurrent-use risk); Apple on-device translation is fast enough per-call (see
+// docs/engine-limits.md) that serializing same-process Apple-engine calls is not expected to
+// be user-visible, and it is far cheaper than a re-entrancy bug.
+// SessionEntry owns exactly one (source, target) pair's TranslationSession. It is an actor so
+// that two overlapping calls for THIS SAME pair serialize (never call into one
+// TranslationSession instance concurrently — Apple does not document that as safe). Its own
+// turn only ever runs this one pair's work, so a stuck translate() here never delays a
+// different pair — see TranslationSessionCache's doc comment below for why that distinction
+// matters (a PR-review finding, reproduced live: a >10 minute translate() during this PR's
+// hand-testing).
+actor SessionEntry {
+  private let source: Locale.Language
+  private let target: Locale.Language
+  private var session: TranslationSession?
+
+  init(source: Locale.Language, target: Locale.Language) {
+    self.source = source
+    self.target = target
+  }
+
+  private func preparedSession() async throws -> TranslationSession {
+    if let existing = session {
+      return existing
+    }
+    let s = TranslationSession(installedSource: source, target: target)
+    try await s.prepareTranslation()
+    session = s
+    return s
+  }
+
+  /// Prepares the session if it is not already cached, discarding the result.
+  func warm() async {
+    _ = try? await preparedSession()
+  }
+
+  /// Translates text using the cached (or newly prepared) session. Returns the response plus
+  /// a (getSessionMs, translateMs) timing breakdown (issue #173 item 8's real measurement).
+  func translate(text: String) async throws -> (
+    response: TranslationSession.Response, getSessionMs: Int, translateMs: Int
+  ) {
+    let sessionStart = Date()
+    let s = try await preparedSession()
+    let getSessionMs = Int(Date().timeIntervalSince(sessionStart) * 1000)
+    let translateStart = Date()
+    let response = try await s.translate(text)
+    let translateMs = Int(Date().timeIntervalSince(translateStart) * 1000)
+    return (response, getSessionMs, translateMs)
+  }
+}
+
+// TranslationSessionCache maps a (source, target) pair to its own SessionEntry (issue #173
+// item 8). Deliberately NOT itself an actor holding all sessions: an earlier revision of this
+// cache was one actor serializing every pair's calls behind a single queue, and PR review
+// correctly flagged that session.translate() is unbounded and not cancellable (issue #111), so
+// one stuck call for pair A would head-of-line-block every later call for pair B too — this
+// PR's own hand-testing reproduced exactly that (a translate() still running after 10+
+// minutes). Splitting into one SessionEntry actor per pair keeps the safety property that
+// matters (two overlapping calls for the SAME pair never touch one TranslationSession
+// concurrently) without serializing unrelated pairs against each other.
+//
+// entries is protected by a plain NSLock, not actor isolation: lookups/inserts here are
+// synchronous and hold the lock only for a dictionary access, never across an await — so a
+// plain lock is enough and avoids adding yet another actor hop to every call.
+final class TranslationSessionCache: @unchecked Sendable {
+  static let shared = TranslationSessionCache()
+
+  private let lock = NSLock()
+  private var entries: [String: SessionEntry] = [:]
+
+  private func entry(source: Locale.Language, target: Locale.Language) -> SessionEntry {
+    let key = "\(source.maximalIdentifier)->\(target.maximalIdentifier)"
+    lock.lock()
+    defer { lock.unlock() }
+    if let existing = entries[key] {
+      return existing
+    }
+    let e = SessionEntry(source: source, target: target)
+    entries[key] = e
+    return e
+  }
+
+  /// Warms the cache for (source, target): see SessionEntry.warm.
+  func warm(source: Locale.Language, target: Locale.Language) async {
+    await entry(source: source, target: target).warm()
+  }
+
+  /// Translates text using the cached (or newly prepared) session for (source, target): see
+  /// SessionEntry.translate. Two calls for different pairs run fully concurrently (different
+  /// SessionEntry actors); two calls for the same pair serialize on that pair's actor.
+  func translate(source: Locale.Language, target: Locale.Language, text: String) async throws
+    -> (response: TranslationSession.Response, getSessionMs: Int, translateMs: Int)
+  {
+    try await entry(source: source, target: target).translate(text: text)
+  }
+}
+
 // kai_translate: performs one system translation synchronously.
 // src/dst are BCP-47 codes (e.g. "en" / "zh-Hans"); src may be an empty string for
 // auto-detect.
@@ -218,6 +329,16 @@ public func kai_translate(
       job.noteTaskEnded()
     }
 
+    // Issue #173 item 8: real timing instrumentation, not a repeat of the earlier "it's
+    // structural" guess. Four stages are timed and logged as one "translate.timing" line per
+    // call: the installed-languages enumeration below (suspected — and confirmed by this very
+    // log — to be the dominant per-call cost, since it awaits LanguageAvailability().status
+    // once per supported language every single time), source-language detection, getting a
+    // ready session (now cache-backed by TranslationSessionCache, so this is ~0 after the
+    // first call for a given pair instead of a fresh prepareTranslation() every time), and the
+    // translate() call itself.
+    let callStart = Date()
+
     let availability = LanguageAvailability()
     let installedAll = await availability.supportedLanguages
     var installed: [String] = []
@@ -226,6 +347,7 @@ public func kai_translate(
         installed.append(lang.maximalIdentifier)
       }
     }
+    let installedLangsMs = Int(Date().timeIntervalSince(callStart) * 1000)
 
     // A cancel that came in while the loop above ran stops here, before source detection and before
     // prepareTranslation: the caller already has its answer.
@@ -234,6 +356,7 @@ public func kai_translate(
       return
     }
 
+    let detectStart = Date()
     var effectiveSource = sourceCode
     var detectedLang: String? = nil
     if sourceCode.isEmpty {
@@ -270,14 +393,25 @@ public func kai_translate(
         bridgeErrorJSON(code: BRIDGE_ERR_NO_SOURCE_LANG, detail: detail, from: detectedFrom))
       return
     }
+    let detectMs = Int(Date().timeIntervalSince(detectStart) * 1000)
     let sourceLang = Locale.Language(identifier: effectiveSource)
-    let session = TranslationSession(installedSource: sourceLang, target: targetLang)
     do {
-      try await session.prepareTranslation()
-      let resp = try await session.translate(inputText)
+      // Issue #173 item 8: was `TranslationSession(installedSource:target:)` +
+      // `prepareTranslation()` inline here, on every call. Now backed by
+      // TranslationSessionCache, so only the first call for a given (source, target) pair
+      // pays the session-creation + prepareTranslation cost; every later call for the same
+      // pair (the overwhelmingly common case — most users translate one language pair) reuses
+      // the already-prepared session.
+      let (resp, getSessionMs, translateCallMs) = try await TranslationSessionCache.shared
+        .translate(source: sourceLang, target: targetLang, text: inputText)
       let from = resp.sourceLanguage.languageCode?.identifier ?? sourceCode
       job.finish(bridgeEncode(TranslateSuccess(result: resp.targetText, from: from)))
       bridgeFileLog(bridgeLogText("translate.done", from, targetCode, resp.targetText.utf8.count))
+      let totalMs = Int(Date().timeIntervalSince(callStart) * 1000)
+      bridgeFileLog(
+        bridgeLogText(
+          "translate.timing", installedLangsMs, detectMs, getSessionMs, translateCallMs,
+          totalMs))
     } catch {
       // A cancel is not a failure (issue #111): kai_translate_cancel has already answered the
       // caller, so this is the abandoned work unwinding. It is not logged as an error and reports
@@ -317,6 +451,43 @@ public func kai_translate_cancel(_ token: Int64) -> Int32 {
   let found = translateRegistry.cancel(token)
   bridgeFileLog(bridgeLogText("translate.cancel", token, found ? "running" : "not_running"))
   return found ? 1 : 0
+}
+
+// kai_warm_translate: warms (creates + prepareTranslation()s) a TranslationSessionCache entry
+// for (src, dst) so the first real kai_translate call for that pair skips the
+// prepareTranslation cost (issue #173 item 8). Go calls this once at launch, in its own
+// goroutine, for the user's default language pair (main.go), and it is harmless — a cheap
+// no-op — if that pair later turns out to already be cached (e.g. a translate happened before
+// warming finished) or if src/dst are empty (auto-detect has no fixed pair to warm; the caller
+// skips the call in that case, but this still no-ops safely if it didn't).
+// Blocks the calling thread until warming finishes or fails; the Go side calls this off the
+// main goroutine so it never blocks app startup. Always returns 1 (best-effort: a warm
+// failure — e.g. the pair's language pack is not installed — is not fatal, since kai_translate
+// still works, just without the pre-warmed session; failures are logged, not surfaced to Go).
+@_cdecl("kai_warm_translate")
+public func kai_warm_translate(
+  _ src: UnsafePointer<CChar>?,
+  _ dst: UnsafePointer<CChar>?
+) -> Int32 {
+  let sourceCode = src.flatMap { String(cString: $0) } ?? ""
+  let targetCode = dst.flatMap { String(cString: $0) } ?? ""
+  guard !sourceCode.isEmpty, !targetCode.isEmpty else {
+    // No fixed pair to warm (source is auto-detect, or target unset); not an error.
+    return 1
+  }
+  bridgeFileLog(bridgeLogText("translate.warm_start", sourceCode, targetCode))
+  let start = Date()
+  let sema = DispatchSemaphore(value: 0)
+  Task {
+    await TranslationSessionCache.shared.warm(
+      source: Locale.Language(identifier: sourceCode),
+      target: Locale.Language(identifier: targetCode))
+    sema.signal()
+  }
+  sema.wait()
+  let elapsedMs = Int(Date().timeIntervalSince(start) * 1000)
+  bridgeFileLog(bridgeLogText("translate.warm_done", sourceCode, targetCode, elapsedMs))
+  return 1
 }
 
 // kai_available_languages: queries locally downloaded (installed, offline-translatable)
