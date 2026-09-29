@@ -131,7 +131,7 @@ func TestPlanSourceSwitchShortTextNeverSwitches(t *testing.T) {
 }
 
 func TestPlanSourceSwitchCountsCodePointsNotBytes(t *testing.T) {
-	det := &fakeDetector{lang: "zh-Hans", conf: 0.99, ok: true}
+	det := &fakeDetector{lang: "zh", conf: 0.99, ok: true}
 	svc := newSwitchService(t, det, langpref.New())
 	// 10 Chinese characters are 30 bytes but 10 code points: too short.
 	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "今天天气很好我们去玩", From: model.EN, To: model.FR}); got.Switched {

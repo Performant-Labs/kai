@@ -25,6 +25,13 @@ func (w *TranslateWrapper) TranslateMulti(req model.TranslateRequest) (*model.Tr
 	return w.svc.TranslateMulti(req)
 }
 
+// PlanSourceSwitch decides whether text that just arrived changes the language pair (issue #200):
+// the source follows the text and the old source replaces the target. Every way text arrives asks
+// through this one call; the answer is applied, never learned or persisted, by the window.
+func (w *TranslateWrapper) PlanSourceSwitch(req model.SourceSwitchRequest) model.SourceSwitch {
+	return w.svc.PlanSourceSwitch(req)
+}
+
 // CancelTranslate cancels the running translation request requestID (issue #109), or only its
 // engine when engine is not empty; the other engines keep running. It reports whether it found
 // something still running, and returns false, without any error, for an unknown or finished

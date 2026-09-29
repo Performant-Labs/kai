@@ -46,3 +46,9 @@ func SetBridgeLocale(_ string) {}
 // see Translate above); empty implementation keeps the signature consistent with
 // apple_darwin.go's so main.go can call it unconditionally.
 func WarmTranslate(_, _ string) {}
+
+// DetectLanguage has no local detector off macOS (issue #200): it always reports none, and the
+// translate service falls back to the detection a translation result carries.
+func DetectLanguage(_ string) (model.Language, float64, bool) {
+	return "", 0, false
+}

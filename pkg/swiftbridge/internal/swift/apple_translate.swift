@@ -519,3 +519,38 @@ public func kai_available_languages(
   _ = sema.wait(timeout: .now() + 30)
   return writeCString(resultJSON, into: out, cap: out_cap)
 }
+
+// MARK: - Local language detection (issue #200)
+
+/// kai_detect_language's payload: the most likely language and how sure NaturalLanguage is.
+struct DetectedLanguage: Codable {
+  let lang: String
+  let confidence: Double
+}
+
+// kai_detect_language: detects the language of `text` locally with NLLanguageRecognizer and writes
+// {"lang":"es","confidence":0.99} (DetectedLanguage), or {"lang":"","confidence":0} when nothing
+// could be recognized. A pure, synchronous computation (a fresh recognizer per call, so there is
+// no shared state): no AppKit, no main thread, no Task and no wait, so any Go goroutine may call
+// it. The language is the bare language code (es, en, zh).
+@_cdecl("kai_detect_language")
+public func kai_detect_language(
+  _ text: UnsafePointer<CChar>?,
+  _ out: UnsafeMutablePointer<CChar>?,
+  _ out_cap: Int32
+) -> Int32 {
+  let input = text.flatMap { String(cString: $0) } ?? ""
+  var payload = DetectedLanguage(lang: "", confidence: 0)
+  if !input.isEmpty {
+    let recognizer = NLLanguageRecognizer()
+    recognizer.processString(input)
+    let hypotheses = recognizer.languageHypotheses(withMaximum: 1)
+    if let best = hypotheses.max(by: { $0.value < $1.value }), best.key != .undetermined {
+      // The bare language code, the way kai_translate reports its own detection (zh-Hans becomes
+      // zh): the Go side compares languages, not scripts.
+      let code = Locale.Language(identifier: best.key.rawValue).languageCode?.identifier
+      payload = DetectedLanguage(lang: code ?? best.key.rawValue, confidence: best.value)
+    }
+  }
+  return writeCString(bridgeEncode(payload), into: out, cap: out_cap)
+}

@@ -67,6 +67,10 @@ var (
 	// until warming finishes or fails; main.go calls it in its own goroutine at launch so
 	// startup is never blocked on it.
 	KaiWarmTranslate func(src string, dst string) int32
+	// KaiDetectLanguage detects the language of text locally with NaturalLanguage's
+	// NLLanguageRecognizer and writes {"lang":"es","confidence":0.99} (DetectedLanguage) into out
+	// (issue #200). A synchronous, pure computation: safe from any goroutine, no main-thread rule.
+	KaiDetectLanguage func(text string, out unsafe.Pointer, outCap int32) int32
 )
 
 // The dylib defaults to the same directory as this .go source file (build.sh copies the
@@ -179,6 +183,7 @@ func registerAll(h uintptr) {
 	register(&KaiTranslate, "kai_translate")
 	register(&KaiTranslateCancel, "kai_translate_cancel")
 	register(&KaiWarmTranslate, "kai_warm_translate")
+	register(&KaiDetectLanguage, "kai_detect_language")
 }
 
 // Available reports whether the Swift bridge loaded successfully (dylib Dlopen'ed and the

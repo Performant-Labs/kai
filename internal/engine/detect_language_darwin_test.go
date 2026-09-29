@@ -25,7 +25,7 @@ func TestDetectLanguageRealBridge(t *testing.T) {
 		{"Hola, ¿cómo estás? Necesito que me ayudes con este documento hoy.", "es"},
 		{"The quick brown fox jumps over the lazy dog again and again.", "en"},
 		{"Bonjour tout le monde, ceci est un test de détection de langue.", "fr"},
-		{"今天天气很好，我们一起去公园散步吧，然后回家吃饭。", "zh-Hans"},
+		{"今天天气很好，我们一起去公园散步吧，然后回家吃饭。", "zh"},
 	} {
 		start := time.Now()
 		lang, conf, ok := DetectLanguage(tc.text)
