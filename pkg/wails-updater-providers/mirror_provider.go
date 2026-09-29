@@ -14,22 +14,17 @@ import (
 )
 
 // Options controls updater behavior; everything is injected by the caller.
-// Note: language/Locale, theme/Theme, primary source/Source, and the update window
+// Note: language/Locale, theme/Theme, primary source/Source (auto and github both mean GitHub), and the update window
 // name/size/event names have been promoted to "library-global config" (see the var block and
 // Set/Get package functions below) and no longer appear in this struct;
 // the library reads the package globals directly, so callers don't thread parameters through
 // every layer — at runtime just call SetXxx to switch.
 type Options struct {
-	// CnbRepo is the CNB repo path (e.g. your-org/your-repo). Required when Source is
-	// SourceCNB/SourceAuto and CNB is selected, otherwise NewMirrorProvider errors.
-	CnbRepo string
-	// GithubRepo is the GitHub repo path (e.g. your-org/your-repo). Required when Source is
-	// SourceGithub/SourceAuto and GitHub is selected, otherwise NewMirrorProvider errors.
+	// GithubRepo is the GitHub repo path (e.g. your-org/your-repo). Required, otherwise
+	// NewMirrorProvider errors.
 	GithubRepo string
 	// GithubToken is the GitHub access token (needed for private repos or rate limits).
 	GithubToken string
-	// CnbToken is the CNB access token (needed for private repos or rate limits).
-	CnbToken string
 	// BuildTime is this machine's build time, used for nightly version time comparison
 	// (upgrade only when the remote publish time is newer).
 	// Example: time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
@@ -116,7 +111,7 @@ func (o Options) BuildTimeFileOrDefault() string {
 }
 
 // ===================== Library-global config (package vars) =====================
-// Language/Locale, theme/Theme, primary source/Source, and the update window
+// Language/Locale, theme/Theme, primary source/Source (auto and github both mean GitHub), and the update window
 // name/size/event names are all "library globals",
 // read/written externally via the exported Set/Get package functions; the library internals
 // (matcher, provider, window) read them
@@ -127,7 +122,7 @@ func (o Options) BuildTimeFileOrDefault() string {
 var (
 	globalLocale      Locale = LocaleZhCN             // current library-global language; falls back to the default (zh-CN) when unset
 	globalTheme       Theme  = ThemeDark              // current library-global theme; falls back to the default (dark) when unset
-	globalSource      Source = SourceAuto             // current library-global primary source preference (auto picks CNB/GitHub by language)
+	globalSource      Source = SourceAuto             // current library-global primary source preference (auto = GitHub)
 	globalWindowName         = "updater-window"       // built-in update window name
 	globalWindowW            = 520                    // built-in update window width (pixels; matches the JS side’s resizeToContent WINDOW_WIDTH so expansion doesn’t jump between 348 and 520)
 	globalWindowH            = 660                    // built-in update window fixed height (pixels; Wails’ inline shim drops Events.Emit payloads so height data can’t be returned — hence fixed height + CSS filling the background)
@@ -153,7 +148,7 @@ func SetTheme(theme Theme) { globalTheme = normalizeTheme(theme) }
 // unset).
 func GetTheme() Theme { return normalizeTheme(globalTheme) }
 
-// SetSource sets the library-global primary source preference (auto/cnb/github).
+// SetSource sets the library-global primary source preference (auto/github).
 func SetSource(v Source) { globalSource = normalizeSource(v) }
 
 // GetSource returns the current library-global primary source preference.
@@ -219,23 +214,20 @@ func SetClient(c *http.Client) {
 // http.DefaultClient).
 func GetClient() *http.Client { return globalClient }
 
-// MirrorProvider merges the CNB/GitHub dual sources, choosing the primary by the global
-// source preference.
+// MirrorProvider is the update provider (GitHub only since issue #178 removed the CNB source;
+// the type keeps its name to avoid churn in callers).
 // Language/theme/source are all read from package globals (GetLocale/GetTheme/GetSource) —
 // none are held as fields —
 // so calling SetXxx at runtime makes subsequent Check/Download/Window follow live.
 type MirrorProvider struct {
-	opts    *Options // caller-injected config pointer
-	cnbRepo string   // CNB repo path
-	ghRepo  string   // GitHub repo path
+	opts   *Options // caller-injected config pointer
+	ghRepo string   // GitHub repo path
 
-	cnbProvider    *cnbProvider    // CNB sub-source (active when source=CNB/auto selects CNB)
-	githubProvider *githubProvider // GitHub sub-source (active when source=Github/auto selects GitHub)
+	githubProvider *githubProvider // GitHub source
 
 	buildTime time.Time // this machine's build time, for nightly time comparison
 	gitCommit string    // this machine's git commit, for skipping same-commit nightlies
 
-	cnbToken      string              // CNB access token
 	githubToken   string              // GitHub access token
 	prerelease    bool                // whether pre-releases (nightlies) are allowed
 	assetMatcher  github.AssetMatcher // asset matcher (the official type)
@@ -249,19 +241,12 @@ type MirrorProvider struct {
 // package globals GetLogger/GetClient (injected by the caller via SetLogger/SetClient before
 // construction).
 func NewMirrorProvider(opts *Options) (*MirrorProvider, error) {
-	// Construction only validates source legality (the primary is not pinned here); the
-	// actual primary is computed at Check/Download
-	// time from the package globals GetSource/GetLocale, so it follows runtime SetXxx
-	// changes.
-	if _, err := decideSource(GetLogger()); err != nil {
-		return nil, err
+	if opts.GithubRepo == "" {
+		return nil, fmt.Errorf("%s", T("updater_init_repo_empty", map[string]any{"Source": string(SourceGithub)}))
 	}
-
 	m := &MirrorProvider{
 		opts:          opts,
-		cnbRepo:       opts.CnbRepo,
 		ghRepo:        opts.GithubRepo,
-		cnbToken:      opts.CnbToken,
 		githubToken:   opts.GithubToken,
 		prerelease:    opts.Prerelease,
 		assetMatcher:  opts.AssetMatcherOrDefault(),
@@ -271,48 +256,18 @@ func NewMirrorProvider(opts *Options) (*MirrorProvider, error) {
 		buildTime:     opts.BuildTime,
 		gitCommit:     opts.GitCommit,
 	}
-
-	// source is only used at construction to pick which sub-source to initialize (in auto
-	// mode, one is initialized by current language;
-	// the other is lazily initialized on demand during Check if it gets selected).
-	source, _ := decideSource(GetLogger())
-	switch source {
-	case SourceCNB:
-		if opts.CnbRepo == "" {
-			return nil, fmt.Errorf("%s", T("updater_init_repo_empty", map[string]any{"Source": string(SourceCNB)}))
-		}
-		// Empty-token checks are deferred to Check time — construction doesn't block (so
-		// NewMirrorProvider can always produce a usable provider).
-		m.cnbProvider = &cnbProvider{
-			client:        GetClient(),
-			lg:            GetLogger(),
-			repo:          opts.CnbRepo,
-			assetMatcher:  opts.AssetMatcherOrDefault(),
-			checksumFile:  opts.ChecksumFileOrDefault(),
-			gitCommitFile: opts.GitCommitFileOrDefault(),
-			buildTimeFile: opts.BuildTimeFileOrDefault(),
-			token:         opts.CnbToken,
-			buildTime:     opts.BuildTime,
-			gitCommit:     opts.GitCommit,
-			prerelease:    opts.Prerelease,
-		}
-	case SourceGithub:
-		if opts.GithubRepo == "" {
-			return nil, fmt.Errorf("%s", T("updater_init_repo_empty", map[string]any{"Source": string(SourceGithub)}))
-		}
-		m.githubProvider = &githubProvider{
-			client:        GetClient(),
-			lg:            GetLogger(),
-			repo:          opts.GithubRepo,
-			assetMatcher:  opts.AssetMatcherOrDefault(),
-			checksumFile:  opts.ChecksumFileOrDefault(),
-			gitCommitFile: opts.GitCommitFileOrDefault(),
-			buildTimeFile: opts.BuildTimeFileOrDefault(),
-			token:         opts.GithubToken,
-			buildTime:     opts.BuildTime,
-			gitCommit:     opts.GitCommit,
-			prerelease:    opts.Prerelease,
-		}
+	m.githubProvider = &githubProvider{
+		client:        GetClient(),
+		lg:            GetLogger(),
+		repo:          opts.GithubRepo,
+		assetMatcher:  m.assetMatcher,
+		checksumFile:  m.checksumFile,
+		gitCommitFile: m.gitCommitFile,
+		buildTimeFile: m.buildTimeFile,
+		token:         m.githubToken,
+		buildTime:     opts.BuildTime,
+		gitCommit:     opts.GitCommit,
+		prerelease:    opts.Prerelease,
 	}
 	return m, nil
 }
@@ -320,118 +275,14 @@ func NewMirrorProvider(opts *Options) (*MirrorProvider, error) {
 // Name implements the updater.Provider interface.
 func (m *MirrorProvider) Name() string { return "mirror" }
 
-// decideSource resolves the actual primary source from the current package globals
-// GetSource/GetLocale.
-// With source=auto/empty, the choice is by language: Chinese goes to CNB, everything else to
-// GitHub.
-func decideSource(lg *slog.Logger) (Source, error) {
-	cfgSource := GetSource()
-	locale := GetLocale()
-	switch cfgSource {
-	case "", SourceAuto:
-		// In auto mode the source is picked by language: Chinese goes to CNB, everything
-		// else to GitHub.
-		if locale == LocaleZhCN {
-			lg.Debug(T("updater_source_auto_selected", "Source", string(SourceCNB)))
-			return SourceCNB, nil
-		}
-		lg.Debug(T("updater_source_auto_selected", "Source", string(SourceGithub)))
-		return SourceGithub, nil
-	case SourceCNB:
-		return SourceCNB, nil
-	case SourceGithub:
-		return SourceGithub, nil
-	default:
-		return "", fmt.Errorf("%s", T("updater_init_unknown_source", map[string]any{"Source": string(cfgSource)}))
-	}
-}
-
-// resolveSource resolves the actual primary source at runtime from the current package
-// globals GetSource/GetLocale,
-// lazily initializing the corresponding sub-source (in auto mode, a language switch may
-// select the sub-source that wasn't initialized at construction).
-// Returns the primary source and its sub-source; src == "" means resolution failed.
-func (m *MirrorProvider) resolveSource() (Source, error) {
-	src, err := decideSource(GetLogger())
-	if err != nil {
-		return "", err
-	}
-	switch src {
-	case SourceCNB:
-		if m.cnbProvider == nil {
-			m.cnbProvider = &cnbProvider{
-				repo:          m.cnbRepo,
-				assetMatcher:  m.assetMatcher,
-				checksumFile:  m.checksumFile,
-				gitCommitFile: m.gitCommitFile,
-				buildTimeFile: m.buildTimeFile,
-				token:         m.cnbToken,
-				buildTime:     m.buildTime,
-				gitCommit:     m.gitCommit,
-				prerelease:    m.prerelease,
-				client:        GetClient(),
-				lg:            GetLogger(),
-			}
-		}
-		return SourceCNB, nil
-	case SourceGithub:
-		if m.githubProvider == nil {
-			m.githubProvider = &githubProvider{
-				client:        GetClient(),
-				lg:            GetLogger(),
-				repo:          m.ghRepo,
-				assetMatcher:  m.assetMatcher,
-				checksumFile:  m.checksumFile,
-				gitCommitFile: m.gitCommitFile,
-				buildTimeFile: m.buildTimeFile,
-				token:         m.githubToken,
-				buildTime:     m.buildTime,
-				gitCommit:     m.gitCommit,
-				prerelease:    m.prerelease,
-			}
-		}
-		return SourceGithub, nil
-	default:
-		return "", fmt.Errorf("%s", T("updater_init_no_source"))
-	}
-}
-
-// Check implements the updater.Provider interface, dispatching to the corresponding
-// sub-source by primary source.
-// The primary is computed fresh each time (reading package-level GetLocale/GetSource), so a
-// language switch is followed without rebuilds.
+// Check implements the updater.Provider interface.
 func (m *MirrorProvider) Check(ctx context.Context, req updater.CheckRequest) (*updater.Release, error) {
-	src, err := m.resolveSource()
-	if err != nil {
-		return nil, err
-	}
-	switch src {
-	case SourceCNB:
-		return m.cnbProvider.Check(ctx, req)
-	case SourceGithub:
-		return m.githubProvider.Check(ctx, req)
-	default:
-		return nil, fmt.Errorf("%s", T("updater_init_no_source"))
-	}
+	return m.githubProvider.Check(ctx, req)
 }
 
-// Download implements the updater.Provider interface, dispatching to the corresponding
-// sub-source by primary source.
-// The primary is computed fresh each time (reading package-level GetLocale/GetSource), so a
-// language switch is followed without rebuilds.
+// Download implements the updater.Provider interface.
 func (m *MirrorProvider) Download(ctx context.Context, rel *updater.Release, dst io.Writer, onProgress func(written, total int64)) error {
-	src, err := m.resolveSource()
-	if err != nil {
-		return err
-	}
-	switch src {
-	case SourceCNB:
-		return m.cnbProvider.Download(ctx, rel, dst, onProgress)
-	case SourceGithub:
-		return m.githubProvider.Download(ctx, rel, dst, onProgress)
-	default:
-		return fmt.Errorf("%s", T("updater_init_no_source"))
-	}
+	return m.githubProvider.Download(ctx, rel, dst, onProgress)
 }
 
 // buildStableRelease constructs the stable release (source-agnostic).
@@ -495,8 +346,7 @@ type publishedAtGetter interface {
 	GetPublishedAt() string
 }
 
-// sortReleasesByPublishedAt sorts by publish time descending (newest first); shared by CNB
-// and GitHub.
+// sortReleasesByPublishedAt sorts by publish time descending (newest first); .
 func sortReleasesByPublishedAt[T publishedAtGetter](list []T) {
 	sort.Slice(list, func(i, j int) bool {
 		ti, ei := time.Parse(time.RFC3339, list[i].GetPublishedAt())

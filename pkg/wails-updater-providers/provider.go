@@ -43,16 +43,11 @@ var sha256Re = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 // Download URL templates: {repo} is replaced at runtime with the actual repo path (e.g.
 // example-org/example-repo),
 // {tag} with the version (tag_name), and {file} with the asset file name.
-// CNB's public download base is https://cnb.cool (same origin as the response's
-// browser_download_url; no auth needed);
-// GitHub's public download base is https://github.com. Both are built from templates.
+// GitHub's public download base is https://github.com, built from a template.
 const (
-	cnbDownloadURL    = "https://cnb.cool/{repo}/-/releases/download/{tag}/{file}"
-	ghDownloadURL     = "https://github.com/{repo}/releases/download/{tag}/{file}"
-	cnbReleaseTagList = "https://api.cnb.cool/{repo}/-/releases?page=1&page_size=20"
-	cnbReleaseTagURL  = "https://api.cnb.cool/{repo}/-/releases/tags/{tag}"
-	ghReleaseLatest   = "https://api.github.com/repos/{repo}/releases/latest"
-	ghReleasesList    = "https://api.github.com/repos/{repo}/releases?per_page=100"
+	ghDownloadURL   = "https://github.com/{repo}/releases/download/{tag}/{file}"
+	ghReleaseLatest = "https://api.github.com/repos/{repo}/releases/latest"
+	ghReleasesList  = "https://api.github.com/repos/{repo}/releases?per_page=100"
 )
 
 // buildURL renders a download URL from the template: {tag} -> tag, {file} -> file.
@@ -64,11 +59,11 @@ func buildURL(tpl, tag, file string) string {
 
 // downloadRelease is the shared download logic: downloads the release's upgrade artifact to
 // dst, reporting progress via onProgress.
-// Prefers directURL (the asset's real download URL, e.g. CNB's browser_download_url);
+// Prefers directURL (the asset's real download URL);
 // when directURL is empty it falls back to template-joining downloadURLTpl + repo + version +
 // filename (the GitHub path).
-// The caller pre-builds the request via newReq before issuing (CNB attaches Accept etc.;
-// GitHub uses a plain GET),
+// The caller pre-builds the request via newReq before issuing (GitHub sets Accept and
+// the optional Bearer token),
 // and this function only executes the request, reads the body and reports progress — it never
 // news a request itself.
 func downloadRelease(ctx context.Context, lg *slog.Logger, client *http.Client, downloadURLTpl, repo string, rel *updater.Release, dst io.Writer, onProgress func(written, total int64), directURL string, newReq func(ctx context.Context, url string) (*http.Request, error)) error {

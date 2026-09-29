@@ -314,12 +314,9 @@ export interface UpdaterConfig {
     "prerelease": boolean;
 
     /**
-     * Source selects the update-check source: empty / "github" / "cnb".
-     *   - empty (default): current logic — auto-pick per UI language (English → GitHub,
-     *     Chinese → CNB).
-     *   - "github": force official GitHub only (with SHA256SUMS verification).
-     *   - "cnb": force the CNB mirror only (needs cnbToken; anonymous 401 / unreachable
-     *     network is treated as "no update").
+     * Source selects the update-check source: empty / "github". Both mean GitHub, the only
+     * source (the CNB mirror was removed, issue #178; a saved "cnb" is reset to empty on load by
+     * normalizeUpdaterSource).
      * Note: only affects the "check / download source" choice, not the updater's own install
      * behavior.
      */

@@ -22,10 +22,9 @@ copy. Never check boxes here. The reasoning behind each step is in
 - [ ] 4. **No real, ready work left unmerged**
   - `gh pr list --repo Performant-Labs/kai-private --state open` (the script counts them; the decisions are yours)
   - Dependabot bumps: merge the ones wanted, and record why the rest wait (a major bump such as a new Wails or Vitest version is a decision, not noise): `___`
-- [ ] 5. **In-app updater channel** (release-blocking until decided; see `docs/releasing.md`)
-  - The updater is hardcoded to upstream `dtapps/kai` (`main.go` ~line 642) and can offer
-    upstream's build over this one.
-  - The script prints whether it still points at upstream. Tracked in [#178](https://github.com/Performant-Labs/kai-private/issues/178). State of the fix: `___` ("fixed in <PR>", or "not fixed: release notes tell users to decline the update prompt")
+- [ ] 5. **In-app updater channel** (see `docs/releasing.md`; [#178](https://github.com/Performant-Labs/kai-private/issues/178) is fixed)
+  - The updater polls this fork (`buildinfo.UpdaterGithubRepo`), not upstream; nothing to decline. Until releases are public, installed apps get no update and users install by hand; the release notes must not promise auto-update.
+  - The script warns if `main.go` ever points at `dtapps/kai` again. Result: `___`
 
 ## Known issues and changelog coverage
 
@@ -36,7 +35,7 @@ Gathered here, before the CHANGELOG is written, so nothing is missed.
   - `gh issue list --repo Performant-Labs/kai-private --label known-issue --state open`
   - Then skim the whole open list: real defects have been filed with no label
   - **Open does not mean live.** For each candidate, confirm it still happens on the build you are releasing, or write it as "unverified" and say why
-- [ ] 7. **One line per real, still-open issue**, with a link. This exact list, plus the two standing lines from `docs/releasing.md` (updater #178, Accessibility re-grant), goes into the CHANGELOG's Known Issues in step 12, verbatim: `___`
+- [ ] 7. **One line per real, still-open issue**, with a link. This exact list, plus the standing line from `docs/releasing.md` (Accessibility re-grant), goes into the CHANGELOG's Known Issues in step 12, verbatim: `___`
 - [ ] 8. **Changelog coverage: `scripts/changelog-check.sh`**
   - Every PR it lists gets an entry under `[Unreleased]` citing its number or issue, or a reasoned entry in the `<!-- changelog-skip: ... -->` comment
   - Read the issue and the diff for "Implements #NN" PRs; do not write an entry from a title alone
@@ -53,7 +52,7 @@ Steps 9-13 happen on ONE branch, `release/vX.Y.Z`, in one PR.
   (2 in `build/config.yml`, 2 in `build/darwin/Info.plist`)
 - [ ] 12. **Restructure `CHANGELOG.md`**
   - `[Unreleased]` becomes `## [X.Y.Z] - YYYY-MM-DD`, organized per `docs/releasing.md`
-  - Known Issues = the list from step 7, verbatim, standing lines included (release notes are extracted from this section, so this is how the signing and updater warnings reach them)
+  - Known Issues = the list from step 7, verbatim, standing lines included (release notes are extracted from this section, so this is how the signing warning reaches them)
   - Fresh empty `## [Unreleased]` above it
 - [ ] 13. **Open the PR, get PR-Agent above 90, merge it, confirm CI is green on the merge commit**
   - Every PR-Agent finding read and fixed or dismissed with a reason
@@ -97,8 +96,8 @@ CI and the verify script cannot see these. Install the built app to `/Applicatio
   - Output: `___`
 - [ ] 24. **Build the release notes**: the CHANGELOG's `## [X.Y.Z]` section into a standalone
   file, minus the `<!-- changelog-skip -->` comment, with the **Installing** paragraph from
-  `docs/releasing.md` ("Release notes preface") in front. Nothing else is added (the updater and
-  Accessibility warnings are already in its Known Issues). Read it once as a stranger would
+  `docs/releasing.md` ("Release notes preface") in front. Nothing else is added (the Accessibility
+  warning is already in its Known Issues). Read it once as a stranger would
 - [ ] 25. **Explicit go-ahead obtained** to publish
 - [ ] 26. **Create the release**
   - `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip Kai-X.Y.Z-darwin-arm64.dmg SHA256SUMS --notes-file <notes> --repo Performant-Labs/kai-private --verify-tag`

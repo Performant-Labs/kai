@@ -125,6 +125,13 @@ func (g *githubProvider) checkPrerelease(ctx context.Context, req updater.CheckR
 		g.lg.Warn(g.t("updater_warn_unauthorized"))
 		return nil, fmt.Errorf("%s", g.t("updater_err_unauthorized"))
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		// A private repo (anonymous callers get 404, not 401) or a repo with no published release
+		// yet: nothing to offer. That is "no update", not a failure worth a warning or a dialog
+		// (issue #178).
+		g.lg.Debug("no releases visible for the update repo (HTTP 404); treating as up to date", "repo", g.repo)
+		return nil, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		g.lg.Warn(g.t("updater_warn_api_error", "Status", resp.StatusCode, "Body", string(body)))
@@ -237,6 +244,13 @@ func (g *githubProvider) checkStable(ctx context.Context, req updater.CheckReque
 	if resp.StatusCode == http.StatusUnauthorized {
 		g.lg.Warn(g.t("updater_warn_unauthorized"))
 		return nil, fmt.Errorf("%s", g.t("updater_err_unauthorized"))
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		// A private repo (anonymous callers get 404, not 401) or a repo with no published release
+		// yet: nothing to offer. That is "no update", not a failure worth a warning or a dialog
+		// (issue #178).
+		g.lg.Debug("no releases visible for the update repo (HTTP 404); treating as up to date", "repo", g.repo)
+		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))

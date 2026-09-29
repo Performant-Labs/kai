@@ -31,7 +31,6 @@ type Source string
 // Update source constants: package globals set by SetSource; also used by
 // Provider.Name().
 const (
-	SourceCNB    Source = "cnb"
 	SourceGithub Source = "github"
 	SourceAuto   Source = "auto"
 )
@@ -68,10 +67,11 @@ func normalizeTheme(theme Theme) Theme {
 }
 
 // normalizeSource normalizes any source preference into a supported Source;
-// empty or unknown values fall back to SourceAuto (primary source picked by language).
+// empty or unknown values fall back to SourceAuto. That includes "cnb": the CNB source was
+// removed (issue #178), so a value left over from that era selects the default.
 func normalizeSource(src Source) Source {
 	switch src {
-	case SourceCNB, SourceGithub, SourceAuto:
+	case SourceGithub, SourceAuto:
 		return src
 	default:
 		return SourceAuto

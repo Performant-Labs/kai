@@ -676,10 +676,8 @@ func main() {
 	kupdater.SetTheme(kupdater.Theme(updTheme))
 	kupdater.SetSource(kupdater.Source(settingsService.Get().Updater.Source))
 	updOpts := kupdater.Options{
-		CnbRepo:     "dtapp/kai",
-		GithubRepo:  "dtapps/kai",
+		GithubRepo:  buildinfo.UpdaterGithubRepo,
 		GithubToken: buildinfo.GithubToken,
-		CnbToken:    buildinfo.CnbToken,
 		BuildTime:   parseBuildTime(buildinfo.BuildTime),
 		GitCommit:   buildinfo.GitCommit,
 		Prerelease:  settingsService.Get().Updater.Prerelease,
