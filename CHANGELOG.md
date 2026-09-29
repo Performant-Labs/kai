@@ -6,6 +6,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 `scripts/changelog-check.sh` lists merged PRs this section does not cover.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-09-29
 <!-- changelog-skip: PRs deliberately not listed (CI, test-harness and i18n-key-check plumbing, and a groundwork PR replaced by #147): #4 #21 #27 #37 #71 -->
 
 ### Enhancements
@@ -41,7 +43,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - Alt+A can still miss selected text in Chrome (for example a Google Sheets cell). A probe found the simulated Cmd+C fails against a Chrome text field at every key delay tried, so the fixes above may not help there. WhatsApp got the race fix but was not tested inside WhatsApp itself (#175).
 - After shrinking the translate window, quitting and relaunching, one report said the window did not appear (possibly behind other windows). It was not reproduced (#175).
 - Apple's on-device engine can add blank lines between translated lines of multi-line input. Believed to be Apple's own behavior; not confirmed against another engine (#173).
-- The Baidu engine may return only the first line of a multi-line translation. Unconfirmed (#146).
+- The Baidu engine keeps only the first entry of Baidu's response (`internal/engine/baidu.go`), so if Baidu returns one entry per line, multi-line text loses every line after the first. Baidu's real response was not tested (#146).
 - The Settings window was reported to disappear when Kai loses focus. That was filed against the old menu-bar-only mode; the Dock icon change (#165) may have fixed it, and it has not been re-tested (#154).
 - The in-app updater is hardcoded to upstream `dtapps/kai` and can offer an upstream build over this one. Decline the update prompt (#178).
 - Every new build is a new identity to macOS, so the Accessibility grant must be removed and added again after installing one.
