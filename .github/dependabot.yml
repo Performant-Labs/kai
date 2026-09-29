@@ -1,20 +1,66 @@
+# Dependabot configuration, following the org standard in the playbook repo
+# (workflow/new-repo-setup.md section 7 and its reference .github/dependabot.yml; rollout #442).
+#
+# Weekly, patch and minor only. Majors are never opened: that only happens if the `ignore`
+# block is written out explicitly on EVERY entry, so it is. Accepted cost (same as the standard):
+# `ignore` also applies to security updates, so a security fix that ships only in a major version
+# produces an alert with no PR behind it and has to be handled by hand.
+#
+# Grouping: each ecosystem's weekly patch/minor updates land as ONE PR instead of one per
+# package (`applies-to: version-updates`, so security updates still get their own PRs).
+#
+# Deliberately NOT here: the auto-merge workflow from the standard. This repo has no branch
+# protection or required checks and repository auto-merge is off, so it would merge a bump
+# without any check. Enabling that is a separate, deliberate decision.
 version: 2
 
 updates:
-  # Go 依赖
+  # Go modules
   - package-ecosystem: 'gomod'
     directory: '/'
     schedule:
-      interval: 'daily'
+      interval: 'weekly'
+    open-pull-requests-limit: 10
     labels:
       - 'dependencies'
       - 'go'
+    groups:
+      all:
+        applies-to: version-updates
+        patterns: ['*']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
-  # 前端依赖
+  # Frontend (npm)
   - package-ecosystem: 'npm'
     directory: '/frontend'
     schedule:
-      interval: 'daily'
+      interval: 'weekly'
+    open-pull-requests-limit: 10
     labels:
       - 'dependencies'
       - 'frontend'
+    groups:
+      all:
+        applies-to: version-updates
+        patterns: ['*']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  # The GitHub Actions workflow files themselves
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+    labels:
+      - 'dependencies'
+    groups:
+      all:
+        applies-to: version-updates
+        patterns: ['*']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
