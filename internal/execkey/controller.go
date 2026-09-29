@@ -39,15 +39,28 @@ const (
 )
 
 // pollClipboardText polls read (selection.Service.ReadClipboardText) every pollClipboardInterval
-// until it returns non-empty text or pollClipboardTimeout elapses, whichever comes first. It
-// always performs at least one read. This replaces a single fixed-delay read so that apps whose
-// copy handling is asynchronous (a Chrome tab, an Electron app) get enough time to populate the
-// pasteboard, without slowing down the common case where a native text field already has it on
-// the first read.
-func pollClipboardText(read func() string) string {
+// until it returns text that is both non-empty AND different from stale, or pollClipboardTimeout
+// elapses, whichever comes first. It always performs at least one read. This replaces a single
+// fixed-delay read so that apps whose copy handling is asynchronous (a Chrome tab, an Electron
+// app) get enough time to populate the pasteboard, without slowing down the common case where a
+// native text field already has it on the first read.
+//
+// PR review finding (issue #173): an earlier version accepted the first non-empty read
+// unconditionally. Every caller here already clears the clipboard before injecting the copy key
+// (CopySelection's step 2 in this same package), so in practice the first read during normal
+// operation is "" and this made no difference — but that safety depended entirely on every
+// caller remembering to clear first, which pollClipboardText itself had no way to enforce. The
+// stale parameter makes the guarantee self-contained: the caller passes what the clipboard held
+// right before the copy key was injected (in the normal path, "" — the same value CopySelection
+// already cleared it to), and a read that still equals stale is treated as "not yet updated" and
+// keeps polling, even if it is non-empty (e.g. a caller that skipped the clear, or a race where
+// the clear itself hadn't visibly landed yet). This is what stops a genuinely stale clipboard
+// value — leftover text from a previous unrelated copy — from being returned as if it were the
+// new selection.
+func pollClipboardText(read func() string, stale string) string {
 	deadline := time.Now().Add(pollClipboardTimeout)
 	for {
-		if text := read(); text != "" {
+		if text := read(); text != "" && text != stale {
 			return text
 		}
 		if time.Now().After(deadline) {
