@@ -127,3 +127,40 @@ func TestSessionCacheIsPerPairNotGlobal(t *testing.T) {
 			"design: a plain class dispatching to per-pair SessionEntry actors)")
 	}
 }
+
+// Issue #200: the local language detector entry point. It is a pure NaturalLanguage computation,
+// so it must stay clear of everything with a main-thread or wait rule: no AppKit, no semaphore,
+// no Task. It is declared, registered on the Go side and stubbed on the other OSes.
+func TestDetectLanguageEntryPoint(t *testing.T) {
+	src := readSwift(t, "apple_translate.swift")
+	i := strings.Index(src, `@_cdecl("kai_detect_language")`)
+	if i < 0 {
+		t.Fatal(`apple_translate.swift does not declare @_cdecl("kai_detect_language")`)
+	}
+	body := src[i:]
+	if j := strings.Index(body[1:], "@_cdecl"); j >= 0 {
+		body = body[:j+1]
+	}
+	if !strings.Contains(body, "NLLanguageRecognizer") {
+		t.Error("kai_detect_language does not use NLLanguageRecognizer")
+	}
+	for _, banned := range []string{"sema", "Task", "NSApp", "NSWorkspace", "DispatchQueue.main", "MainActor"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("kai_detect_language uses %q: it must be a plain synchronous computation", banned)
+		}
+	}
+	load, err := os.ReadFile("load.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(load), `register(&KaiDetectLanguage, "kai_detect_language")`) {
+		t.Error("load.go does not register kai_detect_language")
+	}
+	other, err := os.ReadFile("load_other.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(other), "KaiDetectLanguage") {
+		t.Error("load_other.go has no KaiDetectLanguage stub")
+	}
+}
