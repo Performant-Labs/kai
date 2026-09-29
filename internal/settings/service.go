@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -191,12 +192,9 @@ type UpdaterConfig struct {
 	// Prerelease is whether pre-release updates may be detected.
 	// When on: update checks include the GitHub repo's pre-release versions as candidates.
 	Prerelease bool `json:"prerelease" mapstructure:"prerelease"`
-	// Source selects the update-check source: empty / "github" / "cnb".
-	//   - empty (default): current logic — auto-pick per UI language (English → GitHub,
-	//     Chinese → CNB).
-	//   - "github": force official GitHub only (with SHA256SUMS verification).
-	//   - "cnb": force the CNB mirror only (needs cnbToken; anonymous 401 / unreachable
-	//     network is treated as "no update").
+	// Source selects the update-check source: empty / "github". Both mean GitHub, the only
+	// source (the CNB mirror was removed, issue #178; a saved "cnb" is reset to empty on load by
+	// normalizeUpdaterSource).
 	// Note: only affects the "check / download source" choice, not the updater's own install
 	// behavior.
 	Source string `json:"source" mapstructure:"source"`
@@ -206,9 +204,16 @@ type UpdaterConfig struct {
 const (
 	// UpdaterSourceGitHub forces the official GitHub source.
 	UpdaterSourceGitHub = "github"
-	// UpdaterSourceCNB forces the CNB mirror source.
-	UpdaterSourceCNB = "cnb"
 )
+
+// normalizeUpdaterSource resets any updater source that is no longer offered to the default
+// (empty). The CNB source was removed (issue #178), so a settings.json that still says "cnb" (in any
+// case) must load and run on GitHub rather than fail; the startup re-save then drops it from disk.
+func (c *Settings) normalizeUpdaterSource() {
+	if strings.EqualFold(c.Updater.Source, "cnb") {
+		c.Updater.Source = ""
+	}
+}
 
 // DefaultTarget is the policy default target language (issue #44): what a fresh install
 // translates into, and the fallback for a persisted target that cannot be used. It is English
@@ -322,6 +327,7 @@ func NewService(dataDir string) (*Service, error) {
 	}
 	s.cfg.Path = filePath
 	s.cfg.normalizeLanguages()
+	s.cfg.normalizeUpdaterSource()
 
 	// Re-save after startup so disk config matches memory (missing defaults are backfilled;
 	// extras are overwritten by the write)
@@ -380,6 +386,7 @@ func (s *Service) startWatching() {
 			}
 			s.cfg.Path = s.filePath
 			s.cfg.normalizeLanguages()
+			s.cfg.normalizeUpdaterSource()
 
 			if s.onChange != nil {
 				cb := s.onChange

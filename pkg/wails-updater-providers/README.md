@@ -1,14 +1,14 @@
 # wails-updater-providers
 
-Wails v3 自更新器的多源 Provider 实现包。封装 CNB / GitHub 双源，对外只暴露官方
+Wails v3 自更新器的多源 Provider 实现包。封装 GitHub 源（CNB 源已移除，#178），对外只暴露官方
 `github.com/wailsapp/wails/v3/pkg/updater` 的类型，调用方 `import` 后直接
 `updater.Config{Providers: []updater.Provider{...}}` 即可使用，无需引入 GitHub 私有类型。
 
 ## 特性
 
-- 双源支持：`cnb` / `github` / `auto`（按可达性自动选择）。
+- 单源：`github` / `auto`（二者等价，均为 GitHub）。历史值 `cnb` 会被规整为 `auto`。GitHub 对匿名请求返回 404（私有仓库或尚无 Release）时视为「无更新」，仅记 Debug 日志。
 - 注入项与全局配置分离：`Options` 只承载调用方注入项（`Logger`、`Client`、
-  `CnbRepo`、`GithubRepo`、`Token`、`BuildTime`、`GitCommit`、`Prerelease`、
+  `GithubRepo`、`Token`、`BuildTime`、`GitCommit`、`Prerelease`、
   `AssetMatcher`、`ChecksumFile` 等）；**语言/主题/主源为包级全局**，由 `SetLocale` /
   `SetTheme` / `SetSource` 设置，库内部（`matcher` / `provider` / 更新窗口）直接读取，
   运行时调用 `SetXxx` 即可实时跟随，无需重新构造 provider。
@@ -39,10 +39,9 @@ import (
 func main() {
     // 1. 设置包全局语言/主源（一次设置，运行时亦可经 SetXxx 动态切换）。
     kupdater.SetLocale(kupdater.LocaleZhCN) // 或 kupdater.LocaleEnUS
-    kupdater.SetSource(kupdater.SourceAuto) // cnb / github / auto
+    kupdater.SetSource(kupdater.SourceAuto) // github / auto
     // 2. 构造 Options（只注入调用方侧数据；语言/主题/源由包全局承载）。
     opts := kupdater.Options{
-        CnbRepo:     "your-org/your-repo",
         GithubRepo:  "your-org/your-repo",
         // Logger / Client / Token / BuildTime / GitCommit / Prerelease 等按需填写，
         // 不填则走默认值（Logger=slog.Default()、Client=http.DefaultClient 等）。
@@ -137,9 +136,7 @@ Hide`），避免「重开 session 误藏窗口」导致一闪而过。
 | --- | --- | --- |
 | `Logger` | `*slog.Logger` | 自定义日志器，默认 `slog.Default()`。 |
 | `Client` | `*http.Client` | 自定义 HTTP 客户端，默认 `http.DefaultClient`。 |
-| `CnbRepo` | `string` | CNB 仓库路径（如 `your-org/your-repo`）。`Source` 选中 CNB 时必填。 |
-| `GithubRepo` | `string` | GitHub 仓库路径（如 `your-org/your-repo`）。`Source` 选中 GitHub 时必填。 |
-| `CnbToken` | `string` | CNB 访问令牌（私有仓库或提频所需）。 |
+| `GithubRepo` | `string` | GitHub 仓库路径（如 `your-org/your-repo`）。必填。 |
 | `GithubToken` | `string` | GitHub 访问令牌（私有仓库或提频所需）。 |
 | `BuildTime` | `time.Time` | 本机构建时间，用于 nightly 版本时间比较。 |
 | `GitCommit` | `string` | 本机构建 git commit，用于 nightly 相同 commit 跳过。 |

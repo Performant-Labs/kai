@@ -7,6 +7,10 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+### Enhancements
+- The in-app updater no longer looks at upstream Kai's releases, so it can no longer offer an upstream build over this one. It checks this fork instead (#178). This fork's repository is private, so for now the check finds nothing and stays silent: updates are not available until releases are published somewhere public, and each release is installed by hand.
+- The China mirror (cnb.cool) update source is removed. A saved "cnb" update-source setting is reset to the default on the next launch (#178).
+
 ## [0.1.0] - 2026-09-29
 <!-- changelog-skip: PRs deliberately not listed (CI, test-harness and i18n-key-check plumbing, and a groundwork PR replaced by #147): #4 #21 #27 #37 #71 -->
 
@@ -45,5 +49,5 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - Apple's on-device engine can add blank lines between translated lines of multi-line input. Believed to be Apple's own behavior; not confirmed against another engine (#173).
 - The Baidu engine keeps only the first entry of Baidu's response (`internal/engine/baidu.go`), so if Baidu returns one entry per line, multi-line text loses every line after the first. Baidu's real response was not tested (#146).
 - The Settings window was reported to disappear when Kai loses focus. That was filed against the old menu-bar-only mode; the Dock icon change (#165) may have fixed it, and it has not been re-tested (#154).
-- The in-app updater is hardcoded to upstream `dtapps/kai` and can offer an upstream build over this one. Decline the update prompt (#178).
+- The in-app updater is hardcoded to upstream `dtapps/kai` and can offer an upstream build over this one. Decline the update prompt (#178). Fixed after 0.1.0: see [Unreleased].
 - Every new build is a new identity to macOS, so the Accessibility grant must be removed and added again after installing one.

@@ -14,7 +14,7 @@ import (
 // Generic placeholder repo; no real business info hardcoded.
 const testRepo = "example-org/example-repo"
 
-// redirectClient redirects requests to api.cnb.cool / github.com to the mock server.
+// redirectClient redirects requests to api.github.com / github.com to the mock server.
 func redirectClient(srv *httptest.Server) *http.Client {
 	host := strings.TrimPrefix(srv.URL, "http://")
 	return &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {

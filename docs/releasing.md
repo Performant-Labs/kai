@@ -27,7 +27,7 @@ shows this value, and `scripts/release-verify.sh` checks it. (No screen in the a
 version today.)
 
 Format: SemVer, plain `X.Y.Z` in files, `vX.Y.Z` as the tag. This fork starts its own line at
-`0.1.0`. It does not track upstream's numbers (see "The in-app updater" for why that matters).
+`0.1.0`. It does not track upstream's numbers (see "The in-app updater"; installed apps do not see this fork's releases yet).
 
 **The first release has no earlier release tag.** Treat everything in `[Unreleased]` as its
 content and cut `0.1.0`. The one tag on the remote, `backup/master-before-subject-rewrite-2026-09-26`,
@@ -107,20 +107,22 @@ certificate or notarization secrets. Two consequences to state in every release'
   1Password has none either. It would also stop every build invalidating the Accessibility grant.
   Until then the two bullets above are the cost of shipping ad-hoc signed.
 
-## The in-app updater (release-blocking until decided)
+## The in-app updater (no updates until releases are public)
 
-`main.go` (around line 642) hardcodes the updater to **upstream**: `CnbRepo: "dtapp/kai"`,
-`GithubRepo: "dtapps/kai"`. Two consequences:
+The updater polls `Performant-Labs/kai-private` (`buildinfo.UpdaterGithubRepo`), never upstream
+`dtapps/kai`, and the CNB (cnb.cool) source is gone ([#178](https://github.com/Performant-Labs/kai-private/issues/178)).
+Consequences:
 
-1. A release cut from this repo is invisible to installed apps.
-2. Installed apps can offer **upstream's** build, and accepting it would replace this fork's
-   fixes. The log shows this today: `Stable update ready: v0.2.0`.
+1. An installed app can no longer be offered upstream's build over this fork's.
+2. The repo is private, so an anonymous update check gets a 404 and reads it as "no update". The
+   app stays quiet (a debug log line, no warning, no dialog), and **installed apps will not see a
+   release cut from this repo**. Users install each release by hand.
+3. Updates need release assets someone can download without a token: a public releases repo (or
+   public assets) that `buildinfo.UpdaterGithubRepo` then points at. That is a separate change; do
+   not ship a token inside the app to get around it.
 
-Until this is decided and fixed (repoint the updater at this repo, which needs a way to read a
-private repo's releases without embedding a token in a distributed app, or disable in-app
-updates for fork builds), the release checklist has a step that says so out loud and the
-release notes must tell users to decline the update prompt. This is a product-behavior change,
-so it is tracked in its own issue, [#178](https://github.com/Performant-Labs/kai-private/issues/178), and not done as part of the process work.
+So there is nothing to warn about for the updater at release time, but the release notes must not
+promise auto-update.
 
 ## What a release produces
 
@@ -145,7 +147,7 @@ so it is tracked in its own issue, [#178](https://github.com/Performant-Labs/kai
 
 **`.github/workflows/release.yml` is not used for this fork's releases.** It is upstream's,
 kept unedited so upstream changes still merge cleanly. It builds four platforms on billed
-hosted runners (three of which this fork does not ship), expects updater, CNB, PostHog and
+hosted runners (three of which this fork does not ship), expects CNB, PostHog and
 signing secrets this fork does not have (empty tokens would be baked into the binary), and its
 release step targets a channel no installed app watches. Revisit it if this fork gains a
 Developer ID and a working update channel.
@@ -229,13 +231,11 @@ tracker is not a reliable list of them, so build the list deliberately:
 
 Standing Known Issues lines (verbatim, in the CHANGELOG's Known Issues):
 
-- The in-app updater is hardcoded to upstream `dtapps/kai` and can offer an upstream build over
-  this one. Decline the update prompt (#178).
 - Every new build is a new identity to macOS, so the Accessibility grant must be removed and
   added again after installing one.
 
-Because release notes are extracted from the CHANGELOG, this is how the updater and Accessibility
-warnings reach the notes without anyone writing them separately at publish time. The third
+Because release notes are extracted from the CHANGELOG, this is how the Accessibility warning
+reaches the notes without anyone writing it separately at publish time. The third
 consequence of ad-hoc signing, the Gatekeeper quarantine, is not a known issue but an install
 instruction, so it lives in the release notes preface (next section).
 

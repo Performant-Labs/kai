@@ -16,7 +16,7 @@ A translation tool that lives in the system tray, with selection, screenshot and
 - **Translation engines**: DeepL, Google, OpenAI, Baidu, Tencent, Youdao, plus macOS system translation. Google and system translation work out of the box; the rest require your own API key
 - **OCR**: macOS uses the system offline recognition (no install needed); local tesseract is optional. Region-capture trigger is macOS only
 - **UI language**: built-in Chinese / English, follows the system or switches in Settings
-- **Auto update**: silent check on startup + "Check for Updates" in the tray menu; the update source defaults to UI language (Chinese → CNB, English → GitHub) and can also be set manually; turning on the pre-release channel receives the daily nightly builds
+- **Auto update**: silent check on startup + "Check for Updates" in the tray menu; the update source is GitHub (the CNB mirror was removed) and this fork's repository is private, so no update is offered until releases are public; turning on the pre-release channel receives the daily nightly builds
 
 ## 2. Anonymous Analytics (PostHog)
 

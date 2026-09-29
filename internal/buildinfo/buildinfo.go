@@ -11,13 +11,17 @@ package buildinfo
 
 import "path/filepath"
 
+// UpdaterGithubRepo is the GitHub repository (owner/name) the in-app updater polls for releases.
+// It is this fork, never upstream (issue #178). The repository is private, so an anonymous update
+// check finds nothing and reads as "no update" until releases are published somewhere public.
+const UpdaterGithubRepo = "Performant-Labs/kai-private"
+
 // The variables below are injected at packaging time:
 //
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.Version=1.0.0
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.BuildTime=2026-08-06T12:00:00Z
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.Dev=false
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.GithubToken=xxx
-//	-X cnb.cool/dtapp/kai/internal/buildinfo.CnbToken=xxx
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.PosthogToken=phc_xxx
 //	-X cnb.cool/dtapp/kai/internal/buildinfo.PosthogProjectID=12345
 var (
@@ -25,10 +29,9 @@ var (
 	BuildTime = "unknown"
 	// Dev flag: "true" uses ~/.kai.dev/, "false" uses ~/.kai/.
 	Dev = "true"
-	// Updater-related tokens (GitHub source / CNB mirror source). Empty when not injected
+	// Updater-related token (GitHub source). Empty when not injected
 	// in local dev; does not affect running.
 	GithubToken = ""
-	CnbToken    = ""
 	// GitCommit is the commit hash injected at build time (injected by CI via -ldflags;
 	// empty locally).
 	GitCommit = ""
