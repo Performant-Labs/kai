@@ -8,6 +8,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ## [Unreleased]
 
 ### Enhancements
+- **Visible behaviour change, on by default:** when text arrives in a different language than the pinned source dropdown shows, Kai now switches the source dropdown to that language, makes the old source the target and translates, with no click. It applies to the hotkey, tray and auto-clipboard fill, a paste, and Translate on typed text, and a note under the result says the languages were switched; the swap button undoes it (#200). This reverses #161's "the dropdown never changes" for a pinned source; an Auto source still never switches and keeps its "auto-detected" note. Only text of 20 or more characters and a confident detection switch anything, regional variants (Spanish (Mexico)) are kept, and a switch is never saved as your default languages. Language detection is local on macOS (Apple's NaturalLanguage). Turn it off in Settings > General > "Auto-switch source language".
 - The in-app updater no longer looks at upstream Kai's releases, so it can no longer offer an upstream build over this one. It checks this fork instead (#178). This fork's repository is private, so for now the check finds nothing and stays silent: updates are not available until releases are published somewhere public, and each release is installed by hand.
 - The China mirror (cnb.cool) update source is removed. A saved "cnb" update-source setting is reset to the default on the next launch (#178).
 
@@ -30,7 +31,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - Apple's behavior at large sizes is measured and recorded: output quality by input size and the wait after a cancel (#152, #153, #155, #156, #157, #158; see `docs/engine-limits.md` and `docs/quality-limits.md`).
 - Undo and redo for the source text (typing, Clear, swap, fills) (#118).
 - The source and result panes show real text: paragraph breaks and spacing kept, selection and caret kept (#95, #144).
-- Auto source detection shows what was detected (#11). A pinned source language that does not match the text is corrected from a single call; the dropdown never changes, a note under the result names the detected language, and its Auto entry reads "Detected" (#161).
+- Auto source detection shows what was detected (#11). A pinned source language that does not match the text is corrected from a single call; the dropdown never changes, a note under the result names the detected language, and its Auto entry reads "Detected" (#161). Since #200 a pinned source does change: see Unreleased.
 - Language dropdowns lead with English, Spanish (Mexico), Portuguese (Portugal); Cmd+Enter translates; the source and result pane headers match in height; tooltips explain the pin and clipboard buttons (#165).
 - Kai has a Dock icon and appears in Cmd+Tab (#165).
 - The Translate button shows a Cmd+Enter hint; the translate window's size is remembered across launches; tooltips describe what each button does; the Apple translation session is prepared at launch and reused (#173).
