@@ -7,7 +7,9 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"cnb.cool/dtapp/kai/internal/doublecopy"
 	"cnb.cool/dtapp/kai/internal/events"
+	"cnb.cool/dtapp/kai/internal/settings"
 )
 
 // Issue #175 item 5: TriggerInput's copy-key branch used to emit nothing when the simulated
@@ -137,5 +139,104 @@ func TestTriggerCopyKey_OverlappingCallIsSkipped(t *testing.T) {
 	h.triggerCopyKey(w3, e, func() string { return "third" })
 	if w3.shows != 1 {
 		t.Fatal("guard was not released after the first call finished")
+	}
+}
+
+// ---- Issue #199: double Cmd+C feeds text in through the same arrival path as auto-clipboard ----
+
+type fakeWin struct{ shown, focused int }
+
+func (f *fakeWin) Show() application.Window { f.shown++; return nil }
+func (f *fakeWin) Focus()                   { f.focused++ }
+
+func TestShowAndFill_ShowsThenEmitsInputFill(t *testing.T) {
+	w, e := &fakeWin{}, &fakeEmitter{}
+	showAndFill(w, e, "hola mundo")
+	if w.shown != 1 || w.focused != 1 {
+		t.Fatalf("shown=%d focused=%d, want 1 and 1", w.shown, w.focused)
+	}
+	if e.n != 1 || e.name != events.EventInputFill || len(e.args) != 1 || e.args[0] != "hola mundo" {
+		t.Fatalf("emitted %q %#v (%d times), want one EventInputFill with the text", e.name, e.args, e.n)
+	}
+}
+
+func TestShowAndFill_EmptyTextShowsButEmitsNothing(t *testing.T) {
+	w, e := &fakeWin{}, &fakeEmitter{}
+	showAndFill(w, e, "")
+	if w.shown != 1 || e.n != 0 {
+		t.Fatalf("shown=%d emits=%d, want the window shown and nothing emitted", w.shown, e.n)
+	}
+}
+
+func TestDeliverDoubleCopy_UsesTheSharedFillPathOnTheTranslateWindow(t *testing.T) {
+	w, e := &fakeWin{}, &fakeEmitter{}
+	h := &Manager{log: slog.Default(), mainWindow: func() application.Window { return nil }}
+	h.deliverDoubleCopy(w, e, "bonjour")
+	if w.shown != 1 || e.name != events.EventInputFill || e.args[0] != "bonjour" {
+		t.Fatalf("shown=%d emitted=%q %#v", w.shown, e.name, e.args)
+	}
+}
+
+type fakeDC struct {
+	applied []bool
+	status  doublecopy.Status
+}
+
+func (f *fakeDC) Apply(on bool)             { f.applied = append(f.applied, on) }
+func (f *fakeDC) Status() doublecopy.Status { return f.status }
+
+func TestSyncDoubleCopy_FollowsTheSetting(t *testing.T) {
+	dc := &fakeDC{}
+	h := &Manager{log: slog.Default(), doubleCopy: dc}
+	h.syncDoubleCopy(&settings.Settings{DoubleCopyTranslate: true})
+	h.syncDoubleCopy(&settings.Settings{DoubleCopyTranslate: false})
+	if len(dc.applied) != 2 || !dc.applied[0] || dc.applied[1] {
+		t.Fatalf("Apply calls = %v, want [true false]", dc.applied)
+	}
+}
+
+func TestSyncDoubleCopy_NilControllerAndNilConfigAreSafe(t *testing.T) {
+	(&Manager{log: slog.Default()}).syncDoubleCopy(&settings.Settings{DoubleCopyTranslate: true})
+	dc := &fakeDC{}
+	(&Manager{log: slog.Default(), doubleCopy: dc}).syncDoubleCopy(nil)
+	if len(dc.applied) != 1 || dc.applied[0] {
+		t.Fatalf("a nil config must switch the feature off, got %v", dc.applied)
+	}
+}
+
+func TestDoubleCopyStatusString(t *testing.T) {
+	h := &Manager{log: slog.Default(), doubleCopy: &fakeDC{status: doublecopy.StatusMissingPermission}}
+	if got := h.DoubleCopyStatus(); got != "missing_permission" {
+		t.Fatalf("status = %q", got)
+	}
+	if got := (&Manager{log: slog.Default()}).DoubleCopyStatus(); got != "off" {
+		t.Fatalf("status with no controller = %q, want off", got)
+	}
+}
+
+func TestRegister_SyncsTheDoubleCopyListenerEvenBeforeTheAppExists(t *testing.T) {
+	st, err := settings.NewService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Get().DoubleCopyTranslate = true
+	dc := &fakeDC{}
+	h := &Manager{log: slog.Default(), settingsSvc: st, doubleCopy: dc}
+	h.Register() // app is nil: the hotkey part returns early, the listener sync must not
+	if len(dc.applied) != 1 || !dc.applied[0] {
+		t.Fatalf("Apply calls = %v, want [true]", dc.applied)
+	}
+	st.Get().DoubleCopyTranslate = false
+	h.Register()
+	if len(dc.applied) != 2 || dc.applied[1] {
+		t.Fatalf("Apply calls = %v, want [true false]", dc.applied)
+	}
+}
+
+func TestUnregister_StopsTheDoubleCopyListener(t *testing.T) {
+	dc := &fakeDC{}
+	(&Manager{log: slog.Default(), doubleCopy: dc}).Unregister()
+	if len(dc.applied) != 1 || dc.applied[0] {
+		t.Fatalf("Apply calls = %v, want [false]", dc.applied)
 	}
 }

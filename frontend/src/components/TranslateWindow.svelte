@@ -79,6 +79,7 @@
     EventEnginesChanged,
     EventAutoClipboardChanged,
     EventCopyKeyFailed,
+    EventDoubleCopyPermissionMissing,
   } from '../utils/events';
   import type { TranslateProgressPayload } from '../utils/events';
   import { WindowSettings, WindowTranslate } from '../constants/window';
@@ -664,6 +665,11 @@
     const offCopyKeyFailed = onEvent(EventCopyKeyFailed, () => {
       showToast(t('translate.copyKeyFailed'), 3200);
     });
+    // Issue #199: "translate on double Cmd+C" is on but Input Monitoring is missing. Say what to
+    // enable and where, instead of a feature that silently does nothing.
+    const offDoubleCopyPermission = onEvent(EventDoubleCopyPermissionMissing, () => {
+      showToast(t('translate.doubleCopyPermission'), 9000);
+    });
     const offClosing = onEvent(EventWindowClosing, (name: string) => {
       // Issue #69: opening Settings drops this window out of always-on-top so Settings is not
       // hidden behind a pinned window; when Settings closes, put the persisted pin back.
@@ -719,6 +725,7 @@
       offProgress();
       offInputFill();
       offCopyKeyFailed();
+      offDoubleCopyPermission();
       offClosing();
       offEngines();
     };

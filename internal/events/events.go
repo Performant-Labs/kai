@@ -79,6 +79,12 @@ const (
 	// the single source of truth.
 	EventAutoClipboardChanged = "kai:auto-clipboard:changed"
 
+	// EventDoubleCopyPermissionMissing is emitted when "translate on double Cmd+C" is switched on
+	// but macOS Input Monitoring is not granted to Kai, so the listener cannot start (issue #199).
+	// No payload. The translate window shows a toast that says which pane to open. Aligned with
+	// the frontend's EventDoubleCopyPermissionMissing in frontend/src/utils/events.ts.
+	EventDoubleCopyPermissionMissing = "kai:doublecopy:permission-missing"
+
 	// EventCopyKeyFailed is emitted when the copy-key branch of TriggerInput (issue #175 item
 	// 5) simulates the copy key but pollClipboardText never sees the clipboard change —
 	// CopySelection returns "". No payload.

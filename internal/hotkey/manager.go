@@ -14,6 +14,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"cnb.cool/dtapp/kai/internal/doublecopy"
 	"cnb.cool/dtapp/kai/internal/events"
 	"cnb.cool/dtapp/kai/internal/execkey"
 	"cnb.cool/dtapp/kai/internal/i18n"
@@ -58,6 +59,16 @@ type Manager struct {
 	// an empty-capture check can never catch. An overlapping call now backs off immediately
 	// instead of racing.
 	triggerInputBusy atomic.Bool
+
+	// doubleCopy is the "translate on double Cmd+C" listener (issue #199). Register keeps it in
+	// step with the setting, so switching it on or off takes effect without a restart.
+	doubleCopy doubleCopyController
+}
+
+// doubleCopyController is the slice of *doublecopy.Service the manager drives (fakeable).
+type doubleCopyController interface {
+	Apply(on bool)
+	Status() doublecopy.Status
 }
 
 // SetApp injects app once it is ready (startup orchestration phase).
@@ -68,6 +79,9 @@ func (h *Manager) SetApp(app *application.App) {
 // Unregister unregisters each currently registered global hotkey one by one (working around
 // UnregisterAll's internal early-return pitfall).
 func (h *Manager) Unregister() {
+	if h.doubleCopy != nil {
+		h.doubleCopy.Apply(false) // shutting down: stop the event tap
+	}
 	if h.app == nil {
 		return
 	}
@@ -91,7 +105,7 @@ func NewManager(
 	screenshotWindow func() application.Window,
 	emitHotkeysChanged func([]string),
 ) *Manager {
-	return &Manager{
+	m := &Manager{
 		app:         app,
 		settingsSvc: st,
 		log:         slog.Default(),
@@ -105,6 +119,8 @@ func NewManager(
 		screenshotWindow:    screenshotWindow,
 		emitHotkeysChanged:  emitHotkeysChanged,
 	}
+	m.doubleCopy = m.newDoubleCopy()
+	return m
 }
 
 // TriggerInput is equivalent to pressing the "input translate" hotkey: summons the main
@@ -125,11 +141,11 @@ func (h *Manager) TriggerInput() {
 		// avoiding double triggering with the original copy key.
 		text := h.execKeyCtrl.ReadClipboard()
 		h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_auto_clipboard")), slog.Int(i18n.T("log.field_length"), len(text)), slog.String(i18n.T("log.field_content"), text))
-		w.Show()
-		w.Focus()
-		if text != "" {
-			h.app.Event.Emit(events.EventInputFill, text)
+		var emitter eventEmitter
+		if h.app != nil {
+			emitter = h.app.Event
 		}
+		showAndFill(w, emitter, text)
 	case cfg.ExecKeys.Copy.Key != "" && cfg.ExecKeys.Copy.Enabled:
 		// Issue #175 item 5: CopySelection backs up/clears/copies/restores the one shared
 		// system clipboard, which is only safe as an atomic sequence. A second overlapping
@@ -172,6 +188,19 @@ func (h *Manager) TriggerInput() {
 		// 			h.app.Event.Emit(events.EventInputFill, sel)
 		// 		}
 		// 		})
+	}
+}
+
+// showAndFill is the one "bring the window up and hand it this text" step: the window is shown and
+// focused, and non-empty text is delivered to the input box through EventInputFill, the event whose
+// arrival path (source-language switch and translate, issue #200) every filled text goes through.
+// The auto-clipboard branch of TriggerInput and the double Cmd+C trigger (issue #199) both end
+// here. emitter may be nil.
+func showAndFill(w windowShower, emitter eventEmitter, text string) {
+	w.Show()
+	w.Focus()
+	if text != "" && emitter != nil {
+		emitter.Emit(events.EventInputFill, text)
 	}
 }
 
@@ -257,6 +286,11 @@ func (h *Manager) TriggerScreenshot() {
 // Register registers the global hotkeys (registration keys only: Input/Screenshot).
 // Each is Unregistered first, so hotkey config changes take effect live (no restart).
 func (h *Manager) Register() {
+	// The double Cmd+C listener follows its setting on every register, which runs at startup and on
+	// every settings save (issue #199). It does not depend on the global-shortcut manager below.
+	if h.settingsSvc != nil {
+		h.syncDoubleCopy(h.settingsSvc.Get())
+	}
 	if h.app == nil {
 		return
 	}
@@ -319,4 +353,75 @@ func (h *Manager) Register() {
 
 	// Push the currently truly-active hotkey list to the frontend for live display.
 	h.emitHotkeysChanged(active)
+}
+
+// newDoubleCopy builds the double Cmd+C listener (issue #199) around this manager's window and
+// events. Its source is the macOS event tap in the Swift bridge; elsewhere it reports unsupported.
+func (h *Manager) newDoubleCopy() *doublecopy.Service {
+	src, pb := doublecopy.NewPlatformSource(func() string {
+		if h.execKeyCtrl == nil {
+			return ""
+		}
+		return h.execKeyCtrl.ReadClipboard()
+	})
+	return doublecopy.New(doublecopy.Config{
+		Source:     src,
+		Pasteboard: pb,
+		Enabled: func() bool {
+			cfg := h.settingsSvc.Get()
+			return cfg != nil && cfg.DoubleCopyTranslate
+		},
+		Deliver:             h.DeliverDoubleCopy,
+		RequestPermission:   doublecopy.RequestPermission,
+		OnPermissionMissing: h.notifyDoubleCopyPermissionMissing,
+		Log:                 h.log,
+	})
+}
+
+// DeliverDoubleCopy is where a double Cmd+C ends: it shows the translate window and fills its input
+// with the copied text, exactly like the auto-clipboard branch of TriggerInput, so the text takes
+// the same arrival path. It never logs the text.
+func (h *Manager) DeliverDoubleCopy(text string) {
+	if h.mainWindow == nil {
+		return
+	}
+	w := h.mainWindow()
+	if w == nil {
+		return
+	}
+	var emitter eventEmitter
+	if h.app != nil {
+		emitter = h.app.Event
+	}
+	h.deliverDoubleCopy(w, emitter, text)
+}
+
+func (h *Manager) deliverDoubleCopy(w windowShower, emitter eventEmitter, text string) {
+	h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), "double Cmd+C"), slog.Int(i18n.T("log.field_length"), len(text)))
+	showAndFill(w, emitter, text)
+}
+
+// notifyDoubleCopyPermissionMissing tells the translate window that Input Monitoring is missing.
+func (h *Manager) notifyDoubleCopyPermissionMissing() {
+	h.log.Warn("double Cmd+C is on but macOS Input Monitoring is not granted to Kai")
+	if h.app != nil {
+		h.app.Event.Emit(events.EventDoubleCopyPermissionMissing)
+	}
+}
+
+// syncDoubleCopy makes the listener follow the setting. A nil config means off.
+func (h *Manager) syncDoubleCopy(cfg *settings.Settings) {
+	if h.doubleCopy == nil {
+		return
+	}
+	h.doubleCopy.Apply(cfg != nil && cfg.DoubleCopyTranslate)
+}
+
+// DoubleCopyStatus is the listener's state as a string for the Settings page: "off", "running",
+// "missing_permission", "unsupported" or "error".
+func (h *Manager) DoubleCopyStatus() string {
+	if h.doubleCopy == nil {
+		return string(doublecopy.StatusOff)
+	}
+	return string(h.doubleCopy.Status())
 }

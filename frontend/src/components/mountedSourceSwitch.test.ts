@@ -246,3 +246,25 @@ describe('TranslateWindow, mounted', () => {
     expect(select('From').value).toBe('en');
   });
 });
+
+describe('TranslateWindow, mounted: double Cmd+C (issue #199)', () => {
+  it('a double-copy text arrives through the same EventInputFill path and switches the source', async () => {
+    h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
+    // The backend emits exactly this event for a double Cmd+C (as for the auto-clipboard fill).
+    h.fire('kai:input:fill', SPANISH);
+    await settle();
+    expect(h.plan).toHaveBeenCalledTimes(1);
+    expect(select('From').value).toBe('es-MX');
+    expect(h.translate).toHaveBeenCalledTimes(1);
+  });
+
+  it('a missing Input Monitoring grant shows the actionable toast', async () => {
+    expect(target.querySelector('.u-toast')).toBeNull();
+    h.fire('kai:doublecopy:permission-missing', undefined);
+    await settle();
+    const toast = target.querySelector('.u-toast');
+    expect(toast, 'no toast after kai:doublecopy:permission-missing').not.toBeNull();
+    expect(toast!.textContent).toContain('Input Monitoring');
+    expect(toast!.textContent).toContain('Privacy & Security');
+  });
+});

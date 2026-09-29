@@ -32,6 +32,15 @@ export function GetConfig(): $CancellablePromise<settings$0.Settings | null> {
 }
 
 /**
+ * GetDoubleCopyStatus reports the double Cmd+C listener's state for the Settings page: "off",
+ * "running", "missing_permission" (the setting is on but Input Monitoring is not granted),
+ * "unsupported" or "error" (issue #199).
+ */
+export function GetDoubleCopyStatus(): $CancellablePromise<string> {
+    return $Call.ByID(1746466896);
+}
+
+/**
  * GetLanguages returns the languages the source/target dropdowns offer (value=code,
  * name=display name): the SELECTABLE set — the recognized bare bases es / pt are left out.
  */

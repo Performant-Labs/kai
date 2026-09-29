@@ -42,6 +42,13 @@ var (
 	KaiTranslateCancel        func(token int64) int32
 	KaiWarmTranslate          func(src string, dst string) int32
 	KaiDetectLanguage         func(text string, out unsafe.Pointer, outCap int32) int32
+	KaiDoubleCopyStart        func() int32
+	KaiDoubleCopyStop         func() int32
+	KaiDoubleCopyPoll         func(out unsafe.Pointer, outCap int32) int32
+	KaiDoubleCopySuppress     func(ms int32) int32
+	KaiDoubleCopyRequest      func() int32
+	KaiDoubleCopyPasteboard   func(out unsafe.Pointer, outCap int32) int32
+	KaiDoubleCopyIngest       func(keycode int32, flags uint64, autorepeat int32, srcPid int32) int32
 )
 
 // Init is the non-macOS empty implementation: no dylib is loaded, nil is returned directly.

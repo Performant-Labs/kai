@@ -71,6 +71,18 @@ var (
 	// NLLanguageRecognizer and writes {"lang":"es","confidence":0.99} (DetectedLanguage) into out
 	// (issue #200). A synchronous, pure computation: safe from any goroutine, no main-thread rule.
 	KaiDetectLanguage func(text string, out unsafe.Pointer, outCap int32) int32
+	// Double Cmd+C (issue #199). Start creates a listen-only event tap on a thread of its own and
+	// returns 0 (listening), 1 (Input Monitoring missing; nothing created, no prompt) or 2 (failed).
+	// Poll writes and clears the recorded Cmd+C key-downs as JSON. None of these needs the main
+	// thread, and none calls back into Go.
+	KaiDoubleCopyStart      func() int32
+	KaiDoubleCopyStop       func() int32
+	KaiDoubleCopyPoll       func(out unsafe.Pointer, outCap int32) int32
+	KaiDoubleCopySuppress   func(ms int32) int32
+	KaiDoubleCopyRequest    func() int32
+	KaiDoubleCopyPasteboard func(out unsafe.Pointer, outCap int32) int32
+	// KaiDoubleCopyIngest is the tap callback's body, exposed so tests can drive it without a tap.
+	KaiDoubleCopyIngest func(keycode int32, flags uint64, autorepeat int32, srcPid int32) int32
 )
 
 // The dylib defaults to the same directory as this .go source file (build.sh copies the
@@ -184,6 +196,13 @@ func registerAll(h uintptr) {
 	register(&KaiTranslateCancel, "kai_translate_cancel")
 	register(&KaiWarmTranslate, "kai_warm_translate")
 	register(&KaiDetectLanguage, "kai_detect_language")
+	register(&KaiDoubleCopyStart, "kai_doublecopy_start")
+	register(&KaiDoubleCopyStop, "kai_doublecopy_stop")
+	register(&KaiDoubleCopyPoll, "kai_doublecopy_poll")
+	register(&KaiDoubleCopySuppress, "kai_doublecopy_suppress")
+	register(&KaiDoubleCopyRequest, "kai_doublecopy_request")
+	register(&KaiDoubleCopyPasteboard, "kai_doublecopy_pasteboard")
+	register(&KaiDoubleCopyIngest, "kai_doublecopy_ingest")
 }
 
 // Available reports whether the Swift bridge loaded successfully (dylib Dlopen'ed and the
