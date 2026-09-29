@@ -94,6 +94,8 @@
     TranslateMulti,
     CancelTranslate,
     PlanSourceSwitch,
+    CorrectSource,
+    CorrectionAvailability,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
   import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
   import { learnFromSelection } from '../utils/langLearn.ts';
@@ -141,6 +143,12 @@
   import { swapLanguages } from '../utils/swapLangs.ts';
   import { cueActive, type SwitchCue } from '../utils/sourceSwitch.ts';
   import { createSourceSwitcher } from './sourceSwitchFlow.ts';
+  import {
+    correctionShown,
+    textToSend,
+    unavailableKey,
+    type AppliedCorrection,
+  } from '../utils/sourceCorrection.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import {
     GetLanguages,
@@ -278,6 +286,33 @@
   // The cue remembers the pair before the switch, so the swap button can undo it, and shows the
   // note while the window still is in the pair the switch made. Neither is persisted or taught.
   let switchCue = $state<SwitchCue | null>(null);
+  // "Correct grammar and wording" (issue #208). The checkbox is the setting correct_source_text
+  // (OFF by default, and only an explicit true turns it on), remembered in settings.json like the
+  // auto-clipboard toggle. Whether the correction can run at all is the backend's answer
+  // (correctAvail): unavailable disables the checkbox, and nothing is asked of the backend then.
+  // `correction` is what the last arrival was corrected to (the text on screen is never replaced:
+  // the source pane keeps what the user gave), `usedCorrection` the correction the request now in
+  // the result pane was actually sent with, which is what the result pane's note describes, and
+  // `correcting` is true while the model works. None of the three is ever persisted or taught.
+  let correctEnabled = $state(false);
+  let correctAvail = $state<{ available: boolean; reason: string }>({
+    available: true,
+    reason: '',
+  });
+  let correcting = $state(false);
+  let correction = $state<AppliedCorrection | null>(null);
+  let usedCorrection = $state<AppliedCorrection | null>(null);
+  const correctionOn = $derived(correctEnabled && correctAvail.available);
+  // The correction the result pane's note describes: only while a result is showing, and only while
+  // the source text is still the one that was corrected.
+  const noteCorrection = $derived(
+    pane === 'result' && correctionShown(usedCorrection, input) ? usedCorrection : null,
+  );
+  const correctTip = $derived(
+    correctAvail.available
+      ? t('translate.correctSourceHint')
+      : t(unavailableKey(correctAvail.reason)),
+  );
   // The request whose result already made the engine-detection retry (translateIfSwitched), so one
   // request retries at most once.
   let hintedRequestId = '';
@@ -437,7 +472,7 @@
   function handleTranslateShortcut(e: KeyboardEvent): boolean {
     if (e.key !== 'Enter' || !e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
     e.preventDefault();
-    if (!awaiting && input.trim()) translateWithSwitch();
+    if (!awaiting && input.trim() && !correcting) translateWithSwitch();
     return true;
   }
 
@@ -705,7 +740,12 @@
         console.error(t('log.restorePinFailed'), e);
       }
       // Must wait for engines/languages/defaults to load first (the result pane's dropdown and dots depend on them).
-      await Promise.all([loadDefaults(), loadEngines(), loadLanguages()]);
+      await Promise.all([
+        loadDefaults(),
+        loadEngines(),
+        loadLanguages(),
+        loadCorrectionAvailability(),
+      ]);
       // Load the "auto-read clipboard" toggle + primary engine (both persisted in settings.json).
       // default_engine is the middle layer of the primary-engine resolution chain (last-used ?? primary ?? first-enabled).
       try {
@@ -713,6 +753,7 @@
         if (cfg?.auto_clipboard) {
           autoClipboard = true;
         }
+        correctEnabled = cfg?.correct_source_text === true;
         if (cfg?.default_engine) {
           defaultEngine = cfg.default_engine;
         }
@@ -760,6 +801,9 @@
   // directly and must never teach (an explicit choice is the only signal — "swap consumes, never
   // teaches"). Reads the picked value off the event so it doesn't depend on bind:value ordering.
   function onLangPicked(ev: Event) {
+    // A correction was made under the pair the window had: another language is a new question.
+    correction = null;
+    switcher.resetCorrection();
     learnLangVariant((ev.currentTarget as HTMLSelectElement).value as TranslateLang);
     persistLangs();
   }
@@ -836,7 +880,49 @@
     translate: () => doTranslate(),
     onCue: (c) => (switchCue = c),
     onError: (e) => console.error(t('log.sourceSwitchFailed'), e),
+    // The correction step (issue #208): every arrival is corrected first, and the rest of the flow
+    // goes on with the corrected text.
+    correct: (req) =>
+      CorrectSource({
+        text: req.text,
+        from: req.from as TranslateLang,
+        detected: req.detected as TranslateLang,
+      }),
+    isCorrectionEnabled: () => correctionOn,
+    onCorrection: (c) => (correction = c),
+    onCorrecting: (busy) => (correcting = busy),
   });
+
+  // Whether the correction can run on this Mac (the backend's answer), read once the window is up.
+  async function loadCorrectionAvailability() {
+    try {
+      const a = await CorrectionAvailability();
+      correctAvail = { available: a?.available === true, reason: a?.reason ?? '' };
+    } catch (e) {
+      console.error(t('log.correctAvailabilityFailed'), e);
+      correctAvail = { available: false, reason: 'unavailable' };
+    }
+  }
+
+  // The checkbox: saved through SaveConfig with the rest of the config, like the auto-clipboard
+  // toggle. It changes what later arrivals do; what is on screen stays as it is. Nothing is taught.
+  async function toggleCorrect(e: Event) {
+    const next = (e.currentTarget as HTMLInputElement).checked;
+    correctEnabled = next;
+    switcher.resetCorrection();
+    try {
+      const cfg = (await GetConfig()) ?? ({} as any);
+      await SaveConfig({ ...cfg, correct_source_text: next });
+    } catch (err) {
+      console.error(t('log.generalSaveCorrectFailed'), err);
+    }
+  }
+
+  // The result pane's one button: translate the text as it came instead of its correction.
+  function translateOriginal() {
+    switcher.useOriginal();
+    doTranslate();
+  }
 
   // Translate the source text, switching the pair first when the text is in another language: the
   // Translate button, Cmd+Enter and the fill (hotkey, tray, auto-clipboard) come here.
@@ -864,6 +950,9 @@
     if (switcher.undo()) return;
     const pair = swapPair;
     if (!pair) return;
+    // A swap translates the text on screen in the other direction: the correction (made for the
+    // language it had) does not go with it.
+    correction = null;
     const { from, to } = pair;
     fromLang = from as TranslateLang;
     toLang = to as TranslateLang;
@@ -887,6 +976,10 @@
     // The request is named here, before the backend is called (issue #109). A request that is
     // still open is replaced: the backend cancels it silently (a hotkey fill during a running
     // translation does this), and its late events are ignored because they carry the old id.
+    // The text that goes out is the corrected one while a correction applies to the text on screen
+    // (issue #208); the result pane's note describes exactly the correction used, and no other.
+    const sendText = textToSend(correction, input);
+    usedCorrection = correctionShown(correction, input) ? correction : null;
     requestId = newRequestID();
     const id = requestId;
     started = null;
@@ -895,7 +988,7 @@
       // Multi-engine concurrency is handled in parallel by the backend across enabled engines, independent of any single engine;
       // the bindings-generated TranslateRequest.engine is required, so pass an empty string to satisfy the type (the backend ignores it).
       const res = await TranslateMulti({
-        text: input,
+        text: sendText,
         from: fromLang as TranslateLang,
         to: toLang as TranslateLang,
         engine: '',
@@ -965,6 +1058,8 @@
     started = null;
     progress = {};
     setSource('', 'program');
+    correction = null;
+    usedCorrection = null;
     results = {};
     requestedTo = '';
     requested = false;
@@ -985,6 +1080,27 @@
          layout). Three columns with equal 1fr sides keep the from/swap/to group centered while
          the Settings gear (issue #69) sits alone in the right column, at the row's right end. -->
     <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+      <!-- "Correct grammar and wording" (issue #208): the left column of the toolbar row, which was
+           empty. Off by default, remembered like the other settings, and disabled with the reason
+           as its tooltip when the on-device model cannot run here. The tooltip is the pane
+           headers' (#165) u-tooltip, opening downward and anchored at its left edge (the label sits
+           at the window's edge, where a centred tooltip would be clipped). -->
+      <label
+        class="u-tooltip u-tooltip--start col-start-1 flex items-center gap-2 justify-self-start text-xs"
+        class:u-muted={!correctionOn}
+        data-tooltip={correctTip}
+        title={correctTip}
+      >
+        <input
+          type="checkbox"
+          class="u-no-drag"
+          data-testid="correct-source-checkbox"
+          checked={correctionOn}
+          disabled={!correctAvail.available}
+          onchange={toggleCorrect}
+        />
+        <span>{t('translate.correctSource')}</span>
+      </label>
       <div class="col-start-2 flex items-center justify-center gap-2">
         <select
           class="u-field u-select u-lang-select px-3 py-2 text-sm"
@@ -1246,14 +1362,14 @@
             <button
               class="u-btn u-btn--primary u-no-drag flex items-center gap-1.5 px-5 py-1.5 text-sm"
               onclick={translateWithSwitch}
-              disabled={awaiting || !input.trim()}
+              disabled={awaiting || !input.trim() || correcting}
               title={t('translate.translateShortcutHint')}
             >
-              {awaiting ? t('common.loading') : t('translate.button')}
+              {awaiting || correcting ? t('common.loading') : t('translate.button')}
               <!-- Cmd+Enter hint (issue #173), matching Claude Desktop's muted send-shortcut glyph:
                    Cmd+Enter already submits (issue #165); this only surfaces it visually, and only
                    while the button is actually actionable (not awaiting, not empty input). -->
-              {#if !awaiting && input.trim()}
+              {#if !awaiting && input.trim() && !correcting}
                 <span
                   class="u-shortcut-hint flex items-center gap-0.5 text-2xs opacity-70"
                   aria-hidden="true"
@@ -1364,6 +1480,34 @@
             {/if}
           </div>
         </div>
+        {#if noteCorrection}
+          <!-- The text was corrected before it was translated (issue #208): says so in the result
+             pane's own muted note style, lists what changed (word by word, computed by the
+             backend), and offers ONE button: translate the original instead. The source pane
+             still shows the original; nothing is saved. -->
+          <div
+            class="u-muted flex shrink-0 flex-col items-start gap-1 px-4 pt-3 text-2xs"
+            data-testid="source-corrected-note"
+          >
+            <span>{t('translate.textCorrected')}</span>
+            <ul class="m-0 list-none p-0">
+              {#each noteCorrection.changes as c}
+                <li>
+                  <span class="line-through">{c.before}</span>
+                  <span aria-hidden="true">→</span>
+                  <span class="font-medium">{c.after}</span>
+                </li>
+              {/each}
+            </ul>
+            <button
+              class="u-btn u-btn--ghost u-no-drag px-2 py-1 text-xs"
+              data-testid="translate-original"
+              onclick={translateOriginal}
+            >
+              {t('translate.translateOriginal')}
+            </button>
+          </div>
+        {/if}
         <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <!-- One value decides the pane (paneState, issue #81): no-engine, loading, result, cancelled (issue #109),
              failed, or idle (nothing requested yet, or just cleared), which has no branch below and stays

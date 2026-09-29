@@ -112,6 +112,7 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	cur.AutoClipboard = cfg.AutoClipboard
 	cur.AutoSwitchSource = cfg.AutoSwitchSource
 	cur.DoubleCopyTranslate = cfg.DoubleCopyTranslate
+	cur.CorrectSourceText = cfg.CorrectSourceText
 	fontSizeChanged := cur.FontSize != settings.NormalizeFontSize(cfg.FontSize)
 	cur.FontSize = settings.NormalizeFontSize(cfg.FontSize)
 	cur.CopyKeySnapshot = cfg.CopyKeySnapshot

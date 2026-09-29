@@ -26,6 +26,24 @@ export function CancelTranslate(requestID: string, engine: string): $Cancellable
     return $Call.ByID(3553365376, requestID, engine);
 }
 
+/**
+ * CorrectSource corrects the grammar and word choice of text that just arrived, when the "correct
+ * grammar and wording" setting is on and Apple's on-device model can run (issue #208). Every way
+ * text arrives asks through this one call, right before PlanSourceSwitch, and translates the answer's
+ * text; the answer never persists or teaches anything.
+ */
+export function CorrectSource(req: model$0.CorrectionRequest): $CancellablePromise<model$0.Correction> {
+    return $Call.ByID(2205934651, req);
+}
+
+/**
+ * CorrectionAvailability reports whether the correction can run on this Mac, and why not when it
+ * cannot, so the toolbar checkbox can say so (issue #208).
+ */
+export function CorrectionAvailability(): $CancellablePromise<model$0.CorrectionAvailability> {
+    return $Call.ByID(2513257435);
+}
+
 export function Ocr(req: model$0.OcrRequest): $CancellablePromise<model$0.OcrResult | null> {
     return $Call.ByID(1768998496, req);
 }

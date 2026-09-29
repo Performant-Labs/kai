@@ -44,6 +44,8 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts', () 
   TranslateMulti: (req: unknown) => h.translate(req),
   CancelTranslate: vi.fn(async () => true),
   PlanSourceSwitch: (req: unknown) => h.plan(req),
+  CorrectSource: vi.fn(),
+  CorrectionAvailability: async () => ({ available: true, reason: '' }),
 }));
 vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts', () => ({
   Learn: (l: string) => h.learn(l),

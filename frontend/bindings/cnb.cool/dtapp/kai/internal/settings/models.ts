@@ -241,6 +241,16 @@ export interface Settings {
     "double_copy_translate": boolean;
 
     /**
+     * CorrectSourceText is the "correct grammar and wording" switch (issue #208): when text arrives,
+     * Apple's on-device model first fixes its grammar and word choice (and swaps mixed-in foreign
+     * words) in the same language, and the corrected text is what gets translated. OFF by default,
+     * and only an explicit true turns it on: a missing key, or a value that is not a boolean, reads
+     * as off. Read through readCorrectSourceText, not mapstructure, so a garbled value cannot fail
+     * the whole settings load.
+     */
+    "correct_source_text": boolean;
+
+    /**
      * FontSize is the text size in percent of the pre-#195 size (issue #195). One of
      * FontSizeSteps, 120 (DefaultFontSize) by default: a fresh install, an old settings.json
      * without the key, and any value that is not one of the six all read as 120. Read through

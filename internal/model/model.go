@@ -386,3 +386,60 @@ type ScreenshotResult struct {
 	// request id from these pushes and ignores progress events of any other request.
 	RequestID string `json:"request_id"`
 }
+
+// CorrectionRequest asks translate.Service.CorrectSource to correct the grammar and word choice of
+// text that has just arrived (issue #208): the text, the source language the window shows, and
+// optionally a detection the caller already holds (the one a #161 result carried).
+type CorrectionRequest struct {
+	Text     string   `json:"text"`
+	From     Language `json:"from"`
+	Detected Language `json:"detected"`
+}
+
+// TextChange is one place where a correction changed the text: Before is the words as they were
+// written, After the words that replaced them. Either can carry a neighbouring word for context
+// (a pure insertion is shown as "casa" -> "casa de"), never more.
+type TextChange struct {
+	Before string `json:"before"`
+	After  string `json:"after"`
+}
+
+// CorrectionStatus says why a CorrectionRequest was answered the way it was. Only Corrected means
+// the text changed; every other value is "translate the text as it came", and tells a test (and a
+// log line) which rule decided.
+type CorrectionStatus string
+
+const (
+	CorrectionCorrected   CorrectionStatus = "corrected"   // the text was changed
+	CorrectionUnchanged   CorrectionStatus = "unchanged"   // the model found nothing to fix
+	CorrectionOff         CorrectionStatus = "off"         // the setting is off
+	CorrectionAutoSource  CorrectionStatus = "auto_source" // the source is Auto: no language to correct in
+	CorrectionTooShort    CorrectionStatus = "too_short"   // fewer than 8 code points
+	CorrectionTooLong     CorrectionStatus = "too_long"    // more than the model is asked to read in one go
+	CorrectionUnavailable CorrectionStatus = "unavailable" // no provider, or it reports it cannot run
+	CorrectionFailed      CorrectionStatus = "failed"      // the provider errored, refused or timed out
+	CorrectionRejected    CorrectionStatus = "rejected"    // the output failed a guard
+)
+
+// Correction is the answer to a CorrectionRequest. When Corrected, Text is the corrected text the
+// caller translates, Original the text as it arrived (kept so it can be restored in one click) and
+// Changes what differs, computed in Go and never by the model. Otherwise Text is the text as it
+// arrived and Changes is empty. Language is the language the text was corrected in (a variant the
+// dropdowns offer), empty when nothing was attempted. Reason carries the provider's availability
+// reason when Status is unavailable (the UI words it).
+type Correction struct {
+	Corrected bool             `json:"corrected"`
+	Status    CorrectionStatus `json:"status"`
+	Reason    string           `json:"reason"`
+	Text      string           `json:"text"`
+	Original  string           `json:"original"`
+	Language  Language         `json:"language"`
+	Changes   []TextChange     `json:"changes"`
+}
+
+// CorrectionAvailability tells the UI whether the correction can run at all on this machine, and
+// when it cannot, why (Reason is an engine.CorrectionStatus value the UI words).
+type CorrectionAvailability struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason"`
+}

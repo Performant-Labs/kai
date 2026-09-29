@@ -138,5 +138,8 @@
   "log.analytics_identify_failed": "Failed to report identify",
   "log.analytics_write_device_id_failed": "Failed to write device ID",
   "log.analytics_device_id_failed": "Failed to get machine ID, anonymous analytics disabled",
-  "log.hotkey_trigger_busy": "[Hotkey] Input-translate hotkey triggered again while a copy-key simulation was already in flight; skipped to avoid racing the clipboard"
+  "log.hotkey_trigger_busy": "[Hotkey] Input-translate hotkey triggered again while a copy-key simulation was already in flight; skipped to avoid racing the clipboard",
+  "log.correct_done": "[correct] finished",
+  "log.correct_failed": "[correct] the correction failed; translating the text as it came",
+  "log.correct_rejected": "[correct] the corrected text was rejected by a guard; translating the text as it came"
 }

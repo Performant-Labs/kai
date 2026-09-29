@@ -72,8 +72,9 @@ describe('translate window request lifecycle (criteria 12, 14)', () => {
     );
   });
   it('the Translate button reads the open request (awaiting), not the first-result loading flag', () => {
-    expect(translateWindow).toMatch(/disabled=\{awaiting \|\| !input\.trim\(\)\}/);
-    expect(translateWindow).toMatch(/\{awaiting \? t\('common\.loading'\) : t\('translate\.button'\)\}/);
+    // Issue #208 adds "|| correcting" (the model is working, before the request opens).
+    expect(translateWindow).toMatch(/disabled=\{awaiting \|\| !input\.trim\(\)( \|\| correcting)?\}/);
+    expect(translateWindow).toMatch(/\{awaiting( \|\| correcting)? \? t\('common\.loading'\) : t\('translate\.button'\)\}/);
     expect(translateWindow).not.toMatch(/disabled=\{loading \|\| !input\.trim\(\)\}/);
   });
   it('the request-level Cancel calls CancelTranslate(requestId, "") and only shows while the request is open', () => {
