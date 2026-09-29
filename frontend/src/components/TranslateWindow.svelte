@@ -1255,7 +1255,7 @@
                    while the button is actually actionable (not awaiting, not empty input). -->
               {#if !awaiting && input.trim()}
                 <span
-                  class="u-shortcut-hint flex items-center gap-0.5 text-[11px] opacity-70"
+                  class="u-shortcut-hint flex items-center gap-0.5 text-2xs opacity-70"
                   aria-hidden="true"
                 >
                   <span>⌘</span><span>⏎</span>
@@ -1429,7 +1429,7 @@
             {#if cueShown}
               <!-- The source and target were switched automatically (issue #200): says so, once, in
                  the result pane's own muted note style. The swap button restores the previous pair. -->
-              <p class="u-muted px-4 text-[11px] first:pt-4" data-testid="source-switched-note">
+              <p class="u-muted px-4 text-2xs first:pt-4" data-testid="source-switched-note">
                 {t('translate.sourceSwitched', { from: langName(fromLang), to: langName(toLang) })}
               </p>
             {/if}
@@ -1442,7 +1442,7 @@
                  ignore keeps the call on one line: the #161 source-contract test reads it without
                  the trailing comma prettier adds when it wraps the line. -->
               <!-- prettier-ignore -->
-              <p class="u-muted px-4 text-[11px] first:pt-4" data-testid="detected-from-note">
+              <p class="u-muted px-4 text-2xs first:pt-4" data-testid="detected-from-note">
                 {t('translate.translatedFromDetected', { lang: langName(activeResult.detected_from) })}
               </p>
             {/if}
@@ -1452,7 +1452,7 @@
             {#if activeResult.cancelled}
               <!-- Cancelled with the parts already translated (the chunked translation, #84,
                  produces this): they stay on screen, marked. -->
-              <span class="u-muted px-4 text-[11px] first:pt-4">{t('translate.cancelled')}</span>
+              <span class="u-muted px-4 text-2xs first:pt-4">{t('translate.cancelled')}</span>
             {/if}
             {#if activeResult.identity}
               <!-- Same language on both sides (issue #80): the result is the source text, not a

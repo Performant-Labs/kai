@@ -2,12 +2,14 @@ import '../../app.css';
 import { mount } from 'svelte';
 import TranslateWindow from '../../components/TranslateWindow.svelte';
 import { initTheme } from '../../stores/theme';
+import { initFontSize } from '../../stores/fontSize';
 import { initWindow } from '../../stores/ui';
 import { installFrontendLogging } from '../../runtime/frontendLog';
 import { AppService } from '@bindings/cnb.cool/dtapp/kai/internal/service';
 
 installFrontendLogging();
 initTheme();
+initFontSize();
 initWindow();
 
 // Pass the WebView's UA to the backend, used as the default User-Agent for all HTTP requests.

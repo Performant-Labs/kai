@@ -117,6 +117,12 @@ export const zh: Dict = {
     autoSwitchSource: '自动切换源语言',
     autoSwitchSourceHint:
       '当文本的语言与源语言不同时，自动把源语言切换为该语言，把原来的源语言设为目标语言，并直接翻译。',
+    fontSize: '文字大小',
+    fontSizeHint:
+      '缩小或放大应用中的所有文字，立即应用于所有窗口。默认为 120%。',
+    fontSizeSmaller: '缩小文字',
+    fontSizeLarger: '放大文字',
+    fontSizeReset: '恢复为 120%',
     doubleCopy: '双击 Cmd+C 翻译',
     doubleCopyHint:
       '在任意应用里快速按两次 Cmd+C，即可翻译刚复制的内容。需要“输入监控”权限。来自密码管理器和钥匙串应用的复制，以及被标记为机密的复制，永远不会被翻译。',
@@ -374,6 +380,7 @@ export const zh: Dict = {
     generalSaveAnalyticsFailed: '[通用] 保存匿名统计开关失败',
     generalSaveAutoSwitchFailed: '[通用] 保存自动切换源语言开关失败',
     generalSaveDoubleCopyFailed: '[通用] 保存双击 Cmd+C 翻译开关失败',
+    generalSaveFontSizeFailed: '[通用] 保存文字大小失败',
     shortcutCheckAccessibilityFailed: '[快捷键] 检测辅助功能授权失败',
     shortcutOpenAccessibilityFailed: '[快捷键] 打开辅助功能设置失败',
     shortcutCheckScreenRecordingFailed: '[快捷键] 检测屏幕录制授权失败',

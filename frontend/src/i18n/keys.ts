@@ -123,6 +123,11 @@ export type Dict = {
     analyticsHint: string;
     autoSwitchSource: string;
     autoSwitchSourceHint: string;
+    fontSize: string;
+    fontSizeHint: string;
+    fontSizeSmaller: string;
+    fontSizeLarger: string;
+    fontSizeReset: string;
     doubleCopy: string;
     doubleCopyHint: string;
     doubleCopyPermission: string;
@@ -369,6 +374,7 @@ export type Dict = {
     generalSaveAnalyticsFailed: string;
     generalSaveAutoSwitchFailed: string;
     generalSaveDoubleCopyFailed: string;
+    generalSaveFontSizeFailed: string;
     shortcutCheckAccessibilityFailed: string;
     shortcutOpenAccessibilityFailed: string;
     shortcutCheckScreenRecordingFailed: string;

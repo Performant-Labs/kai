@@ -545,7 +545,7 @@
     <ul class="flex-1 space-y-3 overflow-y-auto">
       {#each engineGroups as group (group.kind)}
         <li class="space-y-1">
-          <div class="u-label px-1 pb-0.5 text-[11px] opacity-70">{group.title}</div>
+          <div class="u-label px-1 pb-0.5 text-2xs opacity-70">{group.title}</div>
           {#each group.items as e (e.id)}
             <div class="u-list-item" class:is-active={selectedId === e.id}>
               {#if e.kind === 'translate'}
@@ -572,7 +572,7 @@
                 {engineName(e.value)}
               </button>
               {#if !e.supported}
-                <span class="u-muted text-[10px] leading-tight text-right max-w-[3.5rem]"
+                <span class="u-muted text-3xs leading-tight text-right max-w-[5.6em]"
                   >{t('settings.engineUnsupported')}</span
                 >
               {:else}
