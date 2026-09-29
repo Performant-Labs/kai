@@ -32,6 +32,20 @@ func (w *TranslateWrapper) PlanSourceSwitch(req model.SourceSwitchRequest) model
 	return w.svc.PlanSourceSwitch(req)
 }
 
+// CorrectSource corrects the grammar and word choice of text that just arrived, when the "correct
+// grammar and wording" setting is on and Apple's on-device model can run (issue #208). Every way
+// text arrives asks through this one call, right before PlanSourceSwitch, and translates the answer's
+// text; the answer never persists or teaches anything.
+func (w *TranslateWrapper) CorrectSource(req model.CorrectionRequest) model.Correction {
+	return w.svc.CorrectSource(req)
+}
+
+// CorrectionAvailability reports whether the correction can run on this Mac, and why not when it
+// cannot, so the toolbar checkbox can say so (issue #208).
+func (w *TranslateWrapper) CorrectionAvailability() model.CorrectionAvailability {
+	return w.svc.CorrectionAvailability()
+}
+
 // CancelTranslate cancels the running translation request requestID (issue #109), or only its
 // engine when engine is not empty; the other engines keep running. It reports whether it found
 // something still running, and returns false, without any error, for an unknown or finished

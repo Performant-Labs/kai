@@ -61,6 +61,13 @@ type Settings struct {
 	// off. Read through readDoubleCopyTranslate, not mapstructure, so a garbled value cannot fail
 	// the whole settings load.
 	DoubleCopyTranslate bool `json:"double_copy_translate" mapstructure:"-"`
+	// CorrectSourceText is the "correct grammar and wording" switch (issue #208): when text arrives,
+	// Apple's on-device model first fixes its grammar and word choice (and swaps mixed-in foreign
+	// words) in the same language, and the corrected text is what gets translated. OFF by default,
+	// and only an explicit true turns it on: a missing key, or a value that is not a boolean, reads
+	// as off. Read through readCorrectSourceText, not mapstructure, so a garbled value cannot fail
+	// the whole settings load.
+	CorrectSourceText bool `json:"correct_source_text" mapstructure:"-"`
 	// FontSize is the text size in percent of the pre-#195 size (issue #195). One of
 	// FontSizeSteps, 120 (DefaultFontSize) by default: a fresh install, an old settings.json
 	// without the key, and any value that is not one of the six all read as 120. Read through
@@ -314,6 +321,24 @@ func readDoubleCopyTranslate(v *viper.Viper) bool {
 	return false
 }
 
+// correctSourceTextKey is the settings.json key of Settings.CorrectSourceText.
+const correctSourceTextKey = "correct_source_text"
+
+// readCorrectSourceText reads Settings.CorrectSourceText from the loaded file: a boolean is taken
+// as it is (a "true"/"false" string too), and everything else, a missing key, null, a number, an
+// object, a word, is OFF, the default.
+func readCorrectSourceText(v *viper.Viper) bool {
+	switch x := v.Get(correctSourceTextKey).(type) {
+	case bool:
+		return x
+	case string:
+		if b, err := strconv.ParseBool(strings.TrimSpace(x)); err == nil {
+			return b
+		}
+	}
+	return false
+}
+
 // normalizeLanguages coerces persisted language choices that predate the dialect variants
 // (issue #52): bare es / pt are recognized but no longer selectable, so a stored default_to of
 // "es" would match no option in the dropdowns. A bare base becomes the first selectable variant
@@ -387,6 +412,7 @@ func NewService(dataDir string) (*Service, error) {
 	s.cfg.Path = filePath
 	s.cfg.AutoSwitchSource = readAutoSwitchSource(v)
 	s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(v)
+	s.cfg.CorrectSourceText = readCorrectSourceText(v)
 	s.cfg.FontSize = readFontSize(v)
 	s.cfg.normalizeLanguages()
 	s.cfg.normalizeUpdaterSource()
@@ -449,6 +475,7 @@ func (s *Service) startWatching() {
 			s.cfg.Path = s.filePath
 			s.cfg.AutoSwitchSource = readAutoSwitchSource(s.v)
 			s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(s.v)
+			s.cfg.CorrectSourceText = readCorrectSourceText(s.v)
 			s.cfg.FontSize = readFontSize(s.v)
 			s.cfg.normalizeLanguages()
 			s.cfg.normalizeUpdaterSource()
@@ -492,6 +519,7 @@ func (s *Service) writeConfig() error {
 	w.Set("auto_clipboard", s.cfg.AutoClipboard)
 	w.Set(autoSwitchSourceKey, s.cfg.AutoSwitchSource)
 	w.Set(doubleCopyTranslateKey, s.cfg.DoubleCopyTranslate)
+	w.Set(correctSourceTextKey, s.cfg.CorrectSourceText)
 	w.Set(fontSizeKey, NormalizeFontSize(s.cfg.FontSize))
 	w.Set("copy_key_snapshot", s.cfg.CopyKeySnapshot)
 	w.Set("tts", s.cfg.TTS)

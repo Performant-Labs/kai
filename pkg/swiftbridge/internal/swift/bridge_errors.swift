@@ -35,6 +35,11 @@ let BRIDGE_ERR_APPLE_OCR: String = "apple_ocr"
 // translation failed. The Go engine decides from its own context whether anybody asked; the code
 // carries no user-visible copy.
 let BRIDGE_ERR_CANCELLED: String = "cancelled"
+// kai_correct (issue #208): the on-device model declined, failed, or did not answer in time. None
+// carries user-visible copy: the text is translated as it came.
+let BRIDGE_ERR_CORRECT_REFUSED: String = "correct_refused"
+let BRIDGE_ERR_CORRECT_FAILED: String = "correct_failed"
+let BRIDGE_ERR_CORRECT_TIMEOUT: String = "correct_timeout"
 
 // MARK: - Codable models of the bridge's returned JSON
 // All outward (cgo) JSON is uniformly encoded with Codable structs + JSONEncoder;

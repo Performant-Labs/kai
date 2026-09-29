@@ -71,6 +71,13 @@ var (
 	// NLLanguageRecognizer and writes {"lang":"es","confidence":0.99} (DetectedLanguage) into out
 	// (issue #200). A synchronous, pure computation: safe from any goroutine, no main-thread rule.
 	KaiDetectLanguage func(text string, out unsafe.Pointer, outCap int32) int32
+	// KaiCorrect runs Apple's on-device Foundation Models over text with the given instructions and
+	// writes {"text":"..."} (CorrectionSuccess) into out (issue #208). Synchronous, bounded by a
+	// timeout of its own, and it never touches the main thread: call it from a goroutine.
+	// KaiCorrectAvailability writes {"status":"available"} or the reason the model cannot run
+	// (locale empty: the model alone; else also whether it supports that language).
+	KaiCorrect             func(instructions string, text string, out unsafe.Pointer, outCap int32) int32
+	KaiCorrectAvailability func(locale string, out unsafe.Pointer, outCap int32) int32
 	// Double Cmd+C (issue #199). Start creates a listen-only event tap on a thread of its own and
 	// returns 0 (listening), 1 (Input Monitoring missing; nothing created, no prompt) or 2 (failed).
 	// Poll writes and clears the recorded Cmd+C key-downs as JSON. None of these needs the main
@@ -196,6 +203,8 @@ func registerAll(h uintptr) {
 	register(&KaiTranslateCancel, "kai_translate_cancel")
 	register(&KaiWarmTranslate, "kai_warm_translate")
 	register(&KaiDetectLanguage, "kai_detect_language")
+	register(&KaiCorrect, "kai_correct")
+	register(&KaiCorrectAvailability, "kai_correct_availability")
 	register(&KaiDoubleCopyStart, "kai_doublecopy_start")
 	register(&KaiDoubleCopyStop, "kai_doublecopy_stop")
 	register(&KaiDoubleCopyPoll, "kai_doublecopy_poll")

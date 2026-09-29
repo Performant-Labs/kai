@@ -70,6 +70,12 @@ type Service struct {
 	// detect is the local language detector the automatic source switch (issue #200) reads:
 	// engine.DetectLanguage. It is a field so a test can give it a language and a confidence.
 	detect func(text string) (lang model.Language, confidence float64, ok bool)
+	// corrector is the provider that corrects the source text (issue #208): Apple's on-device model
+	// through the Swift bridge. It is a field so a test can hand in a fake; no translation engine
+	// is one.
+	corrector engine.Corrector
+	// correctTimeout bounds one correction; zero is defaultCorrectTimeout. A field for the tests.
+	correctTimeout time.Duration
 }
 
 // emitter is the one outlet for app events (issue #109, D8). *application.EventManager satisfies
@@ -96,6 +102,7 @@ func NewService(reg *engine.Registry, hist *historystore.Store, st *settings.Ser
 		budgetOf:        engine.InputBudget,
 		captureRegion:   engine.CaptureRegion,
 		detect:          engine.DetectLanguage,
+		corrector:       engine.NewAppleCorrector(),
 	}
 }
 

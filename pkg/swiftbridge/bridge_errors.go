@@ -32,6 +32,9 @@ const (
 	BridgeErrAppleTranslate     = "apple_translate"      // Swift: BRIDGE_ERR_APPLE_TRANSLATE (system-level; reuses err.apple_translate_engine)
 	BridgeErrAppleOcr           = "apple_ocr"            // Swift: BRIDGE_ERR_APPLE_OCR (system-level; reuses err.vision_ocr_engine)
 	BridgeErrCancelled          = "cancelled"            // Swift: BRIDGE_ERR_CANCELLED (kai_translate cancelled by kai_translate_cancel; no copy: reported through the ctx)
+	BridgeErrCorrectRefused     = "correct_refused"      // Swift: BRIDGE_ERR_CORRECT_REFUSED (kai_correct: the model declined; no copy: the text is translated as it came)
+	BridgeErrCorrectFailed      = "correct_failed"       // Swift: BRIDGE_ERR_CORRECT_FAILED (kai_correct: any other failure; no copy)
+	BridgeErrCorrectTimeout     = "correct_timeout"      // Swift: BRIDGE_ERR_CORRECT_TIMEOUT (kai_correct: no answer in time; no copy)
 )
 
 // Swift-side constants (mirror; the real definitions live in
@@ -49,6 +52,9 @@ const (
 //	let BRIDGE_ERR_APPLE_TRANSLATE     = "apple_translate"
 //	let BRIDGE_ERR_APPLE_OCR           = "apple_ocr"
 //	let BRIDGE_ERR_CANCELLED           = "cancelled"
+//	let BRIDGE_ERR_CORRECT_REFUSED     = "correct_refused"
+//	let BRIDGE_ERR_CORRECT_FAILED      = "correct_failed"
+//	let BRIDGE_ERR_CORRECT_TIMEOUT     = "correct_timeout"
 
 // ---------------------------------------------------------------------------
 // Go struct mirrors of the returned JSON (one-to-one with the Swift Codable struct fields)
@@ -92,6 +98,20 @@ type AvailableLanguages struct {
 type DetectedLanguage struct {
 	Lang       string  `json:"lang"`
 	Confidence float64 `json:"confidence"`
+}
+
+// CorrectionSuccess mirrors Swift CorrectionSuccess (kai_correct, issue #208): {"text":"..."}, or
+// the BridgeError shape (code correct_refused / correct_failed / correct_timeout) on failure.
+type CorrectionSuccess struct {
+	Text string `json:"text"`
+	BridgeError
+}
+
+// CorrectionAvailability mirrors Swift CorrectionAvailability (kai_correct_availability):
+// {"status":"available"}, or the reason it is not: model_not_ready, apple_intelligence_off,
+// unsupported_hardware, unsupported_language.
+type CorrectionAvailability struct {
+	Status string `json:"status"`
 }
 
 // SelectionPoint mirrors Swift SelectionPoint: {"x":0,"y":0}.

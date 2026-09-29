@@ -42,6 +42,8 @@ var (
 	KaiTranslateCancel        func(token int64) int32
 	KaiWarmTranslate          func(src string, dst string) int32
 	KaiDetectLanguage         func(text string, out unsafe.Pointer, outCap int32) int32
+	KaiCorrect                func(instructions string, text string, out unsafe.Pointer, outCap int32) int32
+	KaiCorrectAvailability    func(locale string, out unsafe.Pointer, outCap int32) int32
 	KaiDoubleCopyStart        func() int32
 	KaiDoubleCopyStop         func() int32
 	KaiDoubleCopyPoll         func(out unsafe.Pointer, outCap int32) int32

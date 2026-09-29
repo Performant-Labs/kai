@@ -138,5 +138,8 @@
   "log.analytics_identify_failed": "上报身份属性失败",
   "log.analytics_write_device_id_failed": "写入设备 ID 失败",
   "log.analytics_device_id_failed": "获取机器 ID 失败，已关闭匿名统计上报",
-  "log.hotkey_trigger_busy": "[快捷键] 复制键模拟仍在进行时输入翻译快捷键再次触发，已跳过以避免与剪贴板产生竞争"
+  "log.hotkey_trigger_busy": "[快捷键] 复制键模拟仍在进行时输入翻译快捷键再次触发，已跳过以避免与剪贴板产生竞争",
+  "log.correct_done": "[纠错] 已完成",
+  "log.correct_failed": "[纠错] 纠错失败，按原文翻译",
+  "log.correct_rejected": "[纠错] 纠错结果未通过校验，按原文翻译"
 }
