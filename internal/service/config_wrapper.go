@@ -97,6 +97,7 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 	cur.ExecKeys = cfg.ExecKeys
 	cur.AutoClipboard = cfg.AutoClipboard
 	cur.AutoSwitchSource = cfg.AutoSwitchSource
+	cur.DoubleCopyTranslate = cfg.DoubleCopyTranslate
 	cur.CopyKeySnapshot = cfg.CopyKeySnapshot
 	cur.AnalyticsEnabled = cfg.AnalyticsEnabled
 	if err := w.settingsSvc.Save(); err != nil {
@@ -124,6 +125,16 @@ func (w *ConfigWrapper) SaveConfig(cfg *settings.Settings) error {
 		}
 	}
 	return nil
+}
+
+// GetDoubleCopyStatus reports the double Cmd+C listener's state for the Settings page: "off",
+// "running", "missing_permission" (the setting is on but Input Monitoring is not granted),
+// "unsupported" or "error" (issue #199).
+func (w *ConfigWrapper) GetDoubleCopyStatus() string {
+	if w.hotkeyMgr == nil {
+		return "off"
+	}
+	return w.hotkeyMgr.DoubleCopyStatus()
 }
 
 // NamedItem is an entry with a display name (for frontend dropdowns/lists).

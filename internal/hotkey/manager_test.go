@@ -213,3 +213,30 @@ func TestDoubleCopyStatusString(t *testing.T) {
 		t.Fatalf("status with no controller = %q, want off", got)
 	}
 }
+
+func TestRegister_SyncsTheDoubleCopyListenerEvenBeforeTheAppExists(t *testing.T) {
+	st, err := settings.NewService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Get().DoubleCopyTranslate = true
+	dc := &fakeDC{}
+	h := &Manager{log: slog.Default(), settingsSvc: st, doubleCopy: dc}
+	h.Register() // app is nil: the hotkey part returns early, the listener sync must not
+	if len(dc.applied) != 1 || !dc.applied[0] {
+		t.Fatalf("Apply calls = %v, want [true]", dc.applied)
+	}
+	st.Get().DoubleCopyTranslate = false
+	h.Register()
+	if len(dc.applied) != 2 || dc.applied[1] {
+		t.Fatalf("Apply calls = %v, want [true false]", dc.applied)
+	}
+}
+
+func TestUnregister_StopsTheDoubleCopyListener(t *testing.T) {
+	dc := &fakeDC{}
+	(&Manager{log: slog.Default(), doubleCopy: dc}).Unregister()
+	if len(dc.applied) != 1 || dc.applied[0] {
+		t.Fatalf("Apply calls = %v, want [false]", dc.applied)
+	}
+}

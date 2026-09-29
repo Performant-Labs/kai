@@ -54,6 +54,13 @@ type Settings struct {
 	// is read through readAutoSwitchSource, not mapstructure, so a garbled value cannot fail the
 	// whole settings load.
 	AutoSwitchSource bool `json:"auto_switch_source" mapstructure:"-"`
+	// DoubleCopyTranslate is the "translate on double Cmd+C" switch (issue #199): pressing Cmd+C
+	// twice quickly in any app fills Kai's input with what was copied and translates it. OFF by
+	// default, because it needs the Input Monitoring permission and changes global behaviour, and
+	// only an explicit true turns it on: a missing key, or a value that is not a boolean, reads as
+	// off. Read through readDoubleCopyTranslate, not mapstructure, so a garbled value cannot fail
+	// the whole settings load.
+	DoubleCopyTranslate bool `json:"double_copy_translate" mapstructure:"-"`
 	// CopyKeySnapshot records the copy key's prior state (enabled/fallback) when
 	// AutoClipboard is switched on, restoring from it when AutoClipboard is switched off;
 	// nil when never enabled.
@@ -282,6 +289,25 @@ func readAutoSwitchSource(v *viper.Viper) bool {
 	return true
 }
 
+// doubleCopyTranslateKey is the settings.json key of Settings.DoubleCopyTranslate.
+const doubleCopyTranslateKey = "double_copy_translate"
+
+// readDoubleCopyTranslate reads Settings.DoubleCopyTranslate from the loaded file: a boolean is
+// taken as it is (a "true"/"false" string too), and everything else, a missing key, null, a
+// number, an object, a word, is OFF, the default. The mirror image of readAutoSwitchSource: a
+// setting that needs a permission must never turn itself on from a damaged file.
+func readDoubleCopyTranslate(v *viper.Viper) bool {
+	switch x := v.Get(doubleCopyTranslateKey).(type) {
+	case bool:
+		return x
+	case string:
+		if b, err := strconv.ParseBool(strings.TrimSpace(x)); err == nil {
+			return b
+		}
+	}
+	return false
+}
+
 // normalizeLanguages coerces persisted language choices that predate the dialect variants
 // (issue #52): bare es / pt are recognized but no longer selectable, so a stored default_to of
 // "es" would match no option in the dropdowns. A bare base becomes the first selectable variant
@@ -354,6 +380,7 @@ func NewService(dataDir string) (*Service, error) {
 	}
 	s.cfg.Path = filePath
 	s.cfg.AutoSwitchSource = readAutoSwitchSource(v)
+	s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(v)
 	s.cfg.normalizeLanguages()
 	s.cfg.normalizeUpdaterSource()
 
@@ -414,6 +441,7 @@ func (s *Service) startWatching() {
 			}
 			s.cfg.Path = s.filePath
 			s.cfg.AutoSwitchSource = readAutoSwitchSource(s.v)
+			s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(s.v)
 			s.cfg.normalizeLanguages()
 			s.cfg.normalizeUpdaterSource()
 
@@ -455,6 +483,7 @@ func (s *Service) writeConfig() error {
 	w.Set("execkeys", s.cfg.ExecKeys)
 	w.Set("auto_clipboard", s.cfg.AutoClipboard)
 	w.Set(autoSwitchSourceKey, s.cfg.AutoSwitchSource)
+	w.Set(doubleCopyTranslateKey, s.cfg.DoubleCopyTranslate)
 	w.Set("copy_key_snapshot", s.cfg.CopyKeySnapshot)
 	w.Set("tts", s.cfg.TTS)
 	w.Set("http_log", s.cfg.HttpLog)

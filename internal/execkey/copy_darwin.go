@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"cnb.cool/dtapp/kai/internal/doublecopy"
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"github.com/go-vgo/robotgo"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -72,6 +73,7 @@ func (e *ExecKeyController) copyDefaultKey() string {
 	// new value from a stale one still sitting there when the target app's copy handler hasn't
 	// run yet (see pollClipboardText's doc comment).
 	before := e.selection.ReadClipboardText()
+	doublecopy.MarkOwnCopy() // Kai's own Cmd+C is not the user's double press (issue #199)
 	comboErr := application.InvokeSyncWithError(func() error {
 		return robotgo.KeyTap("c", "cmd")
 	})
@@ -121,6 +123,7 @@ func (e *ExecKeyController) copyWithHotkey(hotkey string) string {
 	// Snapshot the clipboard before injecting the key — see pollClipboardText's doc comment.
 	before := e.selection.ReadClipboardText()
 	// Run on the main thread
+	doublecopy.MarkOwnCopy() // Kai's own Cmd+C is not the user's double press (issue #199)
 	comboErr := application.InvokeSyncWithError(func() error {
 		return robotgo.KeyTap(key, mods...)
 	})

@@ -231,6 +231,16 @@ export interface Settings {
     "auto_switch_source": boolean;
 
     /**
+     * DoubleCopyTranslate is the "translate on double Cmd+C" switch (issue #199): pressing Cmd+C
+     * twice quickly in any app fills Kai's input with what was copied and translates it. OFF by
+     * default, because it needs the Input Monitoring permission and changes global behaviour, and
+     * only an explicit true turns it on: a missing key, or a value that is not a boolean, reads as
+     * off. Read through readDoubleCopyTranslate, not mapstructure, so a garbled value cannot fail
+     * the whole settings load.
+     */
+    "double_copy_translate": boolean;
+
+    /**
      * CopyKeySnapshot records the copy key's prior state (enabled/fallback) when
      * AutoClipboard is switched on, restoring from it when AutoClipboard is switched off;
      * nil when never enabled.
