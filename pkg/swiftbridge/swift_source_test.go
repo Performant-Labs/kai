@@ -102,3 +102,28 @@ func TestBridgeLogHasCancelKeys(t *testing.T) {
 		}
 	}
 }
+
+// Issue #173 item 8, PR review finding: a session.translate() call is unbounded and
+// uncancellable (issue #111). An earlier revision of TranslationSessionCache was a single
+// actor serializing every (source, target) pair behind one queue, so one stuck call for pair
+// A would head-of-line-block every later call for pair B too — reproduced live during this
+// PR's hand-testing (a translate() still running after 10+ minutes). Pins the per-pair design
+// that replaced it: one SessionEntry actor per pair (so two calls for the SAME pair still
+// serialize, the safety property that matters — Apple does not document TranslationSession as
+// safe for concurrent use), with TranslationSessionCache itself downgraded from an actor to a
+// plain class (a lock only guards the synchronous dictionary lookup, never an await), so
+// different pairs no longer share a queue.
+func TestSessionCacheIsPerPairNotGlobal(t *testing.T) {
+	src := readSwift(t, "apple_translate.swift")
+	if !strings.Contains(src, "actor SessionEntry") {
+		t.Error("apple_translate.swift must declare `actor SessionEntry` (one actor per language pair)")
+	}
+	if strings.Contains(src, "actor TranslationSessionCache") {
+		t.Error("TranslationSessionCache must not be `actor` (that reintroduces a single queue " +
+			"serializing every language pair — see the head-of-line-blocking finding this pins)")
+	}
+	if !strings.Contains(src, "final class TranslationSessionCache") {
+		t.Error("apple_translate.swift must declare `final class TranslationSessionCache` (per-pair " +
+			"design: a plain class dispatching to per-pair SessionEntry actors)")
+	}
+}
