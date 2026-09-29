@@ -61,7 +61,7 @@ describe('Cmd+Enter translates while the window has focus (issue #165)', () => {
   it('only calls doTranslate when not already awaiting and there is input (matches the button)', () => {
     const fn = fnBody('handleTranslateShortcut');
     expect(fn).toMatch(/!awaiting\s*&&\s*input\.trim\(\)/);
-    expect(fn).toMatch(/doTranslate\(\)/);
+    expect(fn).toMatch(/translateWithSwitch\(\)/);
   });
 
   it('onWindowKeydown consults handleTranslateShortcut before the undo/redo shortcut', () => {
@@ -80,7 +80,7 @@ describe('Cmd+Enter translates while the window has focus (issue #165)', () => {
 
 describe('Translate button shows a Cmd+Enter hint (issue #173 item 4)', () => {
   it('the primary Translate button includes a muted ⌘⏎ hint, only while actionable', () => {
-    const btnStart = markup.indexOf("onclick={doTranslate}");
+    const btnStart = markup.indexOf("onclick={translateWithSwitch}");
     expect(btnStart, 'Translate button not found').toBeGreaterThan(-1);
     const tagEnd = markup.indexOf('</button>', btnStart);
     const region = markup.slice(Math.max(0, btnStart - 400), tagEnd);

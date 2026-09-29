@@ -56,6 +56,7 @@ export const zh: Dict = {
     sourceAuto: '自动检测',
     identity: '源语言与目标语言相同，已显示原文',
     translatedFromDetected: '译自自动识别的{lang}',
+    sourceSwitched: '源语言已切换为{from}，目标语言现为{to}。点击交换可撤销。',
     failedPair: '语言对不可用——请在 系统设置 > 通用 > 语言与地区 中下载该语言对',
     failedNetwork: '无法连接 {engine}：请检查网络或代理设置',
     failedAuth: '{engine} 拒绝了该 API 密钥',
@@ -111,6 +112,9 @@ export const zh: Dict = {
     analytics: '匿名统计',
     analyticsHint:
       '发送匿名使用数据（翻译次数、功能使用等），帮助我们改进产品。数据不含任何个人信息，可随时关闭。',
+    autoSwitchSource: '自动切换源语言',
+    autoSwitchSourceHint:
+      '当文本的语言与源语言不同时，自动把源语言切换为该语言，把原来的源语言设为目标语言，并直接翻译。',
     engines: '引擎',
     enginesTitle: '翻译引擎',
     engineList: '引擎列表',
@@ -335,6 +339,7 @@ export const zh: Dict = {
     loadEngineListFailed: '[输入翻译] 加载引擎列表失败',
     loadLangListFailed: '[输入翻译] 加载语言列表失败',
     translateRequestFailed: '[输入翻译] 翻译请求失败',
+    sourceSwitchFailed: '[输入翻译] 自动源语言检测失败',
     translateCancelFailed: '[输入翻译] 取消翻译请求失败',
     screenshotRecaptureFailed: '[截图翻译] 重新截图失败',
     screenshotRetranslateEmit: '[动态桥接] 重新翻译已触发',
@@ -360,6 +365,7 @@ export const zh: Dict = {
     engineLoadAddFieldsFailed: '[引擎] 加载新增引擎字段失败',
     generalSaveLangFailed: '[通用] 保存语言设置失败',
     generalSaveAnalyticsFailed: '[通用] 保存匿名统计开关失败',
+    generalSaveAutoSwitchFailed: '[通用] 保存自动切换源语言开关失败',
     shortcutCheckAccessibilityFailed: '[快捷键] 检测辅助功能授权失败',
     shortcutOpenAccessibilityFailed: '[快捷键] 打开辅助功能设置失败',
     shortcutCheckScreenRecordingFailed: '[快捷键] 检测屏幕录制授权失败',

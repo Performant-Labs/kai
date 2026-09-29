@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { en } from '../i18n/en-US.ts';
 import { zh } from '../i18n/zh-CN.ts';
 
-// Issue #161 (T, RED), frontend half. The source dropdown never changes: its Auto entry always
+// Issue #161 (T, RED), frontend half. (Issue #200 later reversed "never changes" for a pinned source:
+// see autoSourceSwitch.test.ts; what stays is that the Auto entry is a constant label and this note is
+// display only.) The source dropdown never changes: its Auto entry always
 // reads the constant translate.sourceAuto ("Detected"), and #11's relabeling helper is deleted.
 // What the engine actually translated from is shown instead by a persistent, muted note in the
 // result pane, rendered from the backend-decided activeResult.detected_from whenever it is

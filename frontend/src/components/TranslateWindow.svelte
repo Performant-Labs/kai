@@ -92,6 +92,7 @@
   import {
     TranslateMulti,
     CancelTranslate,
+    PlanSourceSwitch,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
   import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
   import { learnFromSelection } from '../utils/langLearn.ts';
@@ -136,7 +137,15 @@
     type ProgressLine,
     type ProgressState,
   } from '../utils/translateProgress.ts';
-  import { swapLanguages } from '../utils/swapLangs.ts';
+  import { swapLanguages, type LangPair } from '../utils/swapLangs.ts';
+  import {
+    acceptSwitch,
+    makeCue,
+    cueActive,
+    undoPair,
+    isDeclined,
+    type SwitchCue,
+  } from '../utils/sourceSwitch.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import {
     GetLanguages,
@@ -269,6 +278,18 @@
   // the baseline) and survives closing the window, which only hides it.
   let sourceHistory = $state(emptyHistory());
 
+  // The automatic source switch (issue #200): text that arrives in another language than the pinned
+  // source shows switches the source select to it, makes the old source the target and translates.
+  // The cue remembers the pair before the switch, so the swap button can undo it, and shows the
+  // note while the window still is in the pair the switch made. declinedText is the text whose
+  // switch the user undid: it is not switched again. Neither is persisted or taught (see
+  // autoSwitchSource).
+  let switchCue = $state<SwitchCue | null>(null);
+  let declinedText = '';
+  // The request whose result already made the engine-detection retry (translateIfSwitched), so one
+  // request retries at most once.
+  let hintedRequestId = '';
+
   // The one writer of a change to the source text: records it (the text before it is `input`),
   // then applies it. Both time rules of the history (the typing window here and the shortcut
   // dedupe below) read the same clock, Date.now().
@@ -348,6 +369,11 @@
       return;
     }
     setSource(el.value, changeKindOf(e));
+    // A paste or a drop puts text into the source pane: an arrival, like the fill. Typing, cutting
+    // and undoing check nothing; typed text is checked when Translate is pressed.
+    if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop') {
+      translateIfSwitched(el.value);
+    }
   }
 
   // A native undo or redo of the source textarea (the Edit menu's key equivalent, a context menu)
@@ -419,7 +445,7 @@
   function handleTranslateShortcut(e: KeyboardEvent): boolean {
     if (e.key !== 'Enter' || !e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
     e.preventDefault();
-    if (!awaiting && input.trim()) doTranslate();
+    if (!awaiting && input.trim()) translateWithSwitch();
     return true;
   }
 
@@ -549,8 +575,10 @@
   // engine detected, issue #53). The swap below reads it (issue #13).
   const detectedFrom = $derived(String(activeResult?.from ?? ''));
   // The source select's option labels (issue #161): the Auto entry always reads "Detected", whatever
-  // the result, and every other entry its language name. The select never changes with a result;
-  // the language a text was actually translated from is the result pane's note instead.
+  // the result, and every other entry its language name. The select's labels never depend on a
+  // result; the language a text was actually translated from is the result pane's note. (A pinned
+  // source does change when text arrives in another language, but that is the automatic switch of
+  // issue #200, decided before the request goes out; it is not a relabel of the result.)
   function fromOptionLabel(value: string): string {
     return value === TRANSLATE_LANG.Auto ? t('translate.sourceAuto') : langName(value);
   }
@@ -565,6 +593,8 @@
   // isSelectable composes the two layers of "can be picked as a target": the loaded language list
   // (bare es / pt are recognized but not in it) and the issue #52 capability gate, so a detection
   // never lands the target on an option the select renders disabled.
+  // Whether the note of the last automatic switch still describes the window (issue #200).
+  const cueShown = $derived(cueActive(switchCue, input, { from: fromLang, to: toLang }));
   const swapPair = $derived(
     swapLanguages({
       from: fromLang,
@@ -599,6 +629,13 @@
         if (payload.request_id !== requestId) return;
         results = { ...results, [payload.engine]: payload };
         loading = false;
+        // The engine told the text is in another language than the pinned source (issue #161) and
+        // no switch was made before the request went out, which is what happens where there is no
+        // local detector: retry through the same switch, once per request.
+        if (payload.detected_from && !payload.identity && hintedRequestId !== requestId) {
+          hintedRequestId = requestId;
+          translateIfSwitched(input, payload.detected_from);
+        }
         // The request settles only when every engine the backend started has reported (result,
         // failure or cancel): until then the active engine keeps its loading placeholder even if a
         // faster sibling answered first.
@@ -624,7 +661,9 @@
       if (!text) return;
       // Its own undo step (issue #118): Undo brings back the text the fill replaced.
       setSource(text, 'program');
-      doTranslate();
+      // A new arrival is a new text: an undo of an earlier switch does not carry over to it.
+      declinedText = '';
+      translateWithSwitch();
     });
     // Issue #175 item 5: the copy-key branch simulated a copy but never saw the clipboard
     // change, so nothing arrived via EventInputFill above. Without this, the window still
@@ -774,6 +813,70 @@
     }
   }
 
+  // The one automatic source switch (issue #200), for every way text arrives: it asks the backend
+  // planner (the decision: local detection, the 20-code-point floor, the confidence check, dialect
+  // matching, the setting) and applies the pair it answers, if the selects can hold it. An Auto
+  // source has no entry to switch, and text the user just undid is not switched again. It only
+  // assigns the two selects: an automatic switch is not a choice, so nothing is taught to the
+  // variant store and nothing is persisted (a select's own onchange does that). `detected` is a
+  // detection the caller already holds (a result's), the planner's fallback. Returns whether it
+  // switched.
+  async function autoSwitchSource(text: string, detected = ''): Promise<boolean> {
+    if (fromLang === TRANSLATE_LANG.Auto || isDeclined(declinedText, text)) return false;
+    const prev: LangPair = { from: fromLang, to: toLang };
+    let plan;
+    try {
+      plan = await PlanSourceSwitch({
+        text,
+        from: prev.from as TranslateLang,
+        to: prev.to as TranslateLang,
+        detected: detected as TranslateLang,
+      });
+    } catch (e) {
+      console.error(t('log.sourceSwitchFailed'), e);
+      return false;
+    }
+    // The user moved on while the answer was on its way: it is not this window's state any more.
+    if (input !== text || fromLang !== prev.from || toLang !== prev.to) return false;
+    const pair = acceptSwitch(plan, {
+      current: prev,
+      autoCode: TRANSLATE_LANG.Auto,
+      sourceOptions: languages.map((l) => l.value),
+      isSelectableTarget: (code) =>
+        targetLanguages.some((l) => l.value === code) && !isTargetDisabled(allEngines, code),
+    });
+    if (!pair) return false;
+    switchCue = makeCue(text, prev, pair);
+    fromLang = pair.from as TranslateLang;
+    toLang = pair.to as TranslateLang;
+    return true;
+  }
+
+  // Translate the source text, switching the pair first when the text is in another language. The
+  // Translate button, Cmd+Enter and the fill (hotkey, tray, auto-clipboard) all come here, and the
+  // double Cmd+C trigger (#199) will.
+  async function translateWithSwitch() {
+    await autoSwitchSource(input);
+    await doTranslate();
+  }
+
+  // For an arrival that does not translate by itself (a paste) or a result that arrived after the
+  // request went out: check the pair, and translate only when it switched.
+  async function translateIfSwitched(text: string, detected = '') {
+    if (await autoSwitchSource(text, detected)) doTranslate();
+  }
+
+  // Undo of an automatic switch (the swap button while the cue is active): the pair before the
+  // switch comes back, exactly, the source text stays, and the text is marked so Translate does not
+  // switch it again. Like the switch itself it persists and teaches nothing.
+  function restoreBeforeSwitch(pair: LangPair) {
+    declinedText = input;
+    fromLang = pair.from as TranslateLang;
+    toLang = pair.to as TranslateLang;
+    switchCue = null;
+    doTranslate();
+  }
+
   // Swap the two languages and translate back (issue #13, DeepL style). swapPair already holds the
   // exchanged pair (the old target becomes the source, an auto source is replaced by the language
   // that was detected, so auto never survives) or is null when there is nothing to exchange; the
@@ -785,6 +888,12 @@
   // onchange ever teaches the variant store. The new source text is its own undo step (issue #118):
   // Undo brings back the old source text and leaves the languages swapped.
   function swap() {
+    // While the note of an automatic switch (issue #200) is showing, swap undoes that switch.
+    const undo = undoPair(switchCue, input, { from: fromLang, to: toLang });
+    if (undo) {
+      restoreBeforeSwitch(undo);
+      return;
+    }
     const pair = swapPair;
     if (!pair) return;
     const { from, to } = pair;
@@ -1168,7 +1277,7 @@
                  request that is still running. -->
             <button
               class="u-btn u-btn--primary u-no-drag flex items-center gap-1.5 px-5 py-1.5 text-sm"
-              onclick={doTranslate}
+              onclick={translateWithSwitch}
               disabled={awaiting || !input.trim()}
               title={t('translate.translateShortcutHint')}
             >
@@ -1349,11 +1458,19 @@
                it); it only narrows the type for the markup below. The detected-source, phonetic,
                cancelled and identity notes are small muted lines above the text: whichever comes
                first adds the top inset (first:pt-4), the text below brings its own p-4. -->
+            {#if cueShown}
+              <!-- The source and target were switched automatically (issue #200): says so, once, in
+                 the result pane's own muted note style. The swap button restores the previous pair. -->
+              <p class="u-muted px-4 text-[11px] first:pt-4" data-testid="source-switched-note">
+                {t('translate.sourceSwitched', { from: langName(fromLang), to: langName(toLang) })}
+              </p>
+            {/if}
             {#if activeResult.detected_from && !activeResult.identity}
               <!-- The language the engine auto-detected and translated from (issue #161): on an
                  auto source, or on a pinned source the backend corrected because the text was in
                  another language. The backend decides when it is set; nothing is compared here.
-                 Display only: it never changes either select, and Copy never includes it. The
+                 Display only: it never changes either select (the automatic switch of issue #200 does that,
+                 before the request), and Copy never includes it. The
                  ignore keeps the call on one line: the #161 source-contract test reads it without
                  the trailing comma prettier adds when it wraps the line. -->
               <!-- prettier-ignore -->

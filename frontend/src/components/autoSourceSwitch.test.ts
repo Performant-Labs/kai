@@ -60,7 +60,12 @@ describe('one shared switch function', () => {
   });
 
   it('never reaches the learn or persist code (an automatic switch is not a choice)', () => {
-    for (const fn of ['autoSwitchSource', 'restoreBeforeSwitch', 'translateWithSwitch', 'translateIfSwitched']) {
+    for (const fn of [
+      'autoSwitchSource',
+      'restoreBeforeSwitch',
+      'translateWithSwitch',
+      'translateIfSwitched',
+    ]) {
       const b = fnBody(fn);
       for (const s of LEARN_OR_PERSIST) expect(b, `${fn} reaches ${s}`).not.toContain(s);
     }
@@ -107,7 +112,7 @@ describe('every arrival path goes through it', () => {
 
   it('a paste into the source pane checks the pair and translates only when it switched', () => {
     const b = fnBody('onSourceInput');
-    expect(b).toMatch(/kind\s*===\s*'paste'/);
+    expect(b).toMatch(/insertFromPaste/);
     expect(b).toContain('translateIfSwitched(');
     expect(b).not.toMatch(/\bdoTranslate\(/);
     const h = fnBody('translateIfSwitched');
@@ -117,9 +122,10 @@ describe('every arrival path goes through it', () => {
 
   it('typing checks nothing per keystroke', () => {
     const b = fnBody('onSourceInput');
-    // The check is only ever reached through the paste branch.
+    // The check is only ever reached through the paste / drop branch (cut and undo check nothing).
     const at = b.indexOf('translateIfSwitched(');
-    expect(b.slice(0, at)).toMatch(/kind\s*===\s*'paste'/);
+    expect(b.slice(Math.max(0, at - 200), at)).toMatch(/insertFromPaste/);
+    expect(b.slice(Math.max(0, at - 200), at)).not.toMatch(/deleteByCut/);
   });
 
   it('a result that still carries the engine detection (#162) retries through the same helper', () => {
@@ -139,7 +145,8 @@ describe('every arrival path goes through it', () => {
       .replace(/\s\/\/ .*$/gm, '');
     for (const m of code.matchAll(/(?<![\w.])doTranslate\(\)/g)) {
       const before = code.slice(0, m.index!);
-      const fn = [...before.matchAll(/\n  (?:async )?function (\w+)\(/g)].pop()?.[1] ?? '(top level)';
+      const fn =
+        [...before.matchAll(/\n  (?:async )?function (\w+)\(/g)].pop()?.[1] ?? '(top level)';
       if (!allowed.includes(fn)) stray.push(fn);
     }
     expect(stray).toEqual([]);
@@ -184,7 +191,10 @@ describe('the setting', () => {
   });
 
   it('has its strings in both locales', () => {
-    for (const [name, cat] of [['en', en], ['zh', zh]] as const) {
+    for (const [name, cat] of [
+      ['en', en],
+      ['zh', zh],
+    ] as const) {
       expect(cat.settings.autoSwitchSource, name).toBeTruthy();
       expect(cat.settings.autoSwitchSourceHint, name).toBeTruthy();
       expect(cat.translate.sourceSwitched, name).toBeTruthy();

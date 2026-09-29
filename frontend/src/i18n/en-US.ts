@@ -57,6 +57,7 @@ export const en: Dict = {
     sourceAuto: 'Detected',
     identity: 'Source and target language are the same — showing the source text',
     translatedFromDetected: 'Translated from auto-detected {lang}',
+    sourceSwitched: 'Source switched to {from}, target is now {to}. Swap to undo.',
     failedPair:
       'Language pair unavailable — add it in System Settings > General > Language & Region',
     failedNetwork: "Can't reach {engine}: check your network or proxy",
@@ -113,6 +114,9 @@ export const en: Dict = {
     analytics: 'Anonymous analytics',
     analyticsHint:
       'Send anonymous usage data (translation counts, feature usage, etc.) to help us improve. No personal data is collected, and you can disable it anytime.',
+    autoSwitchSource: 'Auto-switch source language',
+    autoSwitchSourceHint:
+      'When text arrives in another language than the source shows, switch the source to it, make the old source the target, and translate.',
     engines: 'Engines',
     enginesTitle: 'Translation Engines',
     engineList: 'Engine list',
@@ -343,6 +347,7 @@ export const en: Dict = {
     loadEngineListFailed: '[input] Failed to load engine list',
     loadLangListFailed: '[input] Failed to load language list',
     translateRequestFailed: '[input] Translation request failed',
+    sourceSwitchFailed: '[input] Automatic source-language check failed',
     translateCancelFailed: '[input] Cancelling the translation request failed',
     screenshotRecaptureFailed: '[screenshot] Failed to recapture screenshot',
     screenshotRetranslateEmit: '[dynamic-bridge] retranslate triggered',
@@ -368,6 +373,7 @@ export const en: Dict = {
     engineLoadAddFieldsFailed: '[engine] Failed to load add-engine fields',
     generalSaveLangFailed: '[general] Failed to save language settings',
     generalSaveAnalyticsFailed: '[general] Failed to save anonymous analytics toggle',
+    generalSaveAutoSwitchFailed: '[general] Failed to save auto-switch source language toggle',
     shortcutCheckAccessibilityFailed: '[shortcut] Failed to check Accessibility permission',
     shortcutOpenAccessibilityFailed: '[shortcut] Failed to open Accessibility settings',
     shortcutCheckScreenRecordingFailed: '[shortcut] Failed to check Screen Recording permission',
