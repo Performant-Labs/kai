@@ -63,6 +63,11 @@ export const EventAutoClipboardChanged = 'kai:auto-clipboard:changed';
 // toast on this event so a failed capture reads as a visible failure, not a stale success.
 export const EventCopyKeyFailed = 'kai:copykey:failed';
 
+// EventDoubleCopyPermissionMissing: emitted when "translate on double Cmd+C" (issue #199) is on but
+// macOS Input Monitoring is not granted to Kai. No payload. TranslateWindow shows a toast that
+// says which Privacy & Security pane to open.
+export const EventDoubleCopyPermissionMissing = 'kai:doublecopy:permission-missing';
+
 // Event payload type definitions (aligned with the Go-side structs in internal/events/events.go)
 
 // LocaleChangedPayload: language-change event arguments.

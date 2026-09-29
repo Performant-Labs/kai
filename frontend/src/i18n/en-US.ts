@@ -90,6 +90,8 @@ export const en: Dict = {
     unpin: 'Stop keeping this window on top of others',
     autoClipboard: 'Automatically translate clipboard content when you press the hotkey',
     copyKeyFailed: "Couldn't capture the selection — copy it manually, then press the hotkey again",
+    doubleCopyPermission:
+      'Double Cmd+C needs Input Monitoring. Open System Settings > Privacy & Security > Input Monitoring, turn on Kai, then switch the option off and on again in Settings > General.',
     cancel: 'Cancel',
     cancelEngine: 'Cancel {engine}',
     cancelled: 'Cancelled',
@@ -117,6 +119,11 @@ export const en: Dict = {
     autoSwitchSource: 'Auto-switch source language',
     autoSwitchSourceHint:
       'When text arrives in another language than the source shows, switch the source to it, make the old source the target, and translate.',
+    doubleCopy: 'Translate on double Cmd+C',
+    doubleCopyHint:
+      'Press Cmd+C twice quickly in any app to translate what you copied. Needs the Input Monitoring permission. Copies from password managers and keychain apps, and copies marked as secret, are never translated.',
+    doubleCopyPermission:
+      'Kai needs Input Monitoring to see the double Cmd+C. Open System Settings > Privacy & Security > Input Monitoring, turn on Kai, then switch this option off and on again.',
     engines: 'Engines',
     enginesTitle: 'Translation Engines',
     engineList: 'Engine list',
@@ -374,6 +381,7 @@ export const en: Dict = {
     generalSaveLangFailed: '[general] Failed to save language settings',
     generalSaveAnalyticsFailed: '[general] Failed to save anonymous analytics toggle',
     generalSaveAutoSwitchFailed: '[general] Failed to save auto-switch source language toggle',
+    generalSaveDoubleCopyFailed: '[general] Failed to save double Cmd+C toggle',
     shortcutCheckAccessibilityFailed: '[shortcut] Failed to check Accessibility permission',
     shortcutOpenAccessibilityFailed: '[shortcut] Failed to open Accessibility settings',
     shortcutCheckScreenRecordingFailed: '[shortcut] Failed to check Screen Recording permission',

@@ -97,6 +97,7 @@ export type Dict = {
     unpin: string;
     autoClipboard: string;
     copyKeyFailed: string;
+    doubleCopyPermission: string;
     cancel: string;
     cancelEngine: string;
     cancelled: string;
@@ -122,6 +123,9 @@ export type Dict = {
     analyticsHint: string;
     autoSwitchSource: string;
     autoSwitchSourceHint: string;
+    doubleCopy: string;
+    doubleCopyHint: string;
+    doubleCopyPermission: string;
     engines: string;
     enginesTitle: string;
     engineList: string;
@@ -364,6 +368,7 @@ export type Dict = {
     generalSaveLangFailed: string;
     generalSaveAnalyticsFailed: string;
     generalSaveAutoSwitchFailed: string;
+    generalSaveDoubleCopyFailed: string;
     shortcutCheckAccessibilityFailed: string;
     shortcutOpenAccessibilityFailed: string;
     shortcutCheckScreenRecordingFailed: string;

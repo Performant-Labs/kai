@@ -55,6 +55,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   if (app) unmount(app);
+  app = undefined;
   target?.remove();
 });
 
