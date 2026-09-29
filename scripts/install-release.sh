@@ -29,8 +29,12 @@ keep_perms=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --from) from="${2:-}"; shift ;;
-    --dest) dest="${2:-}"; shift ;;
+    # A missing value must be reported, not left to the trailing shift (which, with set -e, would
+    # end the script silently).
+    --from|--dest)
+      [[ $# -ge 2 && -n "$2" ]] || { echo "$1 needs a value (see --help)" >&2; exit 2; }
+      if [[ "$1" == "--from" ]]; then from="$2"; else dest="$2"; fi
+      shift ;;
     --keep-permissions) keep_perms=1 ;;
     -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     v[0-9]*.[0-9]*.[0-9]*) tag="$1" ;;

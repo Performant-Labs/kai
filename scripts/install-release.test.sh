@@ -176,5 +176,12 @@ run --nonsense
 has  "an unknown argument is rejected"            'unknown argument'
 run --from "$tmp/Kai-1.0.0-darwin-arm64.zip" --dest "$tmp/does-not-exist"
 has  "a missing destination is refused"           'not a directory'
+run --from
+has  "--from with no value says so"               '--from needs a value'
+exit_is "  ... with exit 2"                       2
+run --dest
+has  "--dest with no value says so"               '--dest needs a value'
+run --from "" 
+has  "--from with an empty value says so"         '--from needs a value'
 
 [[ $fail -eq 0 ]] && echo "PASS" || { echo "FAILED"; exit 1; }
