@@ -54,8 +54,8 @@ describe('one shared switch function', () => {
 
   it('applies the pair by assigning the two selects and nothing else', () => {
     const b = fnBody('autoSwitchSource');
-    expect(b).toMatch(/\bfromLang\s*=/);
-    expect(b).toMatch(/\btoLang\s*=/);
+    expect(b).toMatch(/\bfromLang\s*=(?!=)/);
+    expect(b).toMatch(/\btoLang\s*=(?!=)/);
     expect(b).toMatch(/acceptSwitch\(/);
   });
 
@@ -73,7 +73,7 @@ describe('one shared switch function', () => {
 
   it('does not switch an Auto source and skips text the user undid', () => {
     const b = fnBody('autoSwitchSource');
-    expect(b).toContain('TRANSLATE_LANG.Auto');
+    expect(b).toMatch(/fromLang\s*===\s*TRANSLATE_LANG\.Auto/);
     expect(b).toMatch(/isDeclined\(/);
   });
 
