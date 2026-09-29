@@ -1,9 +1,6 @@
 package doublecopy
 
-import (
-	"errors"
-	"time"
-)
+import "errors"
 
 var (
 	// ErrNoPermission means the source cannot listen because the Input Monitoring grant is missing.
@@ -11,10 +8,6 @@ var (
 	// ErrUnsupported means this platform has no source.
 	ErrUnsupported = errors.New("doublecopy: not supported on this platform")
 )
-
-// ownCopyGrace is how long the source treats every Cmd+C as Kai's own after MarkOwnCopy: enough to
-// cover the key event of the simulated copy, short enough that a real copy right after is not lost.
-const ownCopyGrace = 500 * time.Millisecond
 
 // Source delivers Cmd+C key-downs. Start must not prompt for a permission (RequestPermission
 // does); it returns ErrNoPermission when listening is not allowed. Poll returns and clears the

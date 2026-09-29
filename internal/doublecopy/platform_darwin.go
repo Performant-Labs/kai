@@ -12,6 +12,10 @@ import (
 	"cnb.cool/dtapp/kai/pkg/swiftbridge"
 )
 
+// ownCopyGrace is how long the source treats every Cmd+C as Kai's own after MarkOwnCopy: enough to
+// cover the key event of the simulated copy, short enough that a real copy right after is not lost.
+const ownCopyGrace = 500 * time.Millisecond
+
 // Thread rules. Every call below is a plain function call into the Swift bridge that touches no
 // AppKit UI state and needs no main thread: the event tap lives on a thread of its own with its own
 // run loop, the queue is behind a lock, and the pasteboard and frontmost-app reads are property

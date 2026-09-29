@@ -27,8 +27,8 @@ func assertFired(t *testing.T, got []int, want ...int) {
 	if len(got) != len(want) {
 		t.Fatalf("fired at %v, want %v", got, want)
 	}
-	for i := range got {
-		if got[i] != want[i] {
+	for i, g := range got {
+		if g != want[i] {
 			t.Fatalf("fired at %v, want %v", got, want)
 		}
 	}

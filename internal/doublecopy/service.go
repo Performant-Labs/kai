@@ -1,6 +1,7 @@
 package doublecopy
 
 import (
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -112,15 +113,15 @@ func (s *Service) Apply(on bool) {
 		// Already listening.
 	default:
 		err := s.cfg.Source.Start()
-		switch err {
-		case nil:
+		switch {
+		case err == nil:
 			s.gen.Add(1)
 			s.resetDetector()
 			stop := make(chan struct{})
 			s.stop = stop
 			s.status, s.notified = StatusRunning, false
 			go s.loop(stop)
-		case ErrNoPermission:
+		case errors.Is(err, ErrNoPermission):
 			s.status = StatusMissingPermission
 			if !first && !wasOn && s.cfg.RequestPermission != nil {
 				after = append(after, s.cfg.RequestPermission)
@@ -131,7 +132,7 @@ func (s *Service) Apply(on bool) {
 					after = append(after, s.cfg.OnPermissionMissing)
 				}
 			}
-		case ErrUnsupported:
+		case errors.Is(err, ErrUnsupported):
 			s.status = StatusUnsupported
 		default:
 			s.status = StatusError
