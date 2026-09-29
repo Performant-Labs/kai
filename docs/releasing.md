@@ -92,9 +92,20 @@ certificate or notarization secrets. Two consequences to state in every release'
   clipboard. Fix: remove Kai from the list and add it again, or run
   `tccutil reset Accessibility net.dtapp.kai` and relaunch. (Screen Recording stayed granted
   across every rebuild seen so far, so it is not listed here.)
-- **Gatekeeper.** A zip downloaded through a browser gets a quarantine flag and will be blocked
-  as "unidentified developer". `gh release download` does not set the flag. Otherwise run
-  `xattr -dr com.apple.quarantine /Applications/Kai.app`.
+- **Gatekeeper.** A file downloaded by a browser gets the `com.apple.quarantine` flag, and macOS
+  blocks a quarantined, ad-hoc-signed app as coming from an unidentified developer. Checked:
+  `gh release download` does not set the flag, and a disk image does not help (the app inside is
+  still blocked). `scripts/install-release.sh` is the supported way to install a release without
+  the block: it downloads with `gh` (no flag), or with `--from FILE` takes a zip or disk image you
+  already downloaded and clears the flag from it. Either way it verifies the checksum when one is
+  available, checks the bundle id and signature, refuses to replace a running Kai, clears the flag
+  on the installed copy, and clears the stale Accessibility grant **only if the app's code
+  changed**. Removing the flag from a build made by this project's own release process, on your
+  own Mac, is ordinary; it does not make the app trusted for anyone else.
+- **The real fix is not available yet:** a Developer ID signature plus notarization. It needs an
+  Apple Developer Program membership; the release Mac has no Developer ID certificate and
+  1Password has none either. It would also stop every build invalidating the Accessibility grant.
+  Until then the two bullets above are the cost of shipping ad-hoc signed.
 
 ## The in-app updater (release-blocking until decided)
 
@@ -115,10 +126,19 @@ so it is tracked in its own issue, [#178](https://github.com/Performant-Labs/kai
 
 1. **A git tag + `CHANGELOG.md` entry.** `vX.Y.Z`, annotated. The `## [Unreleased]` section
    becomes `## [X.Y.Z] - YYYY-MM-DD` and stays hand-written, not generated from commit messages.
-2. **A GitHub Release** on `Performant-Labs/kai-private` with:
-   - `Kai-X.Y.Z-darwin-arm64.zip`, made with `ditto -c -k --keepParent bin/Kai.app <zip>`
-     (round trip checked: the signature stays valid after unzip; a plain `zip` can break it).
-   - `SHA256SUMS`.
+2. **A GitHub Release** on `Performant-Labs/kai-private` with three assets, all made by
+   `scripts/release-package.sh bin/Kai.app X.Y.Z`:
+   - `Kai-X.Y.Z-darwin-arm64.zip`, made with `ditto` (a plain `zip` can break the signature).
+   - `Kai-X.Y.Z-darwin-arm64.dmg`, a disk image with `Kai.app` and an Applications shortcut. A
+     `.app` is a folder and a release asset must be one file, so it has to be archived; the zip
+     unpacks to `Kai.app` and the disk image is the usual Mac form.
+   - `SHA256SUMS`, covering both.
+
+   The script packages the app it is given and **never rebuilds**: every build embeds its build
+   time and regenerates `Assets.car`, so a rebuild is a different binary from the one
+   `release-verify.sh` approved. It checks that each archive unpacks to an app identical to the
+   input with a valid signature. Package **once** and do not repackage after publishing: the zip
+   is reproducible (identical hash on a second run), the disk image is not (it embeds timestamps).
 
    This is outward-facing. Confirm with whoever is driving the release before publishing, every
    time.
@@ -227,8 +247,10 @@ answers the first question a reader has (how do I install it, and why does Alt+A
 carries the Gatekeeper warning. Fill in the version:
 
 ```markdown
-**Installing.** macOS on Apple Silicon only. Download with `gh release download vX.Y.Z --repo Performant-Labs/kai-private`: a browser download is quarantined by macOS and blocked as coming from an unidentified developer (if that happens, run `xattr -dr com.apple.quarantine /Applications/Kai.app`). Unzip, move `Kai.app` to `/Applications`, and check the zip against `SHA256SUMS`. This build is ad-hoc signed, so remove Kai from Privacy & Security and add it again (on macOS 27 the list is "Device Control and Data Access") before Alt+A can copy text.
+**Installing.** macOS on Apple Silicon only. Download with `gh release download vX.Y.Z --repo Performant-Labs/kai-private`: a browser download is quarantined by macOS and blocked as coming from an unidentified developer (if that happens, run `xattr -dr com.apple.quarantine /Applications/Kai.app`). Unzip, move `Kai.app` to `/Applications`, and check the zip against `SHA256SUMS`. This build is ad-hoc signed, so remove Kai from Privacy & Security and add it again (on macOS 27 the list is "Device Control and Data Access") before Alt+A can copy text. The app is attached twice: `Kai-X.Y.Z-darwin-arm64.zip`, and `Kai-X.Y.Z-darwin-arm64.dmg`, a disk image with `Kai.app` inside to drag to Applications. If you have a checkout of the repo, `scripts/install-release.sh vX.Y.Z` downloads and installs it without the quarantine block.
 ```
+
+(v0.1.0's published notes stop after the disk-image sentence: the installer script did not exist yet.)
 
 After publishing, add a last line linking the release checklist issue.
 
@@ -265,16 +287,20 @@ to `Performant-Labs/kai-private`, never upstream.
 12. Quit any running Kai, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`. It must print PASS.
     (It launches the app, so the Dock icon bounces and Kai briefly takes focus.)
 13. Run the manual smoke matrix (checklist) against the same `bin/Kai.app`.
-14. `ditto -c -k --keepParent bin/Kai.app Kai-X.Y.Z-darwin-arm64.zip`, then
-    `shasum -a 256 Kai-X.Y.Z-darwin-arm64.zip > SHA256SUMS`.
+14. `scripts/release-package.sh bin/Kai.app X.Y.Z`: the zip, the disk image and `SHA256SUMS`,
+    each checked against the app. Package once, from the verified app; never rebuild.
 15. Build the notes file: the CHANGELOG's `## [X.Y.Z]` section (minus the `changelog-skip`
     comment) with the Installing paragraph from "Release notes preface" in front. Nothing else
     is added: the updater and Accessibility warnings are already in its Known Issues.
 16. **Confirm before publishing**, then
-    `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip SHA256SUMS --notes-file <notes>`.
+    `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip Kai-X.Y.Z-darwin-arm64.dmg SHA256SUMS
+    --notes-file <notes>`.
 17. **Verify the published artifact, not just the local build.** In a clean directory,
-    `gh release download vX.Y.Z`, check the checksum, unzip with `ditto -x -k`, and run
-    `scripts/release-verify.sh <that Kai.app> X.Y.Z` again.
+    `gh release download vX.Y.Z`, check the checksums, unzip with `ditto -x -k`, and run
+    `scripts/release-verify.sh <that Kai.app> X.Y.Z` again. Mount the published disk image and
+    check its `Kai.app` is identical to the unzipped one. Then run the installer against the real
+    release: `scripts/install-release.sh vX.Y.Z --dest "$(mktemp -d)" --keep-permissions` must
+    download, verify, install and clear the flag.
 
 For the checklist to run each time, copy
 [`docs/release-checklist.md`](release-checklist.md) into a new issue titled
