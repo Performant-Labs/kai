@@ -139,24 +139,11 @@ func (h *Manager) TriggerInput() {
 		// leave on the clipboard — non-empty, plausible-looking, and wrong. CompareAndSwap
 		// claims the guard atomically; an overlapping call backs off immediately instead of
 		// racing.
-		if !h.triggerInputBusy.CompareAndSwap(false, true) {
-			h.log.Warn(i18n.T("log.hotkey_trigger_busy"))
-			return
-		}
-		defer h.triggerInputBusy.Store(false)
-
-		// Copy-key branch: the order is strictly "simulate Cmd+C copy first → then
-		// Show/Focus".
-		// If Focus ran first, focus would move to Kai, the simulated Cmd+C would land on the
-		// Kai window (nothing selected), the clipboard would keep its old value, and the wrong
-		// content would be picked up.
-		sel := h.execKeyCtrl.CopySelection()
-		h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_copy_key")), slog.Int(i18n.T("log.field_length"), len(sel)), slog.String(i18n.T("log.field_content"), sel))
-		w.Show()
-		w.Focus()
+		var emitter eventEmitter
 		if h.app != nil {
-			emitCopyKeyOutcome(h.app.Event, sel)
+			emitter = h.app.Event
 		}
+		h.triggerCopyKey(w, emitter, h.execKeyCtrl.CopySelection)
 		// TODO(2026-08-11): the "system text capture (macOS Swift bridge kai_selected_text)"
 		// branch is temporarily disabled.
 		// Reason: users reported odd machine issues after enabling this path (suspected to
@@ -185,6 +172,33 @@ func (h *Manager) TriggerInput() {
 		// 			h.app.Event.Emit(events.EventInputFill, sel)
 		// 		}
 		// 		})
+	}
+}
+
+// windowShower is the slice of application.Window that triggerCopyKey drives (fakeable).
+type windowShower interface {
+	Show() application.Window
+	Focus()
+}
+
+// triggerCopyKey is TriggerInput's copy-key branch, with its dependencies injected so the
+// reentrancy guard and the outcome emission can be tested by calling it (issue #175 item 5).
+// Order matters: copy first, then Show/Focus (see TriggerInput). emitter may be nil.
+func (h *Manager) triggerCopyKey(w windowShower, emitter eventEmitter, copySelection func() string) {
+	// An overlapping call would race its own backup/clear/copy/restore of the shared system
+	// clipboard against the in-flight one (see triggerInputBusy); back off instead.
+	if !h.triggerInputBusy.CompareAndSwap(false, true) {
+		h.log.Warn(i18n.T("log.hotkey_trigger_busy"))
+		return
+	}
+	defer h.triggerInputBusy.Store(false)
+
+	sel := copySelection()
+	h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_copy_key")), slog.Int(i18n.T("log.field_length"), len(sel)), slog.String(i18n.T("log.field_content"), sel))
+	w.Show()
+	w.Focus()
+	if emitter != nil {
+		emitCopyKeyOutcome(emitter, sel)
 	}
 }
 

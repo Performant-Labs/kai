@@ -1,10 +1,11 @@
 package hotkey
 
 import (
-	"runtime"
-	"sync"
-	"sync/atomic"
+	"log/slog"
 	"testing"
+	"time"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"cnb.cool/dtapp/kai/internal/events"
 )
@@ -78,43 +79,63 @@ func TestEmitCopyKeyOutcome_EmptyCapture(t *testing.T) {
 	}
 }
 
-// TestTriggerInputBusy_MutualExclusion pins the concurrency contract TriggerInput's copy-key
-// branch relies on (issue #175 item 5): triggerInputBusy.CompareAndSwap(false, true) must let
-// exactly one concurrent caller through at a time, and Store(false) must fully release it for
-// the next caller — the same shape the real code uses around CopySelection() to stop two
-// overlapping hotkey firings from racing on the shared system clipboard (see the doc comments
-// on the triggerInputBusy field and its call site in TriggerInput). This exercises the guard
-// directly, without needing a live application.Window/App/ExecKeyController — those would need
-// a running Wails event loop to invoke safely (robotgo's KeyTap dispatches through
-// application.InvokeSyncWithError), which a unit test must not depend on.
-func TestTriggerInputBusy_MutualExclusion(t *testing.T) {
-	h := &Manager{}
+type fakeWindow struct{ shows, focuses int }
 
-	const attempts = 200
-	var acquiredCount int32
-	var wg sync.WaitGroup
-	wg.Add(attempts)
-	for range attempts {
-		go func() {
-			defer wg.Done()
-			if h.triggerInputBusy.CompareAndSwap(false, true) {
-				atomic.AddInt32(&acquiredCount, 1)
-				// Hold the guard briefly, like CopySelection's real backup/clear/copy/restore
-				// sequence would, so overlapping goroutines actually contend for it instead of
-				// each finding it already free.
-				runtime.Gosched()
-				h.triggerInputBusy.Store(false)
-			}
-		}()
-	}
-	wg.Wait()
+func (f *fakeWindow) Show() application.Window { f.shows++; return nil }
+func (f *fakeWindow) Focus()                   { f.focuses++ }
 
-	if acquiredCount == 0 {
-		t.Fatal("no goroutine ever acquired the guard — CompareAndSwap contract broken")
+func newTestManager() *Manager { return &Manager{log: slog.Default()} }
+
+// These call triggerCopyKey (TriggerInput's copy-key branch) so that removing the busy-guard or
+// the outcome emission from it fails a test (issue #175 item 5).
+
+func TestTriggerCopyKey_CapturedText_ShowsWindowAndEmitsFill(t *testing.T) {
+	h, w, e := newTestManager(), &fakeWindow{}, &fakeEmitter{}
+	h.triggerCopyKey(w, e, func() string { return "sel" })
+	if w.shows != 1 || w.focuses != 1 {
+		t.Fatalf("shows=%d focuses=%d, want 1/1", w.shows, w.focuses)
 	}
-	// Every acquisition must have been released: a final CompareAndSwap must still succeed.
-	if !h.triggerInputBusy.CompareAndSwap(false, true) {
-		t.Fatal("guard left held after all goroutines finished — a Store(false) release was lost")
+	if e.n != 1 || e.name != events.EventInputFill || len(e.args) != 1 || e.args[0] != "sel" {
+		t.Fatalf("emit = %d %q %#v", e.n, e.name, e.args)
 	}
-	h.triggerInputBusy.Store(false)
+}
+
+func TestTriggerCopyKey_EmptyCapture_EmitsCopyKeyFailed(t *testing.T) {
+	h, w, e := newTestManager(), &fakeWindow{}, &fakeEmitter{}
+	h.triggerCopyKey(w, e, func() string { return "" })
+	if w.shows != 1 || e.n != 1 || e.name != events.EventCopyKeyFailed {
+		t.Fatalf("shows=%d emit=%d %q", w.shows, e.n, e.name)
+	}
+}
+
+func TestTriggerCopyKey_OverlappingCallIsSkipped(t *testing.T) {
+	h, e := newTestManager(), &fakeEmitter{}
+	w1, w2 := &fakeWindow{}, &fakeWindow{}
+	inCopy, release := make(chan struct{}), make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		h.triggerCopyKey(w1, e, func() string { close(inCopy); <-release; return "first" })
+		close(done)
+	}()
+	<-inCopy
+	called := false
+	h.triggerCopyKey(w2, e, func() string { called = true; return "second" })
+	if called || w2.shows != 0 {
+		t.Fatal("overlapping call must not run CopySelection or touch the window")
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first call never finished")
+	}
+	if e.n != 1 || e.args[0] != "first" {
+		t.Fatalf("emit count=%d args=%#v, want only the first call's fill", e.n, e.args)
+	}
+	// Guard released: a later call runs normally.
+	w3 := &fakeWindow{}
+	h.triggerCopyKey(w3, e, func() string { return "third" })
+	if w3.shows != 1 {
+		t.Fatal("guard was not released after the first call finished")
+	}
 }
