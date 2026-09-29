@@ -12,11 +12,11 @@ import (
 )
 
 // Issue #195: the text-size setting. Default 120 (percent of the pre-#195 size); six allowed
-// values on an even 15-point ladder; anything else, in a file or on save, reads as 120 and never
+// values on an even 20-point ladder; anything else, in a file or on save, reads as 120 and never
 // fails the settings load.
 
 func TestFontSizeStepsAreTheSixEvenSteps(t *testing.T) {
-	want := []int{90, 105, 120, 135, 150, 165}
+	want := []int{80, 100, 120, 140, 160, 180}
 	got := FontSizeSteps()
 	if !slices.Equal(got, want) {
 		t.Fatalf("FontSizeSteps() = %v, want %v", got, want)
@@ -52,9 +52,23 @@ func TestFontSizeNormalize(t *testing.T) {
 			t.Errorf("NormalizeFontSize(%d) = %d, want it kept", p, got)
 		}
 	}
-	for _, p := range []int{-1, 0, 1, 89, 91, 100, 119, 121, 166, 180, 1000} {
+	for _, p := range []int{-1, 0, 1, 79, 81, 99, 101, 119, 121, 179, 181, 1000} {
 		if got := NormalizeFontSize(p); got != 120 {
 			t.Errorf("NormalizeFontSize(%d) = %d, want 120", p, got)
+		}
+	}
+}
+
+// The ladder was 90/105/120/135/150/165 while this was developed; that ladder never shipped, and
+// its values that are not on the current one read as 120, both in a file and on save.
+func TestFontSizeOldLadderValuesRead120(t *testing.T) {
+	for _, p := range []int{90, 105, 135, 150, 165} {
+		if got := NormalizeFontSize(p); got != 120 {
+			t.Errorf("NormalizeFontSize(%d) = %d, want 120", p, got)
+		}
+		body := `{"font_size":` + strconv.Itoa(p) + `}`
+		if got := loadWith(t, body).FontSize; got != 120 {
+			t.Errorf("%s reads %d, want 120", body, got)
 		}
 	}
 }
@@ -64,13 +78,13 @@ func TestFontSizeGarbledValueReads120(t *testing.T) {
 		`{"font_size":null}`,
 		`{"font_size":"big"}`,
 		`{"font_size":{"x":1}}`,
-		`{"font_size":[150]}`,
+		`{"font_size":[160]}`,
 		`{"font_size":true}`,
-		`{"font_size":100}`,
+		`{"font_size":101}`,
 		`{"font_size":0}`,
-		`{"font_size":-135}`,
+		`{"font_size":-140}`,
 		`{"font_size":121}`,
-		`{"font_size":135.5}`,
+		`{"font_size":140.5}`,
 		`{"font_size":9999999999999999999}`,
 	} {
 		if got := loadWith(t, body).FontSize; got != 120 {
@@ -86,9 +100,9 @@ func TestFontSizeAllowedValuesAreKept(t *testing.T) {
 			t.Errorf("%s reads %d", body, got)
 		}
 	}
-	// A whole number written as a float (135.0) is the same setting.
-	if got := loadWith(t, `{"font_size":135.0}`).FontSize; got != 135 {
-		t.Errorf("135.0 reads %d, want 135", got)
+	// A whole number written as a float (140.0) is the same setting.
+	if got := loadWith(t, `{"font_size":140.0}`).FontSize; got != 140 {
+		t.Errorf("140.0 reads %d, want 140", got)
 	}
 }
 
@@ -98,7 +112,7 @@ func TestFontSizePersistsAcrossReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc.Get().FontSize = 150
+	svc.Get().FontSize = 160
 	if err := svc.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -106,21 +120,21 @@ func TestFontSizePersistsAcrossReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"font_size": 150`) && !strings.Contains(string(raw), `"font_size":150`) {
-		t.Fatalf("settings.json does not carry font_size 150:\n%s", raw)
+	if !strings.Contains(string(raw), `"font_size": 160`) && !strings.Contains(string(raw), `"font_size":160`) {
+		t.Fatalf("settings.json does not carry font_size 160:\n%s", raw)
 	}
 	svc2, err := NewService(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := svc2.Get().FontSize; got != 150 {
-		t.Fatalf("reloaded font size = %d, want 150", got)
+	if got := svc2.Get().FontSize; got != 160 {
+		t.Fatalf("reloaded font size = %d, want 160", got)
 	}
 }
 
 func TestFontSizeDoesNotDisturbOtherSettings(t *testing.T) {
-	s := loadWith(t, `{"auto_switch_source":false,"double_copy_translate":true,"font_size":90,"default_to":"fr"}`)
-	if s.FontSize != 90 || s.AutoSwitchSource || !s.DoubleCopyTranslate || s.DefaultTo != "fr" {
+	s := loadWith(t, `{"auto_switch_source":false,"double_copy_translate":true,"font_size":80,"default_to":"fr"}`)
+	if s.FontSize != 80 || s.AutoSwitchSource || !s.DoubleCopyTranslate || s.DefaultTo != "fr" {
 		t.Fatalf("font=%d auto=%v double=%v to=%q", s.FontSize, s.AutoSwitchSource, s.DoubleCopyTranslate, s.DefaultTo)
 	}
 }
@@ -180,11 +194,11 @@ func TestFontSizeHotReload(t *testing.T) {
 		}
 		return false
 	}
-	if err := os.WriteFile(path, []byte(`{"font_size":165}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"font_size":180}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !waitFor(165) {
-		t.Fatal("hot reload did not pick up font_size 165")
+	if !waitFor(180) {
+		t.Fatal("hot reload did not pick up font_size 180")
 	}
 	if err := os.WriteFile(path, []byte(`{"font_size":"huge"}`), 0o600); err != nil {
 		t.Fatal(err)

@@ -66,8 +66,8 @@ beforeEach(() => {
 afterEach(() => localStorage.clear());
 
 describe('the ladder', () => {
-  it('is the six even 15-point steps, default 120', () => {
-    expect([...FONT_SIZE_STEPS]).toEqual([90, 105, 120, 135, 150, 165]);
+  it('is the six even 20-point steps, default 120', () => {
+    expect([...FONT_SIZE_STEPS]).toEqual([80, 100, 120, 140, 160, 180]);
     expect(DEFAULT_FONT_SIZE).toBe(120);
   });
 
@@ -75,18 +75,22 @@ describe('the ladder', () => {
     for (const p of FONT_SIZE_STEPS) expect(normalizeFontSize(p)).toBe(p);
     for (const bad of [
       0,
-      100,
+      90, // the unreleased 15-point ladder: 90 105 135 150 165
+      105,
       121,
-      -135,
-      165.5,
+      135,
+      150,
+      165,
+      -140,
+      180.5,
       NaN,
       Infinity,
       null,
       undefined,
-      '135',
+      '140',
       'big',
       {},
-      [150],
+      [160],
       true,
     ]) {
       expect(normalizeFontSize(bad), String(bad)).toBe(120);
@@ -94,12 +98,12 @@ describe('the ladder', () => {
   });
 
   it('stepFontSize moves one step and stops at the ends', () => {
-    expect(stepFontSize(120, 1)).toBe(135);
-    expect(stepFontSize(120, -1)).toBe(105);
-    expect(stepFontSize(105, -1)).toBe(90);
-    expect(stepFontSize(90, -1)).toBe(90);
-    expect(stepFontSize(150, 1)).toBe(165);
-    expect(stepFontSize(165, 1)).toBe(165);
+    expect(stepFontSize(120, 1)).toBe(140);
+    expect(stepFontSize(120, -1)).toBe(100);
+    expect(stepFontSize(100, -1)).toBe(80);
+    expect(stepFontSize(80, -1)).toBe(80);
+    expect(stepFontSize(160, 1)).toBe(180);
+    expect(stepFontSize(180, 1)).toBe(180);
   });
 });
 
@@ -113,8 +117,8 @@ describe('applyFontSize: the one place the scale reaches the document', () => {
   });
 
   it('a garbled value applies the 120 default', () => {
-    for (const bad of [100, 0, null, 'x', NaN, 999]) {
-      applyFontSize(150);
+    for (const bad of [105, 0, null, 'x', NaN, 999]) {
+      applyFontSize(160);
       applyFontSize(bad);
       expect(Number(scale()), String(bad)).toBeCloseTo(1.2, 5);
       expect(get(fontSize)).toBe(120);
@@ -124,9 +128,9 @@ describe('applyFontSize: the one place the scale reaches the document', () => {
 
 describe('initFontSize: every window applies the saved size, live', () => {
   it('applies the size from the config', async () => {
-    h.config = { font_size: 90 };
+    h.config = { font_size: 80 };
     await initFontSize();
-    expect(Number(scale())).toBeCloseTo(0.9, 5);
+    expect(Number(scale())).toBeCloseTo(0.8, 5);
   });
 
   it('a config without the value, or a failing read, is 120', async () => {
@@ -142,10 +146,10 @@ describe('initFontSize: every window applies the saved size, live', () => {
   it('follows the change event without a reload', async () => {
     await initFontSize();
     expect(Number(scale())).toBeCloseTo(1.2, 5);
-    h.fire(EventFontSizeChanged, 165);
-    expect(Number(scale())).toBeCloseTo(1.65, 5);
-    h.fire(EventFontSizeChanged, 90);
-    expect(Number(scale())).toBeCloseTo(0.9, 5);
+    h.fire(EventFontSizeChanged, 180);
+    expect(Number(scale())).toBeCloseTo(1.8, 5);
+    h.fire(EventFontSizeChanged, 80);
+    expect(Number(scale())).toBeCloseTo(0.8, 5);
     h.fire(EventFontSizeChanged, 'garbage');
     expect(Number(scale())).toBeCloseTo(1.2, 5);
   });
@@ -157,13 +161,13 @@ describe('initFontSize: every window applies the saved size, live', () => {
   });
 
   it('remembers the last size in localStorage so the next start applies it before the config loads', async () => {
-    h.config = { font_size: 150 };
+    h.config = { font_size: 160 };
     await initFontSize();
     document.documentElement.style.removeProperty('--kai-text-scale');
     h.getConfigFails = true;
     // Same document, new start: the cached size is applied synchronously, before any await.
     const p = initFontSize();
-    expect(Number(scale())).toBeCloseTo(1.5, 5);
+    expect(Number(scale())).toBeCloseTo(1.6, 5);
     await p;
   });
 
@@ -177,10 +181,10 @@ describe('initFontSize: every window applies the saved size, live', () => {
 
 describe('saveFontSize', () => {
   it('applies at once, then saves through SaveConfig keeping the rest of the config', async () => {
-    await saveFontSize(150);
-    expect(Number(scale())).toBeCloseTo(1.5, 5);
+    await saveFontSize(160);
+    expect(Number(scale())).toBeCloseTo(1.6, 5);
     expect(h.saveConfig).toHaveBeenCalledTimes(1);
-    expect(h.saveConfig.mock.calls[0][0]).toMatchObject({ language: 'en-US', font_size: 150 });
+    expect(h.saveConfig.mock.calls[0][0]).toMatchObject({ language: 'en-US', font_size: 160 });
   });
 
   it('saves a garbled value as 120', async () => {
@@ -190,13 +194,13 @@ describe('saveFontSize', () => {
   });
 
   it('puts the previous size back when the save fails', async () => {
-    applyFontSize(135);
+    applyFontSize(140);
     h.saveConfig.mockRejectedValue(new Error('disk full'));
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await saveFontSize(165);
+    await saveFontSize(180);
     err.mockRestore();
-    expect(get(fontSize)).toBe(135);
-    expect(Number(scale())).toBeCloseTo(1.35, 5);
+    expect(get(fontSize)).toBe(140);
+    expect(Number(scale())).toBeCloseTo(1.4, 5);
   });
 });
 
@@ -239,12 +243,21 @@ describe('app.css: text follows the scale, layout does not', () => {
     }
   });
 
+  it('the two smallest sizes never drop below 10px, so 80% stays readable', () => {
+    for (const tok of ['2xs', '3xs']) {
+      const m = css.match(new RegExp(`--text-${tok}:\\s*([^;]+);`));
+      expect(m![1], tok).toMatch(/^max\(0\.625rem,\s*calc\(/);
+    }
+    // The next size up is 12px * 0.8 = 9.6px at 80%; nothing else needs a floor.
+    expect(FONT_SIZE_STEPS[0] / 100).toBeGreaterThanOrEqual(0.8);
+  });
+
   it('the text that inherits (no text-* class) is scaled too', () => {
     expect(css).toMatch(/body\s*\{[^}]*font-size:\s*calc\([^;]*var\(--kai-text-scale\)/);
   });
 
   it('no hand-written font-size in app.css ignores the scale', () => {
-    const decls = css.match(/font-size:[^;]+;/g) ?? [];
+    const decls = css.replace(/\/\*[\s\S]*?\*\//g, '').match(/font-size:[^;]+;/g) ?? [];
     expect(decls.length).toBeGreaterThan(5);
     for (const d of decls) expect(d, d).toContain('var(--kai-text-scale)');
   });

@@ -1,7 +1,7 @@
 // Text-size setting (issue #195). Percent of the pre-#195 size. The Go side owns the setting
 // (internal/settings/font_size.go); this is its copy, needed to apply a size before any Go call
 // returns. internal/settings/font_size_test.go pins the ladder and the default to these.
-export const FONT_SIZE_STEPS = [90, 105, 120, 135, 150, 165] as const;
+export const FONT_SIZE_STEPS = [80, 100, 120, 140, 160, 180] as const;
 export const DEFAULT_FONT_SIZE = 120;
 
 // The one place a stored, received or submitted value becomes a size: one of the six, else 120.

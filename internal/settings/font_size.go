@@ -11,10 +11,10 @@ import (
 // outside FontSizeSteps read as.
 const DefaultFontSize = 120
 
-// fontSizeSteps is the ladder: an even 15 percentage points per step, measured from the
+// fontSizeSteps is the ladder: an even 20 percentage points per step, measured from the
 // pre-#195 size (not compounding). The frontend keeps a copy in
 // frontend/src/constants/fontSize.ts; a test pins the two together.
-var fontSizeSteps = [...]int{90, 105, 120, 135, 150, 165}
+var fontSizeSteps = [...]int{80, 100, 120, 140, 160, 180}
 
 // FontSizeSteps returns the six allowed text sizes in percent, smallest first. It returns a copy.
 func FontSizeSteps() []int {

@@ -77,49 +77,49 @@ describe('GeneralTab text size control, mounted', () => {
     expect(h.saveConfig.mock.calls[0][0]).toMatchObject({
       language: 'en-US',
       theme: 'auto',
-      font_size: 135,
+      font_size: 140,
     });
-    expect(shown()).toBe('135%');
-    expect(scale()).toBeCloseTo(1.35, 5);
+    expect(shown()).toBe('140%');
+    expect(scale()).toBeCloseTo(1.4, 5);
   });
 
   it('smaller saves the previous step', async () => {
     await mountTab();
     q('font-size-smaller').click();
     await settle();
-    expect(h.saveConfig.mock.calls[0][0]).toMatchObject({ font_size: 105 });
-    expect(shown()).toBe('105%');
-    expect(scale()).toBeCloseTo(1.05, 5);
+    expect(h.saveConfig.mock.calls[0][0]).toMatchObject({ font_size: 100 });
+    expect(shown()).toBe('100%');
+    expect(scale()).toBeCloseTo(1.0, 5);
   });
 
-  it('walks the whole ladder and stops: smaller is disabled at 90, larger at 165', async () => {
-    await mountTab(105);
+  it('walks the whole ladder and stops: smaller is disabled at 80, larger at 180', async () => {
+    await mountTab(100);
     expect(q('font-size-smaller').disabled).toBe(false);
     q('font-size-smaller').click();
     await settle();
-    expect(shown()).toBe('90%');
+    expect(shown()).toBe('80%');
     expect(q('font-size-smaller').disabled).toBe(true);
     expect(q('font-size-larger').disabled).toBe(false);
     for (let i = 0; i < 5; i++) {
       q('font-size-larger').click();
       await settle();
     }
-    expect(shown()).toBe('165%');
+    expect(shown()).toBe('180%');
     expect(q('font-size-larger').disabled).toBe(true);
     expect(q('font-size-smaller').disabled).toBe(false);
     expect(h.saveConfig).toHaveBeenCalledTimes(6);
-    expect(scale()).toBeCloseTo(1.65, 5);
+    expect(scale()).toBeCloseTo(1.8, 5);
   });
 
   it('a disabled button saves nothing', async () => {
-    await mountTab(165);
+    await mountTab(180);
     q('font-size-larger').click();
     await settle();
     expect(h.saveConfig).not.toHaveBeenCalled();
   });
 
   it('reset goes back to 120 and saves it; it is disabled when already there', async () => {
-    await mountTab(150);
+    await mountTab(160);
     expect(q('font-size-reset').disabled).toBe(false);
     q('font-size-reset').click();
     await settle();

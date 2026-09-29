@@ -8,11 +8,12 @@
    file and the inherited body size are multiplied by it. The root font size is deliberately left
    alone, because Tailwind spacing, widths, icons and pane proportions are rem-based and scaling
    the root would resize the whole layout (a blunt html { font-size: 120% } broke narrow windows
-   before). --text-2xs / --text-3xs replace the old text-2xs / text-3xs pixel sizes. */
+   before). --text-2xs / --text-3xs replace the old text-[11px] / text-[10px] pixel sizes. These two never drop below
+   0.625rem (10px), so the smallest text stays readable at the smallest size (80%). */
 @theme {
-  --text-3xs: calc(0.625rem * var(--kai-text-scale));
+  --text-3xs: max(0.625rem, calc(0.625rem * var(--kai-text-scale)));
   --text-3xs--line-height: 1.3;
-  --text-2xs: calc(0.6875rem * var(--kai-text-scale));
+  --text-2xs: max(0.625rem, calc(0.6875rem * var(--kai-text-scale)));
   --text-2xs--line-height: calc(1 / 0.6875);
   --text-xs: calc(0.75rem * var(--kai-text-scale));
   --text-sm: calc(0.875rem * var(--kai-text-scale));
@@ -435,7 +436,7 @@ body {
     width: 1.5rem;
     align-items: center;
     justify-content: center;
-    font-size: calc(0.7rem * var(--kai-text-scale));
+    font-size: max(0.625rem, calc(0.7rem * var(--kai-text-scale)));
     line-height: 1;
     color: var(--app-muted);
     cursor: pointer;
@@ -587,7 +588,7 @@ body {
     white-space: nowrap;
     padding: 0.25rem 0.5rem;
     border-radius: 0.375rem;
-    font-size: calc(0.6875rem * var(--kai-text-scale));
+    font-size: max(0.625rem, calc(0.6875rem * var(--kai-text-scale)));
     font-weight: 500;
     background: var(--app-fg);
     color: var(--app-bg);

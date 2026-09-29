@@ -34,8 +34,8 @@ func TestSaveConfigCoercesFontSize(t *testing.T) {
 	}
 	w := NewConfigWrapper(st, nil, nil)
 	cfg := *st.Get()
-	for _, bad := range []int{0, -5, 100, 121, 500} {
-		cfg.FontSize = 150
+	for _, bad := range []int{0, -5, 105, 121, 165, 500} {
+		cfg.FontSize = 160
 		if err := w.SaveConfig(&cfg); err != nil {
 			t.Fatal(err)
 		}
@@ -56,7 +56,7 @@ func TestSaveConfigKeepsFontSizeWhenOtherFieldsChange(t *testing.T) {
 	}
 	w := NewConfigWrapper(st, nil, nil)
 	cfg := *st.Get()
-	cfg.FontSize = 135
+	cfg.FontSize = 140
 	if err := w.SaveConfig(&cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,8 @@ func TestSaveConfigKeepsFontSizeWhenOtherFieldsChange(t *testing.T) {
 	if err := w.SaveConfig(&cfg); err != nil {
 		t.Fatal(err)
 	}
-	if got := st.Get().FontSize; got != 135 {
-		t.Fatalf("font size = %d after an unrelated save, want 135", got)
+	if got := st.Get().FontSize; got != 140 {
+		t.Fatalf("font size = %d after an unrelated save, want 140", got)
 	}
 }
 
@@ -101,7 +101,7 @@ func fontSizeEvents(all []emitted) []emitted {
 func TestSaveConfigBroadcastsAChangedFontSizeOnce(t *testing.T) {
 	w, st, got := wrapperWithRecorder(t)
 	cfg := *st.Get()
-	cfg.FontSize = 150
+	cfg.FontSize = 160
 	if err := w.SaveConfig(&cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -109,15 +109,15 @@ func TestSaveConfigBroadcastsAChangedFontSizeOnce(t *testing.T) {
 	if len(ev) != 1 {
 		t.Fatalf("got %d font size events, want exactly 1: %v", len(ev), *got)
 	}
-	if ev[0].data != 150 {
-		t.Fatalf("payload = %#v, want the int 150", ev[0].data)
+	if ev[0].data != 160 {
+		t.Fatalf("payload = %#v, want the int 160", ev[0].data)
 	}
 }
 
 func TestSaveConfigDoesNotBroadcastAnUnchangedFontSize(t *testing.T) {
 	w, st, got := wrapperWithRecorder(t)
 	cfg := *st.Get()
-	cfg.FontSize = 135
+	cfg.FontSize = 140
 	if err := w.SaveConfig(&cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestSaveConfigDoesNotBroadcastAnUnchangedFontSize(t *testing.T) {
 func TestSaveConfigBroadcastsTheCoercedFontSize(t *testing.T) {
 	w, st, got := wrapperWithRecorder(t)
 	cfg := *st.Get()
-	cfg.FontSize = 150
+	cfg.FontSize = 160
 	if err := w.SaveConfig(&cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -165,11 +165,11 @@ func TestSaveConfigWithoutAppOrEmitterStillSaves(t *testing.T) {
 	}
 	w := NewConfigWrapper(st, nil, nil) // no app, no emitter
 	cfg := *st.Get()
-	cfg.FontSize = 165
+	cfg.FontSize = 180
 	if err := w.SaveConfig(&cfg); err != nil {
 		t.Fatal(err)
 	}
-	if st.Get().FontSize != 165 {
-		t.Fatalf("font size = %d, want 165", st.Get().FontSize)
+	if st.Get().FontSize != 180 {
+		t.Fatalf("font size = %d, want 180", st.Get().FontSize)
 	}
 }
