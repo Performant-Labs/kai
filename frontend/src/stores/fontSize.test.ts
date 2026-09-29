@@ -218,6 +218,13 @@ describe('the wiring that makes it reach every window', () => {
 describe('app.css: text follows the scale, layout does not', () => {
   const css = readFileSync(join(root, 'app.css'), 'utf8');
 
+  it('never divides one length by another in calc() (typed division is not valid in every WebKit)', () => {
+    // e.g. calc(1rem / 0.6875rem): the declaration is dropped where unsupported, so the line-height
+    // silently falls back. A line-height ratio must be a plain number: calc(1 / 0.6875).
+    const bad = css.match(/calc\([^)]*\/\s*[\d.]+(rem|em|px|%)/g) ?? [];
+    expect(bad).toEqual([]);
+  });
+
   it('starts at the default scale, so the first paint matches a fresh install', () => {
     const m = css.match(/:root\s*\{[^}]*--kai-text-scale:\s*([0-9.]+)\s*;/);
     expect(m, 'no --kai-text-scale on :root').not.toBeNull();

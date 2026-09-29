@@ -13,7 +13,7 @@
   --text-3xs: calc(0.625rem * var(--kai-text-scale));
   --text-3xs--line-height: 1.3;
   --text-2xs: calc(0.6875rem * var(--kai-text-scale));
-  --text-2xs--line-height: calc(1rem / 0.6875rem);
+  --text-2xs--line-height: calc(1 / 0.6875);
   --text-xs: calc(0.75rem * var(--kai-text-scale));
   --text-sm: calc(0.875rem * var(--kai-text-scale));
   --text-base: calc(1rem * var(--kai-text-scale));
