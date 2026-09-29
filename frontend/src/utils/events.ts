@@ -54,6 +54,15 @@ export const EventEnginesChanged = 'kai:engines:changed';
 // switches in real time.
 export const EventAutoClipboardChanged = 'kai:auto-clipboard:changed';
 
+// EventCopyKeyFailed: broadcast when the copy-key branch of TriggerInput (issue #175 item 5)
+// simulated the copy key but never saw the clipboard change, so nothing was captured. No
+// payload. The translate window still Show()/Focus()es regardless (so the user sees it come to
+// the front) but, without this event, silently leaves whatever text was already in the input
+// box (issue #81's retained-session design never clears it just because the window reopened) —
+// indistinguishable from the old text actually being the new selection. TranslateWindow shows a
+// toast on this event so a failed capture reads as a visible failure, not a stale success.
+export const EventCopyKeyFailed = 'kai:copykey:failed';
+
 // Event payload type definitions (aligned with the Go-side structs in internal/events/events.go)
 
 // LocaleChangedPayload: language-change event arguments.

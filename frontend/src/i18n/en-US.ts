@@ -88,6 +88,7 @@ export const en: Dict = {
     pin: 'Keep this window on top of other windows',
     unpin: 'Stop keeping this window on top of others',
     autoClipboard: 'Automatically translate clipboard content when you press the hotkey',
+    copyKeyFailed: "Couldn't capture the selection — copy it manually, then press the hotkey again",
     cancel: 'Cancel',
     cancelEngine: 'Cancel {engine}',
     cancelled: 'Cancelled',

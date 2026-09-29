@@ -86,6 +86,7 @@ export const zh: Dict = {
     pin: '将此窗口保持置顶显示',
     unpin: '取消此窗口的置顶显示',
     autoClipboard: '按下快捷键时自动翻译剪贴板中的内容',
+    copyKeyFailed: '未能获取选中内容 — 请手动复制后再次按下快捷键',
     cancel: '取消',
     cancelEngine: '取消 {engine}',
     cancelled: '已取消',

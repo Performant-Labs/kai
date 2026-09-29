@@ -78,6 +78,7 @@
     EventWindowClosing,
     EventEnginesChanged,
     EventAutoClipboardChanged,
+    EventCopyKeyFailed,
   } from '../utils/events';
   import type { TranslateProgressPayload } from '../utils/events';
   import { WindowSettings, WindowTranslate } from '../constants/window';
@@ -625,6 +626,14 @@
       setSource(text, 'program');
       doTranslate();
     });
+    // Issue #175 item 5: the copy-key branch simulated a copy but never saw the clipboard
+    // change, so nothing arrived via EventInputFill above. Without this, the window still
+    // comes to the front showing whatever text was already there (issue #81's retained
+    // session) — indistinguishable from that old text being the actual new selection. Show a
+    // toast so a failed capture is visibly a failure, not a silent stale "success".
+    const offCopyKeyFailed = onEvent(EventCopyKeyFailed, () => {
+      showToast(t('translate.copyKeyFailed'), 3200);
+    });
     const offClosing = onEvent(EventWindowClosing, (name: string) => {
       // Issue #69: opening Settings drops this window out of always-on-top so Settings is not
       // hidden behind a pinned window; when Settings closes, put the persisted pin back.
@@ -679,6 +688,7 @@
       offResult();
       offProgress();
       offInputFill();
+      offCopyKeyFailed();
       offClosing();
       offEngines();
     };
@@ -850,10 +860,10 @@
 
   let toast = $state('');
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
-  function showToast(msg: string) {
+  function showToast(msg: string, durationMs = 1600) {
     toast = msg;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (toast = ''), 1600);
+    toastTimer = setTimeout(() => (toast = ''), durationMs);
   }
 
   async function copy(text: string) {
