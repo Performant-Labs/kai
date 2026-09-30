@@ -4,7 +4,7 @@ Kept for issue #13 (local translation models: download, activate and run on the 
 
 **What this is.** Our own measurements, not research from the web. The question: can Kai run small translation models locally on the Mac's GPU, and how do they compare with Apple's Translation framework (the System engine) on speed and quality? The web research that prompted it is in `apple-translation-speed-grok-2026-09-30.md`.
 
-**Reliability.** Speeds are measured and repeatable (three timed runs each, medians, agreeing within a few percent). Quality is one passage in one language pair, read by Claude, not judged by a native speaker; treat the quality notes as a first impression, not a verdict.
+**Reliability.** Speeds are measured and repeatable (three timed runs each, medians, agreeing within a few percent). The single-passage quality read is one passage in one pair, judged by Claude, not a native speaker: a first impression. The FLORES-200 section scores 100 sentences in each of five directions against professional references, with the caveats listed there.
 
 ## Setup
 - **Mac:** Apple M1 Max, 32 GB, macOS 27. Idle apart from the test (nothing else running on the GPU).
@@ -86,6 +86,63 @@ First-impression notes (Claude, not a native speaker):
 - **HY-MT 7B** is the most natural prose but rephrases freely (adds "por supuesto", merges sentences), so it is less literal.
 - **TranslateGemma 12B** is very good and faithful, and it caught that the "one word" is pride; too slow for long text.
 
+## Quality on a public test set: FLORES-200 (added later on 2026-09-30)
+
+The single-passage read above is a first impression. This section scores all six engines against professional reference translations.
+
+**Method.** FLORES-200 devtest (Meta's professionally translated benchmark; 1,012 sentences per language, Wikipedia-style written text). Every tenth sentence of the first 1,000, so 100 sentences per direction, the same 100 for every engine. Five directions: English to Spanish (Mexico), Spanish to English, English to Chinese (Simplified), Chinese to English, English to Japanese. One call per sentence, no context, greedy decoding for the local models. Metrics with `sacrebleu`: chrF++ (character n-gram F-score with word bigrams, the metric to trust for zh and ja) and BLEU (character-level tokenisation for zh and ja). A paired bootstrap (5,000 resamples of the per-sentence chrF++) gives a 95% interval for the difference between two engines; an interval that excludes zero is a real difference on this sample, otherwise the two are tied.
+
+**chrF++ (higher is better):**
+
+| Engine | en>es | es>en | en>zh | zh>en | en>ja | mean |
+|---|---|---|---|---|---|---|
+| Apple fast | 53.7 | 57.5 | not run | not run | not run | |
+| HY-MT 1.8B | 51.6 | 54.4 | 27.5 | 53.3 | 32.7 | 43.9 |
+| TranslateGemma 4B | 53.5 | 56.0 | 23.9 | 51.8 | 26.6 | 42.4 |
+| HY-MT 7B | 54.6 | 57.1 | 25.4 | 54.4 | 29.6 | 44.2 |
+| Apple default | 54.0 | 57.3 | 29.4 | 55.9 | 30.5 | 45.4 |
+| TranslateGemma 12B | 54.8 | 57.1 | 25.7 | 54.4 | 28.2 | 44.1 |
+
+The Apple fast mode could not run for Chinese and Japanese: those traditional language packs are not installed on this Mac (`notInstalled`), so its 0.0 scores for zh and ja are missing data, not quality, and are left out of the table. Only English and Spanish packs were downloaded.
+
+**BLEU** (character-level for zh and ja) ranks the engines the same way: Apple default 28.5, 27.7, 44.3, 27.2, 46.2 (mean 34.8); TranslateGemma 12B 29.1, 28.5, 39.2, 24.9, 40.5 (32.4); HY-MT 7B 29.3, 27.3, 35.9, 23.5, 43.2 (31.8); HY-MT 1.8B and TranslateGemma 4B about 30.5.
+
+**Who differs from Apple's default (paired bootstrap, per direction):**
+- **HY-MT 7B:** tied on English to Spanish, Spanish to English, Chinese to English and English to Japanese; Apple better on English to Chinese (-3.3 chrF++, interval -5.7 to -1.0).
+- **TranslateGemma 12B:** tied on English to Spanish, Spanish to English and Chinese to English; Apple better on English to Chinese (-3.5) and English to Japanese (-2.5).
+- **TranslateGemma 4B:** tied on English to Spanish and Spanish to English; Apple better on all three CJK directions (-4.3 to -5.8).
+- **HY-MT 1.8B:** Apple better on English to Spanish (-2.5), Spanish to English (-2.8) and Chinese to English (-3.0); tied on English to Chinese and English to Japanese.
+- **Apple fast versus Apple default** (English and Spanish only): tied both ways (-0.5 and +0.4).
+- **HY-MT 7B versus TranslateGemma 4B:** tied on English and Spanish; the 7B better on all three CJK directions (+2.5 to +2.9).
+
+**Time for the 100 sentences (seconds, one call per sentence):**
+
+| Engine | en>es | es>en | en>zh | zh>en | en>ja |
+|---|---|---|---|---|---|
+| Apple fast | 7.9 | 6.1 | | | |
+| HY-MT 1.8B | 39 | 32 | 27 | 30 | 40 |
+| TranslateGemma 4B | 82 | 77 | 67 | 69 | 71 |
+| HY-MT 7B | 104 | 87 | 82 | 83 | 123 |
+| Apple default | 130 | 105 | 125 | 173 | 183 |
+| TranslateGemma 12B | 177 | 168 | 163 | 159 | 173 |
+
+**What this says.**
+- **No local model beats Apple's default on quality.** The best of them (the 7B and the 12B) tie it on English and Spanish and on Chinese to English, and lose a little to it on English to Chinese and Japanese. The 4B ties on English and Spanish only, and the 1.8B is slightly worse.
+- **Speed is where the local models win.** Sentence by sentence, the 7B is about 1.25 times faster than Apple's default, the 4B about 1.6 times, and the 1.8B about 3.3 times. Apple's default is the slowest engine on the Chinese and Japanese sets (125 to 183 s per 100 sentences).
+- **Apple's fast mode is the surprise for Spanish and English.** By this metric it is as good as Apple's default (the difference is inside the noise) and about 16 times faster on short sentences (7.9 s against 130 s per 100). The earlier paragraph read found it rougher on a broken spoken fragment, so the metric cannot see everything, but for written English and Spanish it is a strong option once the language pack is installed.
+- **Per-sentence cost.** Each call has a fixed start-up cost, so short inputs favour Apple's engine more than the long-text runs above did.
+
+**Caveats.**
+- **Written text, not speech.** FLORES is Wikipedia-style written prose; the keynote passage was spoken English with fragments. Rankings can differ on the text Kai users translate.
+- **Overlap metrics.** chrF++ and BLEU reward surface overlap with one reference translation. A correct paraphrase scores low and a fluent mistranslation can score well. This is why the paragraph read is kept alongside.
+- **Contamination is possible.** FLORES is public and may appear in the models' training data (Apple's included); it flatters all engines by an unknown amount.
+- **Spanish variant.** The reference is FLORES Spanish (`spa_Latn`); the targets asked for Mexican Spanish (`es-MX`). A regional mismatch costs every engine a little, roughly equally.
+- **100 sentences per direction** is a small sample; intervals of about plus or minus 2 chrF++ are normal. Differences under that are ties.
+- **Apple's fast mode was not measured for Chinese or Japanese** (packs not installed).
+- **No human judgement.** A native speaker's read on a sample would settle the cases where the metric and the paragraph read disagree.
+
+**Files.** The evaluation used `eval_mlx.py` (the same prompts as above, sentence at a time), a Swift program that ran each sentence through `TranslationSession` for the two strategies, and `score.py` (sacrebleu chrF++ and BLEU, paired bootstrap). The test data is FLORES-200 from Meta's public release (`dl.fbaipublicfiles.com/nllb/flores200_dataset.tar.gz`, CC-BY-SA 4.0).
+
 ## Where the models are stored
 The four models are in the Zot registry on Jupiter as `translation/hy-mt1.5-1.8b`, `translation/translategemma-4b-it`, `translation/hy-mt1.5-7b` and `translation/translategemma-12b-it`, tag `4bit-mlx` (MLX safetensors, tokenizer and config files; 1.0, 2.2, 4.2 and 6.7 GB), OCI artifact type `application/vnd.mlx.model.v1`. The 1.8B and 4B were pulled back from the registry for the timed runs to confirm the round trip.
 
@@ -97,6 +154,7 @@ The four models are in the Zot registry on Jupiter as `translation/hy-mt1.5-1.8b
 
 ## Not measured yet (open in #13)
 - llama.cpp with Metal on the same texts, and a Marian or NLLB model (no MLX build exists, and CTranslate2 has no Apple GPU support).
-- Other language pairs: Spanish to English and a CJK pair, where quality and speed may differ a lot.
+- Apple's fast mode for Chinese and Japanese (download those language packs and rerun).
+- Sentence-level and paragraph-level results side by side on spoken text (subtitles, transcripts, chat), where FLORES's written style may mislead.
 - A long text run end to end (54,000 characters) to check for slowdown over time (memory or heat).
-- Quality judged by a native speaker, and on more than one passage.
+- Quality judged by a native speaker on a sample.
