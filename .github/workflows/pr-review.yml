@@ -42,3 +42,20 @@ jobs:
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: "true"
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: "false"
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: "false"
+
+      # PR-Agent exits 0 even when every model call fails (a bad key, no credit), which
+      # would show a green check with no review. Fail unless a review comment with a
+      # score was written or updated during this run.
+      - name: Fail when no review was produced
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          since=$(date -u -d '15 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          n=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq "[.[] | select(.updated_at >= \"${since}\" and (.body | contains(\"Score\")))] | length")
+          if [ "${n}" -lt 1 ]; then
+            echo "::error::PR-Agent wrote no scored review during this run (model call failed?)"
+            exit 1
+          fi
