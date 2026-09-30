@@ -174,7 +174,31 @@ describe('the toolbar checkbox', () => {
     expect(label.className).toContain('u-tooltip');
     const tip = label.getAttribute('data-tooltip') ?? '';
     expect(tip).toMatch(/on-device/i);
-    expect(label.getAttribute('title')).toBe(tip);
+    // One tooltip only: the native `title` would show a second, duplicate one after its delay.
+    expect(label.hasAttribute('title')).toBe(false);
+    // The text stays available to assistive tech: the checkbox is described by the same string.
+    const ids = (checkbox().getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    const described = ids.map((id) => target.querySelector(`#${id}`)?.textContent?.trim());
+    expect(described).toContain(tip);
+  });
+
+  it('no element carrying data-tooltip also carries a native title (no double tooltip), and every one is still described', async () => {
+    await start({});
+    const tipped = [...target.querySelectorAll('[data-tooltip]')] as HTMLElement[];
+    // the correction label, the pin button and the auto-clipboard button
+    expect(tipped.length).toBeGreaterThanOrEqual(3);
+    for (const el of tipped) {
+      const tip = el.getAttribute('data-tooltip')!;
+      expect(el.hasAttribute('title'), tip).toBe(false);
+      const ctl = el.tagName === 'LABEL' ? (el.querySelector('input') as HTMLElement) : el;
+      const ids = (ctl.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+      const accessible = [
+        ctl.getAttribute('aria-label'),
+        ctl.getAttribute('aria-description'),
+        ...ids.map((id) => target.querySelector(`#${id}`)?.textContent?.trim()),
+      ];
+      expect(accessible, tip).toContain(tip);
+    }
   });
 
   it('reads the saved setting: only an explicit true turns it on', async () => {
