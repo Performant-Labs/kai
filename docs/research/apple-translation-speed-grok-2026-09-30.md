@@ -236,6 +236,16 @@ If you only change one line this week, change the initializer to `preferredStrat
 A standalone Swift test on the same M1 Max that produced the earlier numbers, English to Spanish (Mexico), 1,260 characters of real prose, `TranslationSession(installedSource:target:preferredStrategy:)`:
 
 - **`.highFidelity`:** 10.4 s and 10.3 s in two runs, 8.2 to 8.3 ms per character. The default (no strategy given) is this path here, which agrees with Grok's reading that our numbers sit on the "high" curve.
-- **`.lowLatency`:** fails with `TranslationError.Cause.notInstalled`. `LanguageAvailability(preferredStrategy: .lowLatency)` reports `supported`, not `installed`, for en to es-MX, es, es-ES, fr, de, ja and zh-Hans, and es and es-MX to en. The traditional language packs are not on this Mac, so the fast mode cannot run until they are downloaded. `LanguageAvailability(preferredStrategy: .highFidelity)` reports every one of those pairs as `installed`.
+- **`.lowLatency`, before the packs were installed:** failed with `TranslationError.Cause.notInstalled`. `LanguageAvailability(preferredStrategy: .lowLatency)` reported `supported`, not `installed`, for every pair; `.highFidelity` reported all of them `installed`.
+- **`.lowLatency`, after downloading the English and Spanish (Spain) packs in System Settings:** en to es-MX, es and es-ES report `installed` (the Spain pack also serves Mexican Spanish). Two runs each on the same 1,260 characters:
 
-So the switch exists and is the likely fix, but its speed on our pair (and the quality of its output) is still unmeasured, pending the language-pack download. Kai's bridge does not set a strategy today (`pkg/swiftbridge/internal/swift/apple_translate.swift`).
+| Strategy | Time | Per character |
+|---|---|---|
+| `.highFidelity` | 10.5 s, 10.3 s, 10.6 s, 10.5 s | 8.2 to 8.4 ms |
+| `.lowLatency` | 1.0 s, 0.8 s, 1.0 s, 1.0 s | 0.6 to 0.8 ms |
+
+About 12 times faster, which agrees with Grok's `trn` figures (9 to 17 times).
+
+- **Quality, same passage:** the fast mode is understandable but rougher. It dropped the subject in "Is proud to be the number one contributor" (wrote "Se enorgullece de ser el colaborador número uno de Drupal"), used the singular "Bienvenido" for a room, wrote "Lo hemos estado" for "we have been", and mixed "puedes" with "ustedes". The slow mode wrote "Estoy orgulloso de ser el principal colaborador de Drupal" and stayed in one register ("ustedes", "han visto"). One passage in one pair is a sample, not a verdict.
+
+So the switch is real and the speedup is about 12 times, at some cost in quality. That is why it is a user setting in #10 and not a silent change. Kai's bridge does not set a strategy today (`pkg/swiftbridge/internal/swift/apple_translate.swift`).
