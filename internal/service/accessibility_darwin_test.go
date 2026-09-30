@@ -15,10 +15,10 @@ func fakeAnswer(s string, raw int32) func(unsafe.Pointer, int32) int32 {
 		if s == "" {
 			return raw
 		}
-		buf := unsafe.Slice((*byte)(out), int(outCap))
+		buf := unsafe.Slice((*byte)(out), int(outCap)) //nolint:gosec // test fake writing into the caller buffer
 		n := copy(buf[:outCap-1], s)
 		buf[n] = 0
-		return int32(n)
+		return int32(n) //nolint:gosec // n < outCap
 	}
 }
 
