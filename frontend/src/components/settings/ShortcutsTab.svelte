@@ -317,6 +317,11 @@
           <div class="min-w-0">
             <div class="text-sm font-medium">{t('settings.permAccessibility')}</div>
             <p class="u-muted text-xs">{t('settings.permAccessibilityHint')}</p>
+            {#if accGranted === false}
+              <p class="u-text-warn mt-1 text-xs" data-testid="accessibility-missing">
+                {t('settings.permAccessibilityMissing')}
+              </p>
+            {/if}
           </div>
           <div class="flex shrink-0 items-center gap-2">
             {#if accGranted === null}

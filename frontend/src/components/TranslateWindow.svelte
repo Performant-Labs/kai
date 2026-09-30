@@ -80,6 +80,7 @@
     EventAutoClipboardChanged,
     EventCopyKeyFailed,
     EventDoubleCopyPermissionMissing,
+    EventAccessibilityMissing,
   } from '../utils/events';
   import type { TranslateProgressPayload } from '../utils/events';
   import { WindowSettings, WindowTranslate } from '../constants/window';
@@ -705,6 +706,11 @@
     const offDoubleCopyPermission = onEvent(EventDoubleCopyPermissionMissing, () => {
       showToast(t('translate.doubleCopyPermission'), 9000);
     });
+    // Issue #194: the capture found the Accessibility permission missing, so no key was sent. Say
+    // what to enable and where, instead of a failure that looks like "nothing selected".
+    const offAccessibilityMissing = onEvent(EventAccessibilityMissing, () => {
+      showToast(t('translate.accessibilityMissing'), 12000);
+    });
     const offClosing = onEvent(EventWindowClosing, (name: string) => {
       // Issue #69: opening Settings drops this window out of always-on-top so Settings is not
       // hidden behind a pinned window; when Settings closes, put the persisted pin back.
@@ -767,6 +773,7 @@
       offInputFill();
       offCopyKeyFailed();
       offDoubleCopyPermission();
+      offAccessibilityMissing();
       offClosing();
       offEngines();
     };

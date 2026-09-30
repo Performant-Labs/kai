@@ -100,6 +100,8 @@ export const zh: Dict = {
     copyKeyFailed: '未能获取选中内容 — 请手动复制后再次按下快捷键',
     doubleCopyPermission:
       '双击 Cmd+C 翻译需要“输入监控”权限。请打开“系统设置 > 隐私与安全性 > 输入监控”，开启 Kai，然后在“设置 > 通用”中把该选项关闭再重新打开。',
+    accessibilityMissing:
+      'Kai 无法复制你选中的文字：macOS 尚未授予它“辅助功能”权限。请打开“系统设置 > 隐私与安全性 > 辅助功能”（macOS 27 中名为“设备控制与数据访问”），开启 Kai。如果刚安装或重新构建过 Kai，请在该列表中选中 Kai，用减号移除后再重新添加。',
     cancel: '取消',
     cancelEngine: '取消 {engine}',
     cancelled: '已取消',
@@ -264,6 +266,8 @@ export const zh: Dict = {
     permHint: '以下 macOS 授权会影响快捷键与截图翻译功能，请确认已开启。',
     permAccessibility: '辅助功能',
     permAccessibilityHint: '复制键读取剪贴板需要此项授权。',
+    permAccessibilityMissing:
+      '未授权时 Kai 无法复制你选中的文字。请打开“系统设置 > 隐私与安全性 > 辅助功能”（macOS 27 中名为“设备控制与数据访问”），开启 Kai。安装或重新构建 Kai 后，请先从该列表中移除再重新添加。',
     permScreenRecording: '屏幕录制',
     permScreenRecordingHint: '截图翻译需要此项授权，才能在框选后读取屏幕区域做 OCR（不录制视频）。',
     // TODO: 输入监控 i18n key（permInputMonitoring / permInputMonitoringHint）当前未使用，已注释。
