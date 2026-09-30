@@ -90,6 +90,11 @@ var (
 	KaiDoubleCopyPasteboard func(out unsafe.Pointer, outCap int32) int32
 	// KaiDoubleCopyIngest is the tap callback's body, exposed so tests can drive it without a tap.
 	KaiDoubleCopyIngest func(keycode int32, flags uint64, autorepeat int32, srcPid int32) int32
+	// Launch kind (issue #17). KaiLaunchObserve registers the launch-event observers and must run
+	// before NSApplication runs; KaiLaunchKind returns 0 unknown, 1 user launch, 2 login-item
+	// launch. Neither needs the main thread.
+	KaiLaunchObserve func() int32
+	KaiLaunchKind    func() int32
 )
 
 // The dylib defaults to the same directory as this .go source file (build.sh copies the
@@ -212,6 +217,8 @@ func registerAll(h uintptr) {
 	register(&KaiDoubleCopyRequest, "kai_doublecopy_request")
 	register(&KaiDoubleCopyPasteboard, "kai_doublecopy_pasteboard")
 	register(&KaiDoubleCopyIngest, "kai_doublecopy_ingest")
+	register(&KaiLaunchObserve, "kai_launch_observe")
+	register(&KaiLaunchKind, "kai_launch_kind")
 }
 
 // Available reports whether the Swift bridge loaded successfully (dylib Dlopen'ed and the
