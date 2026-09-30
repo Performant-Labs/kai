@@ -1,6 +1,7 @@
 package execkey
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -140,5 +141,51 @@ func TestPollClipboardText_CapturesValueLandingAfterOldSixHundredMsCeiling(t *te
 	}, "")
 	if got != "sheets cell" {
 		t.Fatalf("got %q, want the value that landed at ~900ms", got)
+	}
+}
+
+// ---- Issue #194: a missing Accessibility permission is its own outcome ----
+//
+// Without the permission macOS drops the simulated Cmd+C silently, the clipboard stays empty and
+// the failure looked exactly like "nothing selected". The permission is checked before anything is
+// touched. The permission is faked with a func; the code under test is the real guardedCopy and the
+// real CopySelection.
+
+func TestGuardedCopy_PermissionMissing_NeverRunsTheCopyAndReportsIt(t *testing.T) {
+	ran := 0
+	text, err := guardedCopy(func() bool { return false }, func() string { ran++; return "x" })
+	if !errors.Is(err, ErrAccessibilityMissing) {
+		t.Fatalf("err = %v, want ErrAccessibilityMissing", err)
+	}
+	if text != "" {
+		t.Fatalf("text = %q, want empty", text)
+	}
+	if ran != 0 {
+		t.Fatalf("the copy ran %d times with the permission missing, want 0 (no key, no clipboard touch)", ran)
+	}
+}
+
+func TestGuardedCopy_PermissionPresent_RunsTheCopyOnceAndReturnsItsText(t *testing.T) {
+	ran := 0
+	text, err := guardedCopy(func() bool { return true }, func() string { ran++; return "picked" })
+	if err != nil || text != "picked" || ran != 1 {
+		t.Fatalf("text=%q err=%v ran=%d, want picked/nil/1", text, err, ran)
+	}
+}
+
+func TestGuardedCopy_PermissionPresentButNothingSelected_IsNotAPermissionError(t *testing.T) {
+	text, err := guardedCopy(func() bool { return true }, func() string { return "" })
+	if err != nil || text != "" {
+		t.Fatalf("text=%q err=%v, want an empty selection with no error", text, err)
+	}
+}
+
+// CopySelection itself is wired through the check: with the permission missing it returns before
+// it reads settings, the clipboard or the keyboard (all nil here, so touching any would panic).
+func TestCopySelection_PermissionMissing_ReturnsTheTypedErrorWithoutTouchingAnything(t *testing.T) {
+	e := &ExecKeyController{accessibility: func() bool { return false }}
+	text, err := e.CopySelection()
+	if !errors.Is(err, ErrAccessibilityMissing) || text != "" {
+		t.Fatalf("text=%q err=%v, want empty and ErrAccessibilityMissing", text, err)
 	}
 }

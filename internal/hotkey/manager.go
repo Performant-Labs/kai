@@ -9,8 +9,11 @@
 package hotkey
 
 import (
+	"errors"
 	"log/slog"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -20,6 +23,12 @@ import (
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/settings"
 )
+
+// accessibilityNoticeEvery is the least time between two "Accessibility permission missing"
+// messages (issue #194). The message is a 12-second toast, so a user who presses the hotkey again
+// within a few minutes of reading it is not shown it again; a press after that shows it again,
+// because the capture is still failing and a window that stays silent is the original bug.
+const accessibilityNoticeEvery = 3 * time.Minute
 
 // Manager is the global hotkey manager.
 type Manager struct {
@@ -45,6 +54,12 @@ type Manager struct {
 	screenshotTranslate func() error              // Screenshot translate main flow: region screenshot→OCR→translate→deliver to screenshot window
 	screenshotWindow    func() application.Window // Screenshot translate window
 	emitHotkeysChanged  func([]string)            // Broadcast the currently active list to the frontend
+
+	// accessNoticeMu guards accessNoticeAt, the time the missing-permission message was last sent
+	// (zero: not yet this launch). now is the clock (nil: time.Now), a field so tests control it.
+	accessNoticeMu sync.Mutex
+	accessNoticeAt time.Time
+	now            func() time.Time
 
 	// triggerInputBusy guards TriggerInput's copy-key branch against reentrancy (issue #175
 	// item 5). A real ~/.kai/logs/kai.log capture showed two "[Hotkey] Hotkey triggered" lines
@@ -213,7 +228,7 @@ type windowShower interface {
 // triggerCopyKey is TriggerInput's copy-key branch, with its dependencies injected so the
 // reentrancy guard and the outcome emission can be tested by calling it (issue #175 item 5).
 // Order matters: copy first, then Show/Focus (see TriggerInput). emitter may be nil.
-func (h *Manager) triggerCopyKey(w windowShower, emitter eventEmitter, copySelection func() string) {
+func (h *Manager) triggerCopyKey(w windowShower, emitter eventEmitter, copySelection func() (string, error)) {
 	// An overlapping call would race its own backup/clear/copy/restore of the shared system
 	// clipboard against the in-flight one (see triggerInputBusy); back off instead.
 	if !h.triggerInputBusy.CompareAndSwap(false, true) {
@@ -222,13 +237,41 @@ func (h *Manager) triggerCopyKey(w windowShower, emitter eventEmitter, copySelec
 	}
 	defer h.triggerInputBusy.Store(false)
 
-	sel := copySelection()
+	sel, err := copySelection()
+	if errors.Is(err, execkey.ErrAccessibilityMissing) {
+		// Issue #194: the key was never posted. Say so; do not report an empty selection.
+		h.log.Warn("copy-key capture skipped: macOS Accessibility permission is not granted to Kai")
+		w.Show()
+		w.Focus()
+		if emitter != nil && h.accessibilityNoticeDue() {
+			emitter.Emit(events.EventAccessibilityMissing)
+		}
+		return
+	}
 	h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_copy_key")), slog.Int(i18n.T("log.field_length"), len(sel)), slog.String(i18n.T("log.field_content"), sel))
 	w.Show()
 	w.Focus()
 	if emitter != nil {
 		emitCopyKeyOutcome(emitter, sel)
 	}
+}
+
+// accessibilityNoticeDue reports whether the missing-permission message should be shown now, and
+// records that it was: true for the first call of a launch, then at most once per
+// accessibilityNoticeEvery.
+func (h *Manager) accessibilityNoticeDue() bool {
+	now := time.Now
+	if h.now != nil {
+		now = h.now
+	}
+	t := now()
+	h.accessNoticeMu.Lock()
+	defer h.accessNoticeMu.Unlock()
+	if !h.accessNoticeAt.IsZero() && t.Sub(h.accessNoticeAt) < accessibilityNoticeEvery {
+		return false
+	}
+	h.accessNoticeAt = t
+	return true
 }
 
 // eventEmitter is the slice of *application.App that emitCopyKeyOutcome drives, so the

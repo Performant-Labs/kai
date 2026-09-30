@@ -72,6 +72,11 @@ export const EventCopyKeyFailed = 'kai:copykey:failed';
 // says which Privacy & Security pane to open.
 export const EventDoubleCopyPermissionMissing = 'kai:doublecopy:permission-missing';
 
+// EventAccessibilityMissing: emitted when the hotkey or tray capture finds the macOS Accessibility
+// permission missing, so the simulated Cmd+C was not sent (issue #194). No payload. Throttled on the
+// Go side. TranslateWindow shows a toast that says what to enable and where.
+export const EventAccessibilityMissing = 'kai:accessibility:missing';
+
 // Event payload type definitions (aligned with the Go-side structs in internal/events/events.go)
 
 // LocaleChangedPayload: language-change event arguments.
