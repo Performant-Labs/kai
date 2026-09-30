@@ -280,9 +280,9 @@ export const en: Dict = {
     permScreenRecording: 'Screen Recording',
     permScreenRecordingHint:
       'Screenshot translation needs this to read the selected screen region for OCR (no video is recorded).',
-    // TODO: the Input Monitoring i18n keys (permInputMonitoring / permInputMonitoringHint) are currently unused and commented out.
-    // permInputMonitoring: 'Input Monitoring',
-    // permInputMonitoringHint: 'Copy key (simulated Cmd+C) relies on this permission; without it the key press is silently dropped by the system.',
+    permInputMonitoring: 'Input Monitoring',
+    permInputMonitoringHint:
+      'Translate on double Cmd+C needs this. Turn on Kai in Privacy & Security > Input Monitoring.',
     permExpand: 'Details',
     permCollapse: 'Collapse',
     history: 'History',
@@ -411,6 +411,7 @@ export const en: Dict = {
     shortcutCheckAccessibilityFailed: '[shortcut] Failed to check Accessibility permission',
     shortcutOpenAccessibilityFailed: '[shortcut] Failed to open Accessibility settings',
     shortcutCheckScreenRecordingFailed: '[shortcut] Failed to check Screen Recording permission',
+    shortcutCheckInputMonitoringFailed: '[shortcut] Failed to check Input Monitoring permission',
     shortcutOpenScreenRecordingFailed: '[shortcut] Failed to open Screen Recording settings',
     shortcutLoadConfigFailed: 'Failed to load shortcut config',
     translateCardCopyFailed: '[screenshot] Copy failed',

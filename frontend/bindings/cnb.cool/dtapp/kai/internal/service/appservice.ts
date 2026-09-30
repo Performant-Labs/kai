@@ -33,6 +33,14 @@ export function CheckAccessibility(): $CancellablePromise<boolean> {
 }
 
 /**
+ * CheckInputMonitoring checks whether macOS Input Monitoring is authorized (translate on double
+ * Cmd+C needs it; cross-platform: non-darwin returns true directly). The Settings page polls it.
+ */
+export function CheckInputMonitoring(): $CancellablePromise<boolean> {
+    return $Call.ByID(3222937727);
+}
+
+/**
  * CheckScreenRecording checks whether macOS screen recording is authorized (needed by
  * screenshot translate; cross-platform: non-darwin returns true directly).
  */

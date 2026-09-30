@@ -130,8 +130,7 @@ export const zh: Dict = {
     autoSwitchSourceHint:
       '当文本的语言与源语言不同时，自动把源语言切换为该语言，把原来的源语言设为目标语言，并直接翻译。',
     fontSize: '文字大小',
-    fontSizeHint:
-      '缩小或放大应用中的所有文字，立即应用于所有窗口。默认为 120%。',
+    fontSizeHint: '缩小或放大应用中的所有文字，立即应用于所有窗口。默认为 120%。',
     fontSizeSmaller: '缩小文字',
     fontSizeLarger: '放大文字',
     fontSizeReset: '恢复为 120%',
@@ -268,9 +267,9 @@ export const zh: Dict = {
     permAccessibilityMissing: '请在“隐私与安全性 > 设备控制与数据访问”中开启 Kai。',
     permScreenRecording: '屏幕录制',
     permScreenRecordingHint: '截图翻译需要此项授权，才能在框选后读取屏幕区域做 OCR（不录制视频）。',
-    // TODO: 输入监控 i18n key（permInputMonitoring / permInputMonitoringHint）当前未使用，已注释。
-    // permInputMonitoring: '输入监控',
-    // permInputMonitoringHint: '复制键（模拟 Cmd+C）依赖此项授权，未授权时按键会被系统静默丢弃。',
+    permInputMonitoring: '输入监控',
+    permInputMonitoringHint:
+      '双击 Cmd+C 翻译需要此项授权。请在“隐私与安全性 > 输入监控”中打开 Kai。',
     permExpand: '查看详情',
     permCollapse: '收起',
     history: '历史',
@@ -399,6 +398,7 @@ export const zh: Dict = {
     shortcutCheckAccessibilityFailed: '[快捷键] 检测辅助功能授权失败',
     shortcutOpenAccessibilityFailed: '[快捷键] 打开辅助功能设置失败',
     shortcutCheckScreenRecordingFailed: '[快捷键] 检测屏幕录制授权失败',
+    shortcutCheckInputMonitoringFailed: '[快捷键] 检测输入监控授权失败',
     shortcutOpenScreenRecordingFailed: '[快捷键] 打开屏幕录制设置失败',
     shortcutLoadConfigFailed: '加载快捷键配置失败',
     translateCardCopyFailed: '[截图翻译] 复制失败',

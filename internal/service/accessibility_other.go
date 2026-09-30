@@ -18,12 +18,7 @@ func (s *AppService) isScreenRecordingEnabled() bool {
 // openScreenRecordingSettings is a no-op on non-darwin platforms.
 func (s *AppService) openScreenRecordingSettings() {}
 
-// TODO: input-monitoring related (isInputMonitoringEnabled / openInputMonitoringSettings
-// non-darwin no-ops) currently unused, commented out.
-// // isInputMonitoringEnabled: non-darwin platforms need no permission, always true.
-// func (s *AppService) isInputMonitoringEnabled() bool {
-// 	return true
-// }
-//
-// // openInputMonitoringSettings is a no-op on non-darwin platforms.
-// func (s *AppService) openInputMonitoringSettings() {}
+// isInputMonitoringEnabled: non-darwin platforms need no permission, always true.
+func (s *AppService) isInputMonitoringEnabled() bool {
+	return true
+}

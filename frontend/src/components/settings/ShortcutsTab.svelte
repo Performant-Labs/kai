@@ -11,11 +11,14 @@
     OpenAccessibilitySettings,
     CheckScreenRecording,
     OpenScreenRecordingSettings,
+    CheckInputMonitoring,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts';
   import { Dialogs } from '@wailsio/runtime';
   import { isMac as detectMac } from '../../runtime/platform';
   import { onEvent } from '../../runtime';
-  import { EventAutoClipboardChanged } from '../../utils/events';
+  import { EventAutoClipboardChanged, EventWindowClosing } from '../../utils/events';
+  import { WindowSettings } from '../../constants/window';
+  import { createPoller } from '../../utils/permissionPoller';
   import { track } from '../../utils/analytics';
 
   // Form shape of a single (registration) hotkey (key + enabled state), aligned with the backend's HotkeyEntry.
@@ -77,8 +80,9 @@
     try {
       accGranted = await CheckAccessibility();
     } catch (e) {
+      // Keep the last known state: a failed re-check (every 3 s while Settings is open) must not
+      // blank a card that was showing a real answer. Before any answer it stays null ("—").
       console.error(t('log.shortcutCheckAccessibilityFailed'), e);
-      accGranted = null;
     } finally {
       accLoading = false;
     }
@@ -104,7 +108,6 @@
       srGranted = await CheckScreenRecording();
     } catch (e) {
       console.error(t('log.shortcutCheckScreenRecordingFailed'), e);
-      srGranted = null;
     } finally {
       srLoading = false;
     }
@@ -120,11 +123,23 @@
     }
   }
 
+  // Input Monitoring (translate on double Cmd+C needs it): true=granted, false=denied, null=unknown.
+  // macOS shows no prompt for this read; the user switches it on in Privacy & Security.
+  let imGranted = $state<boolean | null>(null);
+
+  async function loadInputMonitoring() {
+    try {
+      imGranted = await CheckInputMonitoring();
+    } catch (e) {
+      console.error(t('log.shortcutCheckInputMonitoringFailed'), e);
+    }
+  }
+
   // Loads all permission states the shortcuts page needs. Data-fetch only; it never changes the
   // expanded/collapsed state, so a manual refresh doesn't forcibly collapse a card the user
   // expanded.
   async function loadShortcutPermissions() {
-    await Promise.all([loadAccessibility(), loadScreenRecording()]);
+    await Promise.all([loadAccessibility(), loadScreenRecording(), loadInputMonitoring()]);
     // Set the initial expanded state once, after the first load completes: all granted →
     // collapsed by default, otherwise expanded.
     if (!permInitDone) {
@@ -189,14 +204,42 @@
     recordingKey = key;
   }
 
+  // Issue #14: while the Settings window is visible, re-read the permissions every 3 s so a change
+  // made in System Settings shows up without reopening the page. One timer, and a slow check is
+  // waited for (utils/permissionPoller). The first load still decides the block's open/closed
+  // state once (loadShortcutPermissions); a re-check only updates the cards.
+  async function pollPermissions() {
+    await Promise.all([loadShortcutPermissions(), refreshDoubleCopyStatus()]);
+  }
+  const poller = createPoller(pollPermissions);
+
   onMount(() => {
     loadShortcuts();
     loadShortcutPermissions();
+    // Poll only while the window is on screen. The webview reports hidden/visible when Kai hides or
+    // shows it; the red X only hides the window (its close hook), so that broadcast stops polling
+    // too, and the next focus or visibility change resumes it with an immediate check.
+    const resume = () => {
+      if (document.visibilityState === 'visible') poller.start(true);
+    };
+    const onVisibility = () => (document.visibilityState === 'visible' ? resume() : poller.stop());
+    if (document.visibilityState === 'visible') poller.start();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', resume);
+    const offClosing = onEvent(EventWindowClosing, (name: string) => {
+      if (name === WindowSettings) poller.stop();
+    });
     // When the translate window toggles auto-clipboard, disable/restore this page's copy-hotkey controls in real time.
     const offAuto = onEvent(EventAutoClipboardChanged, (enabled: boolean) => {
       copyDisabled = enabled;
     });
-    return () => offAuto();
+    return () => {
+      offAuto();
+      offClosing();
+      poller.stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', resume);
+    };
   });
 
   // Cross-window events alone may not arrive (multi-window isolation), so when the window regains
@@ -269,6 +312,12 @@
   // listener's state, this mirrors them.
   let doubleCopy = $state(false);
   let doubleCopyMissingPermission = $state(false);
+  // The listener caches "missing_permission" from when it started, so it stays set after the user
+  // grants Input Monitoring. The live check wins once it has an answer; the cached status only
+  // covers the time before one.
+  const doubleCopyNeedsPermission = $derived(
+    doubleCopy && (imGranted === false || (imGranted === null && doubleCopyMissingPermission)),
+  );
 
   async function refreshDoubleCopyStatus() {
     try {
@@ -398,6 +447,23 @@
             </button>
           </div>
         </div>
+
+        <!-- Input Monitoring: translate on double Cmd+C depends on it (no button: there is no prompt to raise) -->
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <div class="text-sm font-medium">{t('settings.permInputMonitoring')}</div>
+            <p class="u-muted text-xs">{t('settings.permInputMonitoringHint')}</p>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            {#if imGranted === null}
+              <span class="u-muted text-sm">—</span>
+            {:else if imGranted}
+              <span class="u-text-ok text-sm font-medium">{t('settings.accGranted')}</span>
+            {:else}
+              <span class="u-text-warn text-sm font-medium">{t('settings.accDenied')}</span>
+            {/if}
+          </div>
+        </div>
       </div>
     {/if}
   </div>
@@ -498,7 +564,7 @@
     <input type="checkbox" checked={doubleCopy} onchange={toggleDoubleCopy} />
     <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
   </label>
-  {#if doubleCopy && doubleCopyMissingPermission}
+  {#if doubleCopyNeedsPermission}
     <p class="mt-3 text-xs" role="alert" data-testid="double-copy-permission">
       {t('settings.doubleCopyPermission')}
     </p>
