@@ -310,12 +310,14 @@ export interface ScreenshotResult {
 /**
  * SourceSwitch is the answer to a SourceSwitchRequest. When Switched, From is the language the text
  * is in (a variant the dropdown offers) and To is the old source, which replaces the old target;
- * otherwise the pair stays as it is and From / To are empty.
+ * otherwise the pair stays as it is and From / To are empty. Reason says why (issue #16), so a
+ * "no switch" is never silent: one of the SwitchReason constants.
  */
 export interface SourceSwitch {
     "switched": boolean;
     "from": Language;
     "to": Language;
+    "reason": string;
 }
 
 /**

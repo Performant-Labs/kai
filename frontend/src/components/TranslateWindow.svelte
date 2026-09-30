@@ -887,6 +887,8 @@
     translate: () => doTranslate(),
     onCue: (c) => (switchCue = c),
     onError: (e) => console.error(t('log.sourceSwitchFailed'), e),
+    // Issue #16: a miss is never silent; the backend logs its own decision line, this names the reason.
+    onSkip: (reason) => console.info(t('log.sourceSwitchSkipped', { reason })),
     // The correction step (issue #208): every arrival is corrected first, and the rest of the flow
     // goes on with the corrected text.
     correct: (req) =>

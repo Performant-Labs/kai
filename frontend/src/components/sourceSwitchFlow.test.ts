@@ -13,6 +13,7 @@ const SWITCH: SourceSwitchPlan = { switched: true, from: 'es-MX', to: 'en' };
 const NONE: SourceSwitchPlan = { switched: false, from: '', to: '' };
 
 function setup(opts: { plan?: SourceSwitchPlan; from?: string; to?: string; text?: string } = {}) {
+  const skips: string[] = [];
   const state = { text: opts.text ?? SPANISH, from: opts.from ?? 'en', to: opts.to ?? 'fr' };
   const cues: (SwitchCue | null)[] = [];
   const plan = vi.fn(async () => opts.plan ?? SWITCH);
@@ -30,8 +31,9 @@ function setup(opts: { plan?: SourceSwitchPlan; from?: string; to?: string; text
     canBeTarget: (c) => ['en', 'fr', 'es-MX'].includes(c),
     translate,
     onCue: (c) => cues.push(c),
+    onSkip: (reason) => skips.push(reason),
   };
-  return { state, cues, plan, translate, sw: createSourceSwitcher(deps) };
+  return { state, cues, skips, plan, translate, sw: createSourceSwitcher(deps) };
 }
 
 let writes: string[];
@@ -190,5 +192,84 @@ describe('typed text on Translate', () => {
     await sw.translateWithSwitch();
     expect(state).toMatchObject({ from: 'es-MX', to: 'en' });
     expect(translate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Issue #16: every way the flow ends without a switch names its reason, so a miss is never silent.
+// The backend's own reason passes through when it said no; the frontend's own drops say theirs.
+describe('the reason of a miss', () => {
+  it('passes the backend reason through when the planner says no', async () => {
+    for (const reason of [
+      'below_confidence',
+      'too_short',
+      'same_language',
+      'no_detection',
+      'disabled',
+    ]) {
+      const { skips, sw } = setup({ plan: { ...NONE, reason } });
+      await sw.translateWithSwitch();
+      expect(skips).toEqual([reason]);
+    }
+  });
+
+  it('says source_auto for an Auto source', async () => {
+    const { skips, sw } = setup({ from: 'auto' });
+    await sw.translateWithSwitch();
+    expect(skips).toEqual(['source_auto']);
+  });
+
+  it('says declined for a text whose switch the user undid', async () => {
+    const { skips, sw, plan } = setup();
+    await sw.translateWithSwitch();
+    sw.undo();
+    skips.length = 0;
+    await sw.translateWithSwitch();
+    expect(skips).toEqual(['declined']);
+    expect(plan).toHaveBeenCalledTimes(1);
+  });
+
+  it('says text_changed when the text moved while the plan was computed', async () => {
+    const { state, skips, sw, plan } = setup();
+    plan.mockImplementationOnce(async () => {
+      state.text = 'something else entirely';
+      return SWITCH;
+    });
+    await sw.autoSwitch(SPANISH);
+    expect(skips).toEqual(['text_changed']);
+  });
+
+  it('says pair_changed when a select moved while the plan was computed', async () => {
+    const { state, skips, sw, plan } = setup();
+    plan.mockImplementationOnce(async () => {
+      state.to = 'es-MX';
+      return SWITCH;
+    });
+    await sw.autoSwitch(SPANISH);
+    expect(skips).toEqual(['pair_changed']);
+  });
+
+  it('says plan_failed when the planner throws', async () => {
+    const { skips, sw, plan } = setup();
+    plan.mockRejectedValueOnce(new Error('boom'));
+    await sw.autoSwitch(SPANISH);
+    expect(skips).toEqual(['plan_failed']);
+  });
+
+  it('names why a plan the selects cannot hold was refused', async () => {
+    const cases: [SourceSwitchPlan, string][] = [
+      [{ switched: true, from: 'ja', to: 'en' }, 'source_not_offered'],
+      [{ switched: true, from: 'es-MX', to: 'fr' }, 'plan_mismatch'],
+    ];
+    for (const [plan, reason] of cases) {
+      const { skips, sw } = setup({ plan });
+      await sw.autoSwitch(SPANISH);
+      expect(skips).toEqual([reason]);
+    }
+  });
+
+  it('says nothing when it switched', async () => {
+    const { skips, sw } = setup();
+    await sw.autoSwitch(SPANISH);
+    expect(skips).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@ import {
   cueActive,
   isDeclined,
   makeCue,
+  rejectReason,
   undoPair,
   type SourceSwitchPlan,
 } from './sourceSwitch.ts';
@@ -82,5 +83,43 @@ describe('isDeclined', () => {
   it('an empty declined text declines nothing', () => {
     expect(isDeclined('', '')).toBe(false);
     expect(isDeclined('', 'x')).toBe(false);
+  });
+});
+
+// Issue #16: a refused plan says why.
+describe('rejectReason', () => {
+  const ctx = {
+    current: { from: 'en', to: 'fr' },
+    autoCode: 'auto',
+    sourceOptions: ['auto', 'en', 'fr', 'es-MX'],
+    isSelectableTarget: (c: string) => c !== 'de',
+  };
+  it('is null for a plan acceptSwitch accepts, and names the refusal otherwise', () => {
+    expect(rejectReason({ switched: true, from: 'es-MX', to: 'en' }, ctx)).toBeNull();
+    expect(rejectReason({ switched: false, from: '', to: '', reason: 'too_short' }, ctx)).toBe(
+      'too_short',
+    );
+    expect(rejectReason({ switched: false, from: '', to: '' }, ctx)).toBe('no_switch');
+    expect(rejectReason(null, ctx)).toBe('no_switch');
+    expect(
+      rejectReason(
+        { switched: true, from: 'es-MX', to: 'en' },
+        { ...ctx, current: { from: 'auto', to: 'fr' } },
+      ),
+    ).toBe('source_auto');
+    expect(rejectReason({ switched: true, from: 'es-MX', to: 'fr' }, ctx)).toBe('plan_mismatch');
+    expect(rejectReason({ switched: true, from: 'ja', to: 'en' }, ctx)).toBe('source_not_offered');
+    expect(
+      rejectReason(
+        { switched: true, from: 'es-MX', to: 'en' },
+        { ...ctx, current: { from: 'de', to: 'fr' } },
+      ),
+    ).toBe('plan_mismatch');
+    expect(
+      rejectReason(
+        { switched: true, from: 'es-MX', to: 'en' },
+        { ...ctx, isSelectableTarget: () => false },
+      ),
+    ).toBe('target_not_selectable');
   });
 });

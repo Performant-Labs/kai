@@ -1,9 +1,12 @@
 package translate
 
 import (
+	"log/slog"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
@@ -47,27 +50,59 @@ const switchMinConfidence = 0.8
 // so a huge paste does not make detection slower.
 const switchDetectRunes = 2000
 
+// urlPattern matches a link in text: a scheme and everything up to whitespace, or a www. host.
+var urlPattern = regexp.MustCompile(`(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)\S+`)
+
 // PlanSourceSwitch decides what the language pair becomes for text that has just arrived. When it
 // answers Switched, From is the detected language (qualified with the variant the user works in,
 // and always one the source dropdown offers, so bare es is es-MX) and To is req.From, the old
 // source. Otherwise nothing changes. See the file comment for the rules.
 func (s *Service) PlanSourceSwitch(req model.SourceSwitchRequest) model.SourceSwitch {
-	none := model.SourceSwitch{}
-	if !s.autoSwitchEnabled() || isAutoSource(req.From) {
-		return none
+	plan, d := s.planSourceSwitch(req)
+	// One line per decision (issue #16): the detection and why it ended as it did. Never the text
+	// (issue #203): only its length.
+	slog.Info(i18n.T("log.source_switch_plan"),
+		"reason", plan.Reason, "detected", string(d.lang), "confidence", d.confidence,
+		"runes", d.runes, "by", d.by, "from", string(req.From), "to", string(req.To),
+		"result_from", string(plan.From))
+	return plan
+}
+
+// switchDetail is what a decision saw, for its log line.
+type switchDetail struct {
+	lang       model.Language // what the detector or the hint named, as it named it
+	confidence float64        // the local detector's; 0 for a hint or nothing
+	runes      int            // code points of the trimmed text
+	by         string         // "local", "hint" or "none"
+}
+
+func (s *Service) planSourceSwitch(req model.SourceSwitchRequest) (model.SourceSwitch, switchDetail) {
+	d := switchDetail{by: "none"}
+	no := func(reason string) (model.SourceSwitch, switchDetail) {
+		return model.SourceSwitch{Reason: reason}, d
 	}
-	trimmed := strings.TrimSpace(req.Text)
-	if utf8.RuneCountInString(trimmed) < switchMinRunes {
-		return none
+	// Links are not text in a language: the address of a Spanish page is not Spanish text, so the
+	// floor and the detector read what is left once they are taken out.
+	trimmed := strings.TrimSpace(urlPattern.ReplaceAllString(req.Text, " "))
+	d.runes = utf8.RuneCountInString(trimmed)
+	if !s.autoSwitchEnabled() {
+		return no(model.SwitchReasonDisabled)
 	}
-	detected, ok := s.detectForSwitch(trimmed, req.Detected)
-	if !ok {
-		return none
+	if isAutoSource(req.From) {
+		return no(model.SwitchReasonSourceAuto)
+	}
+	if d.runes < switchMinRunes {
+		return no(model.SwitchReasonTooShort)
+	}
+	detected, det, reason := s.detectForSwitch(trimmed, req.Detected)
+	d.lang, d.confidence, d.by = det.lang, det.confidence, det.by
+	if reason != "" {
+		return no(reason)
 	}
 	// A bare detection cannot name a dialect, so it covers a pin of any of its variants: es is not
 	// a correction of es-MX, and pt is none of pt-BR / pt-PT.
 	if detected.Covers(req.From) {
-		return none
+		return no(model.SwitchReasonSameLanguage)
 	}
 	from := detected
 	if detected.Covers(req.To) {
@@ -77,9 +112,9 @@ func (s *Service) PlanSourceSwitch(req model.SourceSwitchRequest) model.SourceSw
 		from = s.resultFrom(model.Auto, detected).SelectableOr(detected)
 	}
 	if from.SameAs(req.From) {
-		return none
+		return no(model.SwitchReasonSameLanguage)
 	}
-	return model.SourceSwitch{Switched: true, From: from, To: req.From}
+	return model.SourceSwitch{Switched: true, From: from, To: req.From, Reason: model.SwitchReasonSwitched}, d
 }
 
 // autoSwitchEnabled reads the setting: on unless the settings say off. No settings service (a test,
@@ -94,19 +129,31 @@ func (s *Service) autoSwitchEnabled() bool {
 
 // detectForSwitch returns the language the text is in, recognized by the app: the local detector's
 // when it is confident, else, only when the local detector had nothing to say, the caller's hint.
-func (s *Service) detectForSwitch(trimmed string, hint model.Language) (model.Language, bool) {
+// When it names none, reason says why (and the detail still says what was seen).
+func (s *Service) detectForSwitch(trimmed string, hint model.Language) (model.Language, switchDetail, string) {
 	sample := trimmed
 	if utf8.RuneCountInString(sample) > switchDetectRunes {
 		sample = string([]rune(sample)[:switchDetectRunes])
 	}
 	lang, confidence, ok := s.detect(sample)
 	if ok {
+		d := switchDetail{lang: lang, confidence: confidence, by: "local"}
 		if confidence < switchMinConfidence {
-			return "", false
+			return "", d, model.SwitchReasonBelowConfidence
 		}
-		return recognized(lang)
+		rec, known := recognized(lang)
+		if !known {
+			return "", d, model.SwitchReasonNoDetection
+		}
+		return rec, d, ""
 	}
-	return recognized(hint)
+	d := switchDetail{lang: hint, by: "hint"}
+	rec, known := recognized(hint)
+	if !known {
+		d.by = "none"
+		return "", d, model.SwitchReasonNoDetection
+	}
+	return rec, d, ""
 }
 
 // recognized reports lang when the app knows it (model.ParseLanguage), as that language; an empty,

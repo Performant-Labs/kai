@@ -285,6 +285,7 @@
   "log.single_instance_second_launch": "Another Kai instance detected, brought its main window to front",
   "log.source_auto_clipboard": "Auto clipboard hotkey",
   "log.source_copy_key": "Show main window (simulated copy)",
+  "log.source_switch_plan": "[source switch] decision",
   "log.swiftbridge_loaded": "[dynamic-bridge] Swift bridge loaded",
   "log.swiftbridge_unavailable": "[dynamic-bridge] Swift bridge unavailable (dylib not loaded), feature degraded",
   "log.translate_chunked": "[translate] translating in chunks engine={{.Engine}} chunks={{.Chunks}} parts={{.Parts}} target={{.Target}} unit={{.Unit}}",

@@ -11,6 +11,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ### Bug Fixes
 - No more white flash when a window opens in the dark theme (#15): the native window colour is now chosen from the theme before the window draws, and each page applies the last saved theme before its first paint (falling back to the system appearance). The updater window already did this. Not yet judged in the real app.
 - Kai now shows the translate window every time you open it from the Dock or Finder, not only on a later click of the tray or Dock icon (#17). The very first launch on a fresh data folder centres the window. Launching at login stays quiet, with no window, and opening Kai a second time while it runs still brings the window forward. Where macOS cannot say how Kai was launched, the window is shown.
+- Every decision of the automatic source switch now writes one log line (language, confidence, length, who answered, and why it did or did not switch, never the text), and a link in the text no longer counts as text in a language (#16).
 
 ## [0.2.0] - 2026-09-29
 
