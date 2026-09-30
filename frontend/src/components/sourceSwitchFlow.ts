@@ -18,6 +18,7 @@ import {
   acceptSwitch,
   isDeclined,
   makeCue,
+  rejectReason,
   undoPair,
   type SourceSwitchPlan,
   type SwitchCue,
@@ -57,6 +58,12 @@ export interface SourceSwitchDeps {
   /** Told when the cue changes (null: none). */
   onCue: (cue: SwitchCue | null) => void;
   onError?: (e: unknown) => void;
+  /**
+   * Told why an arrival ended without a switch (issue #16), so a miss is never silent: the
+   * backend's own reason when the planner said no, else the frontend's (declined, text_changed,
+   * pair_changed, plan_failed, source_auto, or why the selects refused the plan). Logging only.
+   */
+  onSkip?: (reason: string) => void;
   /**
    * The correction step (issue #208), optional: with `correct` and `isCorrectionEnabled` given, every
    * arrival is corrected FIRST (translate.Service.CorrectSource through the binding), and the
@@ -135,29 +142,45 @@ export function createSourceSwitcher(deps: SourceSwitchDeps) {
   async function autoSwitch(text: string, detected = ''): Promise<boolean> {
     if (deps.getPair().from === deps.autoCode) {
       setCorrection(null);
+      deps.onSkip?.('source_auto');
       return false;
     }
     // Correct first (issue #208); the switch is planned on the text that will be translated.
     const working = await workingText(text, detected);
-    if (isDeclined(declined, text)) return false;
+    if (isDeclined(declined, text)) {
+      deps.onSkip?.('declined');
+      return false;
+    }
     const prev = { ...deps.getPair() };
     let plan: SourceSwitchPlan;
     try {
       plan = await deps.plan({ text: working, from: prev.from, to: prev.to, detected });
     } catch (e) {
       deps.onError?.(e);
+      deps.onSkip?.('plan_failed');
       return false;
     }
     // The user moved on while the answer was on its way.
     const now = deps.getPair();
-    if (deps.getText() !== text || now.from !== prev.from || now.to !== prev.to) return false;
-    const pair = acceptSwitch(plan, {
+    if (deps.getText() !== text) {
+      deps.onSkip?.('text_changed');
+      return false;
+    }
+    if (now.from !== prev.from || now.to !== prev.to) {
+      deps.onSkip?.('pair_changed');
+      return false;
+    }
+    const ctx = {
       current: prev,
       autoCode: deps.autoCode,
       sourceOptions: deps.sourceOptions(),
       isSelectableTarget: deps.canBeTarget,
-    });
-    if (!pair) return false;
+    };
+    const pair = acceptSwitch(plan, ctx);
+    if (!pair) {
+      deps.onSkip?.(rejectReason(plan, ctx) ?? 'no_switch');
+      return false;
+    }
     // The switch changed the source the answer was asked under: it is still the answer for this text.
     if (memo?.key === memoKey(prev.from, text)) memo.key = memoKey(pair.from, text);
     setCue(makeCue(text, prev, pair));

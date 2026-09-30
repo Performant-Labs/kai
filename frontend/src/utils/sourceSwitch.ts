@@ -17,6 +17,8 @@ export interface SourceSwitchPlan {
   switched: boolean;
   from: string;
   to: string;
+  /** Why (model.SourceSwitch.Reason, issue #16): "switched", or what kept it from switching. */
+  reason?: string;
 }
 
 /** What acceptSwitch checks a plan against (all injected by the caller). */
@@ -41,12 +43,23 @@ export function acceptSwitch(
   plan: SourceSwitchPlan | null | undefined,
   ctx: AcceptContext,
 ): LangPair | null {
-  if (!plan || !plan.switched) return null;
-  if (ctx.current.from === ctx.autoCode) return null;
-  if (plan.to !== ctx.current.from || plan.from === plan.to) return null;
-  if (!ctx.sourceOptions.includes(plan.from)) return null;
-  if (!ctx.isSelectableTarget(plan.to)) return null;
-  return { from: plan.from, to: plan.to };
+  return rejectReason(plan, ctx) === null && plan ? { from: plan.from, to: plan.to } : null;
+}
+
+/**
+ * Why acceptSwitch refuses a plan (issue #16), null when it accepts it. When the planner itself
+ * said no, its own reason is passed through ("no_switch" if it gave none).
+ */
+export function rejectReason(
+  plan: SourceSwitchPlan | null | undefined,
+  ctx: AcceptContext,
+): string | null {
+  if (!plan || !plan.switched) return plan?.reason || 'no_switch';
+  if (ctx.current.from === ctx.autoCode) return 'source_auto';
+  if (plan.to !== ctx.current.from || plan.from === plan.to) return 'plan_mismatch';
+  if (!ctx.sourceOptions.includes(plan.from)) return 'source_not_offered';
+  if (!ctx.isSelectableTarget(plan.to)) return 'target_not_selectable';
+  return null;
 }
 
 /** The note that says the pair was switched, and what the swap button restores. */

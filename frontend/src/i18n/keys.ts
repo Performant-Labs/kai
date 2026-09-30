@@ -360,6 +360,7 @@ export type Dict = {
     loadLangListFailed: string;
     translateRequestFailed: string;
     sourceSwitchFailed: string;
+    sourceSwitchSkipped: string;
     correctFailed: string;
     correctAvailabilityFailed: string;
     generalSaveCorrectFailed: string;

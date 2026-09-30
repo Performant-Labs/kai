@@ -285,6 +285,8 @@
   "log.single_instance_second_launch": "检测到已有 Kai 实例，已将其主窗口唤到前台",
   "log.source_auto_clipboard": "自动剪贴板快捷键",
   "log.source_copy_key": "唤起主窗口模拟复制",
+  "log.source_switch_plan": "[源语言切换] 决策",
+  "log.source_switch_skipped": "[源语言切换] 窗口跳过",
   "log.swiftbridge_loaded": "[动态桥接] Swift 桥接已加载",
   "log.swiftbridge_unavailable": "[动态桥接] Swift 桥接不可用（动态库未加载），功能降级",
   "log.translate_chunked": "[翻译] 分段翻译 引擎={{.Engine}} 分段={{.Chunks}} 部分={{.Parts}} 目标={{.Target}} 单位={{.Unit}}",

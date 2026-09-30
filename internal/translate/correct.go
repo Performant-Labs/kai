@@ -168,8 +168,8 @@ func (s *Service) correctTimeoutOrDefault() time.Duration {
 // a Spanish pin is corrected as English and never turned into Spanish. Text the detector is unsure
 // about (a Spanish and English mix) stays in the pinned language.
 func (s *Service) correctionLanguage(trimmed string, req model.CorrectionRequest) model.Language {
-	detected, ok := s.detectForSwitch(trimmed, req.Detected)
-	if !ok || detected.Covers(req.From) {
+	detected, _, reason := s.detectForSwitch(trimmed, req.Detected)
+	if reason != "" || detected.Covers(req.From) {
 		return req.From
 	}
 	return s.resultFrom(model.Auto, detected).SelectableOr(detected)
