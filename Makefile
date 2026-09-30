@@ -13,6 +13,10 @@ export
 endif
 
 # 版本号
+# Signing (macOS): make darwin-package KAI_SIGN_IDENTITY="Kai Dev". Empty means ad-hoc. See docs/dev-signing.md.
+KAI_SIGN_IDENTITY ?=
+SIGN_ENV = $(if $(KAI_SIGN_IDENTITY),KAI_SIGN_IDENTITY="$(KAI_SIGN_IDENTITY)")
+
 VERSION     ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 # 构建时间(UTC)
 BUILD_TIME  ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -89,7 +93,7 @@ swift-build: ## 手动编译 Swift 桥接动态库（libkai_bridge.dylib，含�
 code-generate: sqlc i18n swift-build ##  代码生成 sqlc i18n swift
 
 dev: ## 运行 Wails 开发模式
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 dev -port $(PORT)
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) $(SIGN_ENV) wails3 dev -port $(PORT)
 
 # ==================== 格式化 / 修复 ====================
 
@@ -223,13 +227,13 @@ vuln-go: ## Go 依赖漏洞检查（发现漏洞即停止）
 # ==================== 构建打包 ====================
 
 darwin-build: ## [macOS] 编译正式二进制 -> bin/Kai（不打包成 .app）
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task darwin:build
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) $(SIGN_ENV) wails3 task darwin:build
 
 darwin-package: ## [macOS] 正式打包 -> bin/Kai.app（打包成 .app）
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task darwin:package
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) $(SIGN_ENV) wails3 task darwin:package
 
 darwin-package-dmg: ## [macOS] 打包并生成 bin/Kai.dmg 安装包
-	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task darwin:package:dmg
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) $(SIGN_ENV) wails3 task darwin:package:dmg
 
 windows-build: ## [Windows] 编译正式二进制 -> bin/Kai.exe（不打包）
 	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) wails3 task windows:build
