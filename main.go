@@ -147,6 +147,12 @@ func main() {
 	if err := swiftbridge.Init(""); err != nil {
 		log.Printf("WARN: failed to load Swift bridge dynamically (some macOS-only features unavailable): %v", err)
 	}
+	// Issue #17: start recording how this process was launched (login item vs user). The launch
+	// event is only readable while AppKit delivers it, so this must run before app.Run().
+	service.ObserveLaunch()
+	// Issue #17: first ever launch = no settings.json yet. Must be read before NewService below
+	// writes the default file.
+	firstRun := service.IsFirstRun(dataDir)
 
 	// ── Phase two: load settings (logging/i18n depend on it; must run before database init) ──
 	settingsService, err := settings.NewService(dataDir)
@@ -629,6 +635,27 @@ func main() {
 		screenshotWindow.Hide()
 	})
 	registerTray(app, hm, configSvc, windowSvc, settingsService)
+
+	// Issue #17: show the translate window on every launch from the Dock or Finder; a launch at
+	// login stays quiet (service.DecideLaunch; an undetectable launch shows the window). Every
+	// window is created hidden above, so nothing else shows one at startup. A second launch while
+	// running is OnSecondInstanceLaunch above. Wait for ApplicationStarted so the app loop and
+	// the lazily built webview exist, and go through windowSvc.ShowTranslateWindow
+	// (showAndFocus, never a bare Show().Focus()) on the main thread via application.InvokeAsync:
+	// a native window call off the main thread crashes the process (#163, #167).
+	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		decision := service.DecideLaunch(service.DetectLaunchKind(), firstRun)
+		slog.Info("startup launch decision", slog.Bool("show", decision.Show), slog.Bool("center", decision.Center))
+		if !decision.Show {
+			return
+		}
+		application.InvokeAsync(func() {
+			if decision.Center {
+				translateWindow.Center()
+			}
+			windowSvc.ShowTranslateWindow()
+		})
+	})
 
 	// After a language change, rebuild the tray menu copy with the latest language (the tray is
 	// native and can only be rebuilt by the backend). Prefer the language carried in the event

@@ -11,6 +11,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ### Bug Fixes
 - The white flash when a window is opened again is gone (#22, after #15): the web view inside each window drew its own white background every time a hidden window was shown, so Settings flashed white on every open even in the dark theme. Each window's web view now draws no background of its own, so the window's dark or light colour shows through, and the colours follow the theme when it changes (System follows the Mac's appearance).
 - No more white flash when a window opens in the dark theme (#15): the native window colour is now chosen from the theme before the window draws, and each page applies the last saved theme before its first paint (falling back to the system appearance). The updater window already did this. Not yet judged in the real app.
+- Kai now shows the translate window every time you open it from the Dock or Finder, not only on a later click of the tray or Dock icon (#17). The very first launch on a fresh data folder centres the window. Launching at login stays quiet, with no window, and opening Kai a second time while it runs still brings the window forward. Where macOS cannot say how Kai was launched, the window is shown.
 
 ## [0.2.0] - 2026-09-29
 
