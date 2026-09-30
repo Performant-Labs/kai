@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"cnb.cool/dtapp/kai/internal/analytics"
@@ -440,6 +441,11 @@ func main() {
 	// currentDark is the resolved theme right now (System follows the Mac), read when a window becomes
 	// ready and when the theme changes (issue #22).
 	currentDark := func() bool { return resolveUpdaterTheme(settingsService.Get().Theme, app) == "dark" }
+	// translateReady is closed once the translate window's web view has been prepared (see
+	// applyWindowBackground): the launch show waits for it so the window is never drawn with the web
+	// view's own white background (issue #22).
+	translateReady := make(chan struct{})
+	var translateReadyOnce sync.Once
 	macAppearance := application.NSAppearanceNameAqua
 	winTheme := application.Light
 	bgColour := windowBackground(startupDark)
@@ -557,6 +563,7 @@ func main() {
 		application.InvokeAsync(func() {
 			windowSvc.DisableRestoration(translateWindow)
 			applyWindowBackground(windowSvc, translateWindow, currentDark(), false)
+			translateReadyOnce.Do(func() { close(translateReady) })
 		})
 	})
 	// Issue #173 item 5: persist the translate window's size across relaunches. WindowDidResize
@@ -649,12 +656,20 @@ func main() {
 		if !decision.Show {
 			return
 		}
-		application.InvokeAsync(func() {
-			if decision.Center {
-				translateWindow.Center()
+		go func() {
+			// Wait for the translate window's web view to be prepared (issue #22), at most 2 s so a
+			// missing ready event can never leave the user with no window.
+			select {
+			case <-translateReady:
+			case <-time.After(2 * time.Second):
 			}
-			windowSvc.ShowTranslateWindow()
-		})
+			application.InvokeAsync(func() {
+				if decision.Center {
+					translateWindow.Center()
+				}
+				windowSvc.ShowTranslateWindow()
+			})
+		}()
 	})
 
 	// After a language change, rebuild the tray menu copy with the latest language (the tray is
