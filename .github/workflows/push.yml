@@ -7,12 +7,15 @@
 # https://github.com/pnpm/action-setup
 name: PushRequest
 
-# Phase 2 of #20 (#23): automatic push/pull_request triggers are retired — the fleet CI
-# (ci.yml + ci.yaml) covers the same Linux checks, so this runs on workflow_dispatch only.
-# Kai-private only; never submitted upstream. The darwin/Swift build is not covered by this
-# workflow or the fleet CI and remains a Mac task.
+# The Linux build and test suite. It runs on every pull request and every push to master
+# (the shared CI it once deferred to lived in a private repository and is gone; ci.yml now
+# only lints workflows and scans for secrets), and can be started by hand. Everything runs on
+# GitHub-hosted runners. The darwin/Swift build is not covered here and remains a Mac task.
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
 
 permissions:
   contents: read
@@ -25,6 +28,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      # Node's experimental Web Storage shadows the test environment's localStorage.
+      NODE_OPTIONS: --no-experimental-webstorage
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
