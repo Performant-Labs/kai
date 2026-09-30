@@ -74,9 +74,25 @@ export async function initTheme(): Promise<void> {
   unregister.push(onEvent(EventLocaleChanged, () => applyClass()));
 }
 
+// Issue #15: the pages' inline <head> script reads this cache to pick the colour before the first
+// paint. The store stays the source of truth: it rewrites the cache on every theme change.
+export const THEME_CACHE_MODE_KEY = 'kai.theme.mode';
+export const THEME_CACHE_RESOLVED_KEY = 'kai.theme.resolved';
+
+function writeThemeCache(): void {
+  try {
+    localStorage.setItem(THEME_CACHE_MODE_KEY, get(themeMode));
+    localStorage.setItem(THEME_CACHE_RESOLVED_KEY, get(resolvedTheme));
+  } catch {
+    // localStorage can be unavailable; the cache is only an optimisation.
+  }
+}
+
 function applyClass(): void {
   const dark = get(isDark);
   document.documentElement.classList.toggle('dark', dark);
+  document.documentElement.style.backgroundColor = dark ? darkVars['--app-bg'] : lightVars['--app-bg'];
+  writeThemeCache();
 }
 
 export async function setTheme(mode: ThemeMode): Promise<void> {

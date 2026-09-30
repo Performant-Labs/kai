@@ -433,6 +433,7 @@ func main() {
 	startupDark := resolveUpdaterTheme(settingsService.Get().Theme, app) == "dark"
 	macAppearance := application.NSAppearanceNameAqua
 	winTheme := application.Light
+	bgColour := windowBackground(startupDark)
 	if startupDark {
 		macAppearance = application.NSAppearanceNameDarkAqua
 		winTheme = application.Dark
@@ -457,12 +458,13 @@ func main() {
 		// zoom/fullscreen toggle) growing it, and MinWidth/MinHeight are kept for
 		// symmetry/documentation of the intended fixed size, though DisableResize alone is
 		// sufficient.
-		MinWidth:      900,
-		MinHeight:     600,
-		MaxWidth:      1280,
-		MaxHeight:     800,
-		DisableResize: true,
-		URL:           "/settings.html",
+		MinWidth:         900,
+		MinHeight:        600,
+		MaxWidth:         1280,
+		MaxHeight:        800,
+		DisableResize:    true,
+		URL:              "/settings.html",
+		BackgroundColour: bgColour,
 		Mac: application.MacWindow{
 			Appearance: macAppearance,
 		},
@@ -515,13 +517,14 @@ func main() {
 	// would be smaller than the window's own MinWidth/MinHeight (e.g. an old/corrupt value).
 	translateWidth, translateHeight := translateWindowSize(settingsService, widthForDefaultText(960), 640, widthForDefaultText(780), 520)
 	translateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:      model.WindowTranslate,
-		Title:     i18n.T("window.translate_title"),
-		Width:     translateWidth,
-		Height:    translateHeight,
-		MinWidth:  widthForDefaultText(780),
-		MinHeight: 520,
-		URL:       "/translate.html",
+		Name:             model.WindowTranslate,
+		Title:            i18n.T("window.translate_title"),
+		Width:            translateWidth,
+		Height:           translateHeight,
+		MinWidth:         widthForDefaultText(780),
+		MinHeight:        520,
+		URL:              "/translate.html",
+		BackgroundColour: bgColour,
 		Mac: application.MacWindow{
 			Appearance: macAppearance,
 		},
@@ -574,13 +577,14 @@ func main() {
 	// Screenshot translate window: image on the left, translation on the right.
 	// Summoned by the screenshot hotkey/EventScreenshotOCR.
 	screenshotWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:      model.WindowScreenshot,
-		Title:     i18n.T("window.screenshot_title"),
-		Width:     widthForDefaultText(900),
-		Height:    600,
-		MinWidth:  widthForDefaultText(600),
-		MinHeight: 400,
-		URL:       "/screenshot.html",
+		Name:             model.WindowScreenshot,
+		Title:            i18n.T("window.screenshot_title"),
+		Width:            widthForDefaultText(900),
+		Height:           600,
+		MinWidth:         widthForDefaultText(600),
+		MinHeight:        400,
+		URL:              "/screenshot.html",
+		BackgroundColour: bgColour,
 		Mac: application.MacWindow{
 			Appearance: macAppearance,
 		},
