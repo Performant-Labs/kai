@@ -99,7 +99,7 @@ export const zh: Dict = {
     autoClipboard: '按下快捷键时自动翻译剪贴板中的内容',
     copyKeyFailed: '未能获取选中内容 — 请手动复制后再次按下快捷键',
     doubleCopyPermission:
-      '双击 Cmd+C 翻译需要“输入监控”权限。请打开“系统设置 > 隐私与安全性 > 输入监控”，开启 Kai，然后在“设置 > 通用”中把该选项关闭再重新打开。',
+      '双击 Cmd+C 翻译需要“输入监控”权限。请打开“系统设置 > 隐私与安全性 > 输入监控”，开启 Kai，然后在“设置 > 快捷键”中把该选项关闭再重新打开。',
     accessibilityMissing:
       'Kai 无法复制你选中的文字：macOS 尚未授予它“辅助功能”权限。请打开“系统设置 > 隐私与安全性 > 辅助功能”（macOS 27 中名为“设备控制与数据访问”），开启 Kai。如果刚安装或重新构建过 Kai，请在该列表中选中 Kai，用减号移除后再重新添加。',
     cancel: '取消',
@@ -396,7 +396,7 @@ export const zh: Dict = {
     generalSaveLangFailed: '[通用] 保存语言设置失败',
     generalSaveAnalyticsFailed: '[通用] 保存匿名统计开关失败',
     generalSaveAutoSwitchFailed: '[通用] 保存自动切换源语言开关失败',
-    generalSaveDoubleCopyFailed: '[通用] 保存双击 Cmd+C 翻译开关失败',
+    shortcutSaveDoubleCopyFailed: '[快捷键] 保存双击 Cmd+C 翻译开关失败',
     generalSaveFontSizeFailed: '[通用] 保存文字大小失败',
     shortcutCheckAccessibilityFailed: '[快捷键] 检测辅助功能授权失败',
     shortcutOpenAccessibilityFailed: '[快捷键] 打开辅助功能设置失败',

@@ -4,6 +4,7 @@
   import {
     GetConfig,
     SaveConfig,
+    GetDoubleCopyStatus,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
   import {
     CheckAccessibility,
@@ -15,6 +16,7 @@
   import { isMac as detectMac } from '../../runtime/platform';
   import { onEvent } from '../../runtime';
   import { EventAutoClipboardChanged } from '../../utils/events';
+  import { track } from '../../utils/analytics';
 
   // Form shape of a single (registration) hotkey (key + enabled state), aligned with the backend's HotkeyEntry.
   type HotkeyEntry = { key: string; enabled: boolean };
@@ -260,6 +262,46 @@
       });
     }
   }
+
+  // --- Translate on double Cmd+C (issue #199, moved here by ADR-0003 / #122) ---
+  // A passive listen-only trigger with its own on/off switch, not a recordable shortcut. OFF by
+  // default (it needs the Input Monitoring permission); the Go side owns the default and the
+  // listener's state, this mirrors them.
+  let doubleCopy = $state(false);
+  let doubleCopyMissingPermission = $state(false);
+
+  async function refreshDoubleCopyStatus() {
+    try {
+      doubleCopyMissingPermission = (await GetDoubleCopyStatus()) === 'missing_permission';
+    } catch {
+      doubleCopyMissingPermission = false;
+    }
+  }
+
+  onMount(async () => {
+    try {
+      const cfg = await GetConfig();
+      if (cfg) doubleCopy = cfg.double_copy_translate ?? false;
+    } catch {
+      /* Ignore read failures; fall back to the default (off) */
+    }
+    await refreshDoubleCopyStatus();
+  });
+
+  async function toggleDoubleCopy(e: Event) {
+    const enabled = (e.target as HTMLInputElement).checked;
+    doubleCopy = enabled;
+    try {
+      const cfg = (await GetConfig()) ?? ({} as any);
+      // SaveConfig makes the backend start or stop the listener (and ask for the permission when
+      // this is the user switching it on), so the status is read after it.
+      await SaveConfig({ ...cfg, double_copy_translate: enabled });
+      track('feature_toggled', { feature: 'double_copy_translate', enabled });
+    } catch (err) {
+      console.error(t('log.shortcutSaveDoubleCopyFailed'), err);
+    }
+    await refreshDoubleCopyStatus();
+  }
 </script>
 
 <svelte:window onkeydown={onHotkeyKeydown} onfocus={refreshCopyDisabled} />
@@ -442,4 +484,23 @@
       {t('settings.hkSave')}
     </button>
   </div>
+</div>
+
+<!-- Translate on double Cmd+C: a passive trigger with its own switch (ADR-0003 / #122) -->
+<div class="u-card u-card--panel mt-5 p-5">
+  <div class="mb-1 text-sm font-medium">{t('settings.doubleCopy')}</div>
+  <p class="u-muted mb-3 text-xs">{t('settings.doubleCopyHint')}</p>
+  <label
+    class="u-switch"
+    aria-label={t('settings.doubleCopy')}
+    title={t('settings.doubleCopyHint')}
+  >
+    <input type="checkbox" checked={doubleCopy} onchange={toggleDoubleCopy} />
+    <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
+  </label>
+  {#if doubleCopy && doubleCopyMissingPermission}
+    <p class="mt-3 text-xs" role="alert" data-testid="double-copy-permission">
+      {t('settings.doubleCopyPermission')}
+    </p>
+  {/if}
 </div>

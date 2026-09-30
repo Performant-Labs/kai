@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { en } from '../../i18n/en-US.ts';
 import { zh } from '../../i18n/zh-CN.ts';
 
-// Issue #199: the REAL GeneralTab.svelte, mounted, with only the generated bindings faked. The
+// Issue #199 / ADR-0003 (#122): the REAL ShortcutsTab.svelte, mounted, with only the generated bindings faked. The
 // double-copy switch is off by default, saves through SaveConfig without touching other fields,
 // and shows an actionable Input Monitoring message when the backend says the permission is missing.
 
@@ -21,8 +21,19 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts', () => 
   GetTheme: async () => 'light',
   SetTheme: async () => {},
 }));
+vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts', () => ({
+  CheckAccessibility: async () => true,
+  OpenAccessibilitySettings: async () => {},
+  CheckScreenRecording: async () => true,
+  OpenScreenRecordingSettings: async () => {},
+}));
+vi.mock('@wailsio/runtime', () => ({
+  Dialogs: { Info: async () => {}, Error: async () => {} },
+  Events: { On: () => () => {}, Off: () => {}, Emit: () => {} },
+}));
 vi.mock('../../utils/analytics', () => ({ track: vi.fn() }));
 
+import ShortcutsTab from './ShortcutsTab.svelte';
 import GeneralTab from './GeneralTab.svelte';
 
 let app: Record<string, unknown> | undefined;
@@ -38,10 +49,10 @@ const toggle = () =>
   target.querySelector('label[aria-label="Translate on double Cmd+C"] input') as HTMLInputElement;
 const note = () => target.querySelector('[data-testid="double-copy-permission"]');
 
-async function mountTab() {
+async function mountTab(Comp: any = ShortcutsTab, props: Record<string, unknown> = {}) {
   target = document.createElement('div');
   document.body.appendChild(target);
-  app = mount(GeneralTab, { target, props: { curLang: 'en-US' } });
+  app = mount(Comp, { target, props });
   await settle();
 }
 
@@ -59,13 +70,20 @@ afterEach(() => {
   target?.remove();
 });
 
-describe('GeneralTab double-copy switch, mounted', () => {
+describe('ShortcutsTab double-copy switch, mounted', () => {
   it('is off when the config says off, and has a tooltip', async () => {
     await mountTab();
     expect(toggle()).not.toBeNull();
     expect(toggle().checked).toBe(false);
     const label = toggle().closest('label')!;
     expect(label.getAttribute('title')).toBe(en.settings.doubleCopyHint);
+    expect(note()).toBeNull();
+  });
+
+  it('is off when the config has no value for it (the default)', async () => {
+    delete h.config.double_copy_translate;
+    await mountTab();
+    expect(toggle().checked).toBe(false);
     expect(note()).toBeNull();
   });
 
@@ -137,6 +155,30 @@ describe('GeneralTab double-copy switch, mounted', () => {
   });
 });
 
+describe('double-copy switch location', () => {
+  it('GeneralTab no longer renders the switch, its hint or the permission note', async () => {
+    h.config.double_copy_translate = true;
+    h.status = 'missing_permission';
+    await mountTab(GeneralTab, { curLang: 'en-US' });
+    expect(toggle()).toBeNull();
+    expect(note()).toBeNull();
+    expect(target.textContent).not.toContain(en.settings.doubleCopy);
+    expect(target.textContent).not.toContain(en.settings.doubleCopyHint);
+  });
+
+  it('a failed save is logged, does not throw, and the permission status is still re-read', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    h.saveConfig.mockRejectedValue(new Error('disk full'));
+    await mountTab();
+    const before = h.getStatus.mock.calls.length;
+    toggle().click();
+    await settle();
+    expect(err).toHaveBeenCalled();
+    expect(h.getStatus.mock.calls.length).toBeGreaterThan(before);
+    err.mockRestore();
+  });
+});
+
 describe('double-copy copy', () => {
   it('exists in both locales with the same keys, differing text', () => {
     for (const k of ['doubleCopy', 'doubleCopyHint', 'doubleCopyPermission'] as const) {
@@ -144,6 +186,8 @@ describe('double-copy copy', () => {
       expect(zh.settings[k], `zh ${k}`).toBeTruthy();
       expect(en.settings[k]).not.toBe(zh.settings[k]);
     }
+    expect(en.log.shortcutSaveDoubleCopyFailed).toBeTruthy();
+    expect(zh.log.shortcutSaveDoubleCopyFailed).toBeTruthy();
     expect(en.translate.doubleCopyPermission).toBeTruthy();
     expect(zh.translate.doubleCopyPermission).toBeTruthy();
   });
@@ -156,5 +200,14 @@ describe('double-copy copy', () => {
     for (const s of [zh.settings.doubleCopyPermission, zh.translate.doubleCopyPermission]) {
       expect(s).toContain('输入监控');
     }
+  });
+
+  it('every text that points at the switch says Settings > Shortcuts, never General', () => {
+    expect(en.translate.doubleCopyPermission).toContain('Settings > Shortcuts');
+    expect(zh.translate.doubleCopyPermission).toContain('设置 > 快捷键');
+    for (const s of [en.translate.doubleCopyPermission, en.settings.doubleCopyPermission]) {
+      expect(s).not.toContain('Settings > General');
+    }
+    expect(zh.translate.doubleCopyPermission).not.toContain('通用');
   });
 });

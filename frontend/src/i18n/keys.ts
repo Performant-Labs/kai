@@ -387,7 +387,7 @@ export type Dict = {
     generalSaveLangFailed: string;
     generalSaveAnalyticsFailed: string;
     generalSaveAutoSwitchFailed: string;
-    generalSaveDoubleCopyFailed: string;
+    shortcutSaveDoubleCopyFailed: string;
     generalSaveFontSizeFailed: string;
     shortcutCheckAccessibilityFailed: string;
     shortcutOpenAccessibilityFailed: string;
