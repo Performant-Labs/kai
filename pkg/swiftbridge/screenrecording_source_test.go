@@ -47,3 +47,32 @@ func TestScreenRecordingRequestAsksBeforeOpeningThePane(t *testing.T) {
 		t.Error("the permission must be requested before the pane opens, so Kai is already in the list when the pane appears")
 	}
 }
+
+// Input Monitoring: the Settings page polls kai_input_monitoring_enabled every 3 seconds (issue
+// #14). The query must never create an event tap, because creating a keyboard tap can make macOS
+// ask the user for the permission, and a tap created on every poll also leaked a retained object.
+// CGPreflightListenEventAccess() answers without a prompt and without creating anything.
+func inputMonitoringBody(t *testing.T, src string) string {
+	t.Helper()
+	i := strings.Index(src, "func kai_input_monitoring_enabled(")
+	if i < 0 {
+		t.Fatal("kai_input_monitoring_enabled not found in apple_accessibility.swift")
+	}
+	rest := src[i:]
+	if j := strings.Index(rest[1:], "@_cdecl"); j >= 0 {
+		rest = rest[:j+1]
+	}
+	return rest
+}
+
+func TestInputMonitoringQueryNeverPrompts(t *testing.T) {
+	body := inputMonitoringBody(t, readSwift(t, "apple_accessibility.swift"))
+	if !strings.Contains(body, "CGPreflightListenEventAccess()") {
+		t.Error("kai_input_monitoring_enabled must use CGPreflightListenEventAccess(), which never prompts")
+	}
+	for _, banned := range []string{"tapCreate", "CGEvent.tap", "passRetained"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("kai_input_monitoring_enabled must not use %s: creating an event tap can prompt the user and it is polled every 3 s", banned)
+		}
+	}
+}

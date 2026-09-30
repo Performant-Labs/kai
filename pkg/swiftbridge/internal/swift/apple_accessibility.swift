@@ -121,31 +121,17 @@ public func kai_screen_size(
 // only the query capability is kept; see the commented example in the detectSourceLanguage
 // module.
 
-// kai_input_monitoring_enabled: detects whether Input Monitoring is granted (a failed
-// CGEvent.tap creation means unauthorized).
+// kai_input_monitoring_enabled: detects whether Input Monitoring is granted, with
+// CGPreflightListenEventAccess(), which never shows a permission prompt and creates nothing. (It used
+// to create and drop a real event tap to see whether creation failed; that can ask the user for the
+// permission, and the Settings page now polls this every 3 seconds.)
 // out receives "true"/"false".
 @_cdecl("kai_input_monitoring_enabled")
 public func kai_input_monitoring_enabled(
   _ out: UnsafeMutablePointer<CChar>?,
   _ out_cap: Int32
 ) -> Int32 {
-  var enabled = false
-  if let src = CGEventSource(stateID: .combinedSessionState) {
-    let tap = CGEvent.tapCreate(
-      tap: .cgSessionEventTap,
-      place: .headInsertEventTap,
-      options: .defaultTap,
-      eventsOfInterest: CGEventMask(1 << CGEventType.keyDown.rawValue),
-      callback: { _, _, _, _ in return Unmanaged.passRetained(CGEvent(source: nil)!) },
-      userInfo: UnsafeMutableRawPointer(Unmanaged.passRetained(src).toOpaque())
-    )
-    if let tap = tap {
-      enabled = true
-      CFMachPortInvalidate(tap)
-    } else {
-      bridgeFileLog(bridgeLogText("input.tap_fail"), level: BRIDGE_LOG_WARN)
-    }
-  }
+  let enabled = CGPreflightListenEventAccess()
   bridgeFileLog(bridgeLogText("input.tap_enabled", String(enabled)), level: BRIDGE_LOG_DEBUG)
   return writeCString(enabled ? "true" : "false", into: out, cap: out_cap)
 }
