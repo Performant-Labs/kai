@@ -14,4 +14,4 @@ Environment note (verified 2026-09-25 on Node 26.7): the frontend tests fail on 
 
 ## Worktrees and PRs
 
-Work in a per-issue worktree under `.worktrees/` (branch `issue-NNNN-<slug>`), never in the primary checkout. Issues and PRs go to `Performant-Labs/kai-private`, never to upstream `dtapps/kai`.
+Work in a per-issue worktree under `.worktrees/` (branch `issue-NNNN-<slug>`), never in the primary checkout. Issues and PRs go to `Performant-Labs/kai` (pass `--repo Performant-Labs/kai --base master`), never to upstream `dtapps/kai`. The old private repository is archived.

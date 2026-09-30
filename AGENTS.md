@@ -19,14 +19,17 @@ exactly one place: link to it, do not restate it.
 
 - All work happens in a per-issue worktree under `.worktrees/` (branch `issue-NNNN-<slug>`),
   never in the primary checkout.
-- Issues and PRs go to `Performant-Labs/kai-private`, never to the upstream `dtapps/kai`.
-  The public fork `performant-labs/kai` and upstream `dtapps/kai` are touched **only** for
-  upstream contributions — and only when an issue explicitly asks for one.
+- Issues and PRs go to `Performant-Labs/kai` (the public home), never to the upstream
+  `dtapps/kai`. Always pass `--repo Performant-Labs/kai --base master` to `gh pr create`:
+  this repository began as a fork, and the default target of a fork is its parent. The old
+  private repository `Performant-Labs/kai-private` is archived; its issue and PR numbers
+  (`#N`) in older comments refer to it.
+- Upstream `dtapps/kai` is touched **only** for upstream contributions, and only when an
+  issue explicitly asks for one.
 - Upstream contribution recipe (only when an issue asks for it): branch off
-  `upstream/master` containing **only** the intended change — and **never** `.opencode/`,
-  `AGENTS.md`, `opencode.json`, `docs/handoffs/`, or `.github/workflows/ci.yml`; push that
-  branch to the `fork` remote; open the PR with
-  `gh pr create --repo dtapps/kai --head performant-labs:<branch>`.
+  `upstream/master` containing **only** the intended change, and **never** `.opencode/`,
+  `AGENTS.md`, `opencode.json`, `docs/handoffs/`, or `.github/workflows/ci.yml`; open the PR
+  with `gh pr create --repo dtapps/kai --head Performant-Labs:<branch>`.
 
 ## OpenCode coding pipeline
 

@@ -23,7 +23,9 @@ jobs:
       - uses: actions/checkout@v7
       - name: Lint workflow files
         run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          curl -fsSLo actionlint.tgz https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  actionlint.tgz" | sha256sum -c -
+          tar -xzf actionlint.tgz actionlint
           # release.yml is upstream's: it uses macOS/Windows runner labels this
           # actionlint release does not know, and has shellcheck notes.
           ./actionlint -ignore 'label ".*" is unknown' -ignore 'shellcheck reported issue'
@@ -37,5 +39,7 @@ jobs:
           fetch-depth: 0
       - name: Scan the full history
         run: |
-          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz | tar -xz gitleaks
+          curl -fsSLo gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz
+          echo "fa0500f6b7e41d28791ebc680f5dd9899cd42b58629218a5f041efa899151a8e  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
           ./gitleaks git . --no-banner --redact
