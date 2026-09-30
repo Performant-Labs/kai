@@ -107,7 +107,7 @@ certificate or notarization secrets. Two consequences to state in every release'
   1Password has none either. It would also stop every build invalidating the Accessibility grant.
   Until then the two bullets above are the cost of shipping ad-hoc signed.
 - **Developer builds can avoid the first bullet** with a free local certificate; see
-  [dev-signing.md](dev-signing.md). Releases stay ad-hoc unless `KAI_SIGN_IDENTITY` is set.
+  [dev-signing.md](dev-signing.md). Releases stay ad-hoc unless `KAI_SIGN_IDENTITY` is set. Test builds are a separate app, `Kai-dev` (`net.dtapp.kai.dev`, `make dev-app`): see the same file.
 
 ## The in-app updater (no updates until releases are public)
 

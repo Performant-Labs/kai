@@ -1,4 +1,4 @@
-.PHONY: help icons build-assets dev darwin-build darwin-package darwin-dmg windows-build windows-package linux-build linux-package tidy bindings sqlc swift-build lint-go lint-fe fmt-fe format-swift check-cross test-go test-frontend
+.PHONY: help icons build-assets dev dev-app darwin-build darwin-package darwin-dmg windows-build windows-package linux-build linux-package tidy bindings sqlc swift-build lint-go lint-fe fmt-fe format-swift check-cross test-go test-frontend
 
 # ==================== 构建配置 ====================
 
@@ -225,6 +225,16 @@ vuln-go: ## Go 依赖漏洞检查（发现漏洞即停止）
 	govulncheck -show verbose ./...
 
 # ==================== 构建打包 ====================
+
+# Kai-dev: the development variant (bundle id net.dtapp.kai.dev, data ~/.kai.dev). Unlike the prod targets
+# below it signs with the "Kai Dev" certificate by default (an empty KAI_SIGN_IDENTITY also means that), and
+# DEV=true is fixed: it can not be overridden into a prod build. It fails BEFORE building when the certificate
+# is missing, and never falls back to ad-hoc. See docs/dev-signing.md.
+DEV_SIGN_IDENTITY = $(or $(KAI_SIGN_IDENTITY),Kai Dev)
+
+dev-app: ## [macOS] Dev variant -> bin/Kai-dev.app (net.dtapp.kai.dev, signed with the "Kai Dev" certificate; see docs/dev-signing.md)
+	KAI_SIGN_IDENTITY="$(DEV_SIGN_IDENTITY)" bash scripts/codesign-app.sh --check
+	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=true KAI_SIGN_IDENTITY="$(DEV_SIGN_IDENTITY)" wails3 task darwin:package:dev
 
 darwin-build: ## [macOS] 编译正式二进制 -> bin/Kai（不打包成 .app）
 	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=$(DEV) $(SIGN_ENV) wails3 task darwin:build

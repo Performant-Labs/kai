@@ -2,6 +2,7 @@
 # Sign a Kai .app bundle. Used by build/darwin/Taskfile.yml for the release and dev variants.
 #
 #   scripts/codesign-app.sh /path/to/Kai.app
+#   scripts/codesign-app.sh --check         only verify that KAI_SIGN_IDENTITY (if set) exists; signs nothing
 #
 # With KAI_SIGN_IDENTITY unset (or empty) this is the historical ad-hoc signature, byte for byte:
 #   codesign --force --deep --sign - APP
@@ -11,11 +12,16 @@
 # falls back to ad-hoc when an identity was asked for.
 set -euo pipefail
 
+check=0
+if [[ "${1:-}" == "--check" ]]; then check=1; shift; fi
 app="${1:-}"
-[[ -n "$app" ]] || { echo "usage: $0 /path/to/Kai.app" >&2; exit 2; }
+if [[ $check -eq 0 ]]; then
+  [[ -n "$app" ]] || { echo "usage: $0 /path/to/Kai.app | $0 --check" >&2; exit 2; }
+fi
 
 identity="${KAI_SIGN_IDENTITY:-}"
 if [[ -z "$identity" ]]; then
+  [[ $check -eq 1 ]] && exit 0
   exec codesign --force --deep --sign - "$app"
 fi
 
@@ -33,4 +39,5 @@ if ! printf '%s\n' "$listing" | grep -F -q -- "$identity"; then
   exit 1
 fi
 
+[[ $check -eq 1 ]] && exit 0
 exec codesign --force --deep --sign "$identity" "$app"

@@ -354,7 +354,7 @@ func main() {
 		// (the app's main surface) to the foreground, avoiding multi-instance contention over the
 		// database/hotkeys/tray.
 		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: "cnb.cool.dtapp.kai",
+			UniqueID: buildinfo.SingleInstanceID(),
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 				slog.Info(i18n.T("log.single_instance_second_launch"))
 				// Kai has no persistent main window (tray + Dock icon, issue #165); on second launch,

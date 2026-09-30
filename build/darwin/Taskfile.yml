@@ -211,19 +211,36 @@ tasks:
     cmds:
       - 'echo "Skipping codesign (not available on {{OS}}). Sign the .app on macOS before distribution."'
 
-  run:
+  package:dev:
+    summary: Packages the DEV build as bin/Kai-dev.app (bundle id net.dtapp.kai.dev); launches nothing
+    desc: |
+      The development variant: Info.dev.plist (name Kai-dev, identifier net.dtapp.kai.dev), signed by
+      scripts/codesign-app.sh (KAI_SIGN_IDENTITY; `make dev-app` defaults it to "Kai Dev"). The
+      caller passes DEV=true so the binary uses ~/.kai.dev. See docs/dev-signing.md.
+    deps:
+      - task: build
     cmds:
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
-      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
+      - task: create:dev:app:bundle
+
+  create:dev:app:bundle:
+    summary: Creates and signs bin/Kai-dev.app from Info.dev.plist
+    internal: true
+    cmds:
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}-dev.app/Contents/MacOS"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}-dev.app/Contents/Resources"
+      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}-dev.app/Contents/Resources"
       - |
         if [ -f build/darwin/Assets.car ]; then
-          cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
+          cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}-dev.app/Contents/Resources"
         fi
-      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
-      - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Info.plist"
-      - bash scripts/codesign-app.sh "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
-      - '"{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS/{{.APP_NAME}}"'
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}-dev.app/Contents/MacOS"
+      - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.APP_NAME}}-dev.app/Contents/Info.plist"
+      - bash scripts/codesign-app.sh "{{.BIN_DIR}}/{{.APP_NAME}}-dev.app"
+
+  run:
+    cmds:
+      - task: create:dev:app:bundle
+      - '"{{.BIN_DIR}}/{{.APP_NAME}}-dev.app/Contents/MacOS/{{.APP_NAME}}"'
 
   sign:
     summary: Signs the application bundle with Developer ID

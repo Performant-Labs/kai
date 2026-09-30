@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+	<!-- Kai-dev: the development variant (make dev-app, docs/dev-signing.md). Its name and bundle
+	     identifier differ from the released Kai (build/darwin/Info.plist) so macOS treats them as
+	     two apps: separate rows in Privacy & Security, separate grants. The identifier is the prod
+	     one plus ".dev". CFBundleExecutable stays "Kai" (the Go binary is bin/Kai). The version here
+	     is a placeholder: the running version comes from the -ldflags the build injects, and
+	     scripts/release-bump.sh edits only Info.plist. -->
 	<dict>
 		<key>CFBundleDisplayName</key>
-		<string>Kai</string>
+		<string>Kai-dev</string>
 		<key>CFBundleExecutable</key>
 		<string>Kai</string>
 		<key>CFBundleGetInfoString</key>
@@ -13,9 +19,9 @@
 		<key>CFBundleIconName</key>
 		<string>appicon</string>
 		<key>CFBundleIdentifier</key>
-		<string>net.dtapp.kai</string>
+		<string>net.dtapp.kai.dev</string>
 		<key>CFBundleName</key>
-		<string>Kai</string>
+		<string>Kai-dev</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
