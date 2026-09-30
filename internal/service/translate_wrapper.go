@@ -1,6 +1,9 @@
 package service
 
 import (
+	"log/slog"
+
+	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
 	"cnb.cool/dtapp/kai/internal/translate"
 )
@@ -30,6 +33,28 @@ func (w *TranslateWrapper) TranslateMulti(req model.TranslateRequest) (*model.Tr
 // through this one call; the answer is applied, never learned or persisted, by the window.
 func (w *TranslateWrapper) PlanSourceSwitch(req model.SourceSwitchRequest) model.SourceSwitch {
 	return w.svc.PlanSourceSwitch(req)
+}
+
+// ReportSourceSwitchSkipped writes the window's own reason for not switching (the frontend drops a
+// plan when the text or the pair changed while it was computed, or the language is not offered) to
+// the main log, next to the backend's decision line, so one file tells the whole story (issue #16).
+// The frontend's own log file was empty in practice, and the reason is a fixed word, never text.
+func (w *TranslateWrapper) ReportSourceSwitchSkipped(reason string) {
+	slog.Info(i18n.T("log.source_switch_skipped"), "reason", sanitizeSkipReason(reason))
+}
+
+// sanitizeSkipReason keeps only a short snake_case word, so nothing the user selected can reach the
+// log through this call, whatever the caller sends.
+func sanitizeSkipReason(reason string) string {
+	if len(reason) == 0 || len(reason) > 40 {
+		return "invalid"
+	}
+	for _, r := range reason {
+		if (r < 'a' || r > 'z') && r != '_' {
+			return "invalid"
+		}
+	}
+	return reason
 }
 
 // CorrectSource corrects the grammar and word choice of text that just arrived, when the "correct

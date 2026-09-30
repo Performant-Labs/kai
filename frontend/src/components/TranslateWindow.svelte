@@ -95,6 +95,7 @@
     TranslateMulti,
     CancelTranslate,
     PlanSourceSwitch,
+    ReportSourceSwitchSkipped,
     CorrectSource,
     CorrectionAvailability,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
@@ -887,8 +888,13 @@
     translate: () => doTranslate(),
     onCue: (c) => (switchCue = c),
     onError: (e) => console.error(t('log.sourceSwitchFailed'), e),
-    // Issue #16: a miss is never silent; the backend logs its own decision line, this names the reason.
-    onSkip: (reason) => console.info(t('log.sourceSwitchSkipped', { reason })),
+    // Issue #16: a miss is never silent; the backend logs its own decision line, and the window's own
+    // reason is sent to the backend too so it lands in the same main log (the frontend log file was
+    // empty in practice).
+    onSkip: (reason) => {
+      console.info(t('log.sourceSwitchSkipped', { reason }));
+      void Promise.resolve(ReportSourceSwitchSkipped(reason)).catch(() => {});
+    },
     // The correction step (issue #208): every arrival is corrected first, and the rest of the flow
     // goes on with the corrected text.
     correct: (req) =>
