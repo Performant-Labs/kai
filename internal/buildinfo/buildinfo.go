@@ -72,3 +72,18 @@ func DBDir(homeDir string) string {
 func LogDir(homeDir string) string {
 	return filepath.Join(DataDir(homeDir), "logs")
 }
+
+// singleInstanceProdID is the single-instance lock ID of the released app. It is the historical
+// value and must not change.
+const singleInstanceProdID = "cnb.cool.dtapp.kai"
+
+// SingleInstanceID returns the Wails single-instance UniqueID. The dev build (Kai-dev) gets its
+// own, so it can start while a released Kai is running: with a shared ID the second process
+// loses the lock, notifies the first one and exits, i.e. launching Kai-dev would only activate
+// the released Kai.
+func SingleInstanceID() string {
+	if IsDev() {
+		return singleInstanceProdID + ".dev"
+	}
+	return singleInstanceProdID
+}
