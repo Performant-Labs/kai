@@ -151,7 +151,7 @@ func TestScreenRecordingRequestEscalatesToCaptureOnlyWhenNotGranted(t *testing.T
 	if ask < 0 || pre < 0 || capture < 0 || open < 0 {
 		t.Fatalf("request, preflight, capture attempt and pane open must all be present (ask=%d pre=%d capture=%d open=%d)", ask, pre, capture, open)
 	}
-	if !(ask < pre && pre < capture && capture < open) {
+	if ask >= pre || pre >= capture || capture >= open {
 		t.Error("order must be: request, preflight, capture attempt (only if not granted), open the pane")
 	}
 	// The capture attempt sits inside an `if !CGPreflightScreenCaptureAccess()` guard.
