@@ -4,6 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kai Settings</title>
+    <style>
+      /* Issue #15: same values as --app-bg in src/app.css; painted before any CSS or JS loads. */
+      html { background-color: #ffffff; color-scheme: light; }
+      html.dark { background-color: #18181c; color-scheme: dark; }
+    </style>
+    <script>
+      // Issue #15: apply the last saved theme before the first paint. The theme store
+      // (src/stores/theme.ts) stays the source of truth and rewrites this cache after load.
+      (function () {
+        var dark;
+        try {
+          var resolved = localStorage.getItem('kai.theme.resolved');
+          if (resolved === 'dark' || resolved === 'light') dark = resolved === 'dark';
+        } catch (e) {}
+        if (dark === undefined) {
+          try { dark = matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) { dark = false; }
+        }
+        var el = document.documentElement;
+        el.classList.toggle('dark', dark);
+        el.style.backgroundColor = dark ? '#18181c' : '#ffffff';
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -8,6 +8,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ## [Unreleased]
 
 - Settings > Shortcuts now re-checks the macOS permissions every 3 seconds while the Settings window is showing, so switching Device Control and Data Access, Screen Recording or Input Monitoring on or off in System Settings changes its row within about 3 seconds, without reopening the page or restarting Kai (#14). Checking pauses while Settings is hidden or closed and starts again, with an immediate check, when it is shown. Input Monitoring now has its own row (it is needed for translate on double Cmd+C), and the note under that switch follows the live permission instead of the state from when the listener started. The permissions block still decides once, on first load, whether to open or collapse.
+### Bug Fixes
+- No more white flash when a window opens in the dark theme (#15): the native window colour is now chosen from the theme before the window draws, and each page applies the last saved theme before its first paint (falling back to the system appearance). The updater window already did this. Not yet judged in the real app.
 
 ## [0.2.0] - 2026-09-29
 
