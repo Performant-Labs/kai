@@ -99,9 +99,9 @@ export const zh: Dict = {
     autoClipboard: '按下快捷键时自动翻译剪贴板中的内容',
     copyKeyFailed: '未能获取选中内容 — 请手动复制后再次按下快捷键',
     doubleCopyPermission:
-      '双击 Cmd+C 翻译需要“输入监控”权限。请打开“系统设置 > 隐私与安全性 > 输入监控”，开启 Kai，然后在“设置 > 快捷键”中把该选项关闭再重新打开。',
+      '请在“隐私与安全性 > 输入监控”中开启 Kai，然后在“设置 > 快捷键”中把该选项关闭再打开。',
     accessibilityMissing:
-      'Kai 无法复制你选中的文字：macOS 尚未授予它“辅助功能”权限。请打开“系统设置 > 隐私与安全性 > 辅助功能”（macOS 27 中名为“设备控制与数据访问”），开启 Kai。如果刚安装或重新构建过 Kai，请在该列表中选中 Kai，用减号移除后再重新添加。',
+      'Kai 无法复制你选中的文字。请在“隐私与安全性 > 设备控制与数据访问”中开启 Kai。',
     cancel: '取消',
     cancelEngine: '取消 {engine}',
     cancelled: '已取消',
@@ -138,8 +138,7 @@ export const zh: Dict = {
     doubleCopy: '双击 Cmd+C 翻译',
     doubleCopyHint:
       '在任意应用里快速按两次 Cmd+C，即可翻译刚复制的内容。需要“输入监控”权限。来自密码管理器和钥匙串应用的复制，以及被标记为机密的复制，永远不会被翻译。',
-    doubleCopyPermission:
-      'Kai 需要“输入监控”权限才能检测双击 Cmd+C。请打开“系统设置 > 隐私与安全性 > 输入监控”，开启 Kai，然后把此选项关闭再重新打开。',
+    doubleCopyPermission: '请在“隐私与安全性 > 输入监控”中开启 Kai，然后把该选项关闭再打开。',
     engines: '引擎',
     enginesTitle: '翻译引擎',
     engineList: '引擎列表',
