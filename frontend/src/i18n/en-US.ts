@@ -377,6 +377,7 @@ export const en: Dict = {
     loadLangListFailed: '[input] Failed to load language list',
     translateRequestFailed: '[input] Translation request failed',
     sourceSwitchFailed: '[input] Automatic source-language check failed',
+    sourceSwitchSkipped: '[input] Automatic source switch skipped: {reason}',
     correctFailed: '[input] Correcting the text failed; translating it as it came',
     correctAvailabilityFailed: '[input] Checking whether the correction is available failed',
     generalSaveCorrectFailed: '[input] Failed to save the correct grammar and wording setting',

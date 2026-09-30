@@ -364,6 +364,7 @@ export const zh: Dict = {
     loadLangListFailed: '[输入翻译] 加载语言列表失败',
     translateRequestFailed: '[输入翻译] 翻译请求失败',
     sourceSwitchFailed: '[输入翻译] 自动源语言检测失败',
+    sourceSwitchSkipped: '[输入翻译] 未自动切换源语言：{reason}',
     correctFailed: '[输入翻译] 文本纠正失败，按原文翻译',
     correctAvailabilityFailed: '[输入翻译] 检查纠正功能是否可用失败',
     generalSaveCorrectFailed: '[输入翻译] 保存“纠正语法和用词”设置失败',
