@@ -1,5 +1,11 @@
 # Decision journal
 
+## 2026-09-30 — The public home is Performant-Labs/kai; kai-private is archived
+- Decided by the owner: there is no private repository any more. Issues and pull requests go to `Performant-Labs/kai`, and `Performant-Labs/kai-private` is archived read-only (its issue and PR numbers in older comments refer to it; an export is kept off-repository).
+- Settled: the history was scrubbed (author and committer addresses, internal host names, home paths) and force-pushed to `Performant-Labs/kai`; the fork's previous upstream history is kept on the branch `upstream-history`; upstream's inherited tags were removed and ours pushed.
+- Settled: the repository is public, so CI and review run on GitHub-hosted runners only, with read-only default workflow tokens, approval required for outside contributors, secret scanning with push protection, and third-party actions pinned to a commit.
+- Upstream `dtapps/kai` is touched only for an explicit upstream contribution, as before. Recorded in `AGENTS.md`, `CLAUDE.md` and `.pr_agent.toml` (PR #7).
+
 ## 2026-09-25 — #52 A (Phase 3, up-front plan review): PASS
 
 - Verdict PASS, 0 block / 8 warn. Handoff: docs/handoffs/52/handoff-A.md.

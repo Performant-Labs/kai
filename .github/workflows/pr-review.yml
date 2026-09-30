@@ -30,7 +30,9 @@ jobs:
        startsWith(github.event.comment.body, '/review') &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     steps:
-      - uses: qodo-ai/pr-agent@main
+      # Pinned to the v0.46.0 release commit: a mutable ref would let a compromised
+      # update read the model key. Bump it deliberately.
+      - uses: qodo-ai/pr-agent@1d01f24f455bb879c1d9c557ad7de3d72dcc7975 # v0.46.0
         env:
           CONFIG.MODEL: deepseek/deepseek-v4-pro
           CONFIG.FALLBACK_MODELS: '["deepseek/deepseek-v4-pro"]'
