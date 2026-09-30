@@ -232,7 +232,7 @@ vuln-go: ## Go 依赖漏洞检查（发现漏洞即停止）
 # is missing, and never falls back to ad-hoc. See docs/dev-signing.md.
 DEV_SIGN_IDENTITY = $(or $(KAI_SIGN_IDENTITY),Kai Dev)
 
-dev-app: ## [macOS] 开发变体 -> bin/Kai-dev.app（net.dtapp.kai.dev，用 "Kai Dev" 证书签名；见 docs/dev-signing.md）
+dev-app: ## [macOS] Dev variant -> bin/Kai-dev.app (net.dtapp.kai.dev, signed with the "Kai Dev" certificate; see docs/dev-signing.md)
 	KAI_SIGN_IDENTITY="$(DEV_SIGN_IDENTITY)" bash scripts/codesign-app.sh --check
 	VERSION=$(VERSION) BUILD_TIME=$(BUILD_TIME) GIT_COMMIT=$(GIT_COMMIT) GITHUB_TOKEN=$(GITHUB_TOKEN) CNB_TOKEN=$(CNB_TOKEN) POSTHOG_PROJECT_ID=$(POSTHOG_PROJECT_ID) POSTHOG_TOKEN=$(POSTHOG_TOKEN) DEV=true KAI_SIGN_IDENTITY="$(DEV_SIGN_IDENTITY)" wails3 task darwin:package:dev
 
