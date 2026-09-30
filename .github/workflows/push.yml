@@ -28,6 +28,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      # Node's experimental Web Storage shadows the test environment's localStorage.
+      NODE_OPTIONS: --no-experimental-webstorage
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
