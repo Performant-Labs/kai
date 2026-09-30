@@ -7,6 +7,7 @@
 package execkey
 
 import (
+	"errors"
 	"log/slog"
 	"time"
 
@@ -15,6 +16,24 @@ import (
 	"cnb.cool/dtapp/kai/internal/settings"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+// ErrAccessibilityMissing is returned by CopySelection when macOS has not granted Kai the
+// Accessibility permission (shown as "Device Control and Data Access" on macOS 27). Without it the
+// system drops the simulated Cmd+C silently, so the empty clipboard would look exactly like "nothing
+// selected" (issue #194). It is a different outcome from an empty selection and must stay one.
+var ErrAccessibilityMissing = errors.New("execkey: the macOS Accessibility permission is missing")
+
+// guardedCopy runs copy only when the Accessibility permission is granted. When it is not, run is
+// not called at all: no key is posted and the user's clipboard is not backed up, cleared or
+// restored, because a key that macOS will drop can only leave the clipboard changed for nothing.
+// Checking the permission (a cheap synchronous query, never a prompt) is the whole job here, so the
+// order is testable without a real keyboard.
+func guardedCopy(granted func() bool, run func() string) (string, error) {
+	if !granted() {
+		return "", ErrAccessibilityMissing
+	}
+	return run(), nil
+}
 
 // pollClipboardDelay/pollClipboardTimeout/pollClipboardInterval govern how long copyWithHotkey
 // (both platforms) waits for the target app to actually populate the pasteboard after the
@@ -100,6 +119,16 @@ type ExecKeyController struct {
 	app         *application.App
 	selection   *selection.Service
 	log         *slog.Logger
+	// accessibility reports whether the Accessibility permission is granted; a field so tests
+	// can fake it. Nil means the real platform query (selection.AccessibilityGranted).
+	accessibility func() bool
+}
+
+func (e *ExecKeyController) accessibilityGranted() bool {
+	if e.accessibility != nil {
+		return e.accessibility()
+	}
+	return selection.AccessibilityGranted()
 }
 
 // NewExecKeyController constructs the exec key controller.
@@ -136,8 +165,17 @@ func (e *ExecKeyController) SetApp(app *application.App) {
 // it simulates the copy key to capture the selection, while protecting the user's clipboard
 // the whole way — backup → clear → copy → clear-then-restore backup (belt and braces).
 // The system clipboard always ends up with the user's original content — no selection
-// residue. Copy failure / empty selection returns an empty string.
-func (e *ExecKeyController) CopySelection() string {
+// residue. Copy failure / empty selection returns an empty string and a nil error.
+//
+// Issue #194: before anything is touched, the Accessibility permission is checked. If it is
+// missing the result is ("", ErrAccessibilityMissing): no key is posted and the clipboard is left
+// alone. If it is present but the clipboard still comes back empty, that stays an empty selection.
+func (e *ExecKeyController) CopySelection() (string, error) {
+	return guardedCopy(e.accessibilityGranted, e.copyAndRestore)
+}
+
+// copyAndRestore is the capture itself (see CopySelection).
+func (e *ExecKeyController) copyAndRestore() string {
 	cfg := e.settingsSvc.Get()
 	// 1. Back up the original clipboard, avoiding any modification.
 	backup := e.selection.ReadClipboardText()

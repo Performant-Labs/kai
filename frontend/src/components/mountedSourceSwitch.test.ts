@@ -76,6 +76,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts', () => 
 }));
 
 import TranslateWindow from './TranslateWindow.svelte';
+import { EventCopyKeyFailed } from '../utils/events';
 
 const SPANISH = 'Hola, necesito que me ayudes con este documento hoy';
 let app: Record<string, unknown> | undefined;
@@ -270,3 +271,28 @@ describe('TranslateWindow, mounted: double Cmd+C (issue #199)', () => {
     expect(toast!.textContent).toContain('Privacy & Security');
   });
 });
+
+describe('TranslateWindow, mounted: missing Accessibility permission (issue #194)', () => {
+  it('shows the actionable toast, naming both labels and the re-add step, not the generic failure', async () => {
+    expect(target.querySelector('.u-toast')).toBeNull();
+    h.fire('kai:accessibility:missing', undefined);
+    await settle();
+    const toast = target.querySelector('.u-toast');
+    expect(toast, 'no toast after kai:accessibility:missing').not.toBeNull();
+    const text = toast!.textContent ?? '';
+    expect(text).toContain('Accessibility');
+    expect(text).toContain('Device Control and Data Access');
+    expect(text).toContain('Privacy & Security');
+    expect(text).toContain('Kai');
+    expect(text).toContain('add it again');
+    expect(text).not.toContain("couldn't capture");
+  });
+
+  it('the ordinary copy-key failure keeps its own, different message', async () => {
+    h.fire(EventCopyKeyFailed, undefined);
+    await settle();
+    const text = target.querySelector('.u-toast')?.textContent ?? '';
+    expect(text).not.toContain('Accessibility');
+  });
+});
+

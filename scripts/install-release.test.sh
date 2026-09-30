@@ -147,9 +147,16 @@ case "$1 $2" in
     shift 2; tag="$1"; shift; dir=""
     while [ $# -gt 0 ]; do case "$1" in --dir) dir="$2"; shift ;; esac; shift; done
     [ -n "${FAKE_NOASSET:-}" ] && { mkdir -p "$dir"; exit 0; }
-    mkdir -p "$dir"; cp "$FAKE_ZIP" "$dir/"
+    mkdir -p "$dir"
+    # Like the real release: the release zip, the updater zip (same bytes, "updater-" name), the
+    # dmg and SHA256SUMS. The updater zip is created before the release zip on purpose, and
+    # `gh` honours --pattern only as a glob on the name (so '*.zip' matches both zips), which is
+    # why the installer has to choose explicitly.
+    up="updater-$(basename "$FAKE_ZIP")"
+    if [ -n "${FAKE_UPDATER_OTHER:-}" ]; then cp "$FAKE_OTHER_ZIP" "$dir/$up"; else cp "$FAKE_ZIP" "$dir/$up"; fi
+    cp "$FAKE_ZIP" "$dir/"
     if [ -n "${FAKE_BAD:-}" ]; then echo "0000000000000000000000000000000000000000000000000000000000000000  $(basename "$FAKE_ZIP")" >"$dir/SHA256SUMS"
-    else (cd "$dir" && shasum -a 256 "$(basename "$FAKE_ZIP")" >SHA256SUMS); fi ;;
+    else (cd "$dir" && shasum -a 256 "$(basename "$FAKE_ZIP")" "$up" >SHA256SUMS); fi ;;
   *) exit 1 ;;
 esac
 EOF
@@ -161,6 +168,14 @@ gh_run --dest "$tmp/g1"
 has  "no argument installs the latest release"    'downloading v1.0.0'
 has  "  ... verifies the checksum"                'checksum ok'
 has  "  ... and installs it"                      'installed Kai 1.0.0'
+# The release also carries updater-Kai-...zip. The installer must use the normal zip, not that one
+# (here the updater zip holds a different build: 2.0.0, so picking it would install the wrong app).
+export FAKE_OTHER_ZIP="$tmp/Kai-2.0.0-darwin-arm64.zip"
+mkdir -p "$tmp/g5"
+out="$(FAKE_UPDATER_OTHER=1 PATH="$tmp/fakebin:$PATH" "$inst" --dest "$tmp/g5" 2>&1)"; code=$?
+has  "with an updater zip in the release, the normal zip is installed" 'installed Kai 1.0.0'
+hasnt "  ... never the updater zip's app"          'installed Kai 2.0.0'
+exit_is "  ... exit 0"                            0
 gh_run v1.0.0 --dest "$tmp/g2"
 has  "a named version is downloaded"              'downloading v1.0.0'
 out="$(FAKE_BAD=1 PATH="$tmp/fakebin:$PATH" "$inst" --dest "$tmp/g3" 2>&1)"; code=$?

@@ -89,6 +89,13 @@ const (
 	// the frontend's EventDoubleCopyPermissionMissing in frontend/src/utils/events.ts.
 	EventDoubleCopyPermissionMissing = "kai:doublecopy:permission-missing"
 
+	// EventAccessibilityMissing is emitted when the hotkey or tray copy-key capture finds the macOS
+	// Accessibility permission missing, so the simulated Cmd+C was not posted (issue #194). No
+	// payload. The translate window shows a toast naming what to enable and where. It is throttled
+	// on the Go side, so it is not repeated on every keypress. Aligned with the frontend's
+	// EventAccessibilityMissing in frontend/src/utils/events.ts.
+	EventAccessibilityMissing = "kai:accessibility:missing"
+
 	// EventCopyKeyFailed is emitted when the copy-key branch of TriggerInput (issue #175 item
 	// 5) simulates the copy key but pollClipboardText never sees the clipboard change —
 	// CopySelection returns "". No payload.

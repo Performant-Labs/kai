@@ -38,16 +38,26 @@ mkapp "$tmp/in" 1.2.3
 
 run "$tmp/in/Kai.app" 1.2.3 "$tmp/out"
 has  "packaging succeeds and says so"               'dmg: the app inside is identical'
+has  "  ... and reports the updater zip"            'updater zip: identical to the release zip'
 exit_is "  ... exit 0"                              0
 truth "the zip exists, named for the version"        '[[ -s "$tmp/out/Kai-1.2.3-darwin-arm64.zip" ]]'
 truth "the disk image exists, named for the version" '[[ -s "$tmp/out/Kai-1.2.3-darwin-arm64.dmg" ]]'
-truth "SHA256SUMS lists both files"                  '[[ "$(grep -c "Kai-1.2.3-darwin-arm64" "$tmp/out/SHA256SUMS")" == 2 ]]'
+truth "the updater zip exists under the exact name the updater needs" '[[ -s "$tmp/out/updater-Kai-1.2.3-darwin-arm64.zip" ]]'
+truth "the updater zip is byte-identical to the release zip" 'cmp -s "$tmp/out/updater-Kai-1.2.3-darwin-arm64.zip" "$tmp/out/Kai-1.2.3-darwin-arm64.zip"'
+truth "exactly four files were produced"             '[[ "$(ls "$tmp/out" | wc -l | tr -d " ")" == 4 ]]'
+truth "SHA256SUMS lists exactly the three archives"  '[[ "$(wc -l <"$tmp/out/SHA256SUMS" | tr -d " ")" == 3 ]]'
+truth "  ... the zip line"                           'grep -Eq "^[0-9a-f]{64}  Kai-1.2.3-darwin-arm64.zip$" "$tmp/out/SHA256SUMS"'
+truth "  ... the dmg line"                           'grep -Eq "^[0-9a-f]{64}  Kai-1.2.3-darwin-arm64.dmg$" "$tmp/out/SHA256SUMS"'
+truth "  ... the updater zip line, exact name"       'grep -Eq "^[0-9a-f]{64}  updater-Kai-1.2.3-darwin-arm64.zip$" "$tmp/out/SHA256SUMS"'
 truth "  ... and the checksums verify"               '(cd "$tmp/out" && shasum -a 256 -c SHA256SUMS >/dev/null 2>&1)'
 truth "the disk image is unmounted afterwards"       '[[ "$(hdiutil info | grep -c image-path)" == "$images_before" ]]'
 
 # The zip really unpacks to the same app, and the disk image really shows the app plus a shortcut.
 mkdir "$tmp/chk"; ditto -x -k "$tmp/out/Kai-1.2.3-darwin-arm64.zip" "$tmp/chk"
 truth "the zip unpacks to an identical app"          'diff -r "$tmp/chk/Kai.app" "$tmp/in/Kai.app" >/dev/null'
+mkdir "$tmp/chku"; ditto -x -k "$tmp/out/updater-Kai-1.2.3-darwin-arm64.zip" "$tmp/chku"
+truth "the updater zip unpacks to an identical app with Kai.app at the top" 'diff -r "$tmp/chku/Kai.app" "$tmp/in/Kai.app" >/dev/null && [[ "$(ls "$tmp/chku")" == "Kai.app" ]]'
+truth "  ... with a valid signature"                 'codesign --verify --deep --strict "$tmp/chku/Kai.app" 2>/dev/null'
 mkdir "$tmp/mnt"; hdiutil attach -readonly -nobrowse -noverify -mountpoint "$tmp/mnt" "$tmp/out/Kai-1.2.3-darwin-arm64.dmg" >/dev/null 2>&1
 truth "the disk image has Kai.app and an Applications shortcut" '[[ -d "$tmp/mnt/Kai.app" && -L "$tmp/mnt/Applications" ]]'
 hdiutil detach -quiet "$tmp/mnt" >/dev/null 2>&1

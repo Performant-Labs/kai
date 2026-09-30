@@ -23,7 +23,7 @@ copy. Never check boxes here. The reasoning behind each step is in
   - `gh pr list --repo Performant-Labs/kai-private --state open` (the script counts them; the decisions are yours)
   - Dependabot bumps: merge the ones wanted, and record why the rest wait (a major bump such as a new Wails or Vitest version is a decision, not noise): `___`
 - [ ] 5. **In-app updater channel** (see `docs/releasing.md`; [#178](https://github.com/Performant-Labs/kai-private/issues/178) is fixed)
-  - The updater polls this fork (`buildinfo.UpdaterGithubRepo`), not upstream; nothing to decline. Until releases are public, installed apps get no update and users install by hand; the release notes must not promise auto-update.
+  - The updater polls this fork (`buildinfo.UpdaterGithubRepo`), not upstream; nothing to decline. Until releases are readable without a login ([#196](https://github.com/Performant-Labs/kai-private/issues/196), open), installed apps get no update (the 404 reads as "no update") and users install by hand; the release notes must not promise auto-update. The `updater-` asset in step 23 is already produced, but nothing reads it until then.
   - The script warns if `main.go` ever points at `dtapps/kai` again. Result: `___`
 
 ## Known issues and changelog coverage
@@ -91,7 +91,7 @@ CI and the verify script cannot see these. Install the built app to `/Applicatio
 ## Package and publish (confirm before doing: public, outward-facing)
 
 - [ ] 23. **Package**
-  - `scripts/release-package.sh bin/Kai.app X.Y.Z` makes `Kai-X.Y.Z-darwin-arm64.zip`, `Kai-X.Y.Z-darwin-arm64.dmg` and `SHA256SUMS` (covering both), and checks that each archive unpacks to an app identical to the input with a valid signature
+  - `scripts/release-package.sh bin/Kai.app X.Y.Z` makes `Kai-X.Y.Z-darwin-arm64.zip`, `updater-Kai-X.Y.Z-darwin-arm64.zip` (a byte-identical copy the in-app updater requires by that name), `Kai-X.Y.Z-darwin-arm64.dmg` and `SHA256SUMS` (covering all three), and checks that each archive unpacks to an app identical to the input with a valid signature
   - It packages the verified app and never rebuilds. Package **once**: the disk image is not reproducible, so repackaging after publishing would change its hash
   - Output: `___`
 - [ ] 24. **Build the release notes**: the CHANGELOG's `## [X.Y.Z]` section into a standalone
@@ -100,8 +100,8 @@ CI and the verify script cannot see these. Install the built app to `/Applicatio
   warning is already in its Known Issues). Read it once as a stranger would
 - [ ] 25. **Explicit go-ahead obtained** to publish
 - [ ] 26. **Create the release**
-  - `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip Kai-X.Y.Z-darwin-arm64.dmg SHA256SUMS --notes-file <notes> --repo Performant-Labs/kai-private --verify-tag`
-- [ ] 27. **Review the published Release page**: all three assets present (zip, disk image, `SHA256SUMS`), notes render, known issues visible
+  - `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip updater-Kai-X.Y.Z-darwin-arm64.zip Kai-X.Y.Z-darwin-arm64.dmg SHA256SUMS --notes-file <notes> --repo Performant-Labs/kai-private --verify-tag`
+- [ ] 27. **Review the published Release page**: all four assets present (zip, `updater-` zip, disk image, `SHA256SUMS`), notes render, known issues visible
 
 ## Post-release
 
@@ -109,7 +109,7 @@ Verify the published artifact, not the local build that produced it.
 
 - [ ] 28. **Download and re-verify**
   - Clean directory: `gh release download vX.Y.Z --repo Performant-Labs/kai-private`
-  - `shasum -a 256 -c SHA256SUMS`
+  - `shasum -a 256 -c SHA256SUMS` (three lines: zip, `updater-` zip, disk image) and `cmp Kai-X.Y.Z-darwin-arm64.zip updater-Kai-X.Y.Z-darwin-arm64.zip` (identical)
   - `ditto -x -k Kai-X.Y.Z-darwin-arm64.zip out` then `scripts/release-verify.sh out/Kai.app X.Y.Z`
   - Mount the published disk image (`hdiutil attach -readonly -nobrowse Kai-X.Y.Z-darwin-arm64.dmg`) and `diff -r` its `Kai.app` against `out/Kai.app`: identical. Then detach it
   - Run the installer against the real release: `scripts/install-release.sh vX.Y.Z --dest "$(mktemp -d)" --keep-permissions` must print `checksum ok`, `installed Kai X.Y.Z` and `quarantine flag cleared`. This is the check that a person can actually install the release without the macOS block

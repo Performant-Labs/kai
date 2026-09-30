@@ -55,6 +55,25 @@ func isAccessibilityEnabled() bool {
 	return accessibilityEnabledViaBridge()
 }
 
+// AccessibilityGranted reports whether macOS Accessibility (shown as "Device Control and Data
+// Access" on macOS 27) is granted to Kai. A synchronous, prompt-free query (AXIsProcessTrusted); it
+// is safe from any goroutine and never opens a dialog. When the bridge itself is not loaded the
+// answer is unknown, not "missing": it returns true so a bridge problem never blocks a capture that
+// would otherwise have worked (the permission message is for a known-missing grant only).
+func AccessibilityGranted() bool {
+	return accessibilityGranted(swiftbridge.Available, accessibilityEnabledViaBridge)
+}
+
+// accessibilityGranted is AccessibilityGranted with its two bridge calls passed in, so the two
+// answers that matter (known missing, and unknown because the bridge is not loaded) can be tested
+// without changing this machine's real permission.
+func accessibilityGranted(bridgeLoaded, granted func() bool) bool {
+	if !bridgeLoaded() {
+		return true
+	}
+	return granted()
+}
+
 // selectionPointViaBridge reads the foreground app window anchor via the Swift bridge
 // (JSON {x,y}).
 func selectionPointViaBridge() (x, y int) {

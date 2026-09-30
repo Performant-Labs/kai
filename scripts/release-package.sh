@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Package a verified Kai.app for a release: the zip, the disk image, and SHA256SUMS.
+# Package a verified Kai.app for a release: the zip, the updater's copy of it, the disk image,
+# and SHA256SUMS.
 #
 #   scripts/release-package.sh /path/to/Kai.app X.Y.Z [outdir]
 #
@@ -10,7 +11,12 @@
 # Produces, in outdir (default: the current directory):
 #   Kai-X.Y.Z-darwin-arm64.zip   made with ditto (a plain zip can break the signature)
 #   Kai-X.Y.Z-darwin-arm64.dmg   Kai.app plus an Applications shortcut, to drag into
-#   SHA256SUMS                   covering both
+#   updater-Kai-X.Y.Z-darwin-arm64.zip   a copy of the zip (same bytes) for the in-app updater,
+#                                which only accepts a release asset named updater-*<platform>*<arch>*
+#                                .zip and needs it listed in SHA256SUMS (pkg/wails-updater-providers
+#                                matcher.go; pinned by updater_asset_test.go). The updater unpacks
+#                                and swaps it in, so it must be the same verified app.
+#   SHA256SUMS                   covering all three
 # and then checks what it made: each archive unpacks to an app identical to the input with a
 # valid signature, and the checksums verify. Exits 1 on the first problem.
 set -euo pipefail
@@ -27,6 +33,9 @@ codesign --verify --deep --strict "$app" 2>/dev/null || die "the app's signature
 mkdir -p "$out"; out="$(cd "$out" && pwd)"
 
 name="Kai-$ver-darwin-arm64"
+# The ONE place the updater asset's name is defined. pkg/wails-updater-providers/updater_asset_test.go
+# reads this line and checks the updater's matcher accepts the name, so do not reword it.
+updater_zip="updater-$name.zip"
 work="$(mktemp -d)"
 mnt=""
 detach() { hdiutil detach -quiet "$1" >/dev/null 2>&1 || { sleep 1; hdiutil detach -force -quiet "$1" >/dev/null 2>&1; }; }
@@ -39,6 +48,10 @@ echo "packaging $app (version $ver)"
 rm -f "$out/$name.zip"
 ditto -c -k --keepParent "$app" "$out/$name.zip"
 
+# The in-app updater's copy: same bytes, so the same top-level Kai.app that ditto made.
+rm -f "$out/$updater_zip"
+cp "$out/$name.zip" "$out/$updater_zip"
+
 # The disk image, from a copy of the same app.
 mkdir "$work/stage"
 ditto "$app" "$work/stage/Kai.app"
@@ -47,8 +60,8 @@ rm -f "$out/$name.dmg"
 hdiutil create -volname "Kai $ver" -srcfolder "$work/stage" -ov -format UDZO "$out/$name.dmg" >/dev/null \
   || die "could not create the disk image"
 
-# The checksums, over both.
-( cd "$out" && shasum -a 256 "$name.zip" "$name.dmg" >SHA256SUMS )
+# The checksums, over all three.
+( cd "$out" && shasum -a 256 "$name.zip" "$updater_zip" "$name.dmg" >SHA256SUMS )
 
 echo "verifying what was made"
 ( cd "$out" && shasum -a 256 -c SHA256SUMS >/dev/null ) || die "SHA256SUMS does not verify"
@@ -58,6 +71,14 @@ ditto -x -k "$out/$name.zip" "$work/unzip"
 diff -r "$work/unzip/Kai.app" "$app" >/dev/null || die "the zip does not contain an app identical to the input"
 codesign --verify --deep --strict "$work/unzip/Kai.app" 2>/dev/null || die "the zip's app has an invalid signature"
 echo "  zip: the app inside is identical to the input, signature valid"
+
+cmp -s "$out/$name.zip" "$out/$updater_zip" || die "the updater zip is not identical to the release zip"
+mkdir "$work/unzip-updater"
+ditto -x -k "$out/$updater_zip" "$work/unzip-updater"
+[[ "$(ls "$work/unzip-updater")" == "Kai.app" ]] || die "the updater zip does not have Kai.app as its only top-level item"
+diff -r "$work/unzip-updater/Kai.app" "$app" >/dev/null || die "the updater zip does not contain an app identical to the input"
+codesign --verify --deep --strict "$work/unzip-updater/Kai.app" 2>/dev/null || die "the updater zip's app has an invalid signature"
+echo "  updater zip: identical to the release zip, the app inside is identical to the input, signature valid"
 
 mnt="$work/mnt"; mkdir "$mnt"
 # A first attach right after creating the image has failed once with "Resource temporarily
@@ -75,4 +96,4 @@ detach "$mnt" && mnt=""
 echo "  dmg: the app inside is identical to the input, signature valid, Applications shortcut present"
 
 echo "done, in $out:"
-( cd "$out" && ls -l "$name.zip" "$name.dmg" SHA256SUMS | awk '{printf "  %-34s %10d bytes\n", $9, $5}' )
+( cd "$out" && ls -l "$name.zip" "$updater_zip" "$name.dmg" SHA256SUMS | awk '{printf "  %-40s %10d bytes\n", $9, $5}' )

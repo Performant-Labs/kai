@@ -107,6 +107,7 @@ export type Dict = {
     autoClipboard: string;
     copyKeyFailed: string;
     doubleCopyPermission: string;
+    accessibilityMissing: string;
     cancel: string;
     cancelEngine: string;
     cancelled: string;
@@ -263,6 +264,7 @@ export type Dict = {
     permHint: string;
     permAccessibility: string;
     permAccessibilityHint: string;
+    permAccessibilityMissing: string;
     permScreenRecording: string;
     permScreenRecordingHint: string;
     permExpand: string;
