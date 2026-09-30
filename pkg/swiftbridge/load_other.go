@@ -28,13 +28,13 @@ var (
 
 	// kai_* function pointers (always nil on non-macOS, kept for signature parity only).
 	KaiOCR                    func(base64 string, out unsafe.Pointer, outCap int32, correct int32, timeout int32, retry int32) int32
-	KaiAccessibilityEnabled   func() int32
+	KaiAccessibilityEnabled   func(out unsafe.Pointer, outCap int32) int32
 	KaiAccessibilityRequest   func() int32
-	KaiScreenRecordingEnabled func() int32
+	KaiScreenRecordingEnabled func(out unsafe.Pointer, outCap int32) int32
 	KaiScreenRecordingRequest func() int32
 	KaiSelectionPoint         func(out unsafe.Pointer, outCap int32) int32
 	KaiScreenSize             func(out unsafe.Pointer, outCap int32) int32
-	KaiInputMonitoringEnabled func() int32
+	KaiInputMonitoringEnabled func(out unsafe.Pointer, outCap int32) int32
 	KaiAvailableLanguages     func(out unsafe.Pointer, outCap int32) int32
 	KaiSetLogConfig           func(dir string, level string, retentionDays int32, compress bool)
 	KaiSetLocale              func(locale string)
