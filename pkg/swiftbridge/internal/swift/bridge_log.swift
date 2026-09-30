@@ -126,6 +126,8 @@ func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
     "selection.done": "选区读取完成 长度=%d",
     "input.tap_fail": "输入监控检测 创建 EventTap 失败（未授权或被策略拒绝）",
     "input.tap_enabled": "输入监控检测 tapIsEnabled=%@",
+    "input.request": "输入监控授权请求 打开系统设置面板",
+    "input.request_done": "输入监控授权请求 已打开系统设置面板",
     "input.settings": "输入监控 打开系统设置面板",
   ]
   let en: [String: String] = [
@@ -172,6 +174,8 @@ func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
     "input.tap_fail":
       "input monitoring check: create EventTap failed (not authorized or blocked by policy)",
     "input.tap_enabled": "input monitoring tapIsEnabled=%@",
+    "input.request": "input monitoring authorization request: open settings panel",
+    "input.request_done": "input monitoring authorization request: settings panel opened",
     "input.settings": "input monitoring: open system settings panel",
   ]
   guard let tmpl = (bridgeLogLocale == "en" ? en : zh)[key] else {

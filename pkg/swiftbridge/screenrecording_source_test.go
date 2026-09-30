@@ -76,3 +76,86 @@ func TestInputMonitoringQueryNeverPrompts(t *testing.T) {
 		}
 	}
 }
+
+// Issue #23: the Grant buttons must reliably put Kai in the list of the matching Privacy pane.
+
+// swiftFuncBody returns the named function up to the next @_cdecl (or the end of the file).
+func swiftFuncBody(t *testing.T, name string) string {
+	t.Helper()
+	src := readSwift(t, "apple_accessibility.swift")
+	i := strings.Index(src, "func "+name+"(")
+	if i < 0 {
+		t.Fatalf("%s not found in apple_accessibility.swift", name)
+	}
+	rest := src[i:]
+	if j := strings.Index(rest[1:], "@_cdecl"); j >= 0 {
+		rest = rest[:j+1]
+	}
+	return rest
+}
+
+// Input Monitoring: CGRequestListenEventAccess() is what lists Kai under Input Monitoring. It must
+// never be done by creating an event tap (that can itself prompt, and leaked when polled), and it
+// must only be the button's job: the 3-second poll uses the Preflight query, which stays read-only.
+func TestInputMonitoringRequestRegistersKaiWithoutATap(t *testing.T) {
+	body := swiftFuncBody(t, "kai_input_monitoring_request")
+	if !strings.Contains(body, "CGRequestListenEventAccess()") {
+		t.Error("kai_input_monitoring_request must call CGRequestListenEventAccess(): it is what lists Kai under Input Monitoring")
+	}
+	for _, banned := range []string{"tapCreate", "CGEvent.tap", "passRetained"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("kai_input_monitoring_request must not use %s: it must never create an event tap", banned)
+		}
+	}
+}
+
+func TestInputMonitoringRequestOpensThePaneAfterAsking(t *testing.T) {
+	body := swiftFuncBody(t, "kai_input_monitoring_request")
+	ask := strings.Index(body, "CGRequestListenEventAccess()")
+	open := strings.Index(body, "NSWorkspace.shared.open")
+	if !strings.Contains(body, "Privacy_ListenEvent") || ask < 0 || open < 0 || ask > open {
+		t.Error("the Input Monitoring pane (Privacy_ListenEvent) must open after the request, so Kai is already listed")
+	}
+}
+
+func TestInputMonitoringPollNeverRequests(t *testing.T) {
+	body := swiftFuncBody(t, "kai_input_monitoring_enabled")
+	if strings.Contains(body, "CGRequestListenEventAccess") {
+		t.Error("the 3-second query must not request the permission; only the Grant button does")
+	}
+}
+
+// Screen Recording: the request alone is not reliable, so it runs on the main thread with Kai
+// frontmost, and only when the preflight still says "not granted" does it make one real (metadata
+// only, no pixels, so no flash) ScreenCaptureKit call so macOS lists Kai. The pane opens last.
+func TestScreenRecordingRequestRunsOnMainThreadWithKaiActive(t *testing.T) {
+	body := requestBody(t, readSwift(t, "apple_accessibility.swift"))
+	if !strings.Contains(body, "Thread.isMainThread") || !strings.Contains(body, "DispatchQueue.main") {
+		t.Error("the request must run on the main thread")
+	}
+	if !strings.Contains(body, "NSApp.activate") {
+		t.Error("Kai must be the active app when it asks, or macOS may not register the request")
+	}
+}
+
+func TestScreenRecordingRequestEscalatesToCaptureOnlyWhenNotGranted(t *testing.T) {
+	body := requestBody(t, readSwift(t, "apple_accessibility.swift"))
+	ask := strings.Index(body, "CGRequestScreenCaptureAccess()")
+	pre := strings.Index(body, "CGPreflightScreenCaptureAccess()")
+	capture := strings.Index(body, "SCShareableContent")
+	// The pane is opened by the openPane closure; it must be CALLED after the capture attempt.
+	open := strings.LastIndex(body, "openPane()")
+	if !strings.Contains(body, "NSWorkspace.shared.open") {
+		t.Fatal("the pane must still be opened")
+	}
+	if ask < 0 || pre < 0 || capture < 0 || open < 0 {
+		t.Fatalf("request, preflight, capture attempt and pane open must all be present (ask=%d pre=%d capture=%d open=%d)", ask, pre, capture, open)
+	}
+	if !(ask < pre && pre < capture && capture < open) {
+		t.Error("order must be: request, preflight, capture attempt (only if not granted), open the pane")
+	}
+	// The capture attempt sits inside an `if !CGPreflightScreenCaptureAccess()` guard.
+	if !strings.Contains(body, "if !CGPreflightScreenCaptureAccess()") {
+		t.Error("the capture attempt must be guarded by `if !CGPreflightScreenCaptureAccess()`")
+	}
+}

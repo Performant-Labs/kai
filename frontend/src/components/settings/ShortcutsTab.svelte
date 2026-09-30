@@ -12,6 +12,7 @@
     CheckScreenRecording,
     OpenScreenRecordingSettings,
     CheckInputMonitoring,
+    OpenInputMonitoringSettings,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts';
   import { Dialogs } from '@wailsio/runtime';
   import { isMac as detectMac } from '../../runtime/platform';
@@ -124,7 +125,7 @@
   }
 
   // Input Monitoring (translate on double Cmd+C needs it): true=granted, false=denied, null=unknown.
-  // macOS shows no prompt for this read; the user switches it on in Privacy & Security.
+  // The state read never prompts; the Grant button registers Kai in the list and opens the pane.
   let imGranted = $state<boolean | null>(null);
 
   async function loadInputMonitoring() {
@@ -132,6 +133,16 @@
       imGranted = await CheckInputMonitoring();
     } catch (e) {
       console.error(t('log.shortcutCheckInputMonitoringFailed'), e);
+    }
+  }
+
+  async function openInputMonitoring() {
+    try {
+      await OpenInputMonitoringSettings();
+      // Same single quick re-check as the other two buttons; the 3 s poll does the rest.
+      setTimeout(loadInputMonitoring, 800);
+    } catch (e) {
+      console.error(t('log.shortcutOpenInputMonitoringFailed'), e);
     }
   }
 
@@ -422,7 +433,11 @@
             {:else}
               <span class="u-text-warn text-sm font-medium">{t('settings.accDenied')}</span>
             {/if}
-            <button class="u-btn u-btn--primary px-3 py-1.5 text-sm" onclick={openAccessibility}>
+            <button
+              class="u-btn u-btn--primary px-3 py-1.5 text-sm"
+              data-testid="grant-accessibility"
+              onclick={openAccessibility}
+            >
               {t('settings.accOpen')}
             </button>
           </div>
@@ -442,13 +457,17 @@
             {:else}
               <span class="u-text-warn text-sm font-medium">{t('settings.accDenied')}</span>
             {/if}
-            <button class="u-btn u-btn--primary px-3 py-1.5 text-sm" onclick={openScreenRecording}>
+            <button
+              class="u-btn u-btn--primary px-3 py-1.5 text-sm"
+              data-testid="grant-screen-recording"
+              onclick={openScreenRecording}
+            >
               {t('settings.accOpen')}
             </button>
           </div>
         </div>
 
-        <!-- Input Monitoring: translate on double Cmd+C depends on it (no button: there is no prompt to raise) -->
+        <!-- Input Monitoring: translate on double Cmd+C depends on it -->
         <div class="flex items-center justify-between gap-4">
           <div class="min-w-0">
             <div class="text-sm font-medium">{t('settings.permInputMonitoring')}</div>
@@ -462,6 +481,13 @@
             {:else}
               <span class="u-text-warn text-sm font-medium">{t('settings.accDenied')}</span>
             {/if}
+            <button
+              class="u-btn u-btn--primary px-3 py-1.5 text-sm"
+              data-testid="grant-input-monitoring"
+              onclick={openInputMonitoring}
+            >
+              {t('settings.accOpen')}
+            </button>
           </div>
         </div>
       </div>

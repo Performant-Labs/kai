@@ -71,6 +71,14 @@ export function OpenAccessibilitySettings(): $CancellablePromise<void> {
 }
 
 /**
+ * OpenInputMonitoringSettings asks macOS to list Kai under Input Monitoring and opens that pane
+ * (darwin only; a no-op elsewhere). The Settings page re-checks the state every 3 seconds.
+ */
+export function OpenInputMonitoringSettings(): $CancellablePromise<void> {
+    return $Call.ByID(731115276);
+}
+
+/**
  * OpenScreenRecordingSettings pops the system "Screen Recording" permission dialog (darwin
  * only).
  */

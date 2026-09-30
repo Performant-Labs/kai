@@ -400,6 +400,7 @@ export const zh: Dict = {
     shortcutCheckScreenRecordingFailed: '[快捷键] 检测屏幕录制授权失败',
     shortcutCheckInputMonitoringFailed: '[快捷键] 检测输入监控授权失败',
     shortcutOpenScreenRecordingFailed: '[快捷键] 打开屏幕录制设置失败',
+    shortcutOpenInputMonitoringFailed: '[快捷键] 打开输入监控设置失败',
     shortcutLoadConfigFailed: '加载快捷键配置失败',
     translateCardCopyFailed: '[截图翻译] 复制失败',
     engineLogOptionalListFailed: '[引擎] 加载可选引擎列表失败',

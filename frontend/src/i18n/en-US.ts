@@ -413,6 +413,7 @@ export const en: Dict = {
     shortcutCheckScreenRecordingFailed: '[shortcut] Failed to check Screen Recording permission',
     shortcutCheckInputMonitoringFailed: '[shortcut] Failed to check Input Monitoring permission',
     shortcutOpenScreenRecordingFailed: '[shortcut] Failed to open Screen Recording settings',
+    shortcutOpenInputMonitoringFailed: '[shortcut] Failed to open Input Monitoring settings',
     shortcutLoadConfigFailed: 'Failed to load shortcut config',
     translateCardCopyFailed: '[screenshot] Copy failed',
     engineLogOptionalListFailed: '[engine] failed to load optional engine list',

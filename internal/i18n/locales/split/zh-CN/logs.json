@@ -89,6 +89,7 @@
   "log.selection_query": "[动态桥接] 辅助功能授权查询",
   "log.selection_read": "选区读取",
   "log.input_monitoring_query": "输入监控授权查询",
+  "log.input_monitoring_request": "输入监控授权请求 登记 Kai 并打开设置面板",
   "log.httplog_cleanup_failed": "清理过期日志失败",
   "log.httplog_cleaned": "已清理过期日志",
   "log.frontend_log_init_failed": "初始化前端日志失败，跳过: %v",

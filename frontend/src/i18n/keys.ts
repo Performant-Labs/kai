@@ -396,6 +396,7 @@ export type Dict = {
     shortcutCheckScreenRecordingFailed: string;
     shortcutCheckInputMonitoringFailed: string;
     shortcutOpenScreenRecordingFailed: string;
+    shortcutOpenInputMonitoringFailed: string;
     shortcutLoadConfigFailed: string;
     translateCardCopyFailed: string;
     engineLogOptionalListFailed: string;

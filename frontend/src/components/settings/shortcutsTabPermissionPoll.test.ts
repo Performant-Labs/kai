@@ -39,6 +39,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts', () => ({
   OpenAccessibilitySettings: vi.fn(),
   CheckScreenRecording: () => h.checkSr(),
   OpenScreenRecordingSettings: vi.fn(),
+  OpenInputMonitoringSettings: async () => {},
   CheckInputMonitoring: () => h.checkIm(),
 }));
 vi.mock('../../utils/analytics', () => ({ track: vi.fn() }));

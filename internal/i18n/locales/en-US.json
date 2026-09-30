@@ -239,6 +239,7 @@
   "log.httplog_cleaned": "Cleaned old logs",
   "log.httplog_cleanup_failed": "Failed to clean up old logs",
   "log.input_monitoring_query": "Input monitoring authorization query",
+  "log.input_monitoring_request": "Input monitoring authorization request: register Kai and open the settings pane",
   "log.log_config_applied": "Log config applied",
   "log.log_initialized": "Log initialized, writing to: %s",
   "log.notification_auth_request_failed": "Failed to request notification authorization",

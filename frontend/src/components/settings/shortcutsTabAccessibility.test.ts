@@ -28,6 +28,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts', () => ({
   CheckScreenRecording: async () => h.screenRecording,
   CheckInputMonitoring: async () => true,
   OpenScreenRecordingSettings: vi.fn(),
+  OpenInputMonitoringSettings: async () => {},
 }));
 
 import ShortcutsTab from './ShortcutsTab.svelte';
