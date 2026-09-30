@@ -79,10 +79,13 @@ else
   command -v gh >/dev/null 2>&1 || die "gh is not installed (or use --from FILE)"
   [[ -n "$tag" ]] || tag="$(gh release view --repo "$repo" --json tagName --jq .tagName)" || die "could not find the latest release"
   echo "downloading $tag from $repo"
-  gh release download "$tag" --repo "$repo" --dir "$work/dl" --pattern '*.zip' --pattern SHA256SUMS >/dev/null \
+  gh release download "$tag" --repo "$repo" --dir "$work/dl" --pattern 'Kai-*.zip' --pattern SHA256SUMS >/dev/null \
     || die "could not download $tag"
-  # `|| true`: with no zip, ls fails and pipefail + set -e would end the script without a message.
-  src="$(ls "$work"/dl/*.zip 2>/dev/null | head -1 || true)"
+  # A release carries two zips: Kai-X.Y.Z-darwin-arm64.zip (this one) and updater-Kai-...zip, the
+  # in-app updater's copy of it (docs/releasing.md). Take the first that is not the updater's,
+  # whatever gh downloaded. `|| true`: with no zip, ls fails and pipefail + set -e would end the
+  # script without a message.
+  src="$(ls "$work"/dl/*.zip 2>/dev/null | grep -v '/updater-[^/]*$' | head -1 || true)"
   [[ -n "$src" ]] || die "$tag has no zip asset"
   (cd "$work/dl" && grep " $(basename "$src")\$" SHA256SUMS | shasum -a 256 -c - >/dev/null 2>&1) \
     || die "checksum mismatch for the downloaded $(basename "$src")"
