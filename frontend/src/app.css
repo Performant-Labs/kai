@@ -570,7 +570,8 @@ body {
   /* Fast custom tooltip (issue #165): the native `title` tooltip in the Wails/WKWebView shell
      has a long hover delay, so an icon-only control whose glyph isn't self-evident at a glance
      (pin, auto-clipboard) gets an instant CSS tooltip as the primary visible affordance.
-     `title`/aria-label stay on the element for accessibility and as a fallback.
+     The trigger carries NO native `title` (it would show a second, duplicate tooltip after its
+     delay): aria-label / aria-describedby keep the text accessible.
      Opens BELOW the trigger, not above (PR #166 review finding): both current uses sit in the
      pane header row, right at the top edge of a `.u-card--panel` `overflow-hidden` ancestor —
      a tooltip opening upward would be clipped by that boundary before it became visible. Below
@@ -610,15 +611,18 @@ body {
     max-width: min(24rem, 90vw);
   }
 
-  .u-tooltip--start:hover::after,
-  .u-tooltip--start:focus-visible::after {
-    transform: translateY(0);
-  }
-
   .u-tooltip:hover::after,
   .u-tooltip:focus-visible::after {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+  }
+
+  /* Must beat the generic hover rule above, which has equal specificity and would otherwise
+     win on hover and shift this left-anchored tooltip left by half its width, off the window
+     edge. Doubled class raises specificity; placing it after also wins on order. */
+  .u-tooltip.u-tooltip--start:hover::after,
+  .u-tooltip.u-tooltip--start:focus-visible::after {
+    transform: translateY(0);
   }
 
   /* Pane title-area header (issue #165): a fixed height so the source and result panes' header

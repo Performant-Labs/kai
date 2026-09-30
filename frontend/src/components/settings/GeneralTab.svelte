@@ -134,7 +134,6 @@
       class="u-btn u-btn--ghost u-tooltip px-3 py-1.5 text-sm"
       data-testid="font-size-smaller"
       aria-label={t('settings.fontSizeSmaller')}
-      title={t('settings.fontSizeSmaller')}
       data-tooltip={t('settings.fontSizeSmaller')}
       disabled={atSmallest}
       onclick={() => changeFontSize(stepFontSize($fontSize, -1))}
@@ -148,7 +147,6 @@
       class="u-btn u-btn--ghost u-tooltip px-3 py-1.5 text-sm"
       data-testid="font-size-larger"
       aria-label={t('settings.fontSizeLarger')}
-      title={t('settings.fontSizeLarger')}
       data-tooltip={t('settings.fontSizeLarger')}
       disabled={atLargest}
       onclick={() => changeFontSize(stepFontSize($fontSize, 1))}
@@ -159,7 +157,6 @@
       class="u-btn u-btn--ghost u-tooltip px-3 py-1.5 text-sm"
       data-testid="font-size-reset"
       aria-label={t('settings.fontSizeReset')}
-      title={t('settings.fontSizeReset')}
       data-tooltip={t('settings.fontSizeReset')}
       disabled={$fontSize === DEFAULT_FONT_SIZE}
       onclick={() => changeFontSize(DEFAULT_FONT_SIZE)}

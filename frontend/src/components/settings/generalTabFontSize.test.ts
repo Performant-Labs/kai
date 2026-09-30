@@ -129,7 +129,7 @@ describe('GeneralTab text size control, mounted', () => {
     expect(q('font-size-reset').disabled).toBe(true);
   });
 
-  it('the buttons carry the #165 tooltip (instant data-tooltip plus title and aria-label)', async () => {
+  it('the buttons carry the #165 tooltip (instant data-tooltip plus aria-label, and no native title duplicate)', async () => {
     await mountTab();
     const want: Record<string, string> = {
       'font-size-smaller': en.settings.fontSizeSmaller,
@@ -140,9 +140,16 @@ describe('GeneralTab text size control, mounted', () => {
       const b = q(id);
       expect(b.classList.contains('u-tooltip'), id).toBe(true);
       expect(b.getAttribute('data-tooltip'), id).toBe(text);
-      expect(b.getAttribute('title'), id).toBe(text);
+      expect(b.hasAttribute('title'), id).toBe(false);
       expect(b.getAttribute('aria-label'), id).toBe(text);
     }
+  });
+
+  it('no element carrying data-tooltip also carries a native title', async () => {
+    await mountTab();
+    const tipped = [...target.querySelectorAll('[data-tooltip]')];
+    expect(tipped).toHaveLength(3);
+    for (const el of tipped) expect(el.hasAttribute('title'), el.getAttribute('data-tooltip')!).toBe(false);
   });
 
   it('sits with the language and theme controls, before the analytics switch', async () => {
