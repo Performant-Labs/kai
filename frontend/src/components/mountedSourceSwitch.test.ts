@@ -273,18 +273,16 @@ describe('TranslateWindow, mounted: double Cmd+C (issue #199)', () => {
 });
 
 describe('TranslateWindow, mounted: missing Accessibility permission (issue #194)', () => {
-  it('shows the actionable toast, naming both labels and the re-add step, not the generic failure', async () => {
+  it('shows the actionable toast, naming the pane, not the generic failure', async () => {
     expect(target.querySelector('.u-toast')).toBeNull();
     h.fire('kai:accessibility:missing', undefined);
     await settle();
     const toast = target.querySelector('.u-toast');
     expect(toast, 'no toast after kai:accessibility:missing').not.toBeNull();
     const text = toast!.textContent ?? '';
-    expect(text).toContain('Accessibility');
     expect(text).toContain('Device Control and Data Access');
     expect(text).toContain('Privacy & Security');
     expect(text).toContain('Kai');
-    expect(text).toContain('add it again');
     expect(text).not.toContain("couldn't capture");
   });
 

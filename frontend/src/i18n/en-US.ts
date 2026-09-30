@@ -104,9 +104,9 @@ export const en: Dict = {
     autoClipboard: 'Automatically translate clipboard content when you press the hotkey',
     copyKeyFailed: "Couldn't capture the selection — copy it manually, then press the hotkey again",
     doubleCopyPermission:
-      'Double Cmd+C needs Input Monitoring. Open System Settings > Privacy & Security > Input Monitoring, turn on Kai, then switch the option off and on again in Settings > Shortcuts.',
+      'Turn on Kai in Privacy & Security > Input Monitoring, then switch it off and on in Settings > Shortcuts.',
     accessibilityMissing:
-      'Kai cannot copy your selection: macOS has not given it the Accessibility permission. Open System Settings > Privacy & Security > Accessibility (on macOS 27 it is called "Device Control and Data Access") and turn on Kai. If you installed or rebuilt Kai, select Kai in that list, remove it with the minus button, and add it again.',
+      "Kai can't copy your selection. Turn on Kai in Privacy & Security > Device Control and Data Access.",
     cancel: 'Cancel',
     cancelEngine: 'Cancel {engine}',
     cancelled: 'Cancelled',
@@ -144,7 +144,7 @@ export const en: Dict = {
     doubleCopyHint:
       'Press Cmd+C twice quickly in any app to translate what you copied. Needs the Input Monitoring permission. Copies from password managers and keychain apps, and copies marked as secret, are never translated.',
     doubleCopyPermission:
-      'Kai needs Input Monitoring to see the double Cmd+C. Open System Settings > Privacy & Security > Input Monitoring, turn on Kai, then switch this option off and on again.',
+      'Turn on Kai in Privacy & Security > Input Monitoring, then switch this option off and on.',
     engines: 'Engines',
     enginesTitle: 'Translation Engines',
     engineList: 'Engine list',
@@ -276,8 +276,7 @@ export const en: Dict = {
       'These macOS permissions affect shortcuts and screenshot translation. Please make sure they are enabled.',
     permAccessibility: 'Accessibility',
     permAccessibilityHint: 'Copy key clipboard reading requires this permission.',
-    permAccessibilityMissing:
-      'Without it Kai cannot copy your selection. Open System Settings > Privacy & Security > Accessibility (on macOS 27: "Device Control and Data Access") and turn on Kai. After installing or rebuilding Kai, remove it from that list and add it again.',
+    permAccessibilityMissing: 'Turn on Kai in Privacy & Security > Device Control and Data Access.',
     permScreenRecording: 'Screen Recording',
     permScreenRecordingHint:
       'Screenshot translation needs this to read the selected screen region for OCR (no video is recorded).',
