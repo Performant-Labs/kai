@@ -17,6 +17,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - The China mirror (cnb.cool) update source is removed. A saved "cnb" update-source setting is reset to the default on the next launch (#178).
 
 ### Bug Fixes
+- Settings > Shortcuts: the Screen Recording **Grant access** button now asks macOS for the permission before opening the pane. Before, it only opened the pane, and macOS lists an app there only after the app has asked, so Kai never appeared in the list and there was nothing to switch on. (Screenshot translation needs this permission.)
 - Settings > Shortcuts showed the Accessibility and Screen Recording rows as "Granted" whatever the real permission was, because Kai read the permission answer wrongly and treated every reply as "granted" (a bug inherited from upstream Kai). The rows now show the real state, and the missing-permission message from #194 (Alt+A and the tray input entry) now appears when the permission is really missing. An answer that cannot be read is never shown as "Granted" in Settings, and never blocks a capture. **Not yet confirmed in the real app:** the permission removed and then added again.
 
 ## [0.1.0] - 2026-09-29

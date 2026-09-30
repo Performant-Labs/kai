@@ -56,12 +56,15 @@ public func kai_screenrecording_enabled(
   return writeCString(enabled ? "true" : "false", into: out, cap: out_cap)
 }
 
-// kai_screenrecording_request: opens System Settings > Privacy & Security > Screen
-// Recording.
-// A 0 return means the pane opened successfully.
+// kai_screenrecording_request: asks macOS for the Screen Recording permission, then opens
+// System Settings > Privacy & Security > Screen Recording.
+// macOS lists an app in that pane only after the app has asked (CGRequestScreenCaptureAccess) or
+// tried to capture; opening the pane alone left Kai out of the list, with nothing to switch on.
+// A 0 return means the request was made and the pane opened ("requested", not "granted").
 @_cdecl("kai_screenrecording_request")
 public func kai_screenrecording_request() -> Int32 {
   bridgeFileLog(bridgeLogText("screen.request"))
+  _ = CGRequestScreenCaptureAccess()
   if let url = URL(
     string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
   {
