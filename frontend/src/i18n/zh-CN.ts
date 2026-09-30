@@ -266,8 +266,7 @@ export const zh: Dict = {
     permHint: '以下 macOS 授权会影响快捷键与截图翻译功能，请确认已开启。',
     permAccessibility: '辅助功能',
     permAccessibilityHint: '复制键读取剪贴板需要此项授权。',
-    permAccessibilityMissing:
-      '未授权时 Kai 无法复制你选中的文字。请打开“系统设置 > 隐私与安全性 > 辅助功能”（macOS 27 中名为“设备控制与数据访问”），开启 Kai。安装或重新构建 Kai 后，请先从该列表中移除再重新添加。',
+    permAccessibilityMissing: '请在“隐私与安全性 > 设备控制与数据访问”中开启 Kai。',
     permScreenRecording: '屏幕录制',
     permScreenRecordingHint: '截图翻译需要此项授权，才能在框选后读取屏幕区域做 OCR（不录制视频）。',
     // TODO: 输入监控 i18n key（permInputMonitoring / permInputMonitoringHint）当前未使用，已注释。

@@ -276,8 +276,7 @@ export const en: Dict = {
       'These macOS permissions affect shortcuts and screenshot translation. Please make sure they are enabled.',
     permAccessibility: 'Accessibility',
     permAccessibilityHint: 'Copy key clipboard reading requires this permission.',
-    permAccessibilityMissing:
-      'Without it Kai cannot copy your selection. Open System Settings > Privacy & Security > Accessibility (on macOS 27: "Device Control and Data Access") and turn on Kai. After installing or rebuilding Kai, remove it from that list and add it again.',
+    permAccessibilityMissing: 'Turn on Kai in Privacy & Security > Device Control and Data Access.',
     permScreenRecording: 'Screen Recording',
     permScreenRecordingHint:
       'Screenshot translation needs this to read the selected screen region for OCR (no video is recorded).',

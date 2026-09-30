@@ -68,10 +68,18 @@ describe('ShortcutsTab Accessibility row, mounted (issue #194)', () => {
     expect(n, 'no message in the Accessibility row for a missing permission').not.toBeNull();
     const text = n!.textContent ?? '';
     expect(text).toContain('Privacy & Security');
-    expect(text).toContain('Accessibility');
     expect(text).toContain('Device Control and Data Access');
     expect(text).toContain('Kai');
-    expect(text).toContain('add it again');
+  });
+
+  it('keeps the note to one short line: the status and the button already say the rest', async () => {
+    // It was a four-line paragraph repeating what the toast says, which cluttered the row.
+    h.accessibility = false;
+    await mountTab();
+    const text = (note()?.textContent ?? '').trim();
+    expect(text.length).toBeGreaterThan(0);
+    expect(text.length).toBeLessThanOrEqual(90);
+    expect(text).not.toContain('add it again');
   });
 
   it('shows no message when the permission is granted', async () => {
