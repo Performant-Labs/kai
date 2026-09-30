@@ -5,7 +5,8 @@
 #
 # Checks, in order (stops at the first failure):
 #   1. Info.plist reports X.Y.Z.
-#   2. The code signature is valid; prints whether it is ad-hoc or a Developer ID.
+#   2. The code signature is valid; prints its kind (ad-hoc, stable certificate or Developer ID)
+#      as an informational line via scripts/sign-check.sh. An ad-hoc signature does NOT fail this.
 #   3. No personal home-directory path is embedded in the binary.
 #   4. The app LAUNCHES and STAYS RUNNING for [seconds] (default 20) and its own startup log
 #      reports X.Y.Z. This is the check that matters most: issue #167 shipped a build that
@@ -36,6 +37,8 @@ echo "    ok: $got"
 echo "2/4 code signature"
 codesign --verify --deep --strict "$app" 2>&1 || { echo "FAIL: signature invalid" >&2; exit 1; }
 codesign -dv "$app" 2>&1 | grep -E "^(Identifier|Signature|Authority)" | sed 's/^/    /' || true
+# Informational only: never fails a release (v0.1.0 is ad-hoc on purpose).
+"$(dirname "$0")/sign-check.sh" "$app" 2>&1 | sed -n '1p;3p' | sed 's/^/    /' || true
 
 echo "3/4 embedded personal paths"
 if strings -a "$bin" | grep -E "/Users/[A-Za-z0-9._-]+/" | head -5 | grep -q .; then
