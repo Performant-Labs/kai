@@ -13,6 +13,9 @@ name: PushRequest
 # workflow or the fleet CI and remains a Mac task.
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
 
 permissions:
   contents: read
