@@ -9,6 +9,7 @@ import (
 
 	"cnb.cool/dtapp/kai/internal/doublecopy"
 	"cnb.cool/dtapp/kai/internal/events"
+	"cnb.cool/dtapp/kai/internal/execkey"
 	"cnb.cool/dtapp/kai/internal/settings"
 )
 
@@ -93,7 +94,7 @@ func newTestManager() *Manager { return &Manager{log: slog.Default()} }
 
 func TestTriggerCopyKey_CapturedText_ShowsWindowAndEmitsFill(t *testing.T) {
 	h, w, e := newTestManager(), &fakeWindow{}, &fakeEmitter{}
-	h.triggerCopyKey(w, e, func() string { return "sel" })
+	h.triggerCopyKey(w, e, func() (string, error) { return "sel", nil })
 	if w.shows != 1 || w.focuses != 1 {
 		t.Fatalf("shows=%d focuses=%d, want 1/1", w.shows, w.focuses)
 	}
@@ -104,7 +105,7 @@ func TestTriggerCopyKey_CapturedText_ShowsWindowAndEmitsFill(t *testing.T) {
 
 func TestTriggerCopyKey_EmptyCapture_EmitsCopyKeyFailed(t *testing.T) {
 	h, w, e := newTestManager(), &fakeWindow{}, &fakeEmitter{}
-	h.triggerCopyKey(w, e, func() string { return "" })
+	h.triggerCopyKey(w, e, func() (string, error) { return "", nil })
 	if w.shows != 1 || e.n != 1 || e.name != events.EventCopyKeyFailed {
 		t.Fatalf("shows=%d emit=%d %q", w.shows, e.n, e.name)
 	}
@@ -116,12 +117,12 @@ func TestTriggerCopyKey_OverlappingCallIsSkipped(t *testing.T) {
 	inCopy, release := make(chan struct{}), make(chan struct{})
 	done := make(chan struct{})
 	go func() {
-		h.triggerCopyKey(w1, e, func() string { close(inCopy); <-release; return "first" })
+		h.triggerCopyKey(w1, e, func() (string, error) { close(inCopy); <-release; return "first", nil })
 		close(done)
 	}()
 	<-inCopy
 	called := false
-	h.triggerCopyKey(w2, e, func() string { called = true; return "second" })
+	h.triggerCopyKey(w2, e, func() (string, error) { called = true; return "second", nil })
 	if called || w2.shows != 0 {
 		t.Fatal("overlapping call must not run CopySelection or touch the window")
 	}
@@ -136,9 +137,63 @@ func TestTriggerCopyKey_OverlappingCallIsSkipped(t *testing.T) {
 	}
 	// Guard released: a later call runs normally.
 	w3 := &fakeWindow{}
-	h.triggerCopyKey(w3, e, func() string { return "third" })
+	h.triggerCopyKey(w3, e, func() (string, error) { return "third", nil })
 	if w3.shows != 1 {
 		t.Fatal("guard was not released after the first call finished")
+	}
+}
+
+// ---- Issue #194: a missing Accessibility permission is reported as such, once in a while ----
+
+func missingPermission() (string, error) { return "", execkey.ErrAccessibilityMissing }
+
+func TestTriggerCopyKey_PermissionMissing_EmitsTheAccessibilityMessageNotCopyKeyFailed(t *testing.T) {
+	h, w, e := newTestManager(), &fakeWindow{}, &fakeEmitter{}
+	h.triggerCopyKey(w, e, missingPermission)
+	if w.shows != 1 || w.focuses != 1 {
+		t.Fatalf("shows=%d focuses=%d, want the window still shown 1/1", w.shows, w.focuses)
+	}
+	if e.n != 1 || e.name != events.EventAccessibilityMissing || len(e.args) != 0 {
+		t.Fatalf("emit = %d %q %#v, want one %q", e.n, e.name, e.args, events.EventAccessibilityMissing)
+	}
+}
+
+func TestTriggerCopyKey_PermissionPresentAndNothingSelected_DoesNotClaimAPermissionProblem(t *testing.T) {
+	h, w, e := newTestManager(), &fakeWindow{}, &fakeEmitter{}
+	h.triggerCopyKey(w, e, func() (string, error) { return "", nil })
+	if e.name != events.EventCopyKeyFailed || e.n != 1 {
+		t.Fatalf("emit = %d %q, want the ordinary copy-key failure", e.n, e.name)
+	}
+}
+
+func TestTriggerCopyKey_PermissionMissing_IsNotRepeatedOnEveryPress(t *testing.T) {
+	h, e := newTestManager(), &fakeEmitter{}
+	clock := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	h.now = func() time.Time { return clock }
+
+	press := func() { h.triggerCopyKey(&fakeWindow{}, e, missingPermission) }
+	press()
+	clock = clock.Add(10 * time.Second)
+	press()
+	clock = clock.Add(accessibilityNoticeEvery - 11*time.Second)
+	press()
+	if e.n != 1 {
+		t.Fatalf("emitted %d times for three presses inside the throttle, want 1", e.n)
+	}
+	clock = clock.Add(2 * time.Second) // now more than the interval after the first message
+	press()
+	if e.n != 2 || e.name != events.EventAccessibilityMissing {
+		t.Fatalf("emitted %d (%q) after the interval, want a second message", e.n, e.name)
+	}
+}
+
+func TestTriggerCopyKey_PermissionMissing_WindowStillShownWhileThrottled(t *testing.T) {
+	h, e := newTestManager(), &fakeEmitter{}
+	h.triggerCopyKey(&fakeWindow{}, e, missingPermission)
+	w := &fakeWindow{}
+	h.triggerCopyKey(w, e, missingPermission)
+	if w.shows != 1 || e.n != 1 {
+		t.Fatalf("shows=%d emits=%d, want the window shown and no second message", w.shows, e.n)
 	}
 }
 
