@@ -321,16 +321,16 @@ func captureLog(t *testing.T) *strings.Builder {
 }
 
 func TestPlanSourceSwitchLogsOneInfoLinePerDecisionWithoutContent(t *testing.T) {
-	secret := "Mi contrasena secreta es LibelulaAzul y no debe aparecer en ningun registro"
+	selection := "Mi contrasena secreta es LibelulaAzul y no debe aparecer en ningun registro"
 	buf := captureLog(t)
 	svc := newSwitchService(t, &fakeDetector{lang: "es", conf: 0.9123, ok: true}, langpref.New())
-	svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: secret, From: model.EN, To: model.FR})
+	svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: selection, From: model.EN, To: model.FR})
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	if len(lines) != 1 {
 		t.Fatalf("got %d log lines, want exactly 1:\n%s", len(lines), buf.String())
 	}
 	line := lines[0]
-	n := utf8.RuneCountInString(secret)
+	n := utf8.RuneCountInString(selection)
 	for _, want := range []string{"level=INFO", "reason=switched", "detected=es", "confidence=0.912", "runes=" + strconv.Itoa(n), "by=local"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("log line lacks %q: %s", want, line)
