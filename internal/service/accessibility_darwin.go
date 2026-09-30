@@ -88,7 +88,9 @@ func (s *AppService) isInputMonitoringEnabled() bool {
 // (darwin only). Only the Grant button calls it, never the 3-second poll.
 func (s *AppService) openInputMonitoringSettings() {
 	s.log.Info(i18n.T("log.input_monitoring_request"))
-	if !swiftbridge.Available() {
+	// The function pointer is non-nil only once the bridge has loaded and registered it, so a nil check
+	// covers "bridge not loaded" and lets a test stub the call.
+	if swiftbridge.KaiInputMonitoringRequest == nil {
 		return
 	}
 	swiftbridge.KaiInputMonitoringRequest()
