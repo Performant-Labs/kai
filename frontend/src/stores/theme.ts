@@ -91,7 +91,9 @@ function writeThemeCache(): void {
 function applyClass(): void {
   const dark = get(isDark);
   document.documentElement.classList.toggle('dark', dark);
-  document.documentElement.style.backgroundColor = dark ? darkVars['--app-bg'] : lightVars['--app-bg'];
+  document.documentElement.style.backgroundColor = dark
+    ? darkVars['--app-bg']
+    : lightVars['--app-bg'];
   writeThemeCache();
 }
 
