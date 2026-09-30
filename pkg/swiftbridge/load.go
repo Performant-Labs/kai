@@ -90,6 +90,10 @@ var (
 	KaiDoubleCopyPasteboard func(out unsafe.Pointer, outCap int32) int32
 	// KaiDoubleCopyIngest is the tap callback's body, exposed so tests can drive it without a tap.
 	KaiDoubleCopyIngest func(keycode int32, flags uint64, autorepeat int32, srcPid int32) int32
+
+	// KaiWindowSetWebviewBackground (issue #22) makes a window's web view draw no background of its own and
+	// sets the colour behind the page; the window is the native NSWindow pointer, r g b are 0-255. Main thread only.
+	KaiWindowSetWebviewBackground func(window uintptr, r int32, g int32, b int32) int32
 )
 
 // The dylib defaults to the same directory as this .go source file (build.sh copies the
@@ -212,6 +216,7 @@ func registerAll(h uintptr) {
 	register(&KaiDoubleCopyRequest, "kai_doublecopy_request")
 	register(&KaiDoubleCopyPasteboard, "kai_doublecopy_pasteboard")
 	register(&KaiDoubleCopyIngest, "kai_doublecopy_ingest")
+	register(&KaiWindowSetWebviewBackground, "kai_window_set_webview_background")
 }
 
 // Available reports whether the Swift bridge loaded successfully (dylib Dlopen'ed and the

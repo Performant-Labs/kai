@@ -114,7 +114,10 @@ func TestResizableWindowsUseTheScaledWidths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(src)
+	// gofmt aligns the values of a struct literal's keys, so a longer neighbouring key (issue #15 added
+	// BackgroundColour) changes the spacing after a colon; compare with whitespace runs collapsed.
+	collapse := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	text := collapse(string(src))
 	for _, want := range []string{
 		"translateWindowSize(settingsService, widthForDefaultText(960), 640, widthForDefaultText(780), 520)",
 		"MinWidth:  widthForDefaultText(780),",
@@ -123,7 +126,7 @@ func TestResizableWindowsUseTheScaledWidths(t *testing.T) {
 		"Width:  1280,",
 		"MaxWidth:      1280,",
 	} {
-		if !strings.Contains(text, want) {
+		if !strings.Contains(text, collapse(want)) {
 			t.Errorf("main.go lacks %q", want)
 		}
 	}
