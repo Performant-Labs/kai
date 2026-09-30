@@ -37,16 +37,35 @@ import (
 // }
 
 // accessibilityEnabledViaBridge only queries the accessibility permission state (a liveness
-// probe before coordinate positioning); it reads no selection.
+// probe before coordinate positioning); it reads no selection. An answer that cannot be read is
+// UNKNOWN and counts as granted (the #211 rule: a bridge problem never blocks a capture that
+// works); only a real "false" is missing. A bridge that is not loaded keeps its old answer here
+// (false: no positioning without it); AccessibilityGranted decides that case itself, as unknown.
 func accessibilityEnabledViaBridge() bool {
-	// Degrade safely when the dylib isn’t loaded: treat as not authorized (no panic).
+	// Degrade safely when the dylib isn’t loaded (no panic).
 	if !swiftbridge.Available() {
 		slog.Warn(i18n.T("log.swiftbridge_unavailable"))
 		return false
 	}
-	enabled := swiftbridge.KaiAccessibilityEnabled() != 0
-	slog.Info(i18n.T("log.selection_query"), slog.Bool(i18n.T("log.field_result"), enabled))
-	return enabled
+	return accessibilityFromQuery(swiftbridge.KaiAccessibilityEnabled)
+}
+
+// accessibilityAnswer reads the Swift query through the shared helper. known is false when the
+// answer could not be read; granted is only meaningful when known.
+func accessibilityAnswer(query func(unsafe.Pointer, int32) int32) (granted, known bool) {
+	return swiftbridge.QueryEnabled(query)
+}
+
+// accessibilityFromQuery turns the query into the granted/missing decision: unknown counts as
+// granted, only a real "false" is missing.
+func accessibilityFromQuery(query func(unsafe.Pointer, int32) int32) bool {
+	granted, known := accessibilityAnswer(query)
+	if !known {
+		slog.Warn(i18n.T("log.swiftbridge_unavailable"))
+		return true
+	}
+	slog.Info(i18n.T("log.selection_query"), slog.Bool(i18n.T("log.field_result"), granted))
+	return granted
 }
 
 // isAccessibilityEnabled checks whether macOS accessibility is granted to the current

@@ -16,6 +16,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - The in-app updater no longer looks at upstream Kai's releases, so it can no longer offer an upstream build over this one. It checks this fork instead (#178). This fork's repository is private, so for now the check finds nothing and stays silent: updates are not available until releases are published somewhere public, and each release is installed by hand.
 - The China mirror (cnb.cool) update source is removed. A saved "cnb" update-source setting is reset to the default on the next launch (#178).
 
+### Bug Fixes
+- Settings > Shortcuts showed the Accessibility and Screen Recording rows as "Granted" whatever the real permission was, because Kai read the permission answer wrongly and treated every reply as "granted" (a bug inherited from upstream Kai). The rows now show the real state, and the missing-permission message from #194 (Alt+A and the tray input entry) now appears when the permission is really missing. An answer that cannot be read is never shown as "Granted" in Settings, and never blocks a capture. **Not yet confirmed in the real app:** the permission removed and then added again.
+
 ## [0.1.0] - 2026-09-29
 <!-- changelog-skip: PRs deliberately not listed (CI, test-harness and i18n-key-check plumbing, and a groundwork PR replaced by #147): #4 #21 #27 #37 #71 -->
 

@@ -4,10 +4,20 @@ package service
 
 import (
 	"log/slog"
+	"unsafe"
 
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/pkg/swiftbridge"
 )
+
+// permissionFromQuery reads a Swift permission query for the Settings > Shortcuts rows. An answer
+// that cannot be read is NOT shown as granted (the same as an unloaded bridge, which already reads
+// as not granted here): the row offers "Grant access", which is harmless, instead of claiming a
+// permission nobody confirmed.
+func permissionFromQuery(query func(unsafe.Pointer, int32) int32) bool {
+	enabled, ok := swiftbridge.QueryEnabled(query)
+	return ok && enabled
+}
 
 // isAccessibilityEnabled checks whether macOS accessibility is granted to the current binary.
 func (s *AppService) isAccessibilityEnabled() bool {
@@ -16,7 +26,7 @@ func (s *AppService) isAccessibilityEnabled() bool {
 		s.log.Warn(i18n.T("log.swiftbridge_unavailable"))
 		return false
 	}
-	enabled := swiftbridge.KaiAccessibilityEnabled() != 0
+	enabled := permissionFromQuery(swiftbridge.KaiAccessibilityEnabled)
 	s.log.Info(i18n.T("log.accessibility_query"), slog.Bool(i18n.T("log.field_result"), enabled))
 	return enabled
 }
@@ -38,7 +48,7 @@ func (s *AppService) isScreenRecordingEnabled() bool {
 		s.log.Warn(i18n.T("log.swiftbridge_unavailable"))
 		return false
 	}
-	enabled := swiftbridge.KaiScreenRecordingEnabled() != 0
+	enabled := permissionFromQuery(swiftbridge.KaiScreenRecordingEnabled)
 	s.log.Info(i18n.T("log.screenrecording_query"), slog.Bool(i18n.T("log.field_result"), enabled))
 	return enabled
 }
