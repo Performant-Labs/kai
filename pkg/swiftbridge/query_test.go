@@ -16,7 +16,7 @@ func fakeQuery(s string, raw *int32) func(unsafe.Pointer, int32) int32 {
 		if out == nil || outCap <= 1 {
 			return -1
 		}
-		buf := unsafe.Slice((*byte)(out), int(outCap))
+		buf := unsafe.Slice((*byte)(out), int(outCap)) //nolint:gosec // test stand-in for Swift writing into the caller's buffer
 		n := copy(buf[:outCap-1], s)
 		buf[n] = 0
 		return int32(n) //nolint:gosec // n <= outCap-1
