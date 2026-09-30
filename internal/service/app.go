@@ -116,18 +116,11 @@ func (s *AppService) OpenScreenRecordingSettings() {
 	s.openScreenRecordingSettings()
 }
 
-// TODO: input-monitoring related (CheckInputMonitoring / OpenInputMonitoringSettings exported
-// methods) currently unused, commented out.
-// // CheckInputMonitoring checks whether macOS input monitoring is authorized (cross-platform:
-// non-darwin returns true directly).
-// func (s *AppService) CheckInputMonitoring() bool {
-// 	return s.isInputMonitoringEnabled()
-// }
-//
-// // OpenInputMonitoringSettings opens the system input-monitoring settings pane (darwin only).
-// func (s *AppService) OpenInputMonitoringSettings() {
-// 	s.openInputMonitoringSettings()
-// }
+// CheckInputMonitoring checks whether macOS Input Monitoring is authorized (translate on double
+// Cmd+C needs it; cross-platform: non-darwin returns true directly). The Settings page polls it.
+func (s *AppService) CheckInputMonitoring() bool {
+	return s.isInputMonitoringEnabled()
+}
 
 // ServiceName returns the service name (part of the wails lifecycle trio).
 func (s *AppService) ServiceName() string {

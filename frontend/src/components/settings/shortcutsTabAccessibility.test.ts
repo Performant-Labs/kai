@@ -26,6 +26,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts', () => ({
   CheckAccessibility: async () => h.accessibility,
   OpenAccessibilitySettings: () => h.openAccessibility(),
   CheckScreenRecording: async () => h.screenRecording,
+  CheckInputMonitoring: async () => true,
   OpenScreenRecordingSettings: vi.fn(),
 }));
 

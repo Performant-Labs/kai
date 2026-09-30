@@ -25,6 +25,10 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts', () => ({
   CheckAccessibility: async () => true,
   OpenAccessibilitySettings: async () => {},
   CheckScreenRecording: async () => true,
+  // No live answer: the page falls back to the listener's status, which is what these tests drive.
+  CheckInputMonitoring: async () => {
+    throw new Error('no live answer');
+  },
   OpenScreenRecordingSettings: async () => {},
 }));
 vi.mock('@wailsio/runtime', () => ({

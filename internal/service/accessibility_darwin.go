@@ -27,7 +27,7 @@ func (s *AppService) isAccessibilityEnabled() bool {
 		return false
 	}
 	enabled := permissionFromQuery(swiftbridge.KaiAccessibilityEnabled)
-	s.log.Info(i18n.T("log.accessibility_query"), slog.Bool(i18n.T("log.field_result"), enabled))
+	s.log.Debug(i18n.T("log.accessibility_query"), slog.Bool(i18n.T("log.field_result"), enabled))
 	return enabled
 }
 
@@ -49,7 +49,7 @@ func (s *AppService) isScreenRecordingEnabled() bool {
 		return false
 	}
 	enabled := permissionFromQuery(swiftbridge.KaiScreenRecordingEnabled)
-	s.log.Info(i18n.T("log.screenrecording_query"), slog.Bool(i18n.T("log.field_result"), enabled))
+	s.log.Debug(i18n.T("log.screenrecording_query"), slog.Bool(i18n.T("log.field_result"), enabled))
 	return enabled
 }
 
@@ -63,19 +63,23 @@ func (s *AppService) openScreenRecordingSettings() {
 	swiftbridge.KaiScreenRecordingRequest()
 }
 
-// TODO: input-monitoring related (isInputMonitoringEnabled / openInputMonitoringSettings)
-// currently unused, commented out. Restore when robotgo is needed to simulate the copy key.
-// // isInputMonitoringEnabled checks whether macOS "Input Monitoring" is granted to the
-// current binary.
-// func (s *AppService) isInputMonitoringEnabled() bool {
-// 	enabled := C.kai_input_monitoring_enabled() != 0
-// 	s.log.Info(i18n.T("log.input_monitoring_query"), slog.Bool("result", enabled))
-// 	return enabled
-// }
-//
-// // openInputMonitoringSettings opens the system "Security & Privacy > Input Monitoring"
-// settings pane (darwin only).
-// func (s *AppService) openInputMonitoringSettings() {
-// 	s.log.Info("[Kai-Bridge-Cgo] input monitoring permission: opening system settings pane")
-// 	C.kai_input_monitoring_request()
-// }
+// inputMonitoringFromQuery reads the Input Monitoring answer for the Settings page. A bridge that
+// is not loaded, a nil query and an answer that cannot be read (the old no-buffer -1) all give
+// "not granted", never "granted" (issue #14). Split from the service method so that is testable
+// without the real dylib.
+func inputMonitoringFromQuery(available bool, query func(unsafe.Pointer, int32) int32) bool {
+	return available && permissionFromQuery(query)
+}
+
+// isInputMonitoringEnabled checks whether macOS Input Monitoring is granted to the current binary
+// (the translate-on-double-Cmd+C listener needs it). Unlike the request functions above, the query
+// only reads the state and never shows a prompt.
+func (s *AppService) isInputMonitoringEnabled() bool {
+	if !swiftbridge.Available() {
+		s.log.Warn(i18n.T("log.swiftbridge_unavailable"))
+		return false
+	}
+	enabled := inputMonitoringFromQuery(true, swiftbridge.KaiInputMonitoringEnabled)
+	s.log.Debug(i18n.T("log.input_monitoring_query"), slog.Bool(i18n.T("log.field_result"), enabled))
+	return enabled
+}
