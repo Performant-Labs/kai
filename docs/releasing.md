@@ -118,8 +118,18 @@ Consequences:
    app stays quiet (a debug log line, no warning, no dialog), and **installed apps will not see a
    release cut from this repo**. Users install each release by hand.
 3. Updates need release assets someone can download without a token: a public releases repo (or
-   public assets) that `buildinfo.UpdaterGithubRepo` then points at. That is a separate change; do
-   not ship a token inside the app to get around it.
+   making this repo public) that `buildinfo.UpdaterGithubRepo` then points at. That decision is
+   open ([#196](https://github.com/Performant-Labs/kai-private/issues/196)); do not ship a token
+   inside the app to get around it.
+4. Even on a readable repo the updater ignores an asset unless its name is
+   `updater-<anything>-<platform>-<arch>.zip` (also `.tar.gz`/`.tgz`; the lower-cased name starts
+   with `updater-` and contains `darwin` and `arm64` for this Mac build), and it needs `SHA256SUMS`
+   to list that exact file name. `release-package.sh` produces
+   `updater-Kai-X.Y.Z-darwin-arm64.zip` for that reason: a copy of the release zip, same bytes,
+   the same top-level `Kai.app`. The name is defined once, on the `updater_zip=` line of
+   `scripts/release-package.sh`, and `pkg/wails-updater-providers/updater_asset_test.go` reads that
+   line and checks the updater's matcher accepts it, so renaming it in either place fails a test.
+   This is in place on the release side only; until 2 above is solved nothing reads it.
 
 So there is nothing to warn about for the updater at release time, but the release notes must not
 promise auto-update.
@@ -128,13 +138,16 @@ promise auto-update.
 
 1. **A git tag + `CHANGELOG.md` entry.** `vX.Y.Z`, annotated. The `## [Unreleased]` section
    becomes `## [X.Y.Z] - YYYY-MM-DD` and stays hand-written, not generated from commit messages.
-2. **A GitHub Release** on `Performant-Labs/kai-private` with three assets, all made by
+2. **A GitHub Release** on `Performant-Labs/kai-private` with four assets, all made by
    `scripts/release-package.sh bin/Kai.app X.Y.Z`:
    - `Kai-X.Y.Z-darwin-arm64.zip`, made with `ditto` (a plain `zip` can break the signature).
    - `Kai-X.Y.Z-darwin-arm64.dmg`, a disk image with `Kai.app` and an Applications shortcut. A
      `.app` is a folder and a release asset must be one file, so it has to be archived; the zip
      unpacks to `Kai.app` and the disk image is the usual Mac form.
-   - `SHA256SUMS`, covering both.
+   - `updater-Kai-X.Y.Z-darwin-arm64.zip`, a byte-identical copy of the zip under the name the
+     in-app updater requires (see "The in-app updater"). Do not rename or drop it. The installer
+     script skips it and uses the plain zip.
+   - `SHA256SUMS`, covering the zip, the updater zip and the disk image.
 
    The script packages the app it is given and **never rebuilds**: every build embeds its build
    time and regenerates `Assets.car`, so a rebuild is a different binary from the one
@@ -287,18 +300,19 @@ to `Performant-Labs/kai-private`, never upstream.
 12. Quit any running Kai, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`. It must print PASS.
     (It launches the app, so the Dock icon bounces and Kai briefly takes focus.)
 13. Run the manual smoke matrix (checklist) against the same `bin/Kai.app`.
-14. `scripts/release-package.sh bin/Kai.app X.Y.Z`: the zip, the disk image and `SHA256SUMS`,
-    each checked against the app. Package once, from the verified app; never rebuild.
+14. `scripts/release-package.sh bin/Kai.app X.Y.Z`: the zip, the updater zip, the disk image and
+    `SHA256SUMS`, each checked against the app. Package once, from the verified app; never rebuild.
 15. Build the notes file: the CHANGELOG's `## [X.Y.Z]` section (minus the `changelog-skip`
     comment) with the Installing paragraph from "Release notes preface" in front. Nothing else
     is added: the updater and Accessibility warnings are already in its Known Issues.
 16. **Confirm before publishing**, then
-    `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip Kai-X.Y.Z-darwin-arm64.dmg SHA256SUMS
-    --notes-file <notes>`.
+    `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip updater-Kai-X.Y.Z-darwin-arm64.zip
+    Kai-X.Y.Z-darwin-arm64.dmg SHA256SUMS --notes-file <notes>`.
 17. **Verify the published artifact, not just the local build.** In a clean directory,
-    `gh release download vX.Y.Z`, check the checksums, unzip with `ditto -x -k`, and run
+    `gh release download vX.Y.Z`, check the checksums (all three files), unzip with `ditto -x -k`, and run
     `scripts/release-verify.sh <that Kai.app> X.Y.Z` again. Mount the published disk image and
-    check its `Kai.app` is identical to the unzipped one. Then run the installer against the real
+    check its `Kai.app` is identical to the unzipped one, and that the updater zip is byte-identical
+    to the release zip (`cmp`). Then run the installer against the real
     release: `scripts/install-release.sh vX.Y.Z --dest "$(mktemp -d)" --keep-permissions` must
     download, verify, install and clear the flag.
 
