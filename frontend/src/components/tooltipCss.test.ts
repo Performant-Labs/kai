@@ -46,7 +46,7 @@ const cmp = (a: Rule, b: Rule) =>
 function winningTransform(state: ':hover' | ':focus-visible'): string | undefined {
   const matching = rules().filter(
     (r) =>
-      /^\.u-tooltip(--start)?(:hover|:focus-visible)?::after$/.test(r.selector) &&
+      /^\.u-tooltip(\.u-tooltip--start|--start)?(:hover|:focus-visible)?::after$/.test(r.selector) &&
       (!/:(hover|focus-visible)/.test(r.selector) || r.selector.includes(state)) &&
       /transform:/.test(r.body),
   );

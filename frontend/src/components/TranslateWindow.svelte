@@ -1096,7 +1096,6 @@
         class="u-tooltip u-tooltip--start col-start-1 flex items-center gap-2 justify-self-start text-xs"
         class:u-muted={!correctionOn}
         data-tooltip={correctTip}
-        title={correctTip}
       >
         <input
           type="checkbox"
@@ -1104,9 +1103,11 @@
           data-testid="correct-source-checkbox"
           checked={correctionOn}
           disabled={!correctAvail.available}
+          aria-describedby="correct-source-tip"
           onchange={toggleCorrect}
         />
         <span>{t('translate.correctSource')}</span>
+        <span id="correct-source-tip" class="sr-only">{correctTip}</span>
       </label>
       <div class="col-start-2 flex items-center justify-center gap-2">
         <select
@@ -1220,7 +1221,6 @@
               class:u-icon-btn--active={pinned}
               onclick={togglePin}
               aria-label={pinned ? t('translate.unpin') : t('translate.pin')}
-              title={pinned ? t('translate.unpin') : t('translate.pin')}
               data-tooltip={pinned ? t('translate.unpin') : t('translate.pin')}
             >
               <svg
@@ -1244,7 +1244,6 @@
               class:u-icon-btn--active={autoClipboard}
               onclick={() => applyAutoClipboard(!autoClipboard)}
               aria-label={t('translate.autoClipboard')}
-              title={t('translate.autoClipboard')}
               data-tooltip={t('translate.autoClipboard')}
             >
               <svg
