@@ -168,3 +168,15 @@ var setWindowNotRestorable = SetWindowNotRestorable
 func (w *WindowWrapper) DisableRestoration(win application.Window) {
 	disableRestoration(win, setWindowNotRestorable)
 }
+
+// setWindowWebViewBackground defaults to the real SetWindowWebViewBackground (darwin: Swift bridge;
+// elsewhere a no-op). A package var so tests can swap it.
+var setWindowWebViewBackground = SetWindowWebViewBackground
+
+// ApplyWebViewBackground makes win's web view draw no background of its own and sets the colour behind
+// the page (issue #22), so a hidden window shown again does not flash white. Call it on the main
+// thread (wrap in application.InvokeAsync), once the native window exists and again whenever the theme
+// changes. A no-op where there is no native window.
+func (w *WindowWrapper) ApplyWebViewBackground(win application.Window, r, g, b uint8) {
+	applyWebViewBackground(win, r, g, b, setWindowWebViewBackground)
+}

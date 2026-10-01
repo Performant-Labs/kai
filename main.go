@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"cnb.cool/dtapp/kai/internal/analytics"
@@ -437,6 +438,14 @@ func main() {
 	// the frontend theme store via window.runtime.Window.SetDarkTheme etc. (if the runtime
 	// supports it).
 	startupDark := resolveUpdaterTheme(settingsService.Get().Theme, app) == "dark"
+	// currentDark is the resolved theme right now (System follows the Mac), read when a window becomes
+	// ready and when the theme changes (issue #22).
+	currentDark := func() bool { return resolveUpdaterTheme(settingsService.Get().Theme, app) == "dark" }
+	// translateReady is closed once the translate window's web view has been prepared (see
+	// applyWindowBackground): the launch show waits for it so the window is never drawn with the web
+	// view's own white background (issue #22).
+	translateReady := make(chan struct{})
+	var translateReadyOnce sync.Once
 	macAppearance := application.NSAppearanceNameAqua
 	winTheme := application.Light
 	bgColour := windowBackground(startupDark)
@@ -509,6 +518,7 @@ func main() {
 		// omitting this caused a SIGTRAP crash shortly after every launch, caught 2026-09-28.
 		application.InvokeAsync(func() {
 			windowSvc.DisableRestoration(settingsWindow)
+			applyWindowBackground(windowSvc, settingsWindow, currentDark(), false)
 		})
 	})
 
@@ -552,6 +562,8 @@ func main() {
 		// Main-thread dispatch required — see the settings-window comment above.
 		application.InvokeAsync(func() {
 			windowSvc.DisableRestoration(translateWindow)
+			applyWindowBackground(windowSvc, translateWindow, currentDark(), false)
+			translateReadyOnce.Do(func() { close(translateReady) })
 		})
 	})
 	// Issue #173 item 5: persist the translate window's size across relaunches. WindowDidResize
@@ -615,6 +627,7 @@ func main() {
 		// Main-thread dispatch required — see the settings-window comment above.
 		application.InvokeAsync(func() {
 			windowSvc.DisableRestoration(screenshotWindow)
+			applyWindowBackground(windowSvc, screenshotWindow, currentDark(), false)
 		})
 	})
 	_ = screenshotWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
@@ -643,12 +656,20 @@ func main() {
 		if !decision.Show {
 			return
 		}
-		application.InvokeAsync(func() {
-			if decision.Center {
-				translateWindow.Center()
+		go func() {
+			// Wait for the translate window's web view to be prepared (issue #22), at most 2 s so a
+			// missing ready event can never leave the user with no window.
+			select {
+			case <-translateReady:
+			case <-time.After(2 * time.Second):
 			}
-			windowSvc.ShowTranslateWindow()
-		})
+			application.InvokeAsync(func() {
+				if decision.Center {
+					translateWindow.Center()
+				}
+				windowSvc.ShowTranslateWindow()
+			})
+		}()
 	})
 
 	// After a language change, rebuild the tray menu copy with the latest language (the tray is
@@ -775,6 +796,20 @@ func main() {
 		appSvc.ServiceShutdown()
 		analytics.Close()
 	})
+
+	// Issue #22: the windows' colours follow the theme. The user changing the theme setting, and the
+	// Mac switching appearance while the theme is System, both recolour the three windows (window colour
+	// and the web view's background) so a window shown later does not flash the old colour.
+	recolourWindows := func() {
+		dark := currentDark()
+		application.InvokeAsync(func() {
+			for _, w := range []application.Window{settingsWindow, translateWindow, screenshotWindow} {
+				applyWindowBackground(windowSvc, w, dark, true)
+			}
+		})
+	}
+	app.Event.On(kevents.EventThemeChanged, func(*application.CustomEvent) { recolourWindows() })
+	app.Event.OnApplicationEvent(events.Common.ThemeChanged, func(*application.ApplicationEvent) { recolourWindows() })
 
 	// System theme change (Wails3 official events.Common.ThemeChanged, implemented natively
 	// per platform). The official docs require listening for system-level events via

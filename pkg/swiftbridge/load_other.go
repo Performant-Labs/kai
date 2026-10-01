@@ -52,8 +52,10 @@ var (
 	KaiDoubleCopyRequest      func() int32
 	KaiDoubleCopyPasteboard   func(out unsafe.Pointer, outCap int32) int32
 	KaiDoubleCopyIngest       func(keycode int32, flags uint64, autorepeat int32, srcPid int32) int32
-	KaiLaunchObserve          func() int32
-	KaiLaunchKind             func() int32
+
+	KaiWindowSetWebviewBackground func(window uintptr, r int32, g int32, b int32) int32
+	KaiLaunchObserve              func() int32
+	KaiLaunchKind                 func() int32
 )
 
 // Init is the non-macOS empty implementation: no dylib is loaded, nil is returned directly.
