@@ -266,6 +266,7 @@ export type Dict = {
     permAccessibilityHint: string;
     permAccessibilityMissing: string;
     permScreenRecording: string;
+    permScreenRecordingMissing: string;
     permScreenRecordingHint: string;
     permInputMonitoring: string;
     permInputMonitoringHint: string;
@@ -397,6 +398,7 @@ export type Dict = {
     shortcutCheckScreenRecordingFailed: string;
     shortcutCheckInputMonitoringFailed: string;
     shortcutOpenScreenRecordingFailed: string;
+    shortcutOpenInputMonitoringFailed: string;
     shortcutLoadConfigFailed: string;
     translateCardCopyFailed: string;
     engineLogOptionalListFailed: string;

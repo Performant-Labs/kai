@@ -239,6 +239,7 @@
   "log.httplog_cleaned": "已清理过期日志",
   "log.httplog_cleanup_failed": "清理过期日志失败",
   "log.input_monitoring_query": "输入监控授权查询",
+  "log.input_monitoring_request": "输入监控授权请求 登记 Kai 并打开设置面板",
   "log.log_config_applied": "日志配置已应用",
   "log.log_initialized": "日志已初始化，写入: %s",
   "log.notification_auth_request_failed": "请求通知授权失败",

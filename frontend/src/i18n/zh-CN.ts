@@ -262,10 +262,12 @@ export const zh: Dict = {
     accRefresh: '刷新状态',
     permTitle: '运行所需授权',
     permHint: '以下 macOS 授权会影响快捷键与截图翻译功能，请确认已开启。',
-    permAccessibility: '辅助功能',
+    permAccessibility: '设备控制与数据访问',
     permAccessibilityHint: '复制键读取剪贴板需要此项授权。',
     permAccessibilityMissing: '请在“隐私与安全性 > 设备控制与数据访问”中开启 Kai。',
     permScreenRecording: '屏幕录制',
+    permScreenRecordingMissing:
+      '请在“屏幕与系统音频录制”中打开 Kai（没有时点 + 添加），然后重启 Kai。',
     permScreenRecordingHint: '截图翻译需要此项授权，才能在框选后读取屏幕区域做 OCR（不录制视频）。',
     permInputMonitoring: '输入监控',
     permInputMonitoringHint:
@@ -401,6 +403,7 @@ export const zh: Dict = {
     shortcutCheckScreenRecordingFailed: '[快捷键] 检测屏幕录制授权失败',
     shortcutCheckInputMonitoringFailed: '[快捷键] 检测输入监控授权失败',
     shortcutOpenScreenRecordingFailed: '[快捷键] 打开屏幕录制设置失败',
+    shortcutOpenInputMonitoringFailed: '[快捷键] 打开输入监控设置失败',
     shortcutLoadConfigFailed: '加载快捷键配置失败',
     translateCardCopyFailed: '[截图翻译] 复制失败',
     engineLogOptionalListFailed: '[引擎] 加载可选引擎列表失败',

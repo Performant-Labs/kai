@@ -122,6 +122,12 @@ func (s *AppService) CheckInputMonitoring() bool {
 	return s.isInputMonitoringEnabled()
 }
 
+// OpenInputMonitoringSettings asks macOS to list Kai under Input Monitoring and opens that pane
+// (darwin only; a no-op elsewhere). The Settings page re-checks the state every 3 seconds.
+func (s *AppService) OpenInputMonitoringSettings() {
+	s.openInputMonitoringSettings()
+}
+
 // ServiceName returns the service name (part of the wails lifecycle trio).
 func (s *AppService) ServiceName() string {
 	return "AppService"
