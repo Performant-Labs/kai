@@ -148,14 +148,14 @@ describe('ShortcutsTab permission polling (issue #14)', () => {
     h.sr = false;
     h.im = false;
     await mountTab();
-    expect(row('Accessibility')).toContain('Not granted');
+    expect(row('Device Control and Data Access')).toContain('Not granted');
     expect(row('Screen Recording')).toContain('Not granted');
     expect(row('Input Monitoring')).toContain('Not granted');
     expect(target.querySelector('[data-testid="accessibility-missing"]')).not.toBeNull();
     h.acc = true;
     await tick(3000);
-    expect(row('Accessibility')).toContain('Granted');
-    expect(row('Accessibility')).not.toContain('Not granted');
+    expect(row('Device Control and Data Access')).toContain('Granted');
+    expect(row('Device Control and Data Access')).not.toContain('Not granted');
     expect(target.querySelector('[data-testid="accessibility-missing"]')).toBeNull();
     expect(row('Screen Recording')).toContain('Not granted');
     h.sr = true;
@@ -168,10 +168,10 @@ describe('ShortcutsTab permission polling (issue #14)', () => {
   it('a true-to-false flip shows up too', async () => {
     h.sr = false; // keeps the block open so the rows are on screen
     await mountTab();
-    expect(row('Accessibility')).not.toContain('Not granted');
+    expect(row('Device Control and Data Access')).not.toContain('Not granted');
     h.acc = false;
     await tick(3000);
-    expect(row('Accessibility')).toContain('Not granted');
+    expect(row('Device Control and Data Access')).toContain('Not granted');
   });
 
   it('keeps the open-once rule: a block opened on load stays open when all become granted', async () => {
@@ -183,7 +183,7 @@ describe('ShortcutsTab permission polling (issue #14)', () => {
     await tick(3000);
     // Still expanded (its Collapse button is offered); it did not collapse by itself.
     expect(text()).toContain('Collapse');
-    expect(row('Accessibility')).toContain('Granted');
+    expect(row('Device Control and Data Access')).toContain('Granted');
   });
 
   it('keeps the open-once rule: a block collapsed on load is not forced open by polling', async () => {
@@ -210,12 +210,12 @@ describe('ShortcutsTab permission polling (issue #14)', () => {
   it('a failed check keeps the last known state instead of blanking the card', async () => {
     h.sr = false;
     await mountTab();
-    expect(row('Accessibility')).toContain('Granted');
+    expect(row('Device Control and Data Access')).toContain('Granted');
     h.checkAcc = vi.fn(async () => {
       throw new Error('bridge gone');
     });
     await tick(3000);
-    expect(row('Accessibility')).toContain('Granted');
+    expect(row('Device Control and Data Access')).toContain('Granted');
   });
 
   it('the double Cmd+C note follows the live Input Monitoring check, not the cached listener state', async () => {

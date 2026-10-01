@@ -433,13 +433,15 @@
             {:else}
               <span class="u-text-warn text-sm font-medium">{t('settings.accDenied')}</span>
             {/if}
-            <button
-              class="u-btn u-btn--primary px-3 py-1.5 text-sm"
-              data-testid="grant-accessibility"
-              onclick={openAccessibility}
-            >
-              {t('settings.accOpen')}
-            </button>
+            {#if accGranted !== true}
+              <button
+                class="u-btn u-btn--primary px-3 py-1.5 text-sm"
+                data-testid="grant-accessibility"
+                onclick={openAccessibility}
+              >
+                {t('settings.accOpen')}
+              </button>
+            {/if}
           </div>
         </div>
 
@@ -448,6 +450,11 @@
           <div class="min-w-0">
             <div class="text-sm font-medium">{t('settings.permScreenRecording')}</div>
             <p class="u-muted text-xs">{t('settings.permScreenRecordingHint')}</p>
+            {#if srGranted === false}
+              <p class="u-text-warn mt-1 text-xs" data-testid="screen-recording-missing">
+                {t('settings.permScreenRecordingMissing')}
+              </p>
+            {/if}
           </div>
           <div class="flex shrink-0 items-center gap-2">
             {#if srGranted === null}
@@ -457,13 +464,15 @@
             {:else}
               <span class="u-text-warn text-sm font-medium">{t('settings.accDenied')}</span>
             {/if}
-            <button
-              class="u-btn u-btn--primary px-3 py-1.5 text-sm"
-              data-testid="grant-screen-recording"
-              onclick={openScreenRecording}
-            >
-              {t('settings.accOpen')}
-            </button>
+            {#if srGranted !== true}
+              <button
+                class="u-btn u-btn--primary px-3 py-1.5 text-sm"
+                data-testid="grant-screen-recording"
+                onclick={openScreenRecording}
+              >
+                {t('settings.accOpen')}
+              </button>
+            {/if}
           </div>
         </div>
 
@@ -481,13 +490,15 @@
             {:else}
               <span class="u-text-warn text-sm font-medium">{t('settings.accDenied')}</span>
             {/if}
-            <button
-              class="u-btn u-btn--primary px-3 py-1.5 text-sm"
-              data-testid="grant-input-monitoring"
-              onclick={openInputMonitoring}
-            >
-              {t('settings.accOpen')}
-            </button>
+            {#if imGranted !== true}
+              <button
+                class="u-btn u-btn--primary px-3 py-1.5 text-sm"
+                data-testid="grant-input-monitoring"
+                onclick={openInputMonitoring}
+              >
+                {t('settings.accOpen')}
+              </button>
+            {/if}
           </div>
         </div>
       </div>

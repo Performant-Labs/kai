@@ -89,7 +89,7 @@ describe('ShortcutsTab Accessibility row, mounted (issue #194)', () => {
     // is really on screen (all granted collapses the whole block).
     h.screenRecording = false;
     await mountTab();
-    expect(target.textContent).toContain('Accessibility');
+    expect(target.textContent).toContain('Device Control and Data Access');
     expect(note()).toBeNull();
   });
 

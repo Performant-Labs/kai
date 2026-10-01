@@ -274,10 +274,12 @@ export const en: Dict = {
     permTitle: 'Permissions Required',
     permHint:
       'These macOS permissions affect shortcuts and screenshot translation. Please make sure they are enabled.',
-    permAccessibility: 'Accessibility',
+    permAccessibility: 'Device Control and Data Access',
     permAccessibilityHint: 'Copy key clipboard reading requires this permission.',
     permAccessibilityMissing: 'Turn on Kai in Privacy & Security > Device Control and Data Access.',
     permScreenRecording: 'Screen Recording',
+    permScreenRecordingMissing:
+      'Turn on Kai in Screen & System Audio Recording (click + to add it), then restart Kai.',
     permScreenRecordingHint:
       'Screenshot translation needs this to read the selected screen region for OCR (no video is recorded).',
     permInputMonitoring: 'Input Monitoring',

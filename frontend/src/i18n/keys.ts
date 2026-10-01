@@ -266,6 +266,7 @@ export type Dict = {
     permAccessibilityHint: string;
     permAccessibilityMissing: string;
     permScreenRecording: string;
+    permScreenRecordingMissing: string;
     permScreenRecordingHint: string;
     permInputMonitoring: string;
     permInputMonitoringHint: string;

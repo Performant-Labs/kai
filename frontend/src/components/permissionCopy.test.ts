@@ -26,6 +26,10 @@ const messages: Record<string, { en: string; zh: string }> = {
     en: en.settings.permAccessibilityMissing,
     zh: zh.settings.permAccessibilityMissing,
   },
+  'settings.permScreenRecordingMissing': {
+    en: en.settings.permScreenRecordingMissing,
+    zh: zh.settings.permScreenRecordingMissing,
+  },
   'settings.permInputMonitoringHint': {
     en: en.settings.permInputMonitoringHint,
     zh: zh.settings.permInputMonitoringHint,
