@@ -12,9 +12,9 @@ package buildinfo
 import "path/filepath"
 
 // UpdaterGithubRepo is the GitHub repository (owner/name) the in-app updater polls for releases.
-// It is this fork, never upstream (issue #178). The repository is private, so an anonymous update
-// check finds nothing and reads as "no update" until releases are published somewhere public.
-const UpdaterGithubRepo = "Performant-Labs/kai-private"
+// It is the public Performant-Labs/kai repository, never upstream dtapps/kai (issue #178), so an
+// anonymous update check can read its releases.
+const UpdaterGithubRepo = "Performant-Labs/kai"
 
 // The variables below are injected at packaging time:
 //

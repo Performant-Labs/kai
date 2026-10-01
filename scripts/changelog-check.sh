@@ -21,7 +21,7 @@
 # Range: PRs merged after the last v* release tag; with no tag yet, every merged PR.
 set -euo pipefail
 
-repo="Performant-Labs/kai-private"
+repo="Performant-Labs/kai"
 file="CHANGELOG.md"
 since=""
 strict=0

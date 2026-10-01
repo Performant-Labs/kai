@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-// issue #178: the in-app updater must poll this fork, never upstream (dtapp/kai, dtapps/kai), and
+// issue #178: the in-app updater must poll the public Performant-Labs/kai repo, never upstream (dtapp/kai, dtapps/kai), and
 // must not configure a CNB source.
-func TestUpdaterRepoIsTheFork(t *testing.T) {
-	if UpdaterGithubRepo != "Performant-Labs/kai-private" {
-		t.Errorf("UpdaterGithubRepo = %q, want Performant-Labs/kai-private", UpdaterGithubRepo)
+func TestUpdaterRepoIsThePublicRepo(t *testing.T) {
+	if UpdaterGithubRepo != "Performant-Labs/kai" {
+		t.Errorf("UpdaterGithubRepo = %q, want Performant-Labs/kai", UpdaterGithubRepo)
 	}
 }
 
