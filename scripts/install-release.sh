@@ -20,7 +20,7 @@
 # Accessibility grant so you can add Kai again. It refuses to replace a running Kai.
 set -euo pipefail
 
-repo="${KAI_RELEASE_REPO:-Performant-Labs/kai-private}"
+repo="${KAI_RELEASE_REPO:-Performant-Labs/kai}"
 bundle_id="${KAI_INSTALL_BUNDLE_ID:-net.dtapp.kai}"   # overridable so tests never touch real permissions
 dest="/Applications"
 tag=""

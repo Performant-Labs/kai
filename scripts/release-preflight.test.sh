@@ -12,7 +12,7 @@ fake_pid=""
 cleanup() { [[ -n "$fake_pid" ]] && kill "$fake_pid" 2>/dev/null; rm -rf "$tmp"; }
 trap cleanup EXIT
 
-good_origin="https://github.com/Performant-Labs/kai-private.git"
+good_origin="https://github.com/Performant-Labs/kai.git"   # public repo; still technically a GitHub fork of dtapps/kai
 fail=0
 out=""; code=0
 
@@ -37,14 +37,18 @@ has  "clean master with the right origin passes"     '^PASS'
 exit_is "  ... and exits 0"                          0
 has  "--skip-github says so"                         'skipped (--skip-github)'
 
-# origin.
+# origin. The public repo is still technically a fork of dtapps/kai, so it must be accepted while
+# upstream stays refused, and the archived private repo is no longer a valid origin.
 mkrepo "$tmp/up" "git@github.com:dtapps/kai.git"
 run "$tmp/up" --skip-github
 has  "upstream origin fails"                          'FAIL.*upstream dtapps/kai'
 exit_is "  ... and exits 1"                          1
+mkrepo "$tmp/arch" "git@github.com:Performant-Labs/kai-private.git"
+run "$tmp/arch" --skip-github
+has  "the archived private origin fails"              "FAIL.*expected Performant-Labs/kai\$"
 mkrepo "$tmp/other" "git@github.com:someone/else.git"
 run "$tmp/other" --skip-github
-has  "unknown origin fails"                           "FAIL.*expected Performant-Labs/kai-private"
+has  "unknown origin fails"                           "FAIL.*expected Performant-Labs/kai"
 
 # Tree and branch.
 mkrepo "$tmp/dirty"; echo x >"$tmp/dirty/untracked.txt"
@@ -73,7 +77,7 @@ mkrepo "$tmp/upd"; printf 'GithubRepo:  "dtapps/kai",\n' >"$tmp/upd/main.go"
 git -C "$tmp/upd" add . && git -C "$tmp/upd" -c user.name=t -c user.email=t@t commit -q -m m
 run "$tmp/upd" --skip-github
 has  "updater pointing at upstream warns"             'WARN.*updater still points at upstream'
-mkrepo "$tmp/upd2"; printf 'GithubRepo:  "Performant-Labs/kai-private",\n' >"$tmp/upd2/main.go"
+mkrepo "$tmp/upd2"; printf 'GithubRepo:  "Performant-Labs/kai",\n' >"$tmp/upd2/main.go"
 git -C "$tmp/upd2" add . && git -C "$tmp/upd2" -c user.name=t -c user.email=t@t commit -q -m m
 run "$tmp/upd2" --skip-github
 has  "updater pointing elsewhere is ok"               'ok.*no longer points at upstream'

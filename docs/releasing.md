@@ -1,10 +1,10 @@
 # Releasing
 
-How to cut a release of Kai from `Performant-Labs/kai-private`. Adapted from Holler's
+How to cut a release of Kai from `Performant-Labs/kai` (public). Adapted from Holler's
 `docs/releasing.md`; the differences are called out where they matter. Decision record: issue
-[#177](https://github.com/Performant-Labs/kai-private/issues/177).
+[#177](https://github.com/Performant-Labs/kai-private/issues/177) (archived repository).
 
-This repo is a private fork of `dtapps/kai`. A release is one macOS Apple Silicon app,
+This repo is the public home of Kai and began as a fork of `dtapps/kai` (GitHub still lists it as a fork). A release is one macOS Apple Silicon app,
 `Kai.app`, installed by hand on the maintainers' Macs. Nothing here publishes to upstream.
 
 ## Where the version number lives
@@ -109,20 +109,22 @@ certificate or notarization secrets. Two consequences to state in every release'
 - **Developer builds can avoid the first bullet** with a free local certificate; see
   [dev-signing.md](dev-signing.md). Releases stay ad-hoc unless `KAI_SIGN_IDENTITY` is set. Test builds are a separate app, `Kai-dev` (`net.dtapp.kai.dev`, `make dev-app`): see the same file.
 
-## The in-app updater (no updates until releases are public)
+## The in-app updater (public repository)
 
-The updater polls `Performant-Labs/kai-private` (`buildinfo.UpdaterGithubRepo`), never upstream
-`dtapps/kai`, and the CNB (cnb.cool) source is gone ([#178](https://github.com/Performant-Labs/kai-private/issues/178)).
+The updater polls `Performant-Labs/kai` (`buildinfo.UpdaterGithubRepo`), never upstream
+`dtapps/kai`, and the CNB (cnb.cool) source is gone ([#178](https://github.com/Performant-Labs/kai-private/issues/178), archived repository).
 Consequences:
 
 1. An installed app can no longer be offered upstream's build over this fork's.
-2. The repo is private, so an anonymous update check gets a 404 and reads it as "no update". The
-   app stays quiet (a debug log line, no warning, no dialog), and **installed apps will not see a
-   release cut from this repo**. Users install each release by hand.
-3. Updates need release assets someone can download without a token: a public releases repo (or
-   making this repo public) that `buildinfo.UpdaterGithubRepo` then points at. That decision is
-   open ([#196](https://github.com/Performant-Labs/kai-private/issues/196)); do not ship a token
-   inside the app to get around it.
+2. The repository is public, so an anonymous update check can read its releases without a token;
+   do not ship a token inside the app. Until the first release exists there (and the updater has
+   been seen to find it on a real install, the remaining part of
+   [#196](https://github.com/Performant-Labs/kai-private/issues/196), archived repository), an
+   update check finds nothing, reads it as "no update", and the app stays quiet (a debug log
+   line, no warning, no dialog). Builds installed before that point never see an update; users
+   install those by hand.
+3. A release with no `updater-` asset or no `SHA256SUMS` (next point) is also invisible to the
+   updater, even on a public repository.
 4. Even on a readable repo the updater ignores an asset unless its name is
    `updater-<anything>-<platform>-<arch>.zip` (also `.tar.gz`/`.tgz`; the lower-cased name starts
    with `updater-` and contains `darwin` and `arm64` for this Mac build), and it needs `SHA256SUMS`
@@ -131,7 +133,7 @@ Consequences:
    the same top-level `Kai.app`. The name is defined once, on the `updater_zip=` line of
    `scripts/release-package.sh`, and `pkg/wails-updater-providers/updater_asset_test.go` reads that
    line and checks the updater's matcher accepts it, so renaming it in either place fails a test.
-   This is in place on the release side only; until 2 above is solved nothing reads it.
+   This is in place on the release side only; the first public release and a real update check are still to come (2 above).
 
 So there is nothing to warn about for the updater at release time, but the release notes must not
 promise auto-update.
@@ -140,7 +142,7 @@ promise auto-update.
 
 1. **A git tag + `CHANGELOG.md` entry.** `vX.Y.Z`, annotated. The `## [Unreleased]` section
    becomes `## [X.Y.Z] - YYYY-MM-DD` and stays hand-written, not generated from commit messages.
-2. **A GitHub Release** on `Performant-Labs/kai-private` with four assets, all made by
+2. **A GitHub Release** on `Performant-Labs/kai` with four assets, all made by
    `scripts/release-package.sh bin/Kai.app X.Y.Z`:
    - `Kai-X.Y.Z-darwin-arm64.zip`, made with `ditto` (a plain `zip` can break the signature).
    - `Kai-X.Y.Z-darwin-arm64.dmg`, a disk image with `Kai.app` and an Applications shortcut. A
@@ -232,7 +234,7 @@ Known Issues. So each release runs `scripts/changelog-check.sh`, which lists mer
 A documented issue is not by itself a release blocker; silence is the failure. But the issue
 tracker is not a reliable list of them, so build the list deliberately:
 
-- Search **both** labels: `gh issue list --repo Performant-Labs/kai-private --label bug --state
+- Search **both** labels: `gh issue list --repo Performant-Labs/kai --label bug --state
   open` and `--label known-issue --state open`. `known-issue` means "a real, accepted gap worth
   naming in the next release's Known Issues, not necessarily a defect"; apply it when an issue
   qualifies. Then skim the whole open list anyway: real defects have been filed with no label.
@@ -262,7 +264,7 @@ answers the first question a reader has (how do I install it, and why does Alt+A
 carries the Gatekeeper warning. Fill in the version:
 
 ```markdown
-**Installing.** macOS on Apple Silicon only. Download with `gh release download vX.Y.Z --repo Performant-Labs/kai-private`: a browser download is quarantined by macOS and blocked as coming from an unidentified developer (if that happens, run `xattr -dr com.apple.quarantine /Applications/Kai.app`). Unzip, move `Kai.app` to `/Applications`, and check the zip against `SHA256SUMS`. This build is ad-hoc signed, so remove Kai from Privacy & Security and add it again (on macOS 27 the list is "Device Control and Data Access") before Alt+A can copy text. The app is attached twice: `Kai-X.Y.Z-darwin-arm64.zip`, and `Kai-X.Y.Z-darwin-arm64.dmg`, a disk image with `Kai.app` inside to drag to Applications. (`updater-Kai-X.Y.Z-darwin-arm64.zip` is the same zip under the name the in-app updater needs; you can ignore it.) If you have a checkout of the repo, `scripts/install-release.sh vX.Y.Z` downloads and installs it without the quarantine block.
+**Installing.** macOS on Apple Silicon only. Download with `gh release download vX.Y.Z --repo Performant-Labs/kai`: a browser download is quarantined by macOS and blocked as coming from an unidentified developer (if that happens, run `xattr -dr com.apple.quarantine /Applications/Kai.app`). Unzip, move `Kai.app` to `/Applications`, and check the zip against `SHA256SUMS`. This build is ad-hoc signed, so remove Kai from Privacy & Security and add it again (on macOS 27 the list is "Device Control and Data Access") before Alt+A can copy text. The app is attached twice: `Kai-X.Y.Z-darwin-arm64.zip`, and `Kai-X.Y.Z-darwin-arm64.dmg`, a disk image with `Kai.app` inside to drag to Applications. (`updater-Kai-X.Y.Z-darwin-arm64.zip` is the same zip under the name the in-app updater needs; you can ignore it.) If you have a checkout of the repo, `scripts/install-release.sh vX.Y.Z` downloads and installs it without the quarantine block.
 ```
 
 (v0.1.0's published notes stop after the disk-image sentence: the installer script did not exist yet.)
@@ -278,7 +280,7 @@ Manual, on demand. No cadence and no automated trigger.
 ## Step by step
 
 All version and changelog work lands on ONE branch, `release/vX.Y.Z`, in one PR. Kai's PRs go
-to `Performant-Labs/kai-private`, never upstream.
+to `Performant-Labs/kai`, never upstream.
 
 1. Run `scripts/release-preflight.sh vX.Y.Z` on the release Mac, in a clean checkout of `master`. It
    checks the machine (Apple Silicon macOS, tools, Go version, Kai not running) and the commit

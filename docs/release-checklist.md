@@ -20,10 +20,10 @@ copy. Never check boxes here. The reasoning behind each step is in
   - PR-Agent is not part of this: it runs on PRs and shows as skipped on `master`. Its score is checked on the release PR in step 13
   - Link the specific run (the script prints it): `___`
 - [ ] 4. **No real, ready work left unmerged**
-  - `gh pr list --repo Performant-Labs/kai-private --state open` (the script counts them; the decisions are yours)
+  - `gh pr list --repo Performant-Labs/kai --state open` (the script counts them; the decisions are yours)
   - Dependabot bumps: merge the ones wanted, and record why the rest wait (a major bump such as a new Wails or Vitest version is a decision, not noise): `___`
-- [ ] 5. **In-app updater channel** (see `docs/releasing.md`; [#178](https://github.com/Performant-Labs/kai-private/issues/178) is fixed)
-  - The updater polls this fork (`buildinfo.UpdaterGithubRepo`), not upstream; nothing to decline. Until releases are readable without a login ([#196](https://github.com/Performant-Labs/kai-private/issues/196), open), installed apps get no update (the 404 reads as "no update") and users install by hand; the release notes must not promise auto-update. The `updater-` asset in step 23 is already produced, but nothing reads it until then.
+- [ ] 5. **In-app updater channel** (see `docs/releasing.md`; [#178](https://github.com/Performant-Labs/kai-private/issues/178) (archived repository) is fixed)
+  - The updater polls the public `Performant-Labs/kai` (`buildinfo.UpdaterGithubRepo`), not upstream; nothing to decline. The repository is public, so its releases are readable without a login. Until a release exists there and the updater has been seen to find it on a real install ([#196](https://github.com/Performant-Labs/kai-private/issues/196) (archived repository)), say nothing in the release notes that promises auto-update. The `updater-` asset in step 23 is what the updater reads.
   - The script warns if `main.go` ever points at `dtapps/kai` again. Result: `___`
 
 ## Known issues and changelog coverage
@@ -31,8 +31,8 @@ copy. Never check boxes here. The reasoning behind each step is in
 Gathered here, before the CHANGELOG is written, so nothing is missed.
 
 - [ ] 6. **Build the candidate list** (the tracker is not reliable on its own)
-  - `gh issue list --repo Performant-Labs/kai-private --label bug --state open`
-  - `gh issue list --repo Performant-Labs/kai-private --label known-issue --state open`
+  - `gh issue list --repo Performant-Labs/kai --label bug --state open`
+  - `gh issue list --repo Performant-Labs/kai --label known-issue --state open`
   - Then skim the whole open list: real defects have been filed with no label
   - **Open does not mean live.** For each candidate, confirm it still happens on the build you are releasing, or write it as "unverified" and say why
 - [ ] 7. **One line per real, still-open issue**, with a link. This exact list, plus the standing line from `docs/releasing.md` (Accessibility re-grant), goes into the CHANGELOG's Known Issues in step 12, verbatim: `___`
@@ -64,7 +64,7 @@ Platform: macOS Apple Silicon only. Build on a real Apple Silicon Mac, never cro
 - [ ] 14. **Tag the merge commit**: `git tag -a vX.Y.Z -m "vX.Y.Z"`, then `git push origin vX.Y.Z`
   - Annotated only: Holler signs its tags, but no signing key is configured for this repo
 - [ ] 15. **Build from that tag in a clean checkout, then check the tree**
-  - `git clone --branch vX.Y.Z --depth 1 git@github.com:Performant-Labs/kai-private.git kai-release && cd kai-release`
+  - `git clone --branch vX.Y.Z --depth 1 git@github.com:Performant-Labs/kai.git kai-release && cd kai-release`
   - `make install` (first time on that clone), then `make darwin-package VERSION=X.Y.Z`
   - `VERSION=` is mandatory: without it the build reports a commit SHA or `vX.Y.Z`, not `X.Y.Z`
   - `scripts/release-tree-check.sh vX.Y.Z` must print `ok`. Building always rewrites `build/darwin/icons.icns` and creates `build/darwin/Assets.car`; anything else changed means this is not the tag
@@ -100,7 +100,7 @@ CI and the verify script cannot see these. Install the built app to `/Applicatio
   warning is already in its Known Issues). Read it once as a stranger would
 - [ ] 25. **Explicit go-ahead obtained** to publish
 - [ ] 26. **Create the release**
-  - `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip updater-Kai-X.Y.Z-darwin-arm64.zip Kai-X.Y.Z-darwin-arm64.dmg SHA256SUMS --notes-file <notes> --repo Performant-Labs/kai-private --verify-tag`
+  - `gh release create vX.Y.Z Kai-X.Y.Z-darwin-arm64.zip updater-Kai-X.Y.Z-darwin-arm64.zip Kai-X.Y.Z-darwin-arm64.dmg SHA256SUMS --notes-file <notes> --repo Performant-Labs/kai --verify-tag`
 - [ ] 27. **Review the published Release page**: all four assets present (zip, `updater-` zip, disk image, `SHA256SUMS`), notes render, known issues visible
 
 ## Post-release
@@ -108,7 +108,7 @@ CI and the verify script cannot see these. Install the built app to `/Applicatio
 Verify the published artifact, not the local build that produced it.
 
 - [ ] 28. **Download and re-verify**
-  - Clean directory: `gh release download vX.Y.Z --repo Performant-Labs/kai-private`
+  - Clean directory: `gh release download vX.Y.Z --repo Performant-Labs/kai`
   - `shasum -a 256 -c SHA256SUMS` (three lines: zip, `updater-` zip, disk image) and `cmp Kai-X.Y.Z-darwin-arm64.zip updater-Kai-X.Y.Z-darwin-arm64.zip` (identical)
   - `ditto -x -k Kai-X.Y.Z-darwin-arm64.zip out` then `scripts/release-verify.sh out/Kai.app X.Y.Z`
   - Mount the published disk image (`hdiutil attach -readonly -nobrowse Kai-X.Y.Z-darwin-arm64.dmg`) and `diff -r` its `Kai.app` against `out/Kai.app`: identical. Then detach it

@@ -12,7 +12,7 @@
 # in the release checklist. docs/release-checklist.md's Pre-flight section is the caller.
 set -uo pipefail
 
-repo="${KAI_RELEASE_REPO:-Performant-Labs/kai-private}"
+repo="${KAI_RELEASE_REPO:-Performant-Labs/kai}"
 version=""
 skip_gh=0
 any_branch=0
@@ -105,7 +105,8 @@ fi
 
 echo "Repo and commit"
 
-# 6. origin is the fork, never upstream.
+# 6. origin is Performant-Labs/kai, never upstream. The public repo is still technically a GitHub
+# fork of dtapps/kai, so the check names the exact repo rather than "any fork".
 origin="$(git remote get-url origin 2>/dev/null || true)"
 if [[ "$origin" =~ github\.com[:/]${repo}(\.git)?$ ]]; then
   ok "origin is $repo"
