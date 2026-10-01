@@ -35,6 +35,7 @@ var (
 	KaiSelectionPoint         func(out unsafe.Pointer, outCap int32) int32
 	KaiScreenSize             func(out unsafe.Pointer, outCap int32) int32
 	KaiInputMonitoringEnabled func(out unsafe.Pointer, outCap int32) int32
+	KaiInputMonitoringRequest func() int32
 	KaiAvailableLanguages     func(out unsafe.Pointer, outCap int32) int32
 	KaiSetLogConfig           func(dir string, level string, retentionDays int32, compress bool)
 	KaiSetLocale              func(locale string)

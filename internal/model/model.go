@@ -366,12 +366,26 @@ type SourceSwitchRequest struct {
 
 // SourceSwitch is the answer to a SourceSwitchRequest. When Switched, From is the language the text
 // is in (a variant the dropdown offers) and To is the old source, which replaces the old target;
-// otherwise the pair stays as it is and From / To are empty.
+// otherwise the pair stays as it is and From / To are empty. Reason says why (issue #16), so a
+// "no switch" is never silent: one of the SwitchReason constants.
 type SourceSwitch struct {
 	Switched bool     `json:"switched"`
 	From     Language `json:"from"`
 	To       Language `json:"to"`
+	Reason   string   `json:"reason"`
 }
+
+// The reasons of a SourceSwitch (issue #16). The backend sets the first group; the frontend adds
+// the last when it drops or refuses a plan, and logs them next to these.
+const (
+	SwitchReasonSwitched        = "switched"
+	SwitchReasonDisabled        = "disabled"         // the setting is off
+	SwitchReasonSourceAuto      = "source_auto"      // an Auto source has no dropdown entry to switch
+	SwitchReasonTooShort        = "too_short"        // under the code-point floor
+	SwitchReasonNoDetection     = "no_detection"     // the detector and the hint named no known language
+	SwitchReasonBelowConfidence = "below_confidence" // the local detection is under the threshold
+	SwitchReasonSameLanguage    = "same_language"    // the text is in the language the source already shows
+)
 
 // ScreenshotResult is the full screenshot translate result, pushed to the screenshot
 // window via EventScreenshotOCR.

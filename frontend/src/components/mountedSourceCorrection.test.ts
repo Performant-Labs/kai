@@ -14,6 +14,7 @@ const h = vi.hoisted(() => {
       for (const cb of handlers.get(name) ?? []) cb({ data });
     },
     plan: vi.fn(),
+    reportSkip: vi.fn(async (_reason: string) => {}),
     translate: vi.fn(),
     learn: vi.fn(),
     saveConfig: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts', () 
   TranslateMulti: (req: unknown) => h.translate(req),
   CancelTranslate: vi.fn(async () => true),
   PlanSourceSwitch: (req: unknown) => h.plan(req),
+  ReportSourceSwitchSkipped: (reason: string) => h.reportSkip(reason),
   CorrectSource: (req: unknown) => h.correct(req),
   CorrectionAvailability: () => h.availability(),
 }));

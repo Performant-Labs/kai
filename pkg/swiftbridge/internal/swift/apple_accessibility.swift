@@ -8,6 +8,7 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 import NaturalLanguage
+import ScreenCaptureKit
 import Translation
 import Vision
 
@@ -56,21 +57,49 @@ public func kai_screenrecording_enabled(
   return writeCString(enabled ? "true" : "false", into: out, cap: out_cap)
 }
 
-// kai_screenrecording_request: asks macOS for the Screen Recording permission, then opens
-// System Settings > Privacy & Security > Screen Recording.
-// macOS lists an app in that pane only after the app has asked (CGRequestScreenCaptureAccess) or
-// tried to capture; opening the pane alone left Kai out of the list, with nothing to switch on.
-// A 0 return means the request was made and the pane opened ("requested", not "granted").
+// kai_screenrecording_request: makes macOS list Kai under Privacy & Security > Screen Recording,
+// then opens that pane.
+// CGRequestScreenCaptureAccess() alone is not reliable: it does nothing once the app has been asked
+// before, or when the app is not frontmost / not on the main thread. So this runs on the main thread
+// with Kai active, and if the preflight still says "not granted" after the request it makes one
+// real ScreenCaptureKit call (SCShareableContent: window and display metadata only, no pixels are
+// captured, so no flash and no second prompt beyond the system's own). macOS lists an app once it
+// has asked or tried to capture. The pane opens last, so Kai is already in the list.
+// A 0 return means the request was started ("requested", not "granted"); the pane opens
+// asynchronously on the main thread.
 @_cdecl("kai_screenrecording_request")
 public func kai_screenrecording_request() -> Int32 {
   bridgeFileLog(bridgeLogText("screen.request"))
-  _ = CGRequestScreenCaptureAccess()
-  if let url = URL(
-    string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
-  {
-    NSWorkspace.shared.open(url)
+  let work = {
+    NSApp.activate()
+    _ = CGRequestScreenCaptureAccess()
+    var opened = false
+    let openPane = {
+      if opened { return }
+      opened = true
+      if let url = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+      {
+        NSWorkspace.shared.open(url)
+      }
+      bridgeFileLog(bridgeLogText("screen.request_done"))
+    }
+    if !CGPreflightScreenCaptureAccess() {
+      // One minimal capture attempt so macOS registers Kai; the pane opens when it answers (or
+      // after 3 s at the latest, so a slow answer never leaves the user with no pane).
+      SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { _, _ in
+        DispatchQueue.main.async { openPane() }
+      }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 3) { openPane() }
+    } else {
+      openPane()
+    }
   }
-  bridgeFileLog(bridgeLogText("screen.request_done"))
+  if Thread.isMainThread {
+    work()
+  } else {
+    DispatchQueue.main.async(execute: work)
+  }
   return 0
 }
 
@@ -134,4 +163,22 @@ public func kai_input_monitoring_enabled(
   let enabled = CGPreflightListenEventAccess()
   bridgeFileLog(bridgeLogText("input.tap_enabled", String(enabled)), level: BRIDGE_LOG_DEBUG)
   return writeCString(enabled ? "true" : "false", into: out, cap: out_cap)
+}
+
+// kai_input_monitoring_request: makes macOS list Kai under Privacy & Security > Input Monitoring,
+// then opens that pane. The registering call is the Core Graphics listen-event request below; it
+// never creates an event tap. Only the Grant button calls this: the 3-second Settings poll uses the read-only
+// kai_input_monitoring_enabled above.
+// A 0 return means the request was made and the pane opened ("requested", not "granted").
+@_cdecl("kai_input_monitoring_request")
+public func kai_input_monitoring_request() -> Int32 {
+  bridgeFileLog(bridgeLogText("input.request"))
+  _ = CGRequestListenEventAccess()
+  if let url = URL(
+    string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+  {
+    NSWorkspace.shared.open(url)
+  }
+  bridgeFileLog(bridgeLogText("input.request_done"))
+  return 0
 }

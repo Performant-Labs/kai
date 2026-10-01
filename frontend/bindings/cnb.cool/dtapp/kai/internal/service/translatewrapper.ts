@@ -57,6 +57,16 @@ export function PlanSourceSwitch(req: model$0.SourceSwitchRequest): $Cancellable
     return $Call.ByID(2226517286, req);
 }
 
+/**
+ * ReportSourceSwitchSkipped writes the window's own reason for not switching (the frontend drops a
+ * plan when the text or the pair changed while it was computed, or the language is not offered) to
+ * the main log, next to the backend's decision line, so one file tells the whole story (issue #16).
+ * The frontend's own log file was empty in practice, and the reason is a fixed word, never text.
+ */
+export function ReportSourceSwitchSkipped(reason: string): $CancellablePromise<void> {
+    return $Call.ByID(947839581, reason);
+}
+
 export function ScreenshotOCR(engineName: string): $CancellablePromise<model$0.OcrResult | null> {
     return $Call.ByID(3318430308, engineName);
 }

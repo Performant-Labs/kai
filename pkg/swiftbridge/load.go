@@ -57,6 +57,7 @@ var (
 	KaiSelectionPoint         func(out unsafe.Pointer, outCap int32) int32
 	KaiScreenSize             func(out unsafe.Pointer, outCap int32) int32
 	KaiInputMonitoringEnabled func(out unsafe.Pointer, outCap int32) int32
+	KaiInputMonitoringRequest func() int32
 	KaiAvailableLanguages     func(out unsafe.Pointer, outCap int32) int32
 	KaiSetLogConfig           func(dir string, level string, retentionDays int32, compress bool)
 	KaiSetLocale              func(locale string)
@@ -205,6 +206,7 @@ func registerAll(h uintptr) {
 	register(&KaiSelectionPoint, "kai_selection_point")
 	register(&KaiScreenSize, "kai_screen_size")
 	register(&KaiInputMonitoringEnabled, "kai_input_monitoring_enabled")
+	register(&KaiInputMonitoringRequest, "kai_input_monitoring_request")
 	register(&KaiAvailableLanguages, "kai_available_languages")
 	register(&KaiSetLogConfig, "kai_set_log_config")
 	register(&KaiSetLocale, "kai_set_locale")

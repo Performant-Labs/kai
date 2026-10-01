@@ -30,6 +30,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts', () => ({
     throw new Error('no live answer');
   },
   OpenScreenRecordingSettings: async () => {},
+  OpenInputMonitoringSettings: async () => {},
 }));
 vi.mock('@wailsio/runtime', () => ({
   Dialogs: { Info: async () => {}, Error: async () => {} },

@@ -274,10 +274,12 @@ export const en: Dict = {
     permTitle: 'Permissions Required',
     permHint:
       'These macOS permissions affect shortcuts and screenshot translation. Please make sure they are enabled.',
-    permAccessibility: 'Accessibility',
+    permAccessibility: 'Device Control and Data Access',
     permAccessibilityHint: 'Copy key clipboard reading requires this permission.',
     permAccessibilityMissing: 'Turn on Kai in Privacy & Security > Device Control and Data Access.',
     permScreenRecording: 'Screen Recording',
+    permScreenRecordingMissing:
+      'Turn on Kai in Screen & System Audio Recording (click + to add it), then restart Kai.',
     permScreenRecordingHint:
       'Screenshot translation needs this to read the selected screen region for OCR (no video is recorded).',
     permInputMonitoring: 'Input Monitoring',
@@ -377,6 +379,7 @@ export const en: Dict = {
     loadLangListFailed: '[input] Failed to load language list',
     translateRequestFailed: '[input] Translation request failed',
     sourceSwitchFailed: '[input] Automatic source-language check failed',
+    sourceSwitchSkipped: '[input] Automatic source switch skipped: {reason}',
     correctFailed: '[input] Correcting the text failed; translating it as it came',
     correctAvailabilityFailed: '[input] Checking whether the correction is available failed',
     generalSaveCorrectFailed: '[input] Failed to save the correct grammar and wording setting',
@@ -413,6 +416,7 @@ export const en: Dict = {
     shortcutCheckScreenRecordingFailed: '[shortcut] Failed to check Screen Recording permission',
     shortcutCheckInputMonitoringFailed: '[shortcut] Failed to check Input Monitoring permission',
     shortcutOpenScreenRecordingFailed: '[shortcut] Failed to open Screen Recording settings',
+    shortcutOpenInputMonitoringFailed: '[shortcut] Failed to open Input Monitoring settings',
     shortcutLoadConfigFailed: 'Failed to load shortcut config',
     translateCardCopyFailed: '[screenshot] Copy failed',
     engineLogOptionalListFailed: '[engine] failed to load optional engine list',

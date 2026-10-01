@@ -1,6 +1,8 @@
 package translate
 
 import (
+	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -266,5 +268,119 @@ func TestPlanSourceSwitchNeverLearnsOrPersists(t *testing.T) {
 	}
 	if st.Get().DefaultFrom != wantFrom || st.Get().DefaultTo != wantTo {
 		t.Errorf("default pair changed to %s -> %s", st.Get().DefaultFrom, st.Get().DefaultTo)
+	}
+}
+
+// Issue #16: every "no switch" used to be silent. The plan now says why (the wire values are the
+// contract the frontend logs), and one info line per decision carries the detection, never the text.
+
+func TestPlanSourceSwitchReportsTheReason(t *testing.T) {
+	dir := t.TempDir()
+	st, err := settings.NewService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(det *fakeDetector) *Service {
+		svc := NewService(engine.NewRegistry(), nil, st, nil)
+		svc.detect = det.detect
+		return svc
+	}
+	req := model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.FR}
+	for _, tc := range []struct {
+		name string
+		svc  *Service
+		req  model.SourceSwitchRequest
+		want string
+	}{
+		{"switched", mk(spanishDetector()), req, "switched"},
+		{"too short", mk(spanishDetector()), model.SourceSwitchRequest{Text: "Hola amigo", From: model.EN, To: model.FR}, "too_short"},
+		{"auto source", mk(spanishDetector()), model.SourceSwitchRequest{Text: spanish, From: model.Auto, To: model.EN}, "source_auto"},
+		{"same language", mk(spanishDetector()), model.SourceSwitchRequest{Text: spanish, From: model.ESMX, To: model.EN}, "same_language"},
+		{"below confidence", mk(&fakeDetector{lang: "es", conf: 0.5, ok: true}), req, "below_confidence"},
+		{"no detection", mk(&fakeDetector{ok: false}), req, "no_detection"},
+		{"unrecognized detection", mk(&fakeDetector{lang: "xx", conf: 0.99, ok: true}), req, "no_detection"},
+	} {
+		if got := tc.svc.PlanSourceSwitch(tc.req); got.Reason != tc.want {
+			t.Errorf("%s: Reason = %q, want %q (plan %+v)", tc.name, got.Reason, tc.want, got)
+		}
+	}
+	st.Get().AutoSwitchSource = false
+	if got := mk(spanishDetector()).PlanSourceSwitch(req); got.Reason != "disabled" || got.Switched {
+		t.Errorf("setting off: got %+v, want reason disabled", got)
+	}
+}
+
+// captureLog routes slog to a buffer for the test and returns it.
+func captureLog(t *testing.T) *strings.Builder {
+	t.Helper()
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+func TestPlanSourceSwitchLogsOneInfoLinePerDecisionWithoutContent(t *testing.T) {
+	selection := "Mi contrasena secreta es LibelulaAzul y no debe aparecer en ningun registro"
+	buf := captureLog(t)
+	svc := newSwitchService(t, &fakeDetector{lang: "es", conf: 0.9123, ok: true}, langpref.New())
+	svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: selection, From: model.EN, To: model.FR})
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("got %d log lines, want exactly 1:\n%s", len(lines), buf.String())
+	}
+	line := lines[0]
+	n := utf8.RuneCountInString(selection)
+	for _, want := range []string{"level=INFO", "reason=switched", "detected=es", "confidence=0.912", "runes=" + strconv.Itoa(n), "by=local"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("log line lacks %q: %s", want, line)
+		}
+	}
+	for _, leak := range []string{"LibelulaAzul", "contrasena", "Mi contrasena"} {
+		if strings.Contains(line, leak) {
+			t.Errorf("log line leaks the text (%q): %s", leak, line)
+		}
+	}
+}
+
+func TestPlanSourceSwitchLogNamesWhoAnsweredAndWhyNot(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		det  *fakeDetector
+		req  model.SourceSwitchRequest
+		want []string
+	}{
+		{"hint answered", &fakeDetector{ok: false}, model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.FR, Detected: model.ESMX}, []string{"by=hint", "detected=es-MX", "reason=switched"}},
+		{"below confidence", &fakeDetector{lang: "es", conf: 0.5, ok: true}, model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.FR}, []string{"by=local", "detected=es", "confidence=0.5", "reason=below_confidence"}},
+		{"too short", spanishDetector(), model.SourceSwitchRequest{Text: "Hola amigo", From: model.EN, To: model.FR}, []string{"reason=too_short", "runes=10"}},
+		{"nothing detected", &fakeDetector{ok: false}, model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.FR}, []string{"by=none", "reason=no_detection"}},
+		{"auto source", spanishDetector(), model.SourceSwitchRequest{Text: spanish, From: model.Auto, To: model.EN}, []string{"reason=source_auto"}},
+	} {
+		buf := captureLog(t)
+		newSwitchService(t, tc.det, langpref.New()).PlanSourceSwitch(tc.req)
+		for _, w := range tc.want {
+			if !strings.Contains(buf.String(), w) {
+				t.Errorf("%s: log lacks %q: %s", tc.name, w, buf.String())
+			}
+		}
+	}
+}
+
+func TestPlanSourceSwitchIgnoresLinks(t *testing.T) {
+	// A link is not text in a language: the detector never sees it and it counts toward no floor.
+	det := spanishDetector()
+	svc := newSwitchService(t, det, langpref.New())
+	link := "https://www.ejemplo.com/noticias/2026/10/articulo-largo?id=12345"
+	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: link, From: model.EN, To: model.FR})
+	if got.Switched || got.Reason != "too_short" || det.calls != 0 {
+		t.Errorf("a link alone: got %+v (detector ran %d times), want too_short and no detection", got, det.calls)
+	}
+	got = svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "Mira esto: " + link + " www.otro.mx/pagina", From: model.EN, To: model.FR})
+	if got.Switched || got.Reason != "too_short" {
+		t.Errorf("a few words and links: got %+v, want too_short", got)
+	}
+	got = svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: spanish + " " + link, From: model.EN, To: model.FR})
+	if !got.Switched || strings.Contains(det.seen, "ejemplo.com") {
+		t.Errorf("text plus a link: got %+v, detector saw %q; want a switch on the text alone", got, det.seen)
 	}
 }

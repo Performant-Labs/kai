@@ -13,6 +13,7 @@ const h = vi.hoisted(() => {
       for (const cb of handlers.get(name) ?? []) cb({ data });
     },
     plan: vi.fn(),
+    reportSkip: vi.fn(async (_reason: string) => {}),
     translate: vi.fn(),
     learn: vi.fn(),
     saveConfig: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts', () 
   TranslateMulti: (req: unknown) => h.translate(req),
   CancelTranslate: vi.fn(async () => true),
   PlanSourceSwitch: (req: unknown) => h.plan(req),
+  ReportSourceSwitchSkipped: (reason: string) => h.reportSkip(reason),
   CorrectSource: vi.fn(),
   CorrectionAvailability: async () => ({ available: true, reason: '' }),
 }));
@@ -173,6 +175,13 @@ describe('TranslateWindow, mounted', () => {
     expect(h.translate.mock.calls[0][0]).toMatchObject({ from: 'en', to: 'fr' });
   });
 
+  it('reports why the window did not switch to the main log (issue #16)', async () => {
+    h.plan.mockResolvedValue({ switched: false, from: '', to: '', reason: 'below_confidence' });
+    h.fire('kai:input:fill', SPANISH);
+    await settle();
+    expect(h.reportSkip).toHaveBeenCalledWith('below_confidence');
+  });
+
   it('an Auto source never asks the planner', async () => {
     select('From').value = 'auto';
     select('From').dispatchEvent(new Event('change', { bubbles: true }));
@@ -293,4 +302,3 @@ describe('TranslateWindow, mounted: missing Accessibility permission (issue #194
     expect(text).not.toContain('Accessibility');
   });
 });
-
