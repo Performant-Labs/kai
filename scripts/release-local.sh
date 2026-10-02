@@ -64,6 +64,9 @@ local_sha="$(git rev-parse -q --verify "refs/tags/$tag^{commit}")" || die "no ta
 remote_sha="$(git ls-remote origin "refs/tags/$tag^{}" | cut -f1)"
 [[ -n "$remote_sha" ]] || remote_sha="$(git ls-remote origin "refs/tags/$tag" | cut -f1)"   # lightweight tag
 [[ "$remote_sha" == "$local_sha" ]] || die "$tag is ${local_sha:0:7} here but '${remote_sha:0:7}' on origin: push the tag, or fetch it"
+# The hosted-runner release job (release-kai.yml) leaves a check run on the tagged commit, and a
+# failed attempt of it is not a failure of CI: leave it out of the CI gate.
+export EXCLUDE_CHECK="Build, verify, package, draft"
 if [[ $dry -eq 1 ]]; then "$here/release-gates.sh" "$tag" --no-release-check; else "$here/release-gates.sh" "$tag"; fi \
   || die "a gate failed (see above)"
 
