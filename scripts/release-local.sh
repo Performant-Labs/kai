@@ -36,6 +36,9 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: $0 vX.Y.Z [--dry-run] [--yes] [--out DIR]" >&2; exit 2; }
 ver="${tag#v}"
+# Make --out absolute now, against the directory the script was started in: the build runs in a
+# throwaway worktree, which is deleted at the end, so a relative path would be lost with it.
+if [[ -n "$out" ]]; then mkdir -p "$out" && out="$(cd "$out" && pwd)" || { echo "cannot create --out $out" >&2; exit 2; }; fi
 die() { echo "FAIL: $*" >&2; exit 1; }
 step() { printf '\n== %s\n' "$*"; }
 
