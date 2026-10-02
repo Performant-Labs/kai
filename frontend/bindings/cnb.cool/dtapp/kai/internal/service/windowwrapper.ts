@@ -19,6 +19,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as application$0 from "../../../../../github.com/wailsapp/wails/v3/pkg/application/models.js";
 
 /**
+ * ApplyWebViewBackground makes win's web view draw no background of its own and sets the colour behind
+ * the page (issue #22), so a hidden window shown again does not flash white. Call it on the main
+ * thread (wrap in application.InvokeAsync), once the native window exists and again whenever the theme
+ * changes. A no-op where there is no native window.
+ */
+export function ApplyWebViewBackground(win: application$0.Window, r: number, g: number, b: number): $CancellablePromise<void> {
+    return $Call.ByID(1107051535, win, r, g, b);
+}
+
+/**
  * DisableRestoration opts win out of macOS's Secure State Restoration ("Resume", issue #163):
  * see docs/handoffs/163-brief.md. Must be called after the window's native handle exists
  * (win.NativeWindow() is non-nil only once WebviewWindow.Run() has executed) — wire it to

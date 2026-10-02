@@ -142,5 +142,7 @@
   "log.hotkey_trigger_busy": "[快捷键] 复制键模拟仍在进行时输入翻译快捷键再次触发，已跳过以避免与剪贴板产生竞争",
   "log.correct_done": "[纠错] 已完成",
   "log.correct_failed": "[纠错] 纠错失败，按原文翻译",
-  "log.correct_rejected": "[纠错] 纠错结果未通过校验，按原文翻译"
+  "log.correct_rejected": "[纠错] 纠错结果未通过校验，按原文翻译",
+  "log.source_switch_plan": "[源语言切换] 决策",
+  "log.source_switch_skipped": "[源语言切换] 窗口跳过"
 }

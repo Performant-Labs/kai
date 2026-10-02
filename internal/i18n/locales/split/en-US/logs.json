@@ -142,5 +142,7 @@
   "log.hotkey_trigger_busy": "[Hotkey] Input-translate hotkey triggered again while a copy-key simulation was already in flight; skipped to avoid racing the clipboard",
   "log.correct_done": "[correct] finished",
   "log.correct_failed": "[correct] the correction failed; translating the text as it came",
-  "log.correct_rejected": "[correct] the corrected text was rejected by a guard; translating the text as it came"
+  "log.correct_rejected": "[correct] the corrected text was rejected by a guard; translating the text as it came",
+  "log.source_switch_plan": "[source switch] decision",
+  "log.source_switch_skipped": "[source switch] skipped by the window"
 }
