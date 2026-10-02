@@ -1,0 +1,186 @@
+# Release workflow for this fork (Performant-Labs/kai). Builds, verifies and packages the macOS
+# Apple Silicon app from a vX.Y.Z tag and leaves a DRAFT GitHub Release for a person to publish.
+# It is not upstream's release.yml, which stays untouched and unused: see docs/releasing.md
+# ("Automated release") for why and for the steps that remain manual.
+#
+#   - Pushing a tag vX.Y.Z runs it.
+#   - Run it by hand (Actions > Release (draft) > Run workflow) for a tag that already exists.
+#     A manual run is a dry run unless you untick "dry_run": it uploads the files as a workflow
+#     artifact and creates no release.
+#
+# Everything runs on a GitHub-hosted runner: this is a public repository, so no self-hosted
+# runner may execute this code. No secret is passed to the build, so nothing is baked into the
+# binary (the Makefile reads GITHUB_TOKEN / CNB_TOKEN / POSTHOG_* from the environment, and the
+# build step deliberately sets none of them). The only token is GITHUB_TOKEN, used by `gh`.
+name: Release (draft)
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release, for example v0.3.1'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run: build and verify, upload a workflow artifact, create no release'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# One run per tag; a second run of the same tag waits instead of racing the first.
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, verify, package, draft
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write   # gh release create
+      checks: read      # CI on the tagged commit
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check the tag name
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$TAG' is not a release tag (vX.Y.Z)"; exit 1
+          fi
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Check out the tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      # A release is a commit that is on master. A tag pushed on some other branch must not publish.
+      - name: Check the tag is on master
+        run: |
+          git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor HEAD origin/master; then
+            echo "::error::$TAG ($(git rev-parse --short HEAD)) is not on master"; exit 1
+          fi
+
+      # docs/releasing.md: do not tag off a commit whose run you have not looked at. Every check
+      # on this exact commit must have finished and passed. (PR-Agent shows as skipped on master.)
+      # This job's own check run is left out of the list (its name is the job's `name:` above): it
+      # is in progress now, and an earlier failed attempt of it would otherwise block a re-run.
+      - name: Check CI is green on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          runs="$(gh api "repos/$GH_REPO/commits/$sha/check-runs" --paginate \
+            --jq '.check_runs[] | select(.name != "Build, verify, package, draft") | [.name, .status, (.conclusion // "")] | @tsv')"
+          if [[ -z "$runs" ]]; then
+            echo "::error::no CI runs found for ${sha:0:7}"; exit 1
+          fi
+          echo "$runs"
+          if printf '%s\n' "$runs" | awk -F'\t' '$2 != "completed" || $3 !~ /^(success|skipped|neutral)$/ { bad = 1 } END { exit !bad }'; then
+            echo "::error::CI is not green on ${sha:0:7} (see the list above)"; exit 1
+          fi
+
+      # Do not overwrite a release that exists: upstream's workflow deletes it and its tag first.
+      - name: Check no release exists for the tag
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          found="$(gh api "repos/$GH_REPO/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .html_url")"
+          if [[ -n "$found" ]]; then
+            echo "::error::a release for $TAG already exists: $found"; exit 1
+          fi
+
+      - name: Check the tree says this version
+        run: scripts/release-check-version.sh "$VERSION"
+
+      - name: Notes
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          scripts/release-notes.sh "$VERSION" > "$RUNNER_TEMP/out/RELEASE_NOTES.md"
+          cat "$RUNNER_TEMP/out/RELEASE_NOTES.md"
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+
+      # The same wails3 the module pins, not `@latest` as `make tool-deps` would install.
+      - name: Install wails3
+        run: |
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: make deps
+
+      # docs/releasing.md step 11. VERSION must be passed: the default is `git describe`, which
+      # would put a `v` in the version the app reports. No token is in this step's environment.
+      - name: Build Kai.app
+        run: make darwin-package VERSION="$VERSION"
+
+      - name: Check the tree is the tag
+        run: scripts/release-tree-check.sh "$TAG"
+
+      # Launches the app and requires it to stay running (#167 shipped a build that crashed on launch).
+      - name: Verify Kai.app
+        run: scripts/release-verify.sh bin/Kai.app "$VERSION"
+
+      - name: Package
+        run: scripts/release-package.sh bin/Kai.app "$VERSION" "$RUNNER_TEMP/out/assets"
+
+      - name: Upload the files as a workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: kai-${{ env.VERSION }}
+          path: ${{ runner.temp }}/out
+          if-no-files-found: error
+
+      # A draft is visible only to people who can push to the repository. A person runs the manual
+      # smoke matrix (docs/release-checklist.md) on the built app, then publishes it.
+      - name: Create the draft release
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" "$RUNNER_TEMP"/out/assets/* \
+            --draft --verify-tag \
+            --title "Kai $TAG" \
+            --notes-file "$RUNNER_TEMP/out/RELEASE_NOTES.md"
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### Release (draft) for $TAG"
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "Dry run: built, verified and packaged. No release was created. The files are in the workflow artifact."
+            elif [[ "${{ job.status }}" == "success" ]]; then
+              echo "A draft release was created. Before publishing it:"
+              echo "1. Download the zip (\`gh release download $TAG --repo $GH_REPO\` after publishing, or from the draft) and run the smoke matrix in docs/release-checklist.md on a real Mac."
+              echo "2. Publish: \`gh release edit $TAG --repo $GH_REPO --draft=false\`"
+            else
+              echo "The run did not finish. No release was created."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

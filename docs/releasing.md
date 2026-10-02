@@ -162,12 +162,44 @@ promise auto-update.
    This is outward-facing. Confirm with whoever is driving the release before publishing, every
    time.
 
-**`.github/workflows/release.yml` is not used for this fork's releases.** It is upstream's,
+**`.github/workflows/release.yml` is not used for this fork's releases** (see "Automated release (draft)" below for the one that is). It is upstream's,
 kept unedited so upstream changes still merge cleanly. It builds four platforms on billed
 hosted runners (three of which this fork does not ship), expects CNB, PostHog and
 signing secrets this fork does not have (empty tokens would be baked into the binary), and its
 release step targets a channel no installed app watches. Revisit it if this fork gains a
 Developer ID and a working update channel.
+
+## Automated release (draft)
+
+`.github/workflows/release-kai.yml` ("Release (draft)") does steps 11 to 16 below on a GitHub-hosted
+Apple Silicon runner, from a tag you have already pushed (steps 1 to 10 stay as they are):
+
+1. Checks the tag is `vX.Y.Z`, is on `master`, and that every CI check on that exact commit has
+   finished and passed; checks `scripts/release-check-version.sh` (the version files and the
+   CHANGELOG agree with the tag); refuses if a release for the tag already exists (it never
+   deletes one, unlike upstream's workflow).
+2. Builds with `make darwin-package VERSION=X.Y.Z` (no secret is in the build's environment), then
+   `release-tree-check.sh`, `release-verify.sh` and `release-package.sh`.
+3. Builds the notes with `scripts/release-notes.sh` (the Installing paragraph below plus the
+   CHANGELOG section) and creates a **draft** GitHub Release with the four assets. Every run also
+   uploads the files as a workflow artifact.
+
+Run it by pushing the tag, or by hand (Actions > Release (draft)) for a tag that exists. A manual
+run is a dry run unless you untick `dry_run`: it builds and verifies and creates no release.
+
+What stays manual, on purpose:
+
+- **Step 13, the smoke matrix.** CI cannot see hotkeys, windows or permissions (#163). A person
+  runs it on the built app, then publishes the draft: `gh release edit vX.Y.Z --repo
+  Performant-Labs/kai --draft=false`. The draft is the confirmation step 16 asks for.
+- **Step 17**, checking the published artifact and running the installer against it.
+- **Steps 1 to 10**, the release branch, PR and tag. A workflow that opens the release PR needs a
+  token that can start CI on it, which `GITHUB_TOKEN` cannot; that is a later phase of
+  [#31](https://github.com/Performant-Labs/kai/issues/31).
+
+This replaces the macOS build Mac for the build. It has not yet been seen to pass
+`release-verify.sh` (a launch test) on a hosted runner; the first dry run decides whether the
+launch check holds there.
 
 ## What a build changes in the tree
 
