@@ -47,6 +47,16 @@ cd "$root"
 [[ -n "$out" ]] || out="$root/bin/release/$tag"
 
 step "machine"
+# The Swift bridge uses Apple's FoundationModels macros, which only Xcode.app ships. With
+# xcode-select pointing at the Command Line Tools the build fails ("plugin for module
+# 'FoundationModelsMacros' not found"), so use Xcode when the Tools are selected.
+if [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p 2>/dev/null)" == "/Library/Developer/CommandLineTools" \
+      && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+  echo "xcode-select points at the Command Line Tools; building with $DEVELOPER_DIR"
+fi
+# wails3 is installed by `go install`, which an interactive shell may not have on its PATH.
+[[ ":$PATH:" == *":$HOME/go/bin:"* ]] || export PATH="$HOME/go/bin:$PATH"
 [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] || die "releases are built on macOS Apple Silicon (this is $(uname -s) $(uname -m); a Rosetta shell counts as x86_64)"
 missing=()
 for t in git gh go pnpm node wails3 jq make ditto codesign shasum perl hdiutil; do command -v "$t" >/dev/null 2>&1 || missing+=("$t"); done
