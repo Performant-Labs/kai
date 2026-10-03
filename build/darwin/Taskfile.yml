@@ -212,9 +212,9 @@ tasks:
       - 'echo "Skipping codesign (not available on {{OS}}). Sign the .app on macOS before distribution."'
 
   package:dev:
-    summary: Packages the DEV build as bin/Kai-dev.app (bundle id net.dtapp.kai.dev); launches nothing
+    summary: Packages the DEV build as bin/Kai-dev.app (bundle id com.performantlabs.kai.dev); launches nothing
     desc: |
-      The development variant: Info.dev.plist (name Kai-dev, identifier net.dtapp.kai.dev), signed by
+      The development variant: Info.dev.plist (name Kai-dev, identifier com.performantlabs.kai.dev), signed by
       scripts/codesign-app.sh (KAI_SIGN_IDENTITY; `make dev-app` defaults it to "Kai Dev"). The
       caller passes DEV=true so the binary uses ~/.kai.dev. See docs/dev-signing.md.
     deps:

@@ -9,7 +9,7 @@
 		<key>CFBundleGetInfoString</key>
 		<string>A translation tool that lives in the system tray, with selection, screenshot and input translation plus built-in OCR.</string>
 		<key>CFBundleIdentifier</key>
-		<string>net.dtapp.kai.dev</string>
+		<string>com.performantlabs.kai.dev</string>
 		<key>CFBundleName</key>
 		<string>Kai (Dev)</string>
 		<key>CFBundlePackageType</key>

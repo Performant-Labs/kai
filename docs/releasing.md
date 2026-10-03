@@ -90,7 +90,7 @@ certificate or notarization secrets. Two consequences to state in every release'
   under "Device Control and Data Access") is tied to the app's signature, so installing a new
   build silently invalidates it: hotkeys register but the simulated copy returns an empty
   clipboard. Fix: remove Kai from the list and add it again, or run
-  `tccutil reset Accessibility net.dtapp.kai` and relaunch. (Screen Recording stayed granted
+  `tccutil reset Accessibility com.performantlabs.kai` and relaunch. (Screen Recording stayed granted
   across every rebuild seen so far, so it is not listed here.)
 - **Gatekeeper.** A file downloaded by a browser gets the `com.apple.quarantine` flag, and macOS
   blocks a quarantined, ad-hoc-signed app as coming from an unidentified developer. Checked:
@@ -107,7 +107,7 @@ certificate or notarization secrets. Two consequences to state in every release'
   1Password has none either. It would also stop every build invalidating the Accessibility grant.
   Until then the two bullets above are the cost of shipping ad-hoc signed.
 - **Developer builds can avoid the first bullet** with a free local certificate; see
-  [dev-signing.md](dev-signing.md). Releases stay ad-hoc unless `KAI_SIGN_IDENTITY` is set. Test builds are a separate app, `Kai-dev` (`net.dtapp.kai.dev`, `make dev-app`): see the same file.
+  [dev-signing.md](dev-signing.md). Releases stay ad-hoc unless `KAI_SIGN_IDENTITY` is set. Test builds are a separate app, `Kai-dev` (`com.performantlabs.kai.dev`, `make dev-app`): see the same file.
 
 ## The in-app updater (public repository)
 

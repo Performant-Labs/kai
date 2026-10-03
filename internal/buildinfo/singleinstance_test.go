@@ -14,11 +14,12 @@ func setDev(t *testing.T, v string) {
 	t.Cleanup(func() { Dev = old })
 }
 
-// The prod build keeps the historical single-instance ID: changing it would let an old and a new
-// release run side by side and fight over the database, tray and hotkeys.
-func TestSingleInstanceIDProdIsUnchanged(t *testing.T) {
+// The prod build's single-instance ID is the bundle identifier. Changing it would let two
+// releases run side by side and fight over the database, tray and hotkeys, so a change must be
+// deliberate (it last changed in issue #27, with the bundle identifier).
+func TestSingleInstanceIDProd(t *testing.T) {
 	setDev(t, "false")
-	if got, want := SingleInstanceID(), "cnb.cool.dtapp.kai"; got != want {
+	if got, want := SingleInstanceID(), "com.performantlabs.kai"; got != want {
 		t.Errorf("prod SingleInstanceID() = %q, want %q", got, want)
 	}
 }

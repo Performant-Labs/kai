@@ -7,7 +7,7 @@ version: '3'
 info:
   companyName: "DTApp" # The name of the company
   productName: "Kai" # The name of the application
-  productIdentifier: "net.dtapp.kai" # The unique product identifier
+  productIdentifier: "com.performantlabs.kai" # The unique product identifier
   description: "常驻系统托盘的翻译工具，支持划词、截图与输入翻译，并内置 OCR。" # The application description
   copyright: "(c) 2026, DTApp" # Copyright text
   comments: "A translation tool that lives in the system tray, with selection, screenshot and input translation plus built-in OCR." # Comments
@@ -20,7 +20,7 @@ info:
 # Note: Keys under `ios` OVERRIDE values under `info` when set.
 ios:
   # The iOS bundle identifier used in the generated Xcode project (CFBundleIdentifier)
-  bundleID: "net.dtapp.kai"
+  bundleID: "com.performantlabs.kai"
   # The display name shown under the app icon (CFBundleDisplayName/CFBundleName)
   displayName: "Kai"
   # The app version to embed in Info.plist (CFBundleShortVersionString/CFBundleVersion)

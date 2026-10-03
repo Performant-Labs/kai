@@ -180,7 +180,7 @@
 					"$(inherited)",
 					"-ObjC",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "net.dtapp.kai";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.performantlabs.kai";
 				PRODUCT_NAME = "Kai";
 				CODE_SIGNING_ALLOWED = NO;
 				SDKROOT = iphoneos;
@@ -196,7 +196,7 @@
 					"$(inherited)",
 					"-ObjC",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "net.dtapp.kai";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.performantlabs.kai";
 				PRODUCT_NAME = "Kai";
 				CODE_SIGNING_ALLOWED = NO;
 				SDKROOT = iphoneos;

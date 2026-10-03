@@ -27,13 +27,13 @@ mk() { make --no-print-directory -n -C "$root" "$@" "${V[@]}" 2>&1; }
 echo "-- Info.plist files"
 prod="$root/build/darwin/Info.plist"; dev="$root/build/darwin/Info.dev.plist"
 truth "prod plist: CFBundleName is Kai"                       '[[ "$(plist_val "$prod" CFBundleName)" == "Kai" ]]'
-truth "prod plist: identifier is net.dtapp.kai"               '[[ "$(plist_val "$prod" CFBundleIdentifier)" == "net.dtapp.kai" ]]'
+truth "prod plist: identifier is com.performantlabs.kai"               '[[ "$(plist_val "$prod" CFBundleIdentifier)" == "com.performantlabs.kai" ]]'
 truth "prod plist: executable is Kai"                         '[[ "$(plist_val "$prod" CFBundleExecutable)" == "Kai" ]]'
 prod_sha="$(perl -0pe 's{(<key>CFBundleShortVersionString</key>\s*<string>)[^<]*}{$1VER}; s{(<key>CFBundleVersion</key>\s*<string>)[^<]*}{$1VER}' "$prod" | sha)"
-truth "prod plist is byte-for-byte as before (version keys aside)" '[[ "$prod_sha" == 2535f7648ebd8928328af02a1be2518f4a8e06954bf7415c033cbe26c7d8bb6f ]]'
+truth "prod plist is byte-for-byte as before (version keys and the bundle identifier aside, #27)" '[[ "$prod_sha" == 02d3a43ca9179823f40740a2fddbe543e495017a2cccf9840da0ad13e52b6be1 ]]'
 truth "dev plist: CFBundleName is Kai-dev"                    '[[ "$(plist_val "$dev" CFBundleName)" == "Kai-dev" ]]'
 truth "dev plist: CFBundleDisplayName is Kai-dev"             '[[ "$(plist_val "$dev" CFBundleDisplayName)" == "Kai-dev" ]]'
-truth "dev plist: identifier is net.dtapp.kai.dev"            '[[ "$(plist_val "$dev" CFBundleIdentifier)" == "net.dtapp.kai.dev" ]]'
+truth "dev plist: identifier is com.performantlabs.kai.dev"            '[[ "$(plist_val "$dev" CFBundleIdentifier)" == "com.performantlabs.kai.dev" ]]'
 truth "dev plist: identifier is the prod one plus .dev"       '[[ "$(plist_val "$dev" CFBundleIdentifier)" == "$(plist_val "$prod" CFBundleIdentifier).dev" ]]'
 truth "dev plist: executable stays Kai (the Go binary's name)" '[[ "$(plist_val "$dev" CFBundleExecutable)" == "Kai" ]]'
 

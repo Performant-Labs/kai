@@ -5,15 +5,15 @@
 The development build is a **different app** from the released one, so macOS keeps their
 permissions apart and you can tell them apart:
 
-|                     | released app             | development app             |
-| ------------------- | ------------------------ | --------------------------- |
-| name in Privacy & Security | `Kai`             | `Kai-dev`                   |
-| bundle identifier   | `net.dtapp.kai`          | `net.dtapp.kai.dev`         |
-| bundle              | `bin/Kai.app`            | `bin/Kai-dev.app`           |
-| built with          | `make darwin-package VERSION=X.Y.Z` | `make dev-app`   |
-| signed with         | ad-hoc unless `KAI_SIGN_IDENTITY` is set | the `Kai Dev` certificate, always |
-| data folder         | `~/.kai`                 | `~/.kai.dev`                |
-| single-instance ID  | `cnb.cool.dtapp.kai`     | `cnb.cool.dtapp.kai.dev`    |
+|                            | released app                        | development app                     |
+| -------------------------- | ----------------------------------- | ----------------------------------- |
+| name in Privacy & Security | `Kai`                               | `Kai-dev`                           |
+| bundle identifier          | `com.performantlabs.kai`            | `com.performantlabs.kai.dev`        |
+| bundle                     | `bin/Kai.app`                       | `bin/Kai-dev.app`                   |
+| built with                 | `make darwin-package VERSION=X.Y.Z` | `make dev-app`                      |
+| signed with                | ad-hoc unless `KAI_SIGN_IDENTITY` is set | the `Kai Dev` certificate, always |
+| data folder                | `~/.kai`                            | `~/.kai.dev`                        |
+| single-instance ID         | `com.performantlabs.kai`            | `com.performantlabs.kai.dev`        |
 
 The dev identifier is the released one with `.dev` appended (`build/darwin/Info.dev.plist`), so it
 follows if the released identifier is ever renamed. The executable inside both bundles is still
@@ -42,7 +42,7 @@ binary, so **every rebuild is a different app**: Accessibility, Screen Recording
 Monitoring grants are lost, and the old rows in Privacy & Security stay bound to old hashes.
 
 Signing with a stable certificate changes the requirement to
-`identifier "net.dtapp.kai" and certificate leaf = H"..."`, which does not change between
+`identifier "com.performantlabs.kai" and certificate leaf = H"..."`, which does not change between
 builds. This needs only a free certificate. It is **not** Developer ID or notarization (that
 needs a paid membership) and does not help on other people's Macs.
 
@@ -65,7 +65,7 @@ This is the command for test builds. It defaults `KAI_SIGN_IDENTITY` to `Kai Dev
 with `make dev-app KAI_SIGN_IDENTITY="Apple Development: ..."`; an empty value still means
 `Kai Dev`), fixes `DEV=true`, and checks first, before compiling anything, that the certificate
 exists: if not, it stops with a message pointing here and **never** falls back to ad-hoc. Do not
-build test builds with `make darwin-package`: that is the released app's path (`net.dtapp.kai`,
+build test builds with `make darwin-package`: that is the released app's path (`com.performantlabs.kai`,
 `~/.kai`, ad-hoc unless told otherwise).
 
 `make dev` (live reload) also runs the app as `bin/Kai-dev.app`; it signs ad-hoc unless
@@ -84,22 +84,41 @@ with a message; it never silently falls back to ad-hoc.
 
     scripts/sign-check.sh bin/Kai-dev.app                    # prints kind, requirement, verdict
     scripts/sign-check.sh bin/Kai-dev.app --require-stable   # exit 1 if the requirement is a binary hash
-    codesign -dr - bin/Kai-dev.app    # expect: identifier "net.dtapp.kai.dev" and certificate leaf = H"..."
+    codesign -dr - bin/Kai-dev.app    # expect: identifier "com.performantlabs.kai.dev" and certificate leaf = H"..."
 
 `scripts/release-verify.sh` prints the same kind as an informational line; it never fails a
 release for being ad-hoc.
 
+## The identifier changed from `net.dtapp.kai` (issue #27)
+
+Releases before 0.4.0 used upstream's namespace, `net.dtapp.kai` (dev: `net.dtapp.kai.dev`); from
+0.4.0 the identifiers are Performant Labs' own: `com.performantlabs.kai` and
+`com.performantlabs.kai.dev`. To macOS the new app is a different one, so, once:
+
+- Grant Accessibility ("Device Control and Data Access"), Screen Recording and Input Monitoring
+  again in Settings > Shortcuts. Rows named "Kai" from the old identifier stay in Privacy &
+  Security: remove them (the new app has its own row), or clear them with the same three
+  `tccutil reset` commands as below, using `net.dtapp.kai` (and `net.dtapp.kai.dev` for the dev app).
+- Quit the old Kai before opening the new one: the two do not share the single-instance lock, so
+  both would run and fight over the tray and the hotkeys.
+- Kai's own data (`~/.kai`, `~/.kai.dev`) does not depend on the identifier and carries over. The
+  few interface preferences the web view remembers itself (the last Settings tab, a window's pin)
+  are stored per identifier and start fresh.
+- The `Kai Dev` certificate does not change. Its requirement is
+  `identifier "..." and certificate leaf = H"..."`, so the leaf stays and only the identifier part is
+  new: the dev app is a new identity with no grants, as in "One-time cleanup" below.
+
 ## One-time cleanup after switching identity
 
 Old grants are bound to old hashes, so reset them once, then grant once in Settings > Shortcuts.
-For the dev app (`net.dtapp.kai.dev`, a new identity: it has no grants yet, so this only clears
+For the dev app (`com.performantlabs.kai.dev`, a new identity: it has no grants yet, so this only clears
 anything left from an earlier attempt):
 
-    tccutil reset Accessibility net.dtapp.kai.dev
-    tccutil reset ScreenCapture net.dtapp.kai.dev
-    tccutil reset ListenEvent net.dtapp.kai.dev
+    tccutil reset Accessibility com.performantlabs.kai.dev
+    tccutil reset ScreenCapture com.performantlabs.kai.dev
+    tccutil reset ListenEvent com.performantlabs.kai.dev
 
-For the released app, use `net.dtapp.kai` in the same three commands. Old rows named "Kai" that
+For the released app, use `com.performantlabs.kai` in the same three commands. Old rows named "Kai" that
 were granted to dev builds before the split belong to the released identifier: reset that one too
 and grant the released app afresh.
 
