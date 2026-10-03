@@ -21,7 +21,7 @@
 set -euo pipefail
 
 repo="${KAI_RELEASE_REPO:-Performant-Labs/kai}"
-bundle_id="${KAI_INSTALL_BUNDLE_ID:-net.dtapp.kai}"   # overridable so tests never touch real permissions
+bundle_id="${KAI_INSTALL_BUNDLE_ID:-com.performantlabs.kai}"   # overridable so tests never touch real permissions
 dest="/Applications"
 tag=""
 from=""

@@ -11,7 +11,7 @@
 		<key>CFBundleIconName</key>
 		<string>appicon</string>
 		<key>CFBundleIdentifier</key>
-		<string>net.dtapp.kai</string>
+		<string>com.performantlabs.kai</string>
 		<key>CFBundleName</key>
 		<string>Kai</string>
 		<key>CFBundlePackageType</key>

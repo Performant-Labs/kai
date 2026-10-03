@@ -19,11 +19,11 @@ cat >"$tmp/bin/codesign" <<'FAKE'
 #!/usr/bin/env bash
 case "$1" in
   --verify) [[ "${FAKE_KIND:-}" == invalid ]] && { echo "invalid signature" >&2; exit 1; }; exit 0 ;;
-  -dv) printf 'Identifier=net.dtapp.kai\nSignature=adhoc\n' >&2 ;;
+  -dv) printf 'Identifier=com.performantlabs.kai\nSignature=adhoc\n' >&2 ;;
   -dr)
     case "${FAKE_KIND:-}" in
       adhoc) printf 'Executable=/x\n# designated => cdhash H"baa23ec59eab0b294f93e36b9f7668c3a89f01e4"\n' >&2 ;;
-      cert)  printf 'Executable=/x\ndesignated => identifier "net.dtapp.kai" and certificate leaf = H"dc5b8b8daa588f1b265ff845c19c5384d6c969b2"\n' >&2 ;;
+      cert)  printf 'Executable=/x\ndesignated => identifier "com.performantlabs.kai" and certificate leaf = H"dc5b8b8daa588f1b265ff845c19c5384d6c969b2"\n' >&2 ;;
     esac ;;
 esac
 FAKE

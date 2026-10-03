@@ -7,6 +7,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+### Breaking Changes
+- **The app's identifier changed** from `net.dtapp.kai` to `com.performantlabs.kai` (the development app, Kai-dev, from `net.dtapp.kai.dev` to `com.performantlabs.kai.dev`), under Performant Labs' own namespace instead of upstream's (#27). To macOS this is a new app. Grant Accessibility (Device Control and Data Access), Screen Recording and Input Monitoring again in Settings > Shortcuts; the old "Kai" rows stay in Privacy & Security, so remove them. Quit an older Kai before opening this one: the two do not share the single-instance lock, so both would run and fight over the tray and the hotkeys. Kai's own settings and history (`~/.kai`) carry over; the few interface preferences the web view remembers (the last Settings tab, a window's pin) start fresh. Details: `docs/dev-signing.md`.
+
 ## [0.3.1] - 2026-10-02
 
 ### Bug Fixes

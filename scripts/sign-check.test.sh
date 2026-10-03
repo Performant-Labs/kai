@@ -13,11 +13,11 @@ cat >"$tmp/bin/codesign" <<'FAKE'
 #!/usr/bin/env bash
 case "${FAKE_KIND:-}" in
   adhoc)  printf 'Executable=/x/Kai\n# designated => cdhash H"baa23ec59eab0b294f93e36b9f7668c3a89f01e4"\n' >&2 ;;
-  cert)   printf 'Executable=/x/Kai\ndesignated => identifier "net.dtapp.kai" and certificate leaf = H"dc5b8b8daa588f1b265ff845c19c5384d6c969b2"\n' >&2 ;;
-  devcert) printf 'Executable=/x/Kai\ndesignated => identifier "net.dtapp.kai.dev" and certificate leaf = H"2a573c82aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n' >&2 ;;
+  cert)   printf 'Executable=/x/Kai\ndesignated => identifier "com.performantlabs.kai" and certificate leaf = H"dc5b8b8daa588f1b265ff845c19c5384d6c969b2"\n' >&2 ;;
+  devcert) printf 'Executable=/x/Kai\ndesignated => identifier "com.performantlabs.kai.dev" and certificate leaf = H"2a573c82aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n' >&2 ;;
   devadhoc) printf 'Executable=/x/Kai\n# designated => cdhash H"baa23ec59eab0b294f93e36b9f7668c3a89f01e4"\n' >&2 ;;
-  appledev) printf 'Executable=/x/Kai\ndesignated => identifier "net.dtapp.kai" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: a@b.c (ABCDE12345)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */\n' >&2 ;;
-  devid)  printf 'Executable=/x/Kai\ndesignated => identifier "net.dtapp.kai" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "TEAMID1234"\n' >&2 ;;
+  appledev) printf 'Executable=/x/Kai\ndesignated => identifier "com.performantlabs.kai" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: a@b.c (ABCDE12345)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */\n' >&2 ;;
+  devid)  printf 'Executable=/x/Kai\ndesignated => identifier "com.performantlabs.kai" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "TEAMID1234"\n' >&2 ;;
   unsigned) echo "$2: code object is not signed at all" >&2; exit 1 ;;
 esac
 FAKE
@@ -48,11 +48,11 @@ exit_is "  ... exit 0"                                  0
 run cert "$tmp/Kai.app" --require-stable
 exit_is "--require-stable passes for a certificate"     0
 
-# The dev variant (Kai-dev, net.dtapp.kai.dev) is classified like any other bundle id.
+# The dev variant (Kai-dev, com.performantlabs.kai.dev) is classified like any other bundle id.
 mkdir "$tmp/Kai-dev.app"
 run devcert "$tmp/Kai-dev.app" --require-stable
 has "a Kai-dev app signed with the certificate is stable" 'signature kind: stable local/development certificate'
-has "  ... and the requirement shows the dev identifier"  'identifier "net.dtapp.kai.dev"'
+has "  ... and the requirement shows the dev identifier"  'identifier "com.performantlabs.kai.dev"'
 exit_is "  ... and passes --require-stable"                0
 run devadhoc "$tmp/Kai-dev.app" --require-stable
 has "a Kai-dev app signed ad-hoc is reported as ad-hoc"   'signature kind: ad-hoc'

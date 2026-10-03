@@ -73,9 +73,11 @@ func LogDir(homeDir string) string {
 	return filepath.Join(DataDir(homeDir), "logs")
 }
 
-// singleInstanceProdID is the single-instance lock ID of the released app. It is the historical
-// value and must not change.
-const singleInstanceProdID = "cnb.cool.dtapp.kai"
+// singleInstanceProdID is the single-instance lock ID of the released app. It equals the bundle
+// identifier. It changed once, from the historical "cnb.cool.dtapp.kai", together with the bundle
+// identifier (issue #27); a Kai from before that change does not share the lock with this one, so
+// it must be quit before the new one is opened. It must not change again.
+const singleInstanceProdID = "com.performantlabs.kai"
 
 // SingleInstanceID returns the Wails single-instance UniqueID. The dev build (Kai-dev) gets its
 // own, so it can start while a released Kai is running: with a shared ID the second process
