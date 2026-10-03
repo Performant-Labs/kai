@@ -71,7 +71,13 @@ build test builds with `make darwin-package`: that is the released app's path (`
 `make dev` (live reload) also runs the app as `bin/Kai-dev.app`; it signs ad-hoc unless
 `KAI_SIGN_IDENTITY="Kai Dev"` is passed.
 
-## Sign the released app with it (optional)
+## Releases use a different certificate
+
+Releases are signed with `Kai Release`, not `Kai Dev`: see "Signing, and what it costs users" in
+[releasing.md](releasing.md) and `scripts/release-cert.sh`. The commands below are for signing a
+local test build of the released app with the dev certificate.
+
+## Sign a local build of the released app with it (optional)
 
     make darwin-package VERSION=X.Y.Z KAI_SIGN_IDENTITY="Kai Dev"
 
