@@ -7,7 +7,8 @@
 # Kinds, from the designated requirement (`codesign -dr -`):
 #   ad-hoc                               requirement is the binary's cdhash: grants are lost on EVERY rebuild
 #   Developer ID                         requirement anchors to Apple and a Developer ID certificate
-#   stable local/development certificate requirement names a certificate: grants survive rebuilds
+#   stable local/development certificate requirement names a certificate (`certificate leaf = H"..."`,
+#                                        or `certificate root = H"..."` for a self-signed one): grants survive rebuilds
 # Exit 0 always (information), except: a missing/unreadable app exits 1, bad usage exits 2, and
 # --require-stable exits 1 when the requirement depends on the binary hash.
 set -uo pipefail
@@ -34,7 +35,7 @@ if [[ "$req" == *cdhash* ]] && [[ "$req" != *"certificate leaf"* ]] && [[ "$req"
 elif [[ "$req" == *"certificate 1[field.1.2.840.113635.100.6.2.6]"* || "$req" == *"1.2.840.113635.100.6.2.6"* ]]; then
   kind="Developer ID"; stable=1
   verdict="grants survive rebuilds"
-elif [[ "$req" == *"certificate leaf"* || "$req" == *"anchor apple generic"* || "$req" == *"anchor "* ]]; then
+elif [[ "$req" == *"certificate leaf"* || "$req" == *"certificate root"* || "$req" == *"anchor apple generic"* || "$req" == *"anchor "* ]]; then
   kind="stable local/development certificate"; stable=1
   verdict="grants survive rebuilds signed with the same certificate"
 else

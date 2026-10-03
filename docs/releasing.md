@@ -83,31 +83,43 @@ Build on a real Apple Silicon Mac, never cross-compile. The maintainer's Mac qua
 
 ## Signing, and what it costs users
 
-Builds here are **ad-hoc signed** (`Signature=adhoc`). This fork has no Apple Developer ID
-certificate or notarization secrets. Two consequences to state in every release's notes:
+Releases are signed with a **self-signed certificate, "Kai Release"**, made once on the release Mac
+with `scripts/release-cert.sh` ([#36](https://github.com/Performant-Labs/kai/issues/36)); before
+0.4.0 they were ad-hoc signed. `scripts/release-local.sh` signs with it, stops if it is missing,
+never falls back to ad-hoc (`--ad-hoc` asks for that on purpose), and requires the result to be
+stable (`scripts/sign-check.sh --require-stable`). This fork still has no Apple Developer ID
+certificate or notarization.
 
-- **Every new build is a new identity to macOS.** The Accessibility grant (on macOS 27 it is
-  under "Device Control and Data Access") is tied to the app's signature, so installing a new
-  build silently invalidates it: hotkeys register but the simulated copy returns an empty
-  clipboard. Fix: remove Kai from the list and add it again, or run
-  `tccutil reset Accessibility com.performantlabs.kai` and relaunch. (Screen Recording stayed granted
-  across every rebuild seen so far, so it is not listed here.)
-- **Gatekeeper.** A file downloaded by a browser gets the `com.apple.quarantine` flag, and macOS
-  blocks a quarantined, ad-hoc-signed app as coming from an unidentified developer. Checked:
-  `gh release download` does not set the flag, and a disk image does not help (the app inside is
-  still blocked). `scripts/install-release.sh` is the supported way to install a release without
-  the block: it downloads with `gh` (no flag), or with `--from FILE` takes a zip or disk image you
-  already downloaded and clears the flag from it. Either way it verifies the checksum when one is
-  available, checks the bundle id and signature, refuses to replace a running Kai, clears the flag
-  on the installed copy, and clears the stale Accessibility grant **only if the app's code
-  changed**. Removing the flag from a build made by this project's own release process, on your
-  own Mac, is ordinary; it does not make the app trusted for anyone else.
+- **What the certificate fixes.** An ad-hoc signature's code requirement is the binary's hash, so
+  every build is a new identity to macOS and installing one silently invalidates the Accessibility
+  grant (on macOS 27 it is under "Device Control and Data Access"): hotkeys register but the
+  simulated copy returns an empty clipboard. A certificate's requirement is
+  `identifier "com.performantlabs.kai" and certificate root = H"<its SHA-1>"` (a self-signed
+  certificate is its own root), which does not change between builds, so grants survive rebuilds on
+  the release Mac. **Unverified:** that they also survive an update on another person's Mac (this
+  repo's earlier notes say a self-signed certificate "does not help on other people's Macs"); #36
+  tracks checking it with two releases on a second Mac. Until then keep the standing Known Issues
+  line below.
+- **The key is the identity.** Lose it and every user grants permissions again once; leak it and
+  anyone can sign an app macOS treats as the same identity (it would still not pass Gatekeeper as
+  trusted). Back it up as a `.p12` in the password manager and keep it only on the release Mac. A
+  certificate made with `release-cert.sh` lasts 10 years.
+- **Gatekeeper.** A self-signed certificate is not trusted, so a file downloaded by a browser gets
+  the `com.apple.quarantine` flag and macOS blocks it as coming from an unidentified developer.
+  Checked: `gh release download` does not set the flag, and a disk image does not help (the app
+  inside is still blocked). `scripts/install-release.sh` is the supported way to install a release
+  without the block: it downloads with `gh` (no flag), or with `--from FILE` takes a zip or disk
+  image you already downloaded and clears the flag from it. Either way it verifies the checksum
+  when one is available, checks the bundle id and signature, refuses to replace a running Kai,
+  clears the flag on the installed copy, and clears the stale Accessibility grant **only if the
+  app's code changed**. Removing the flag from a build made by this project's own release
+  process, on your own Mac, is ordinary; it does not make the app trusted for anyone else.
 - **The real fix is not available yet:** a Developer ID signature plus notarization. It needs an
   Apple Developer Program membership; the release Mac has no Developer ID certificate and
-  1Password has none either. It would also stop every build invalidating the Accessibility grant.
-  Until then the two bullets above are the cost of shipping ad-hoc signed.
-- **Developer builds can avoid the first bullet** with a free local certificate; see
-  [dev-signing.md](dev-signing.md). Releases stay ad-hoc unless `KAI_SIGN_IDENTITY` is set. Test builds are a separate app, `Kai-dev` (`com.performantlabs.kai.dev`, `make dev-app`): see the same file.
+  1Password has none either. It would remove the Gatekeeper block. Until then, say in the notes
+  how to install.
+- **Developer builds** use the separate `Kai Dev` certificate and the `Kai-dev` app
+  (`com.performantlabs.kai.dev`, `make dev-app`): see [dev-signing.md](dev-signing.md).
 
 ## The in-app updater (public repository)
 

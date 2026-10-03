@@ -14,6 +14,7 @@ cat >"$tmp/bin/codesign" <<'FAKE'
 case "${FAKE_KIND:-}" in
   adhoc)  printf 'Executable=/x/Kai\n# designated => cdhash H"baa23ec59eab0b294f93e36b9f7668c3a89f01e4"\n' >&2 ;;
   cert)   printf 'Executable=/x/Kai\ndesignated => identifier "com.performantlabs.kai" and certificate leaf = H"dc5b8b8daa588f1b265ff845c19c5384d6c969b2"\n' >&2 ;;
+  selfsigned) printf 'Executable=/x/Kai\ndesignated => identifier "com.performantlabs.kai" and certificate root = H"bae95532c7b7716c1a9b006c3411530f1ba206ff"\n' >&2 ;;
   devcert) printf 'Executable=/x/Kai\ndesignated => identifier "com.performantlabs.kai.dev" and certificate leaf = H"2a573c82aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n' >&2 ;;
   devadhoc) printf 'Executable=/x/Kai\n# designated => cdhash H"baa23ec59eab0b294f93e36b9f7668c3a89f01e4"\n' >&2 ;;
   appledev) printf 'Executable=/x/Kai\ndesignated => identifier "com.performantlabs.kai" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: a@b.c (ABCDE12345)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */\n' >&2 ;;
@@ -47,6 +48,13 @@ hasnt "  ... and is not called ad-hoc"                  'signature kind: ad-hoc'
 exit_is "  ... exit 0"                                  0
 run cert "$tmp/Kai.app" --require-stable
 exit_is "--require-stable passes for a certificate"     0
+
+# A self-signed certificate (the "Kai Release" one, scripts/release-cert.sh) prints `certificate root`,
+# not `certificate leaf`, because its leaf is its own root. Seen on a real Mac.
+run selfsigned "$tmp/Kai.app" --require-stable
+has "a self-signed certificate (root = H) is a stable certificate" 'signature kind: stable local/development certificate'
+hasnt "  ... and is not called ad-hoc"                              'signature kind: ad-hoc'
+exit_is "  ... and passes --require-stable"                          0
 
 # The dev variant (Kai-dev, com.performantlabs.kai.dev) is classified like any other bundle id.
 mkdir "$tmp/Kai-dev.app"

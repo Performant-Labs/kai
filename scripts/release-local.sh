@@ -2,11 +2,17 @@
 # Build, verify and package a release from a tag on this Mac, and create a DRAFT GitHub Release.
 # This is docs/releasing.md steps 11 to 16 in one command.
 #
-#   scripts/release-local.sh vX.Y.Z [--dry-run] [--yes] [--out DIR]
+#   scripts/release-local.sh vX.Y.Z [--dry-run] [--yes] [--ad-hoc] [--out DIR]
 #
 #   --dry-run  build, verify and package, but create no release
 #   --yes      do not ask before creating the draft (needed when there is no terminal)
+#   --ad-hoc   sign ad-hoc instead of with the release certificate (grants are lost on every rebuild)
 #   --out DIR  keep the files in DIR (default: bin/release/vX.Y.Z in this checkout, git-ignored)
+#
+# Signing: the app is signed with the self-signed "Kai Release" certificate (KAI_RELEASE_SIGN_IDENTITY
+# names another), made once with scripts/release-cert.sh, so the code requirement is the certificate
+# and not the binary hash. It stops if the certificate is missing and never falls back to ad-hoc;
+# --ad-hoc asks for ad-hoc on purpose. After the build it requires a stable requirement.
 #
 # Run it from your checkout, after the release PR is merged and the tag is pushed (steps 1 to
 # 10). It never touches your working tree: it builds in a fresh detached worktree of the tag, so
@@ -22,19 +28,20 @@ set -euo pipefail
 
 repo="${GH_REPO:-Performant-Labs/kai}"
 here="$(cd "$(dirname "$0")" && pwd)"
-tag=""; dry=0; yes=0; out=""
+tag=""; dry=0; yes=0; adhoc=0; out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) dry=1 ;;
     --yes) yes=1 ;;
+    --ad-hoc) adhoc=1 ;;
     --out) [[ $# -ge 2 && -n "$2" ]] || { echo "--out needs a directory" >&2; exit 2; }; out="$2"; shift ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 0 ;;
     v[0-9]*.[0-9]*.[0-9]*) tag="$1" ;;
-    *) echo "unknown argument: $1 (usage: $0 vX.Y.Z [--dry-run] [--yes] [--out DIR])" >&2; exit 2 ;;
+    *) echo "unknown argument: $1 (usage: $0 vX.Y.Z [--dry-run] [--yes] [--ad-hoc] [--out DIR])" >&2; exit 2 ;;
   esac
   shift
 done
-[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: $0 vX.Y.Z [--dry-run] [--yes] [--out DIR]" >&2; exit 2; }
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: $0 vX.Y.Z [--dry-run] [--yes] [--ad-hoc] [--out DIR]" >&2; exit 2; }
 ver="${tag#v}"
 # Make --out absolute now, against the directory the script was started in: the build runs in a
 # throwaway worktree, which is deleted at the end, so a relative path would be lost with it.
@@ -63,6 +70,16 @@ for t in git gh go pnpm node wails3 jq make ditto codesign shasum perl hdiutil; 
 xcrun --find swiftc >/dev/null 2>&1 || missing+=("swiftc (Xcode command line tools)")
 [[ ${#missing[@]} -eq 0 ]] || die "missing tools: ${missing[*]}"
 ! pgrep -x Kai >/dev/null 2>&1 || die "Kai is running: quit it (release-verify.sh launches its own copy)"
+# The signing identity. codesign-app.sh --check fails, naming the fix, when it is not in a keychain.
+ident="${KAI_RELEASE_SIGN_IDENTITY:-Kai Release}"
+[[ $adhoc -eq 0 ]] || ident=""
+if [[ -n "$ident" ]]; then
+  KAI_SIGN_IDENTITY="$ident" "$here/codesign-app.sh" --check \
+    || die "no code-signing identity \"$ident\": run scripts/release-cert.sh once, or pass --ad-hoc"
+  echo "signing with \"$ident\""
+else
+  echo "signing ad-hoc (--ad-hoc): permission grants will be lost on every rebuild"
+fi
 git remote get-url origin | grep -Eqi "github\.com[:/]${repo}(\.git)?$" || die "origin is not $repo"
 gh auth status >/dev/null 2>&1 || die "gh is not logged in"
 [[ "$(gh api "repos/$repo" --jq .permissions.push 2>/dev/null)" == "true" || $dry -eq 1 ]] || die "gh cannot push to $repo (a draft release needs it)"
@@ -103,12 +120,19 @@ make deps
 # would bake into the binary or that would change the signature: releases are ad-hoc signed and
 # carry no token.
 step "build Kai.app (this takes a few minutes)"
+sign_env=(-u KAI_SIGN_IDENTITY)
+[[ -z "$ident" ]] || sign_env=(KAI_SIGN_IDENTITY="$ident")
 env -u GITHUB_TOKEN -u GH_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN \
-    -u CNB_TOKEN -u POSTHOG_TOKEN -u POSTHOG_PROJECT_ID -u KAI_SIGN_IDENTITY \
+    -u CNB_TOKEN -u POSTHOG_TOKEN -u POSTHOG_PROJECT_ID "${sign_env[@]}" \
   make darwin-package VERSION="$ver"
 
 step "the tree is the tag"
 "$here/release-tree-check.sh" "$tag"
+
+if [[ -n "$ident" ]]; then
+  step "the signature is stable (not the binary hash)"
+  "$here/sign-check.sh" bin/Kai.app --require-stable
+fi
 
 step "verify (launches the app for 20 seconds)"
 "$here/release-verify.sh" bin/Kai.app "$ver"
