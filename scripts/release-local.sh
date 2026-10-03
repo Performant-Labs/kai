@@ -103,7 +103,8 @@ make deps
 # would bake into the binary or that would change the signature: releases are ad-hoc signed and
 # carry no token.
 step "build Kai.app (this takes a few minutes)"
-env -u GITHUB_TOKEN -u CNB_TOKEN -u POSTHOG_TOKEN -u POSTHOG_PROJECT_ID -u KAI_SIGN_IDENTITY \
+env -u GITHUB_TOKEN -u GH_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN \
+    -u CNB_TOKEN -u POSTHOG_TOKEN -u POSTHOG_PROJECT_ID -u KAI_SIGN_IDENTITY \
   make darwin-package VERSION="$ver"
 
 step "the tree is the tag"
