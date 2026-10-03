@@ -300,10 +300,13 @@ tracker is not a reliable list of them, so build the list deliberately:
 - Carry the **standing lines** below into every release until their cause is fixed. They are not
   issues to skim for; they are consequences of how this fork ships.
 
-Standing Known Issues lines (verbatim, in the CHANGELOG's Known Issues):
+Standing Known Issues lines (in the CHANGELOG's Known Issues, reworded to that release's facts):
 
-- Every new build is a new identity to macOS, so the Accessibility grant must be removed and
-  added again after installing one.
+- Permissions are granted to the app's signing identity. Releases are signed with the stable
+  "Kai Release" certificate, so later updates should keep them, but that is not verified on other
+  Macs yet ([#36](https://github.com/Performant-Labs/kai/issues/36)): say so, and say to remove Kai
+  from the list and add it again if Alt+A stops copying after an update. A change of the app
+  identifier or the certificate resets them for everyone once; say that in the release that does it.
 
 Because release notes are extracted from the CHANGELOG, this is how the Accessibility warning
 reaches the notes without anyone writing it separately at publish time. The third
@@ -318,7 +321,7 @@ answers the first question a reader has (how do I install it, and why does Alt+A
 carries the Gatekeeper warning. Fill in the version:
 
 ```markdown
-**Installing.** macOS on Apple Silicon only. Download with `gh release download vX.Y.Z --repo Performant-Labs/kai`: a browser download is quarantined by macOS and blocked as coming from an unidentified developer (if that happens, run `xattr -dr com.apple.quarantine /Applications/Kai.app`). Unzip, move `Kai.app` to `/Applications`, and check the zip against `SHA256SUMS`. This build is ad-hoc signed, so remove Kai from Privacy & Security and add it again (on macOS 27 the list is "Device Control and Data Access") before Alt+A can copy text. The app is attached twice: `Kai-X.Y.Z-darwin-arm64.zip`, and `Kai-X.Y.Z-darwin-arm64.dmg`, a disk image with `Kai.app` inside to drag to Applications. (`updater-Kai-X.Y.Z-darwin-arm64.zip` is the same zip under the name the in-app updater needs; you can ignore it.) If you have a checkout of the repo, `scripts/install-release.sh vX.Y.Z` downloads and installs it without the quarantine block.
+**Installing.** macOS on Apple Silicon only. Download with `gh release download vX.Y.Z --repo Performant-Labs/kai`: a browser download is quarantined by macOS and blocked as coming from an unidentified developer (if that happens, run `xattr -dr com.apple.quarantine /Applications/Kai.app`). Unzip, move `Kai.app` to `/Applications`, and check the zip against `SHA256SUMS`. This build is signed with a self-signed certificate, not a Developer ID. Grant Kai access in Privacy & Security (on macOS 27 the list is "Device Control and Data Access") before Alt+A can copy text; if an older Kai left a row there, remove it first. The app is attached twice: `Kai-X.Y.Z-darwin-arm64.zip`, and `Kai-X.Y.Z-darwin-arm64.dmg`, a disk image with `Kai.app` inside to drag to Applications. (`updater-Kai-X.Y.Z-darwin-arm64.zip` is the same zip under the name the in-app updater needs; you can ignore it.) If you have a checkout of the repo, `scripts/install-release.sh vX.Y.Z` downloads and installs it without the quarantine block.
 ```
 
 (v0.1.0's published notes stop after the disk-image sentence: the installer script did not exist yet.)
