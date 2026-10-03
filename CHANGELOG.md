@@ -7,10 +7,14 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-02
+<!-- changelog-skip: release PR plumbing, no user-facing change: #33 -->
+
+### Enhancements
+- Releases are now signed with a stable self-signed certificate ("Kai Release") instead of ad-hoc, so macOS identifies the app by that certificate and not by the hash of each build (#36). This does not make the app trusted by macOS: Gatekeeper still blocks a browser download (see Known Issues).
+
 ### Breaking Changes
 - **The app's identifier changed** from `net.dtapp.kai` to `com.performantlabs.kai` (the development app, Kai-dev, from `net.dtapp.kai.dev` to `com.performantlabs.kai.dev`), under Performant Labs' own namespace instead of upstream's (#27). To macOS this is a new app. Grant Accessibility (Device Control and Data Access), Screen Recording and Input Monitoring again in Settings > Shortcuts; the old "Kai" rows stay in Privacy & Security, so remove them. Quit an older Kai before opening this one: the two do not share the single-instance lock, so both would run and fight over the tray and the hotkeys. Kai's own settings and history (`~/.kai`) carry over; the few interface preferences the web view remembers (the last Settings tab, a window's pin) start fresh. Details: `docs/dev-signing.md`.
-
-## [0.3.1] - 2026-10-02
 
 ### Bug Fixes
 - The log line Kai writes for each decision of the automatic source switch now shows its words ("[source switch] decision", or "skipped by the window") instead of the raw message key, which 0.3.0 printed because the texts were missing from the language sources. Search the log for `[source switch]` (#29, #30). Nothing else changed since 0.3.0.
@@ -20,8 +24,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - Kai's log records the text you select or copy on the hotkey paths (Alt+A and the copy key) at info level, so it can contain private text; do not paste a log into an issue without checking it ([#11](https://github.com/Performant-Labs/kai/issues/11)).
 - Screen Recording: macOS may not list Kai in Privacy & Security > Screen & System Audio Recording when you click Grant access (it did not for the development build; for this release it is unverified). If Kai is not listed, click + in that list, add Kai, switch it on, then restart Kai.
 - The title bar of the Settings and translate windows is white while the content is dark in the dark theme ([#8](https://github.com/Performant-Labs/kai/issues/8)).
-- The in-app updater has not yet been seen to find a release on a real install, so do not count on it: install 0.3.1 by hand (the disk image, the zip, or `scripts/install-release.sh`). Kai 0.2.0 looks in the archived private repository and cannot offer any update.
-- Every new build is a new identity to macOS, so the Accessibility grant must be removed and added again after installing one.
+- The in-app updater has not yet been seen to find a release on a real install, so do not count on it, and this release changes the app's identifier: install 0.4.0 by hand (the disk image, the zip, or `scripts/install-release.sh`). Kai 0.2.0 looks in the archived private repository and cannot offer any update.
+- Permissions must be granted again once after installing 0.4.0 (the identifier changed). Releases are now signed with a stable certificate, so later updates should keep them, but that is not yet verified on other Macs ([#36](https://github.com/Performant-Labs/kai/issues/36)); if Alt+A stops copying after an update, remove Kai from the list in Privacy & Security and add it again.
+- The certificate is self-signed, so macOS still blocks a copy downloaded with a browser as coming from an unidentified developer: install with `gh release download` and `scripts/install-release.sh`, or run `xattr -dr com.apple.quarantine /Applications/Kai.app`.
 
 ## [0.3.0] - 2026-10-01
 
