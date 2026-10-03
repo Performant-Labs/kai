@@ -1,3 +1,8 @@
+# NOTE: this cannot build the app today. The app targets a newer Apple SDK than the macos-26 runner
+# has (the first run failed to compile apple_correct.swift, issue #31). Releases are cut with
+# scripts/release-local.sh on a Mac; see docs/releasing.md. It is kept for when a runner with the
+# right SDK exists, and it shares scripts/release-gates.sh with the local script.
+#
 # Release workflow for this fork (Performant-Labs/kai). Builds, verifies and packages the macOS
 # Apple Silicon app from a vX.Y.Z tag and leaves a DRAFT GitHub Release for a person to publish.
 # It is not upstream's release.yml, which stays untouched and unused: see docs/releasing.md
@@ -64,43 +69,16 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # A release is a commit that is on master. A tag pushed on some other branch must not publish.
-      - name: Check the tag is on master
-        run: |
-          git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
-          if ! git merge-base --is-ancestor HEAD origin/master; then
-            echo "::error::$TAG ($(git rev-parse --short HEAD)) is not on master"; exit 1
-          fi
-
-      # docs/releasing.md: do not tag off a commit whose run you have not looked at. Every check
-      # on this exact commit must have finished and passed. (PR-Agent shows as skipped on master.)
-      # This job's own check run is left out of the list (its name is the job's `name:` above): it
-      # is in progress now, and an earlier failed attempt of it would otherwise block a re-run.
-      - name: Check CI is green on the tagged commit
+      # scripts/release-gates.sh: the tag is on master, every CI check on that exact commit passed
+      # (docs/releasing.md: do not tag off a commit whose run you have not looked at), and no
+      # release exists for the tag (it is never deleted or overwritten, unlike upstream's workflow).
+      # This job's own check run is left out of the CI list: it is in progress now, and an earlier
+      # failed attempt of it would otherwise block a re-run. Its name is the job's `name:` above.
+      - name: Check the release gates
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          sha="$(git rev-parse HEAD)"
-          runs="$(gh api "repos/$GH_REPO/commits/$sha/check-runs" --paginate \
-            --jq '.check_runs[] | select(.name != "Build, verify, package, draft") | [.name, .status, (.conclusion // "")] | @tsv')"
-          if [[ -z "$runs" ]]; then
-            echo "::error::no CI runs found for ${sha:0:7}"; exit 1
-          fi
-          echo "$runs"
-          if printf '%s\n' "$runs" | awk -F'\t' '$2 != "completed" || $3 !~ /^(success|skipped|neutral)$/ { bad = 1 } END { exit !bad }'; then
-            echo "::error::CI is not green on ${sha:0:7} (see the list above)"; exit 1
-          fi
-
-      # Do not overwrite a release that exists: upstream's workflow deletes it and its tag first.
-      - name: Check no release exists for the tag
-        if: ${{ env.DRY_RUN != 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          found="$(gh api "repos/$GH_REPO/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .html_url")"
-          if [[ -n "$found" ]]; then
-            echo "::error::a release for $TAG already exists: $found"; exit 1
-          fi
+          EXCLUDE_CHECK: Build, verify, package, draft
+        run: scripts/release-gates.sh "$TAG" ${{ env.DRY_RUN == 'true' && '--no-release-check' || '' }}
 
       - name: Check the tree says this version
         run: scripts/release-check-version.sh "$VERSION"

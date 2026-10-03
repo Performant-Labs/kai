@@ -171,35 +171,45 @@ Developer ID and a working update channel.
 
 ## Automated release (draft)
 
-`.github/workflows/release-kai.yml` ("Release (draft)") does steps 11 to 16 below on a GitHub-hosted
-Apple Silicon runner, from a tag you have already pushed (steps 1 to 10 stay as they are):
+**`scripts/release-local.sh vX.Y.Z` does steps 11 to 16 in one command, on your Mac.** Run it from
+a checkout of `master` after the release PR is merged and the tag is pushed (steps 1 to 10):
 
-1. Checks the tag is `vX.Y.Z`, is on `master`, and that every CI check on that exact commit has
-   finished and passed; checks `scripts/release-check-version.sh` (the version files and the
-   CHANGELOG agree with the tag); refuses if a release for the tag already exists (it never
-   deletes one, unlike upstream's workflow).
-2. Builds with `make darwin-package VERSION=X.Y.Z` (no secret is in the build's environment), then
-   `release-tree-check.sh`, `release-verify.sh` and `release-package.sh`.
-3. Builds the notes with `scripts/release-notes.sh` (the Installing paragraph below plus the
-   CHANGELOG section) and creates a **draft** GitHub Release with the four assets. Every run also
-   uploads the files as a workflow artifact.
+```bash
+scripts/release-local.sh v0.3.1 --dry-run   # build, verify, package; create nothing
+scripts/release-local.sh v0.3.1             # the same, then asks before creating the DRAFT release
+```
 
-Run it by pushing the tag, or by hand (Actions > Release (draft)) for a tag that exists. A manual
-run is a dry run unless you untick `dry_run`: it builds and verifies and creates no release.
+It builds in a fresh detached worktree of the tag, so your working tree is never touched and the
+result is the tag as committed. In order it:
+
+1. checks the machine (Apple Silicon, tools, Kai not running, `gh` logged in with push rights);
+2. checks the tag is the same commit here and on `origin`, then runs `scripts/release-gates.sh`:
+   the commit is on `origin/master`, every CI check on that exact commit passed, and no release
+   (draft included) exists for the tag (it never deletes or overwrites one, unlike upstream's workflow);
+3. checks the version files and CHANGELOG say the tag's version (`release-check-version.sh`) and
+   builds the notes (`release-notes.sh`: the Installing paragraph below plus the CHANGELOG section);
+4. builds with `make darwin-package VERSION=X.Y.Z`, with no token in the environment, then runs
+   `release-tree-check.sh`, `release-verify.sh` and `release-package.sh`;
+5. asks, then creates a **draft** release with the four assets. The files, the notes and the
+   verified `Kai.app` stay in `bin/release/vX.Y.Z/`.
 
 What stays manual, on purpose:
 
-- **Step 13, the smoke matrix.** CI cannot see hotkeys, windows or permissions (#163). A person
-  runs it on the built app, then publishes the draft: `gh release edit vX.Y.Z --repo
-  Performant-Labs/kai --draft=false`. The draft is the confirmation step 16 asks for.
+- **Step 13, the smoke matrix.** CI cannot see hotkeys, windows or permissions (#163). Run it on
+  the `Kai.app` the script leaves in `bin/release/vX.Y.Z/`, then publish the draft:
+  `gh release edit vX.Y.Z --repo Performant-Labs/kai --draft=false`. The draft is the confirmation
+  step 16 asks for.
 - **Step 17**, checking the published artifact and running the installer against it.
 - **Steps 1 to 10**, the release branch, PR and tag. A workflow that opens the release PR needs a
   token that can start CI on it, which `GITHUB_TOKEN` cannot; that is a later phase of
   [#31](https://github.com/Performant-Labs/kai/issues/31).
 
-This replaces the macOS build Mac for the build. It has not yet been seen to pass
-`release-verify.sh` (a launch test) on a hosted runner; the first dry run decides whether the
-launch check holds there.
+**Why not a hosted runner.** `.github/workflows/release-kai.yml` does the same on a GitHub-hosted
+runner when a `vX.Y.Z` tag is pushed, but it cannot build the app today: the first run (v0.3.1)
+failed to compile `apple_correct.swift` because the app targets a newer Apple SDK than the
+`macos-26` runner has. It stays in the repository, using the same `release-gates.sh`, for when a
+runner with the right SDK exists; until then a tag push runs it and it fails at the build step,
+after the gates, without creating anything.
 
 ## What a build changes in the tree
 
