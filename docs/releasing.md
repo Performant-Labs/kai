@@ -23,8 +23,8 @@ At runtime the version comes from the build flag `-X ...buildinfo.Version`, whic
 `make darwin-package VERSION=X.Y.Z` sets. **Always pass `VERSION=` for a release build.** The
 default is `git describe --tags --always`, which is a bare commit SHA on an untagged commit and
 `vX.Y.Z` (with the `v`) on a tagged one. The startup log line `Kai starting... version=...`
-shows this value, and `scripts/release-verify.sh` checks it. (No screen in the app displays the
-version today.)
+shows this value, and `scripts/release-verify.sh` checks it. (Since 0.4.1 Settings > General also
+shows it, in the About card.)
 
 Format: SemVer, plain `X.Y.Z` in files, `vX.Y.Z` as the tag. This fork starts its own line at
 `0.1.0`. It does not track upstream's numbers (see "The in-app updater"; installed apps do not see this fork's releases yet).

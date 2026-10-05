@@ -7,12 +7,23 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-05
+
 ### Enhancements
 - Settings > General now has an About card, the first card of the tab, that shows the installed version, marks a development build, and has a button that copies "Kai <version>" for pasting into an issue (#41).
 - Both `[source switch]` log lines (the decision and "skipped by the window") now carry `version=` and `commit=`, so a pasted `kai.log` says which build produced a line, also when the startup line is in another day's file. This is for diagnosing the intermittent Alt-A miss (#16).
 
 ### Bug Fixes
 - The swap button in the translate window now always swaps for real. After an automatic source switch (a Spanish text moved the source to Spanish and the target to English), it used to undo the switch instead: the dropdowns changed but the source pane kept its Spanish text and the result came back in Spanish. Now the source pane shows the translation, the old text's language becomes the target, and each pane matches its dropdown. The note of the automatic switch no longer says "Swap to undo" (#39).
+
+### Known Issues
+- Alt-A sometimes captures the right Mexican Spanish text but does not switch the language drop-downs (at least 3 of 20 translations for one user). The cause is not found yet. Every `[source switch]` log line now names the build, so when it happens again, send `~/.kai/logs/kai.log` (and that day's `kai-YYYY-MM-DD.log.gz` if it was an earlier day) ([#16](https://github.com/Performant-Labs/kai/issues/16)).
+- Kai's log records the text you select or copy on the hotkey paths (Alt+A and the copy key) at info level, so it can contain private text; do not paste a log into an issue without checking it ([#11](https://github.com/Performant-Labs/kai/issues/11)).
+- Screen Recording: macOS may not list Kai in Privacy & Security > Screen & System Audio Recording when you click Grant access (it did not for the development build; for this release it is unverified). If Kai is not listed, click + in that list, add Kai, switch it on, then restart Kai.
+- The title bar of the Settings and translate windows is white while the content is dark in the dark theme ([#8](https://github.com/Performant-Labs/kai/issues/8)).
+- The in-app updater has not yet been seen to find a release on a real install, so do not count on it: install 0.4.1 by hand (the disk image, the zip, or `scripts/install-release.sh`). Kai 0.2.0 looks in the archived private repository and cannot offer any update.
+- Permissions are granted to the app's signing identity. 0.4.1 is signed with the same "Kai Release" certificate as 0.4.0, so the grants should carry over, but that is not yet verified on other Macs ([#36](https://github.com/Performant-Labs/kai/issues/36)); if Alt+A stops copying after an update, remove Kai from the list in Privacy & Security and add it again.
+- The certificate is self-signed, so macOS still blocks a copy downloaded with a browser as coming from an unidentified developer: install with `gh release download` and `scripts/install-release.sh`, or run `xattr -dr com.apple.quarantine /Applications/Kai.app`.
 
 ## [0.4.0] - 2026-10-02
 <!-- changelog-skip: release PR plumbing, no user-facing change: #33 -->
