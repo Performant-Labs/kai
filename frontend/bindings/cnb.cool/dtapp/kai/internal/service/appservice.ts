@@ -57,10 +57,19 @@ export function EmitHotkeysChanged(active: string[] | null): $CancellablePromise
 }
 
 /**
- * GetVersion returns the app version.
+ * GetVersion returns the app version the build injected (buildinfo.Version: the same value the tray
+ * menu and the log show). Issue #41.
  */
 export function GetVersion(): $CancellablePromise<string> {
     return $Call.ByID(240241073);
+}
+
+/**
+ * IsDevBuild reports whether this is a development build (the Kai-dev app), so the Settings About
+ * card can mark it and it is never mistaken for a release. Issue #41.
+ */
+export function IsDevBuild(): $CancellablePromise<boolean> {
+    return $Call.ByID(1196589252);
 }
 
 /**

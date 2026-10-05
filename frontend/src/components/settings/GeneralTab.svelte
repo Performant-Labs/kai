@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Clipboard } from '@wailsio/runtime';
   import { t, locale, resolveLang } from '../../i18n';
   import { userLang } from '../../stores/ui';
   import { themeMode, setTheme } from '../../stores/theme';
@@ -7,6 +8,10 @@
     GetConfig,
     SaveConfig,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
+  import {
+    GetVersion,
+    IsDevBuild,
+  } from '@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts';
   import { Lang, type LangCode } from '../../constants/lang';
   import { THEME, type ThemeMode } from '../../constants/theme';
   import { track } from '../../utils/analytics';
@@ -22,6 +27,31 @@
   // on; the Go side owns the default, this only mirrors it.
   let autoSwitchSource = $state(true);
 
+  // About card (issue #41): the installed version, whether it is a development build, and a short-lived
+  // "Copied" on the copy button.
+  let appVersion = $state('');
+  let devBuild = $state(false);
+  let versionCopied = $state(false);
+
+  async function loadAbout() {
+    try {
+      appVersion = await GetVersion();
+      devBuild = await IsDevBuild();
+    } catch {
+      /* Leave the card blank; the rest of the tab does not depend on it */
+    }
+  }
+
+  async function copyVersion() {
+    try {
+      await Clipboard.SetText(`Kai ${appVersion}`);
+      versionCopied = true;
+      setTimeout(() => (versionCopied = false), 1500);
+    } catch (e) {
+      console.error(t('log.generalCopyVersionFailed'), e);
+    }
+  }
+
   const themeOptions = $derived.by<{ mode: ThemeMode; label: string }[]>(() => [
     { mode: THEME.Auto, label: t('settings.themeAuto') },
     { mode: THEME.Light, label: t('settings.themeLight') },
@@ -29,6 +59,8 @@
   ]);
 
   onMount(async () => {
+    // The About card is independent of the config read below: a failure of either leaves the other.
+    void loadAbout();
     try {
       const cfg = await GetConfig();
       if (cfg) analyticsEnabled = cfg.analytics_enabled ?? false;
@@ -186,4 +218,24 @@
     <input type="checkbox" checked={autoSwitchSource} onchange={toggleAutoSwitchSource} />
     <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
   </label>
+</div>
+
+<div class="u-card u-card--panel mt-5 p-5">
+  <div class="mb-1 text-sm font-medium">{t('settings.about')}</div>
+  <div class="flex items-center gap-3 text-sm">
+    <span class="u-muted">{t('settings.aboutVersion')}</span>
+    <span class="font-medium" data-testid="app-version">{appVersion}</span>
+    {#if devBuild}
+      <span class="u-muted text-xs" data-testid="app-dev-build">{t('settings.aboutDevBuild')}</span>
+    {/if}
+    <button
+      class="u-btn u-btn--ghost px-3 py-1.5 text-sm"
+      data-testid="app-version-copy"
+      aria-label={t('settings.aboutCopy')}
+      disabled={!appVersion}
+      onclick={copyVersion}
+    >
+      {versionCopied ? t('common.copied') : t('settings.aboutCopy')}
+    </button>
+  </div>
 </div>
