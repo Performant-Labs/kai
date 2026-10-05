@@ -218,7 +218,8 @@ export function createSourceSwitcher(deps: SourceSwitchDeps) {
       correctionDeclined = '';
     },
     /**
-     * The swap button while the cue is active: restores the pair before the switch, keeps the text,
+     * Undoes the switch while the cue is active (issue #39: the swap button no longer calls this;
+     * it always swaps for real): restores the pair before the switch, keeps the text,
      * marks it so it is not switched again, and translates. False when there is nothing to undo.
      */
     undo(): boolean {

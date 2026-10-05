@@ -81,6 +81,7 @@ import TranslateWindow from './TranslateWindow.svelte';
 import { EventCopyKeyFailed } from '../utils/events';
 
 const SPANISH = 'Hola, necesito que me ayudes con este documento hoy';
+const ENGLISH = 'Hello, I need you to help me with this document today';
 let app: Record<string, unknown> | undefined;
 let target: HTMLElement;
 
@@ -122,7 +123,7 @@ describe('TranslateWindow, mounted', () => {
     expect(select('To').value).toBe('fr');
   });
 
-  it('a mismatching fill switches the source, swaps the target, translates once, shows the cue, and swap undoes it', async () => {
+  it('a mismatching fill switches the source, swaps the target, translates once, shows the cue, and a swap then swaps for real (issue #39)', async () => {
     h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
 
     h.fire('kai:input:fill', SPANISH);
@@ -140,7 +141,7 @@ describe('TranslateWindow, mounted', () => {
     h.fire('kai:translate:result', {
       engine: 'google',
       request_id: req.request_id,
-      result: 'Hello, I need you to help me with this document today',
+      result: ENGLISH,
       from: 'es-MX',
       to: 'en',
     });
@@ -152,17 +153,19 @@ describe('TranslateWindow, mounted', () => {
     expect(h.saveConfig).not.toHaveBeenCalled();
     expect(JSON.stringify(Object.entries(localStorage))).not.toContain('default_');
 
-    // Swap restores the previous pair exactly, keeps the text, translates again, drops the cue.
+    // Issue #39: swap after an automatic switch is a real swap, not an undo of the switch. Each pane
+    // ends up in the language its dropdown names: the source shows the translation (English), the
+    // target is the language the text was in, and the English text is translated back to Spanish.
     swapBtn().click();
     await settle();
     expect(select('From').value).toBe('en');
-    expect(select('To').value).toBe('fr');
+    expect(select('To').value).toBe('es-MX');
+    expect((target.querySelector('textarea') as HTMLTextAreaElement).value).toBe(ENGLISH);
     expect(h.translate).toHaveBeenCalledTimes(2);
-    expect(h.translate.mock.calls[1][0]).toMatchObject({ text: SPANISH, from: 'en', to: 'fr' });
-    expect(target.querySelector('textarea')).not.toBeNull();
+    expect(h.translate.mock.calls[1][0]).toMatchObject({ text: ENGLISH, from: 'en', to: 'es-MX' });
     expect(target.querySelector('[data-testid="source-switched-note"]')).toBeNull();
+    // The swap consumes preferences and never teaches the variant store.
     expect(h.learn).not.toHaveBeenCalled();
-    expect(h.saveConfig).not.toHaveBeenCalled();
   });
 
   it('a fill the planner does not switch changes nothing and translates with the pinned pair', async () => {
@@ -243,19 +246,6 @@ describe('TranslateWindow, mounted', () => {
     await settle();
     expect(select('From').value).toBe('es-MX');
     expect(h.translate).toHaveBeenCalledTimes(1);
-  });
-
-  it('the same text is not switched again after the undo', async () => {
-    h.plan.mockResolvedValue({ switched: true, from: 'es-MX', to: 'en' });
-    h.fire('kai:input:fill', SPANISH);
-    await settle();
-    swapBtn().click();
-    await settle();
-    h.plan.mockClear();
-    translateBtn().click();
-    await settle();
-    expect(h.plan).not.toHaveBeenCalled();
-    expect(select('From').value).toBe('en');
   });
 });
 

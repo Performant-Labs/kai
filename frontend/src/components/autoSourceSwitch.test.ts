@@ -97,8 +97,8 @@ describe('the window is wired to the one flow', () => {
     expect(body).toContain('hintedRequestId');
   });
 
-  it('swap asks the flow to undo first', () => {
-    expect(fnBody('swap')).toMatch(/switcher\.undo\(\)/);
+  it('swap is always a real swap: it never undoes the automatic switch (issue #39)', () => {
+    expect(fnBody('swap')).not.toMatch(/switcher\.undo\(\)/);
   });
 });
 
@@ -137,6 +137,8 @@ describe('the setting', () => {
       expect(cat.translate.sourceSwitched, name).toBeTruthy();
       expect(cat.translate.sourceSwitched, name).toContain('{from}');
       expect(cat.translate.sourceSwitched, name).toContain('{to}');
+      // The note no longer promises that the swap button undoes the switch (issue #39).
+      expect(cat.translate.sourceSwitched, name).not.toMatch(/undo|撤销/i);
     }
   });
 
