@@ -20,9 +20,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// version is the app version (injected at build time).
-var version = "dev"
-
 // AppService is the app's core facade (thin Wrapper):
 //   - The only implementer of the wails lifecycle trio (ServiceStartup / ServiceShutdown /
 //     ServiceName), and the single entry point for the global startup orchestration (engine
@@ -88,9 +85,16 @@ func (s *AppService) SetUserAgent(ua string) {
 	useragent.Set(ua)
 }
 
-// GetVersion returns the app version.
+// GetVersion returns the app version the build injected (buildinfo.Version: the same value the tray
+// menu and the log show). Issue #41.
 func (s *AppService) GetVersion() string {
-	return version
+	return buildinfo.Version
+}
+
+// IsDevBuild reports whether this is a development build (the Kai-dev app), so the Settings About
+// card can mark it and it is never mistaken for a release. Issue #41.
+func (s *AppService) IsDevBuild() bool {
+	return buildinfo.IsDev()
 }
 
 // CheckAccessibility checks whether macOS accessibility is authorized (cross-platform:

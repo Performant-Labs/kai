@@ -134,6 +134,10 @@ export const en: Dict = {
     autoSwitchSource: 'Auto-switch source language',
     autoSwitchSourceHint:
       'When text arrives in another language than the source shows, switch the source to it, make the old source the target, and translate.',
+    about: 'About',
+    aboutVersion: 'Version',
+    aboutCopy: 'Copy version',
+    aboutDevBuild: 'Development build',
     fontSize: 'Text size',
     fontSizeHint:
       'Make all text in the app smaller or larger. Applies to every window right away. 120% is the default.',
@@ -409,6 +413,7 @@ export const en: Dict = {
     generalSaveLangFailed: '[general] Failed to save language settings',
     generalSaveAnalyticsFailed: '[general] Failed to save anonymous analytics toggle',
     generalSaveAutoSwitchFailed: '[general] Failed to save auto-switch source language toggle',
+    generalCopyVersionFailed: '[general] Failed to copy the app version',
     shortcutSaveDoubleCopyFailed: '[shortcuts] Failed to save double Cmd+C toggle',
     generalSaveFontSizeFailed: '[general] Failed to save text size',
     shortcutCheckAccessibilityFailed: '[shortcut] Failed to check Accessibility permission',

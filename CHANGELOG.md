@@ -8,6 +8,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ## [Unreleased]
 
 ### Enhancements
+- Settings > General now has an About card that shows the installed version, marks a development build, and has a button that copies "Kai <version>" for pasting into an issue (#41).
 - Both `[source switch]` log lines (the decision and "skipped by the window") now carry `version=` and `commit=`, so a pasted `kai.log` says which build produced a line, also when the startup line is in another day's file. This is for diagnosing the intermittent Alt-A miss (#16).
 
 ### Bug Fixes
