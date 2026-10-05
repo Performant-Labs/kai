@@ -46,6 +46,18 @@ var (
 )
 
 // IsDev reports whether this is a dev build
+// LogAttrs returns the slog attributes that name this build (version and commit), for the log lines
+// a bug report depends on (issue #16). The startup line also carries them, but after a day rotation
+// it is in another file, so a line that must stand alone repeats them. A build without a commit (a
+// local one) reads "unknown".
+func LogAttrs() []any {
+	commit := GitCommit
+	if commit == "" {
+		commit = "unknown"
+	}
+	return []any{"version", Version, "commit", commit}
+}
+
 func IsDev() bool { return Dev == "true" || Dev == "1" }
 
 // DataHome returns the data root directory name (switches by mode; no home prefix)

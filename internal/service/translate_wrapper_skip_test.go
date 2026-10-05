@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+
+	"cnb.cool/dtapp/kai/internal/buildinfo"
 )
 
 func captureSkipLog(t *testing.T) *bytes.Buffer {
@@ -25,6 +27,20 @@ func TestReportSourceSwitchSkippedWritesOneInfoLineWithTheReason(t *testing.T) {
 	out := strings.TrimSpace(buf.String())
 	if strings.Count(out, "\n") != 0 || !strings.Contains(out, "level=INFO") || !strings.Contains(out, "reason=pair_changed") {
 		t.Fatalf("want one INFO line carrying reason=pair_changed, got:\n%s", out)
+	}
+}
+
+// Issue #16: the window's skip line names the build too, like the backend's decision line.
+func TestReportSourceSwitchSkippedNamesTheBuild(t *testing.T) {
+	oldV, oldC := buildinfo.Version, buildinfo.GitCommit
+	t.Cleanup(func() { buildinfo.Version, buildinfo.GitCommit = oldV, oldC })
+	buildinfo.Version, buildinfo.GitCommit = "v7.7.7", "feedbee"
+	buf := captureSkipLog(t)
+	(&TranslateWrapper{}).ReportSourceSwitchSkipped("pair_changed")
+	for _, want := range []string{"version=v7.7.7", "commit=feedbee"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("skip line lacks %q: %s", want, buf.String())
+		}
 	}
 }
 

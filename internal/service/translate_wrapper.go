@@ -3,6 +3,7 @@ package service
 import (
 	"log/slog"
 
+	"cnb.cool/dtapp/kai/internal/buildinfo"
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
 	"cnb.cool/dtapp/kai/internal/translate"
@@ -40,7 +41,7 @@ func (w *TranslateWrapper) PlanSourceSwitch(req model.SourceSwitchRequest) model
 // the main log, next to the backend's decision line, so one file tells the whole story (issue #16).
 // The frontend's own log file was empty in practice, and the reason is a fixed word, never text.
 func (w *TranslateWrapper) ReportSourceSwitchSkipped(reason string) {
-	slog.Info(i18n.T("log.source_switch_skipped"), "reason", sanitizeSkipReason(reason))
+	slog.Info(i18n.T("log.source_switch_skipped"), append([]any{"reason", sanitizeSkipReason(reason)}, buildinfo.LogAttrs()...)...)
 }
 
 // sanitizeSkipReason keeps only a short snake_case word, so nothing the user selected can reach the
