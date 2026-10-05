@@ -129,6 +129,10 @@ export const zh: Dict = {
     autoSwitchSource: '自动切换源语言',
     autoSwitchSourceHint:
       '当文本的语言与源语言不同时，自动把源语言切换为该语言，把原来的源语言设为目标语言，并直接翻译。',
+    about: '关于',
+    aboutVersion: '版本',
+    aboutCopy: '复制版本',
+    aboutDevBuild: '开发版本',
     fontSize: '文字大小',
     fontSizeHint: '缩小或放大应用中的所有文字，立即应用于所有窗口。默认为 120%。',
     fontSizeSmaller: '缩小文字',
@@ -396,6 +400,7 @@ export const zh: Dict = {
     generalSaveLangFailed: '[通用] 保存语言设置失败',
     generalSaveAnalyticsFailed: '[通用] 保存匿名统计开关失败',
     generalSaveAutoSwitchFailed: '[通用] 保存自动切换源语言开关失败',
+    generalCopyVersionFailed: '[通用] 复制应用版本失败',
     shortcutSaveDoubleCopyFailed: '[快捷键] 保存双击 Cmd+C 翻译开关失败',
     generalSaveFontSizeFailed: '[通用] 保存文字大小失败',
     shortcutCheckAccessibilityFailed: '[快捷键] 检测辅助功能授权失败',
