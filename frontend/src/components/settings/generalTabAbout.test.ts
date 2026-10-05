@@ -72,6 +72,17 @@ describe('GeneralTab About card (issue #41)', () => {
     expect(q('app-version')?.textContent?.trim()).toBe('v0.4.0');
   });
 
+  // The card sits above every other control, so the version is visible without scrolling.
+  it('puts the About card above the language control, the first control of the tab', async () => {
+    await mountTab();
+    const version = q('app-version')!;
+    const firstControl = target.querySelector('#lang-sel')!;
+    expect(
+      version.compareDocumentPosition(firstControl) & Node.DOCUMENT_POSITION_FOLLOWING,
+      'the version must come before the language select in the page',
+    ).toBeTruthy();
+  });
+
   it('shows no development marker on a release build', async () => {
     await mountTab();
     expect(q('app-dev-build')).toBeNull();
