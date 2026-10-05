@@ -127,6 +127,26 @@
 </header>
 
 <div class="u-card u-card--panel mb-5 p-5">
+  <div class="mb-1 text-sm font-medium">{t('settings.about')}</div>
+  <div class="flex items-center gap-3 text-sm">
+    <span class="u-muted">{t('settings.aboutVersion')}</span>
+    <span class="font-medium" data-testid="app-version">{appVersion}</span>
+    {#if devBuild}
+      <span class="u-muted text-xs" data-testid="app-dev-build">{t('settings.aboutDevBuild')}</span>
+    {/if}
+    <button
+      class="u-btn u-btn--ghost px-3 py-1.5 text-sm"
+      data-testid="app-version-copy"
+      aria-label={t('settings.aboutCopy')}
+      disabled={!appVersion}
+      onclick={copyVersion}
+    >
+      {versionCopied ? t('common.copied') : t('settings.aboutCopy')}
+    </button>
+  </div>
+</div>
+
+<div class="u-card u-card--panel mb-5 p-5">
   <div class="mb-1 text-sm font-medium">{t('settings.language')}</div>
   <p class="u-muted mb-3 text-xs">{t('settings.languageHint')}</p>
   <div class="flex items-center">
@@ -218,24 +238,4 @@
     <input type="checkbox" checked={autoSwitchSource} onchange={toggleAutoSwitchSource} />
     <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
   </label>
-</div>
-
-<div class="u-card u-card--panel mt-5 p-5">
-  <div class="mb-1 text-sm font-medium">{t('settings.about')}</div>
-  <div class="flex items-center gap-3 text-sm">
-    <span class="u-muted">{t('settings.aboutVersion')}</span>
-    <span class="font-medium" data-testid="app-version">{appVersion}</span>
-    {#if devBuild}
-      <span class="u-muted text-xs" data-testid="app-dev-build">{t('settings.aboutDevBuild')}</span>
-    {/if}
-    <button
-      class="u-btn u-btn--ghost px-3 py-1.5 text-sm"
-      data-testid="app-version-copy"
-      aria-label={t('settings.aboutCopy')}
-      disabled={!appVersion}
-      onclick={copyVersion}
-    >
-      {versionCopied ? t('common.copied') : t('settings.aboutCopy')}
-    </button>
-  </div>
 </div>
