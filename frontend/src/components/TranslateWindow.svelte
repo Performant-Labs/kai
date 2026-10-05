@@ -961,8 +961,9 @@
   // onchange ever teaches the variant store. The new source text is its own undo step (issue #118):
   // Undo brings back the old source text and leaves the languages swapped.
   function swap() {
-    // While the note of an automatic switch (issue #200) is showing, swap undoes that switch.
-    if (switcher.undo()) return;
+    // Always a real swap, also while the note of an automatic switch (issue #200) is showing: undoing
+    // that switch put the old pair back around the unchanged text, leaving each pane in a language
+    // other than its dropdown's (issue #39).
     const pair = swapPair;
     if (!pair) return;
     // A swap translates the text on screen in the other direction: the correction (made for the
@@ -1586,7 +1587,7 @@
                first adds the top inset (first:pt-4), the text below brings its own p-4. -->
             {#if cueShown}
               <!-- The source and target were switched automatically (issue #200): says so, once, in
-                 the result pane's own muted note style. The swap button restores the previous pair. -->
+                 the result pane's own muted note style. -->
               <p class="u-muted px-4 text-2xs first:pt-4" data-testid="source-switched-note">
                 {t('translate.sourceSwitched', { from: langName(fromLang), to: langName(toLang) })}
               </p>

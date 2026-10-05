@@ -56,7 +56,7 @@ export const zh: Dict = {
     sourceAuto: '自动检测',
     identity: '源语言与目标语言相同，已显示原文',
     translatedFromDetected: '译自自动识别的{lang}',
-    sourceSwitched: '源语言已切换为{from}，目标语言现为{to}。点击交换可撤销。',
+    sourceSwitched: '源语言已切换为{from}，目标语言现为{to}。',
     correctSource: '纠正语法和用词',
     correctSourceHint:
       '翻译前，用苹果的设备端模型纠正文本的语法和用词，并替换夹杂的外语词。文本不会离开你的 Mac。',

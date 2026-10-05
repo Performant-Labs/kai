@@ -62,7 +62,7 @@ export function rejectReason(
   return null;
 }
 
-/** The note that says the pair was switched, and what the swap button restores. */
+/** The note that says the pair was switched. */
 export interface SwitchCue {
   /** The source text the switch was made for. */
   text: string;
@@ -91,7 +91,8 @@ export function cueActive(cue: SwitchCue | null, text: string, current: LangPair
 }
 
 /**
- * The pair the swap button restores while the cue is active: the pair before the switch, exactly
+ * The pair that undoes the switch while the cue is active (issue #39: the window's swap button no
+ * longer calls this; it always swaps for real): the pair before the switch, exactly
  * (not a plain swap of the new one, which would leave the old source as target and lose the old
  * target). Null when the cue no longer applies, and the ordinary swap runs.
  */

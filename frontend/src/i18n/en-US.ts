@@ -57,7 +57,7 @@ export const en: Dict = {
     sourceAuto: 'Detected',
     identity: 'Source and target language are the same — showing the source text',
     translatedFromDetected: 'Translated from auto-detected {lang}',
-    sourceSwitched: 'Source switched to {from}, target is now {to}. Swap to undo.',
+    sourceSwitched: 'Source switched to {from}, target is now {to}.',
     correctSource: 'Correct grammar and wording',
     correctSourceHint:
       "Before translating, fix the grammar and word choice of the text, and replace mixed-in foreign words, with Apple's on-device model. The text never leaves your Mac.",
