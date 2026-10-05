@@ -7,6 +7,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"cnb.cool/dtapp/kai/internal/buildinfo"
 	"cnb.cool/dtapp/kai/internal/engine"
 	"cnb.cool/dtapp/kai/internal/langpref"
 	"cnb.cool/dtapp/kai/internal/model"
@@ -318,6 +319,22 @@ func captureLog(t *testing.T) *strings.Builder {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	return &buf
+}
+
+// Issue #16: the decision line names the build, so a kai.log pasted after an intermittent miss says
+// which version produced it, also when the startup line is in another day's file.
+func TestPlanSourceSwitchLogLineNamesTheBuild(t *testing.T) {
+	oldV, oldC := buildinfo.Version, buildinfo.GitCommit
+	t.Cleanup(func() { buildinfo.Version, buildinfo.GitCommit = oldV, oldC })
+	buildinfo.Version, buildinfo.GitCommit = "v7.7.7", "feedbee"
+	buf := captureLog(t)
+	svc := newSwitchService(t, spanishDetector(), langpref.New())
+	svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "Hola, necesito que me ayudes con este documento hoy", From: model.EN, To: model.FR})
+	for _, want := range []string{"version=v7.7.7", "commit=feedbee"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("decision line lacks %q: %s", want, buf.String())
+		}
+	}
 }
 
 func TestPlanSourceSwitchLogsOneInfoLinePerDecisionWithoutContent(t *testing.T) {

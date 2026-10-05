@@ -9,6 +9,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ### Enhancements
 - Settings > General now has an About card that shows the installed version, marks a development build, and has a button that copies "Kai <version>" for pasting into an issue (#41).
+- Both `[source switch]` log lines (the decision and "skipped by the window") now carry `version=` and `commit=`, so a pasted `kai.log` says which build produced a line, also when the startup line is in another day's file. This is for diagnosing the intermittent Alt-A miss (#16).
 
 ### Bug Fixes
 - The swap button in the translate window now always swaps for real. After an automatic source switch (a Spanish text moved the source to Spanish and the target to English), it used to undo the switch instead: the dropdowns changed but the source pane kept its Spanish text and the result came back in Spanish. Now the source pane shows the translation, the old text's language becomes the target, and each pane matches its dropdown. The note of the automatic switch no longer says "Swap to undo" (#39).

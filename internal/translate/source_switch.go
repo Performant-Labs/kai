@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"cnb.cool/dtapp/kai/internal/buildinfo"
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
 )
@@ -61,10 +62,12 @@ func (s *Service) PlanSourceSwitch(req model.SourceSwitchRequest) model.SourceSw
 	plan, d := s.planSourceSwitch(req)
 	// One line per decision (issue #16): the detection and why it ended as it did. Never the text
 	// (issue #203): only its length.
-	slog.Info(i18n.T("log.source_switch_plan"),
+	// The build too (issue #16), so the line stands alone in a pasted log.
+	slog.Info(i18n.T("log.source_switch_plan"), append([]any{
 		"reason", plan.Reason, "detected", string(d.lang), "confidence", d.confidence,
 		"runes", d.runes, "by", d.by, "from", string(req.From), "to", string(req.To),
-		"result_from", string(plan.From))
+		"result_from", string(plan.From),
+	}, buildinfo.LogAttrs()...)...)
 	return plan
 }
 
