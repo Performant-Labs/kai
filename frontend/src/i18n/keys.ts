@@ -76,6 +76,8 @@ export type Dict = {
     textCorrected: string;
     translateOriginal: string;
     contextOpen: string;
+    autoTranslate: string;
+    autoTranslateTip: string;
     backTranslate: string;
     backTranslateTip: string;
     backLabel: string;

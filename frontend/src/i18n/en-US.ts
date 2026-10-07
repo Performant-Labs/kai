@@ -73,6 +73,8 @@ export const en: Dict = {
     translateOriginal: 'Translate the original instead',
     contextShowOriginal: "Show the engine's own translation",
     contextOpen: 'Tell the translator the context was wrong',
+    autoTranslate: 'Translate as I type',
+    autoTranslateTip: 'Translate by itself when you stop typing or paste text',
     backTranslate: 'Show a back-translation',
     backTranslateTip: 'Translate the result back into your language to check it',
     backLabel: 'Translated back into {lang}',

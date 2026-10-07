@@ -78,6 +78,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts', () => 
 }));
 
 import TranslateWindow from './TranslateWindow.svelte';
+import { autoTranslateOn } from '../stores/autoTranslate';
 
 const ORIGINAL = 'Necesito hacer el follow up con el cliente antes del deadline';
 const FIXED = 'Necesito hacer el seguimiento con el cliente antes de la fecha límite';
@@ -141,6 +142,9 @@ async function start(config: Record<string, unknown>) {
 
 beforeEach(() => {
   localStorage.clear();
+  // These tests describe the window before "Translate as I type" (issue #57): typing and pasting
+  // translate nothing by themselves. mountedAutoTranslate.test.ts covers the switch on.
+  autoTranslateOn.set(false);
   h.handlers.clear();
   for (const f of [h.plan, h.learn, h.saveConfig, h.translate, h.correct, h.availability])
     f.mockReset();

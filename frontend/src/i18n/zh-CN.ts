@@ -69,6 +69,8 @@ export const zh: Dict = {
     translateOriginal: '改为翻译原文',
     contextShowOriginal: '显示引擎自己的翻译',
     contextOpen: '告诉翻译这里的上下文不对',
+    autoTranslate: '输入时自动翻译',
+    autoTranslateTip: '停止输入或粘贴文本后自动翻译',
     backTranslate: '显示回译',
     backTranslateTip: '把结果翻译回源语言，方便核对',
     backLabel: '回译为{lang}',

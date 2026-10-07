@@ -78,6 +78,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts', () => 
 }));
 
 import TranslateWindow from './TranslateWindow.svelte';
+import { autoTranslateOn } from '../stores/autoTranslate';
 import { EventCopyKeyFailed } from '../utils/events';
 
 const SPANISH = 'Hola, necesito que me ayudes con este documento hoy';
@@ -98,6 +99,9 @@ const swapBtn = () => target.querySelector('button[aria-label^="Swap"]') as HTML
 
 beforeEach(async () => {
   localStorage.clear();
+  // These tests describe the window before "Translate as I type" (issue #57): typing and pasting
+  // translate nothing by themselves. mountedAutoTranslate.test.ts covers the switch on.
+  autoTranslateOn.set(false);
   h.handlers.clear();
   h.plan.mockReset();
   h.learn.mockReset();
