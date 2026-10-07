@@ -71,6 +71,26 @@ export const en: Dict = {
     correctUnavailablePlatform: 'Not available: this needs macOS with Apple Intelligence.',
     textCorrected: 'The text was corrected before translating.',
     translateOriginal: 'Translate the original instead',
+    contextShowOriginal: "Show the engine's own translation",
+    contextOpen: 'Tell the translator the context was wrong',
+    contextTitle: 'Context',
+    contextPlaceholder: 'Tell the translator the context, e.g. “this is a legal contract”',
+    contextSend: 'Translate again in this context',
+    contextClear: 'Clear context',
+    contextClearHint: 'Clear the context and the chat ({shortcut})',
+    contextActive: 'Context active',
+    contextActiveHint: 'Your context applies to every translation until you clear it',
+    contextFallback: '{engine} translated this, because {selected} cannot follow a context.',
+    contextOnDevice: 'the on-device model',
+    contextWorking: 'Translating in this context…',
+    contextCancel: 'Cancel',
+    contextUnavailable:
+      'No engine can follow a context. Turn on Apple Intelligence or add an OpenAI, Anthropic or Gemini engine in Settings.',
+    contextUnavailableAppleIntelligence:
+      'The on-device model is off. Turn on Apple Intelligence in System Settings, or add a cloud engine in Settings.',
+    contextUnavailableNotReady:
+      'The on-device model is still getting ready. Try again in a few minutes, or add a cloud engine in Settings.',
+    contextFailed: 'The translation in this context failed. Try again.',
     failedPair:
       'Language pair unavailable — add it in System Settings > General > Language & Region',
     failedNetwork: "Can't reach {engine}: check your network or proxy",

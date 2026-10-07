@@ -98,6 +98,7 @@
     ReportSourceSwitchSkipped,
     CorrectSource,
     CorrectionAvailability,
+    RetranslateWithContext,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
   import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
   import { learnFromSelection } from '../utils/langLearn.ts';
@@ -152,6 +153,22 @@
     type AppliedCorrection,
   } from '../utils/sourceCorrection.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
+  import ContextChatPanel from './ContextChatPanel.svelte';
+  import {
+    emptyChat,
+    clearChat,
+    hasContext,
+    addUserMessage,
+    buildContextRequest,
+    applyAnswer,
+    answerNoteKey,
+    shownFor,
+    isClearShortcut,
+    DEFAULT_CLEAR_SHORTCUT,
+    type ContextChat,
+    type ContextAnswer,
+    type BoundRetranslation,
+  } from '../utils/contextChat.ts';
   import {
     GetLanguages,
     GetConfig,
@@ -456,6 +473,11 @@
   function onWindowKeydown(e: KeyboardEvent) {
     if (e.isComposing) return;
     if (handleTranslateShortcut(e)) return;
+    if (isClearShortcut(e, clearShortcut)) {
+      e.preventDefault();
+      clearContext();
+      return;
+    }
     const action = shortcutAction(e);
     if (action === null) return;
     e.preventDefault();
@@ -986,6 +1008,8 @@
     requestedThisRun = true;
     requestedTo = toLang;
     results = {};
+    // The engines' own translations replace any retranslation shown for the previous round.
+    retrans = null;
     // A new fan-out round starts blank: the previous batch's edits are meaningless for the new
     // round and are discarded with it.
     edited = new Map();
@@ -1019,6 +1043,8 @@
       started = res?.engines ?? [];
       if (requestSettled(started, results)) awaiting = false;
       if (started.length === 0) loading = false;
+      // A kept context applies to this text too (issue #48).
+      if (hasContext(chat)) void runContext('');
     } catch (e) {
       // A rejected call started nothing, so the request is over at once; no timer is involved.
       console.error(t('log.translateRequestFailed'), e);
@@ -1060,6 +1086,109 @@
     } catch (e) {
       console.error('copy failed', e);
     }
+  }
+
+  // The context chat (issue #48). The context the user gave is kept across texts until it is
+  // cleared (the button, or the shortcut): nothing below is reset when the text or the pair
+  // changes. The backend decides which engine answers (the selected one when it can follow a
+  // context, else the on-device model, else a configured cloud LLM) and whether anything can.
+  let chat = $state<ContextChat>(emptyChat);
+  let chatOpen = $state(false);
+  let chatBusy = $state(false);
+  let chatRequestId = '';
+  // The retranslation shown in place of the engine's own result, bound to the text and engine it
+  // was made for.
+  let retrans = $state<BoundRetranslation | null>(null);
+  const clearShortcutStore = persisted<string>(
+    'kai:translate:clearContextShortcut',
+    DEFAULT_CLEAR_SHORTCUT,
+  );
+  const clearShortcut = $derived($clearShortcutStore);
+  const shownRetrans = $derived(shownFor(retrans, input, activeEngine));
+  // The sentence under the chat when another engine than the selected one did the retranslation.
+  const retransNote = $derived(
+    shownRetrans?.fallback
+      ? t('translate.contextFallback', {
+          engine:
+            shownRetrans.engine === 'apple-foundation-models'
+              ? t('translate.contextOnDevice')
+              : engineName(shownRetrans.engine),
+          selected: engineName(activeEngine),
+        })
+      : '',
+  );
+
+  // Translates the text on screen again in the context in force. `previous` is the translation the
+  // user says is wrong ('' when there is none yet: a new text translated under a kept context).
+  async function runContext(previous: string) {
+    if (!hasContext(chat) || !input.trim()) return;
+    const id = newRequestID();
+    chatRequestId = id;
+    chatBusy = true;
+    const forInput = input;
+    const forEngine = activeEngine;
+    const req = buildContextRequest(chat, {
+      text: textToSend(correction, input),
+      from: fromLang,
+      to: toLang,
+      engine: forEngine,
+      previous,
+      requestId: id,
+    });
+    let ans: ContextAnswer;
+    try {
+      ans = (await RetranslateWithContext(req as any)) as ContextAnswer;
+    } catch (e) {
+      console.error(t('log.translateRequestFailed'), e);
+      ans = {
+        status: 'failed',
+        result: '',
+        engine: '',
+        fallback: false,
+        reason: '',
+        error: '',
+        request_id: id,
+      };
+    }
+    // Cleared, or replaced by a newer one, while the call was pending: not this request's business.
+    if (chatRequestId !== id) return;
+    chatBusy = false;
+    const noteKey = answerNoteKey(ans);
+    const applied = applyAnswer(chat, ans, noteKey ? t(noteKey) : '');
+    chat = applied.chat;
+    if (applied.shown) {
+      retrans = { ...applied.shown, forInput, forEngine };
+      // The retranslation takes the place of the engine's result the way a manual edit does, so
+      // the pane, Copy and the engine switch treat it exactly like one.
+      if (forEngine === activeEngine) edited = new Map(edited).set(forEngine, applied.shown.text);
+    }
+  }
+
+  function sendContext(message: string) {
+    chat = addUserMessage(chat, message);
+    void runContext(activeDisplay);
+  }
+
+  // Back to the engine's own translation; the context stays.
+  function showOriginal() {
+    const next = new Map(edited);
+    next.delete(activeEngine);
+    edited = next;
+    retrans = null;
+  }
+
+  function cancelContext() {
+    CancelTranslate(chatRequestId, '').catch(reportCancelFailure);
+  }
+
+  // Clear context: the button and the shortcut. Forgets the context and the chat, stops a request
+  // in flight, and goes back to the engine's own translation.
+  function clearContext() {
+    if (chatBusy) cancelContext();
+    chatRequestId = '';
+    chatBusy = false;
+    chat = clearChat();
+    retrans = null;
   }
 
   // Back to the idle window (issue #81): the four retained fields (text, results, requested target,
@@ -1655,6 +1784,22 @@
             </div>
           {/if}
         </div>
+        {#if activeEngines.length > 0}
+          <ContextChatPanel
+            {chat}
+            open={chatOpen}
+            busy={chatBusy}
+            active={hasContext(chat)}
+            shortcutLabel={clearShortcut}
+            ontoggle={() => (chatOpen = !chatOpen)}
+            onsend={sendContext}
+            onclear={clearContext}
+            oncancel={cancelContext}
+            note={retransNote}
+            canShowOriginal={shownRetrans !== null}
+            onshoworiginal={showOriginal}
+          />
+        {/if}
       </section>
     </div>
   </main>
