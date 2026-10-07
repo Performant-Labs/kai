@@ -72,6 +72,14 @@ func (w *TranslateWrapper) CorrectionAvailability() model.CorrectionAvailability
 	return w.svc.CorrectionAvailability()
 }
 
+// RetranslateWithContext translates a text again in a context the user described in the result
+// pane's chat (issue #48). The engine whose result is shown does it when it can follow a context;
+// otherwise the on-device model, then a configured cloud LLM, do (see translate.Service). It is
+// cancelled with CancelTranslate(requestID, "").
+func (w *TranslateWrapper) RetranslateWithContext(req model.ContextTranslateRequest) model.ContextTranslateResult {
+	return w.svc.RetranslateWithContext(req)
+}
+
 // CancelTranslate cancels the running translation request requestID (issue #109), or only its
 // engine when engine is not empty; the other engines keep running. It reports whether it found
 // something still running, and returns false, without any error, for an unknown or finished
