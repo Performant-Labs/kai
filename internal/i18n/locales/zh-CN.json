@@ -183,6 +183,7 @@
   "log.apple_translate_invoke": "[动态桥接] 系统翻译调用",
   "log.autostart_disable_failed": "禁用开机自启失败",
   "log.autostart_enable_failed": "启用开机自启失败",
+  "log.back_translate_failed": "[回译] 回译失败",
   "log.check_update_failed": "启动检查更新失败",
   "log.check_update_panic": "启动检查更新异常",
   "log.context_translate_done": "[上下文翻译] 已完成",

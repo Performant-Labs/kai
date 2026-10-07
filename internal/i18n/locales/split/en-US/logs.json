@@ -146,5 +146,6 @@
   "log.source_switch_plan": "[source switch] decision",
   "log.source_switch_skipped": "[source switch] skipped by the window",
   "log.context_translate_failed": "[context-translate] the retranslation failed",
-  "log.context_translate_done": "[context-translate] finished"
+  "log.context_translate_done": "[context-translate] finished",
+  "log.back_translate_failed": "[back-translate] the back-translation failed"
 }

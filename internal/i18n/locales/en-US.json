@@ -183,6 +183,7 @@
   "log.apple_translate_invoke": "[dynamic-bridge] System translation invoked",
   "log.autostart_disable_failed": "Failed to disable autostart",
   "log.autostart_enable_failed": "Failed to enable autostart",
+  "log.back_translate_failed": "[back-translate] the back-translation failed",
   "log.check_update_failed": "Failed to check for updates on startup",
   "log.check_update_panic": "Panic while checking for updates",
   "log.context_translate_done": "[context-translate] finished",

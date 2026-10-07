@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { get } from 'svelte/store';
   import { t, langName, engineName } from '../i18n';
   import { rootStyle } from '../stores/theme';
@@ -100,6 +100,7 @@
     CorrectSource,
     CorrectionAvailability,
     RetranslateWithContext,
+    BackTranslate,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
   import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
   import { learnFromSelection } from '../utils/langLearn.ts';
@@ -155,6 +156,17 @@
   } from '../utils/sourceCorrection.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import ContextChatPanel from './ContextChatPanel.svelte';
+  import { backTranslateOn } from '../stores/backTranslate';
+  import {
+    acceptBack,
+    backPair,
+    backShownFor,
+    buildBackRequest,
+    needsBack,
+    shouldBackTranslate,
+    type BackAnswer,
+    type BoundBack,
+  } from '../utils/backTranslation.ts';
   import { clearContextShortcut } from '../stores/clearContextShortcut';
   import {
     emptyChat,
@@ -1095,6 +1107,79 @@
     }
   }
 
+  // The back-translation (issue #56). With the toggle on, the displayed result is translated back
+  // into the source language and shown under it, to check it in the user's own language. The backend
+  // (BackTranslate) does it with the engine whose result is shown: its own request, cancellable, no
+  // history, never an error. What is on screen is bound to the exact displayed text and engine, so
+  // an edit, a new text or an engine switch can never leave it describing something else.
+  let back = $state<BoundBack | null>(null);
+  let backBusy = $state(false);
+  let backRequestId = '';
+  // The text and engine a request was last made for: a failed or empty answer is not asked again for
+  // the same pair, and an effect run that changes nothing never starts a second request.
+  let backAsked: { displayed: string; engine: string } | null = null;
+  const backShown = $derived(backShownFor(back, activeDisplay, activeEngine));
+
+  function stopBack() {
+    if (backRequestId !== '') CancelTranslate(backRequestId, '').catch(reportCancelFailure);
+    backRequestId = '';
+    backBusy = false;
+    backAsked = null;
+    back = null;
+  }
+
+  async function startBack(displayed: string, engine: string, pair: { from: string; to: string }) {
+    if (backRequestId !== '') CancelTranslate(backRequestId, '').catch(reportCancelFailure);
+    const id = newRequestID();
+    backRequestId = id;
+    backAsked = { displayed, engine };
+    backBusy = true;
+    let ans: BackAnswer | null = null;
+    try {
+      ans = (await BackTranslate(
+        buildBackRequest({ text: displayed, pair, engine, requestId: id }) as any,
+      )) as BackAnswer | null;
+    } catch (e) {
+      console.error(t('log.translateRequestFailed'), e);
+    }
+    // Replaced, cancelled or stopped while the call was pending: not this request's business.
+    if (backRequestId !== id) return;
+    backBusy = false;
+    back = acceptBack(ans, displayed, engine, pair.to);
+  }
+
+  $effect(() => {
+    const wanted = shouldBackTranslate({
+      enabled: $backTranslateOn,
+      displayed: activeDisplay,
+      isResult: pane === 'result',
+      failed: Boolean(activeResult?.error),
+      cancelled: Boolean(activeResult?.cancelled),
+      identity: Boolean(activeResult?.identity),
+    });
+    const displayed = activeDisplay;
+    const engine = activeEngine;
+    const res = activeResult;
+    untrack(() => {
+      if (!wanted || !res) {
+        if (backRequestId !== '' || back !== null || backAsked !== null) stopBack();
+        return;
+      }
+      if (!needsBack(back, displayed, engine)) return;
+      if (backAsked && backAsked.displayed === displayed && backAsked.engine === engine) return;
+      const pair = backPair({
+        resultFrom: String(res.from ?? ''),
+        resultTo: String(res.to ?? ''),
+        detectedFrom: String(res.detected_from ?? ''),
+      });
+      if (!pair) {
+        if (backRequestId !== '' || back !== null) stopBack();
+        return;
+      }
+      void startBack(displayed, engine, pair);
+    });
+  });
+
   // The context chat (issue #48). The context the user gave is kept across texts until it is
   // cleared (the button, or the shortcut): nothing below is reset when the text or the pair
   // changes. The backend decides which engine answers (the selected one when it can follow a
@@ -1235,23 +1320,43 @@
            as its tooltip when the on-device model cannot run here. The tooltip is the pane
            headers' (#165) u-tooltip, opening downward and anchored at its left edge (the label sits
            at the window's edge, where a centred tooltip would be clipped). -->
-      <label
-        class="u-tooltip u-tooltip--start col-start-1 flex items-center gap-2 justify-self-start text-xs"
-        class:u-muted={!correctionOn}
-        data-tooltip={correctTip}
-      >
-        <input
-          type="checkbox"
-          class="u-no-drag"
-          data-testid="correct-source-checkbox"
-          checked={correctionOn}
-          disabled={!correctAvail.available}
-          aria-describedby="correct-source-tip"
-          onchange={toggleCorrect}
-        />
-        <span>{t('translate.correctSource')}</span>
-        <span id="correct-source-tip" class="sr-only">{correctTip}</span>
-      </label>
+      <div class="col-start-1 flex flex-col items-start gap-1 justify-self-start">
+        <label
+          class="u-tooltip u-tooltip--start flex items-center gap-2 text-xs"
+          class:u-muted={!correctionOn}
+          data-tooltip={correctTip}
+        >
+          <input
+            type="checkbox"
+            class="u-no-drag"
+            data-testid="correct-source-checkbox"
+            checked={correctionOn}
+            disabled={!correctAvail.available}
+            aria-describedby="correct-source-tip"
+            onchange={toggleCorrect}
+          />
+          <span>{t('translate.correctSource')}</span>
+          <span id="correct-source-tip" class="sr-only">{correctTip}</span>
+        </label>
+        <!-- "Show a back-translation" (issue #56): the result translated back into the source
+           language, to check it. Off by default; it doubles the translation calls. -->
+        <label
+          class="u-tooltip u-tooltip--start flex items-center gap-2 text-xs"
+          class:u-muted={!$backTranslateOn}
+          data-tooltip={t('translate.backTranslateTip')}
+        >
+          <input
+            type="checkbox"
+            class="u-no-drag"
+            data-testid="back-translate-checkbox"
+            aria-describedby="back-translate-tip"
+            checked={$backTranslateOn}
+            onchange={(e) => backTranslateOn.set(e.currentTarget.checked)}
+          />
+          <span>{t('translate.backTranslate')}</span>
+          <span id="back-translate-tip" class="sr-only">{t('translate.backTranslateTip')}</span>
+        </label>
+      </div>
       <div class="col-start-2 flex items-center justify-center gap-2">
         <select
           class="u-field u-select u-lang-select px-3 py-2 text-sm"
@@ -1759,6 +1864,24 @@
               value={activeDisplay}
               onchange={(ev) => setEdited(activeEngine, ev.currentTarget.value)}
               placeholder={t('translate.noResult')}></textarea>
+            {#if backShown}
+              <!-- The result translated back into the source language (issue #56), under the
+                 result and in a muted label: it only helps to check the translation; Copy copies
+                 the translation above, never this. -->
+              <div class="u-border-t shrink-0 px-4 py-3" data-testid="back-translation">
+                <p class="u-muted text-2xs">
+                  ↩ {t('translate.backLabel', { lang: langName(backShown.lang) })}
+                </p>
+                <p class="whitespace-pre-wrap text-sm leading-relaxed">{backShown.text}</p>
+              </div>
+            {:else if backBusy}
+              <p
+                class="u-border-t u-muted shrink-0 px-4 py-3 text-xs"
+                data-testid="back-translation-pending"
+              >
+                {t('translate.backWorking')}
+              </p>
+            {/if}
           {:else if pane === 'cancelled'}
             <!-- The user cancelled the active engine and it produced nothing (issue #109): muted
                text, never the failure copy or the danger colour. There is no retry button either:
