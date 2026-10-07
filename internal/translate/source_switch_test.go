@@ -412,3 +412,53 @@ func TestPlanSourceSwitchIgnoresLinks(t *testing.T) {
 		t.Errorf("text plus a link: got %+v, detector saw %q; want a switch on the text alone", got, det.seen)
 	}
 }
+
+// Issue #54: a text in the TARGET language, under a pinned source that is another language, would
+// come back as an identity result ("source and target are the same"). There a wrong switch costs
+// little and not switching is certainly useless, so the detector's confidence bar is lower than the
+// general 0.8; every other case keeps 0.8.
+func TestPlanSourceSwitchTextInTheTargetLanguageNeedsLessConfidence(t *testing.T) {
+	text := `Verifíca todos los "tool tips"`
+	for _, tc := range []struct {
+		name string
+		conf float64
+		to   model.Language
+		want bool
+	}{
+		{"detected = target, 0.74", 0.74, model.ESMX, true},
+		{"detected = target, exactly at the lower bar", switchMinConfidenceTarget, model.ESMX, true},
+		{"detected = target, just under the lower bar", switchMinConfidenceTarget - 0.01, model.ESMX, false},
+		{"detected = target, bare es covers es-MX", 0.6, model.ES, true},
+		{"detected is not the target, 0.74 stays below the general bar", 0.74, model.FR, false},
+		{"detected is not the target, at the general bar", switchMinConfidence, model.FR, true},
+	} {
+		svc := newSwitchService(t, &fakeDetector{lang: "es", conf: tc.conf, ok: true}, langpref.New())
+		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.EN, To: tc.to})
+		if got.Switched != tc.want {
+			t.Errorf("%s: Switched = %v (reason %q), want %v", tc.name, got.Switched, got.Reason, tc.want)
+		}
+	}
+}
+
+func TestPlanSourceSwitchLowerBarSwapsThePair(t *testing.T) {
+	svc := newSwitchService(t, &fakeDetector{lang: "es", conf: 0.74, ok: true}, langpref.New())
+	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: `Verifíca todos los "tool tips"`, From: model.EN, To: model.ESMX})
+	if !got.Switched || got.From != model.ESMX || got.To != model.EN || got.Reason != model.SwitchReasonSwitched {
+		t.Fatalf("got %+v, want es-MX -> en, switched", got)
+	}
+}
+
+// The lower bar never overrides a text that already is in the pinned language, and never turns a
+// below-bar hint or unrecognised language into a switch.
+func TestPlanSourceSwitchLowerBarLeavesTheOtherRulesAlone(t *testing.T) {
+	// Detected = the pinned source (es-MX), at a low confidence: nothing to switch.
+	svc := newSwitchService(t, &fakeDetector{lang: "es", conf: 0.6, ok: true}, langpref.New())
+	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: spanish, From: model.ESMX, To: model.EN}); got.Switched {
+		t.Errorf("text in the pinned language switched: %+v", got)
+	}
+	// A language the app does not know, even if it is "the target" by code, is not recognised.
+	svc = newSwitchService(t, &fakeDetector{lang: "xx", conf: 0.6, ok: true}, langpref.New())
+	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.ESMX}); got.Switched {
+		t.Errorf("an unrecognised language switched: %+v", got)
+	}
+}
