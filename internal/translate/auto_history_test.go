@@ -94,3 +94,48 @@ func TestCommitOfAnUnknownRequestSavesNothing(t *testing.T) {
 		t.Errorf("saved %d rows for an empty id", got)
 	}
 }
+
+// The pending rows belong to the NEWEST request. A result of an older one that lands late (its
+// outcome was decided before a newer request opened, its stash runs after the newer one's) must not
+// reset what the newer one is holding. Ordering is by the request's sequence number, not by timing.
+func TestALateResultOfAnOlderRequestDoesNotReplaceTheNewerOnesRows(t *testing.T) {
+	svc, _, hist := newCancelService(t, probeEngine())
+	res := func(text string) *model.TranslateResult {
+		return &model.TranslateResult{Engine: "probe", Text: text, Result: "t " + text, From: model.ES, To: model.EN}
+	}
+	svc.stashAutoHistory("A", 1, res("texto viejo uno"))
+	svc.stashAutoHistory("B", 2, res("texto nuevo uno"))
+	svc.stashAutoHistory("A", 1, res("texto viejo dos")) // the slower engine of A, late
+	svc.stashAutoHistory("B", 2, res("texto nuevo dos")) // B's other engine
+	if got := svc.CommitAutoHistory("A"); got != 0 {
+		t.Errorf("the older request committed %d rows, want 0", got)
+	}
+	if got := svc.CommitAutoHistory("B"); got != 2 {
+		t.Fatalf("the newer request committed %d rows, want both of its results", got)
+	}
+	if n := historyRows(t, hist, "viejo"); n != 0 {
+		t.Errorf("%d rows of the older request were saved", n)
+	}
+	if n := historyRows(t, hist, "nuevo"); n != 2 {
+		t.Errorf("%d rows of the newer request were saved, want 2", n)
+	}
+}
+
+func TestALateResultOfAnOlderRequestAfterAManualOneIsIgnored(t *testing.T) {
+	svc, _, _ := newCancelService(t, probeEngine())
+	svc.dropAutoHistory(5) // a translation the user asked for opened as request number 5
+	svc.stashAutoHistory("A", 4, &model.TranslateResult{Engine: "probe", Text: "x", Result: "y"})
+	if got := svc.CommitAutoHistory("A"); got != 0 {
+		t.Errorf("an older automatic request stashed after a manual one and committed %d rows, want 0", got)
+	}
+}
+
+func TestRequestSequenceNumbersOnlyGrow(t *testing.T) {
+	var rr requestRegistry
+	a := rr.open("s", "a")
+	b := rr.open("s", "b")
+	c := rr.open("other", "c")
+	if !(a.seq < b.seq && b.seq < c.seq) {
+		t.Errorf("seq = %d, %d, %d, want strictly increasing across sessions", a.seq, b.seq, c.seq)
+	}
+}

@@ -81,6 +81,7 @@ type Service struct {
 	// held in memory until CommitAutoHistory writes them or a newer request replaces them.
 	autoMu   sync.Mutex
 	autoID   string
+	autoSeq  uint64 // the sequence number of the newest request that stashed or dropped (see activeRequest.seq)
 	autoRows []*model.TranslateResult
 }
 
@@ -530,12 +531,12 @@ func (s *Service) TranslateMulti(req model.TranslateRequest) (*model.TranslateMu
 	if req.RequestID == "" {
 		req.RequestID = newRequestID()
 	}
+	ar := s.requests.open(sessionTranslate, req.RequestID)
 	// A translation the user asked for replaces whatever an automatic one was holding for the
 	// history: the text it was made for is not the text the user wants kept (issue #57).
 	if !req.Auto {
-		s.dropAutoHistory()
+		s.dropAutoHistory(ar.seq)
 	}
-	ar := s.requests.open(sessionTranslate, req.RequestID)
 	runs := s.requests.start(ar, engines)
 	for i, t := range tasks {
 		// Each engine gets its own goroutine, never blocking the others; completion is pushed
@@ -583,7 +584,7 @@ func (s *Service) translateMultiEngine(ar *activeRequest, run *engineRun, reg en
 		payload.Error = partReached(payload.Error, out)
 	default:
 		if req.Auto {
-			s.stashAutoHistory(ar.id, out.res)
+			s.stashAutoHistory(ar.id, ar.seq, out.res)
 		} else {
 			s.saveHistory(out.res)
 		}
