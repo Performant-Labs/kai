@@ -273,7 +273,7 @@ func TestChunkedTranslateMultiSplitsAndReassemblesInOrder(t *testing.T) {
 	}
 	for i := 1; i <= 3; i++ {
 		if !seen[chunkPara(i)] {
-			t.Errorf("paragraph %d was never sent as its own chunk; calls: %q", i, calls)
+			t.Errorf("paragraph %d was never sent as its own chunk; calls: %+v", i, calls)
 		}
 	}
 	if got.Error != "" || got.Cancelled {
