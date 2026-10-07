@@ -131,5 +131,6 @@
   "err.swiftbridge_purego_dlopen": "[dynamic-bridge] failed to load dylib %s: %s",
   "err.swiftbridge_purego_register": "[dynamic-bridge] failed to register symbol %s: %s",
   "err.swiftbridge_purego_panic": "[dynamic-bridge] panic while registering symbol: %v",
-  "err.swiftbridge_unavailable": "[dynamic-bridge] Swift bridge unavailable (dylib not loaded)"
+  "err.swiftbridge_unavailable": "[dynamic-bridge] Swift bridge unavailable (dylib not loaded)",
+  "err.context_translate_failed": "The translation in this context failed"
 }

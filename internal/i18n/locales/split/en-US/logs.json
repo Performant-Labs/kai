@@ -144,5 +144,7 @@
   "log.correct_failed": "[correct] the correction failed; translating the text as it came",
   "log.correct_rejected": "[correct] the corrected text was rejected by a guard; translating the text as it came",
   "log.source_switch_plan": "[source switch] decision",
-  "log.source_switch_skipped": "[source switch] skipped by the window"
+  "log.source_switch_skipped": "[source switch] skipped by the window",
+  "log.context_translate_failed": "[context-translate] the retranslation failed",
+  "log.context_translate_done": "[context-translate] finished"
 }

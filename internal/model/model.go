@@ -451,6 +451,45 @@ type Correction struct {
 	Changes   []TextChange     `json:"changes"`
 }
 
+// ContextTranslateRequest asks for a new translation of Text in a context the user described
+// (issue #48). Engine is the engine whose result is shown; Previous is that engine's translation,
+// the one the user says is wrong; Context is what the user has told the translator so far, oldest
+// message first (kept across texts until cleared).
+type ContextTranslateRequest struct {
+	Text      string   `json:"text"`
+	From      Language `json:"from"`
+	To        Language `json:"to"`
+	Engine    string   `json:"engine"`
+	Previous  string   `json:"previous"`
+	Context   []string `json:"context"`
+	RequestID string   `json:"request_id,omitempty"`
+}
+
+// ContextTranslateStatus says how a context retranslation ended.
+type ContextTranslateStatus string
+
+const (
+	ContextTranslateOK          ContextTranslateStatus = "ok"
+	ContextTranslateCancelled   ContextTranslateStatus = "cancelled"
+	ContextTranslateUnavailable ContextTranslateStatus = "unavailable" // no engine can follow a context; Reason says why
+	ContextTranslateFailed      ContextTranslateStatus = "failed"
+	ContextTranslateNoContext   ContextTranslateStatus = "no_context" // the request carried no context message
+)
+
+// ContextTranslateResult is the answer to a ContextTranslateRequest. Engine names the engine that
+// produced Result; Fallback is true when it is not the one the request named (that one cannot
+// follow a context). Reason, when the status is unavailable, is the on-device model's availability
+// reason (an engine.CorrectionStatus value) or "none_available"; the UI words it.
+type ContextTranslateResult struct {
+	Status    ContextTranslateStatus `json:"status"`
+	Result    string                 `json:"result"`
+	Engine    string                 `json:"engine"`
+	Fallback  bool                   `json:"fallback"`
+	Reason    string                 `json:"reason"`
+	Error     string                 `json:"error"`
+	RequestID string                 `json:"request_id"`
+}
+
 // CorrectionAvailability tells the UI whether the correction can run at all on this machine, and
 // when it cannot, why (Reason is an engine.CorrectionStatus value the UI words).
 type CorrectionAvailability struct {
