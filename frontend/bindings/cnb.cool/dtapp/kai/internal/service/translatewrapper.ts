@@ -17,6 +17,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as model$0 from "../model/models.js";
 
 /**
+ * BackTranslate translates the displayed result back into the source language, to check it in the
+ * user's own language (issue #56). req.Text is the result and req.From / req.To are already the
+ * swapped pair. It never raises an error: the answer's status says how it ended, so a failure cannot
+ * disturb the main result. It is cancelled with CancelTranslate(requestID, "").
+ */
+export function BackTranslate(req: model$0.TranslateRequest): $CancellablePromise<model$0.BackTranslateResult> {
+    return $Call.ByID(2811488659, req);
+}
+
+/**
  * CancelTranslate cancels the running translation request requestID (issue #109), or only its
  * engine when engine is not empty; the other engines keep running. It reports whether it found
  * something still running, and returns false, without any error, for an unknown or finished

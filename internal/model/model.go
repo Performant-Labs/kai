@@ -451,6 +451,26 @@ type Correction struct {
 	Changes   []TextChange     `json:"changes"`
 }
 
+// BackTranslateStatus says how a back-translation ended (issue #56).
+type BackTranslateStatus string
+
+const (
+	BackTranslateOK        BackTranslateStatus = "ok"
+	BackTranslateCancelled BackTranslateStatus = "cancelled" // the user cancelled it, or a newer one replaced it
+	BackTranslateSkipped   BackTranslateStatus = "skipped"   // there is nothing to show: same language, or an empty answer
+	BackTranslateFailed    BackTranslateStatus = "failed"
+)
+
+// BackTranslateResult is the answer to translate.Service.BackTranslate: the displayed result
+// translated back into the source language, to check it in the user's own language. It is display
+// only. A failure carries no engine text, only the status.
+type BackTranslateResult struct {
+	Status    BackTranslateStatus `json:"status"`
+	Result    string              `json:"result"`
+	Engine    string              `json:"engine"`
+	RequestID string              `json:"request_id"`
+}
+
 // ContextTranslateRequest asks for a new translation of Text in a context the user described
 // (issue #48). Engine is the engine whose result is shown; Previous is that engine's translation,
 // the one the user says is wrong; Context is what the user has told the translator so far, oldest
