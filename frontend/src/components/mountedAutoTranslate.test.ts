@@ -265,6 +265,32 @@ describe('TranslateWindow, mounted: translate as I type (issue #57)', () => {
     expect(reqOf(0).text).toBe('Hola amigo 你好');
   });
 
+  it('closing the window cancels a translation that was waiting', async () => {
+    type(TEXT);
+    await advance(300);
+    h.fire('kai:window:closing', 'translate');
+    await advance(5000);
+    expect(h.translate).not.toHaveBeenCalled();
+  });
+
+  it('closing another window leaves a waiting translation alone', async () => {
+    type(TEXT);
+    await advance(300);
+    h.fire('kai:window:closing', 'settings');
+    await advance(600);
+    await flush();
+    expect(h.translate).toHaveBeenCalledTimes(1);
+  });
+
+  it('unmounting the window cancels a translation that was waiting, with no request and no error', async () => {
+    type(TEXT);
+    await advance(300);
+    unmount(app!);
+    app = undefined;
+    await advance(5000);
+    expect(h.translate).not.toHaveBeenCalled();
+  });
+
   it('Clear cancels a translation that was waiting', async () => {
     type(TEXT);
     await advance(300);

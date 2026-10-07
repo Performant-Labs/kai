@@ -795,7 +795,10 @@
       // Global broadcast: only this window's (translate) closing is looked at, so closing another
       // window never touches the translation.
       if (name !== WindowTranslate) return;
-      // A pending history write for the text on screen is made now, not lost with the timer (issue #57).
+      // A translation still waiting for its pause is dropped: a hidden window must not start a request,
+      // which with a cloud engine costs money. A pending history write for the text on screen is made now,
+      // not lost with its timer (issue #57).
+      autoRun.cancel();
       commitAuto.cancel();
       commitAutoNow();
       // Issue #81: closing the translate window used to clear the text and the results here. It
@@ -856,6 +859,9 @@
       offClosing();
       offEngines();
       offClearShortcut();
+      // Nothing waiting may fire on a window that is gone (issue #57).
+      autoRun.cancel();
+      commitAuto.cancel();
     };
   });
 
