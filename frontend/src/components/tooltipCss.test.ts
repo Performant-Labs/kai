@@ -43,10 +43,16 @@ const cmp = (a: Rule, b: Rule) =>
   a.spec[0] - b.spec[0] || a.spec[1] - b.spec[1] || a.spec[2] - b.spec[2] || a.order - b.order;
 
 /** Winning `transform` on a `.u-tooltip.u-tooltip--start` element in the given state. */
-function winningTransform(state: ':hover' | ':focus-visible'): string | undefined {
+function winningTransform(
+  state: ':hover' | ':focus-visible',
+  variant: 'start' | 'end' = 'start',
+): string | undefined {
   const matching = rules().filter(
     (r) =>
-      /^\.u-tooltip(\.u-tooltip--start|--start)?(:hover|:focus-visible)?::after$/.test(r.selector) &&
+      /^\.u-tooltip(\.u-tooltip--start|--start|\.u-tooltip--end|--end)?(:hover|:focus-visible)?::after$/.test(
+        r.selector,
+      ) &&
+      !(variant === 'start' ? /--end/ : /--start/).test(r.selector) &&
       (!/:(hover|focus-visible)/.test(r.selector) || r.selector.includes(state)) &&
       /transform:/.test(r.body),
   );
@@ -80,5 +86,39 @@ describe('tooltip CSS (duplicate/clipped tooltip fix)', () => {
     expect(start).toMatch(/left:\s*0/);
     expect(start).toMatch(/white-space:\s*normal/);
     expect(start).toMatch(/max-width:\s*min\(24rem, 90vw\)/);
+  });
+
+  // Issue #52: a trigger at the RIGHT end of a pane (the pin and auto-clipboard buttons in the FROM
+  // header) opens its tooltip leftwards, from the button's right edge; centred, it ran past the
+  // pane and was cut off.
+  for (const state of [':hover', ':focus-visible'] as const) {
+    it(`the end variant is not shifted by translateX(-50%) on ${state}`, () => {
+      const t = winningTransform(state, 'end');
+      expect(t, 'no transform rule found for the end variant').toBeDefined();
+      expect(t).not.toMatch(/translateX\(-50%\)/);
+      expect(t).toMatch(/translateY\(0\)/);
+    });
+  }
+
+  it('the end variant anchors at the right edge, wraps, and is bounded like the start variant', () => {
+    const end = css.match(/\.u-tooltip--end::after\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(end).toMatch(/left:\s*auto/);
+    expect(end).toMatch(/right:\s*0/);
+    expect(end).toMatch(/white-space:\s*normal/);
+    expect(end).toMatch(/width:\s*max-content/);
+    expect(end).toMatch(/max-width:\s*min\(24rem, 90vw\)/);
+  });
+
+  it('the pin and auto-clipboard buttons in the FROM header use the end variant', () => {
+    const win = readFileSync(resolve(__dirname, 'TranslateWindow.svelte'), 'utf8');
+    for (const handler of [
+      'onclick={togglePin}',
+      'onclick={() => applyAutoClipboard(!autoClipboard)}',
+    ]) {
+      const at = win.indexOf(handler);
+      expect(at, `${handler} not found`).toBeGreaterThan(-1);
+      const open = win.lastIndexOf('<button', at);
+      expect(win.slice(open, at)).toMatch(/class="[^"]*\bu-tooltip\b[^"]*\bu-tooltip--end\b/);
+    }
   });
 });

@@ -1465,7 +1465,7 @@
               >
             {/if}
             <button
-              class="u-icon-btn u-icon-btn--sm u-no-drag u-tooltip"
+              class="u-icon-btn u-icon-btn--sm u-no-drag u-tooltip u-tooltip--end"
               class:u-icon-btn--active={pinned}
               onclick={togglePin}
               aria-label={pinned ? t('translate.unpin') : t('translate.pin')}
@@ -1488,7 +1488,7 @@
               </svg>
             </button>
             <button
-              class="u-icon-btn u-icon-btn--sm u-no-drag u-tooltip"
+              class="u-icon-btn u-icon-btn--sm u-no-drag u-tooltip u-tooltip--end"
               class:u-icon-btn--active={autoClipboard}
               onclick={() => applyAutoClipboard(!autoClipboard)}
               aria-label={t('translate.autoClipboard')}
