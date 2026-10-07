@@ -88,3 +88,26 @@ func TestRealDetectorSwitchesShortEnglishUnderSpanishPin(t *testing.T) {
 		}
 	}
 }
+
+// Issue #54, with the real detector: Spanish with a misplaced accent (0.74, under the general bar)
+// switches when the target is Spanish; English text that mixes in Spanish words never does.
+func TestRealDetectorSwitchesSpanishWithATypoWhenTheTargetIsSpanish(t *testing.T) {
+	svc := realSwitchService(t)
+	for _, text := range []string{`Verifíca todos los "tool tips"`, "Verifíca todo"} {
+		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.EN, To: model.ESMX})
+		if !got.Switched || got.From != model.ESMX || got.To != model.EN {
+			t.Errorf("%q: got %+v, want es-MX -> en", text, got)
+		}
+	}
+	for _, text := range []string{
+		"Please tell the señor at the front desk that I will arrive tomorrow morning",
+		"She said hasta luego and left the meeting room before the vote started",
+		"Hola, can you please send me the report before the meeting tomorrow morning",
+		"Hello, mi amigo, how are you doing today",
+		"I love tacos al pastor and horchata",
+	} {
+		if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.EN, To: model.ESMX}); got.Switched {
+			t.Errorf("English text switched to Spanish: %q %+v", text, got)
+		}
+	}
+}

@@ -48,6 +48,13 @@ const switchMinRunes = 12
 // below.
 const switchMinConfidence = 0.8
 
+// switchMinConfidenceTarget is the lowest confidence that can switch when the detected language is
+// the TARGET language (issue #54). A text already in the language it would be translated into comes
+// back as an identity result, which is useless, whereas a wrong switch is cheap and undoable, so
+// this bar is lower than switchMinConfidence. A misplaced accent alone drops NaturalLanguage's
+// confidence on a clear Spanish sentence to about 0.74.
+const switchMinConfidenceTarget = 0.5
+
 // switchDetectRunes bounds the text the detector reads. The language of a text shows within its
 // first few thousand characters, and the input can be far larger (up to the translate input cap),
 // so a huge paste does not make detection slower.
@@ -101,6 +108,13 @@ func (s *Service) planSourceSwitch(req model.SourceSwitchRequest) (model.SourceS
 	}
 	detected, det, reason := s.detectForSwitch(trimmed, req.Detected)
 	d.lang, d.confidence, d.by = det.lang, det.confidence, det.by
+	// Issue #54: a text in the TARGET language that is below the general bar still switches: leaving
+	// the pair would only give back an identity result.
+	if reason == model.SwitchReasonBelowConfidence && det.confidence >= switchMinConfidenceTarget {
+		if rec, known := recognized(det.lang); known && rec.Covers(req.To) {
+			detected, reason = rec, ""
+		}
+	}
 	if reason != "" {
 		return no(reason)
 	}
