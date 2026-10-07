@@ -9,6 +9,7 @@ import {
   hasContext,
   isClearShortcut,
   validateClearShortcut,
+  dropRetranslation,
   DEFAULT_CLEAR_SHORTCUT,
   shownFor,
   type ContextAnswer,
@@ -255,5 +256,34 @@ describe('validateClearShortcut', () => {
     ]) {
       expect(validateClearShortcut(c), c).toEqual({ ok: false, reason: 'reserved' });
     }
+  });
+});
+
+describe('dropRetranslation', () => {
+  const r = {
+    text: 'in context',
+    engine: 'openai',
+    fallback: false,
+    forInput: 'hola',
+    forEngine: 'apple',
+  };
+  it('removes the retranslation the window put in the edited map, so the engine result shows again', () => {
+    const edited = new Map([['apple', 'in context']]);
+    const next = dropRetranslation(edited, r);
+    expect(next.has('apple')).toBe(false);
+    expect(edited.has('apple')).toBe(true); // the input map is not changed
+  });
+  it('keeps what the user typed over it since, and every other engine', () => {
+    const edited = new Map([
+      ['apple', 'my own edit'],
+      ['google', 'another edit'],
+    ]);
+    const next = dropRetranslation(edited, r);
+    expect(next.get('apple')).toBe('my own edit');
+    expect(next.get('google')).toBe('another edit');
+  });
+  it('does nothing without a retranslation', () => {
+    const edited = new Map([['apple', 'x']]);
+    expect(dropRetranslation(edited, null)).toEqual(edited);
   });
 });

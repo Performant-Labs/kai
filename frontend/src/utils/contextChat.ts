@@ -139,6 +139,20 @@ export function applyAnswer(
   return { chat: { ...c, messages }, shown: null };
 }
 
+/**
+ * The edited map without the retranslation the window put in it (it shows a retranslation the way it
+ * shows a manual edit). An entry the user has changed since is theirs and stays, as does every other
+ * engine's. The input map is not changed.
+ */
+export function dropRetranslation(
+  edited: Map<string, string>,
+  r: BoundRetranslation | null,
+): Map<string, string> {
+  const next = new Map(edited);
+  if (r !== null && next.get(r.forEngine) === r.text) next.delete(r.forEngine);
+  return next;
+}
+
 /** The retranslation to show for this text and this engine, or null: it belongs to one text, one engine. */
 export function shownFor(
   b: BoundRetranslation | null,

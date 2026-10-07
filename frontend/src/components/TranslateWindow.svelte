@@ -165,6 +165,7 @@
     applyAnswer,
     answerNoteKey,
     shownFor,
+    dropRetranslation,
     isClearShortcut,
     type ContextChat,
     type ContextAnswer,
@@ -1190,6 +1191,8 @@
     chatRequestId = '';
     chatBusy = false;
     chat = clearChat();
+    // The retranslation is shown through the edited map: take it out of there too.
+    edited = dropRetranslation(edited, retrans);
     retrans = null;
   }
 

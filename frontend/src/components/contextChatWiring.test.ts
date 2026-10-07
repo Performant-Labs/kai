@@ -47,6 +47,9 @@ describe('the context chat is wired into the translate window (issue #48)', () =
     const fn = fnBody('clearContext');
     expect(fn).toMatch(/if\s*\(\s*chatBusy\s*\)\s*cancelContext\(\)/);
     expect(fn).toMatch(/retrans\s*=\s*null/);
+    // The retranslation is also shown through the edited map: clearing must take it out of there.
+    expect(fn).toMatch(/edited\s*=\s*dropRetranslation\(edited,\s*retrans\)/);
+    expect(fn.indexOf('dropRetranslation')).toBeLessThan(fn.indexOf('retrans = null'));
     expect(fnBody('cancelContext')).toMatch(/CancelTranslate\(chatRequestId,\s*''\)/);
   });
 
