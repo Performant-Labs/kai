@@ -1451,7 +1451,7 @@
     <div bind:this={panesEl} class="flex min-h-0 flex-1 gap-3">
       <!-- Left pane: source text (width = persisted ratio, changed by divider drag; the textarea fills the remaining height) -->
       <section
-        class="u-card u-card--panel flex min-w-0 flex-col overflow-hidden"
+        class="u-card u-card--panel flex min-w-0 flex-col overflow-hidden u-pane-container"
         style="width: {leftRatio * 100}%"
       >
         <div class="u-border-b u-pane-header flex items-center justify-between px-3 py-2">

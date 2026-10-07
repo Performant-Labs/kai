@@ -121,4 +121,29 @@ describe('tooltip CSS (duplicate/clipped tooltip fix)', () => {
       expect(win.slice(open, at)).toMatch(/class="[^"]*\bu-tooltip\b[^"]*\bu-tooltip--end\b/);
     }
   });
+
+  // A pane can be narrower than a tooltip: the left pane shrinks to a quarter of the window (the
+  // divider's minimum) and the window itself to about 780 px. The tooltip must never be wider than
+  // the room left of its trigger in the pane it opens in (the pin button sits left of the clipboard
+  // button, so about 5rem of the pane's width is not available to it), or the pane clips it; container query units measure the pane.
+  it('the end variant is bounded by the width of its pane (container query units), not only by the viewport', () => {
+    const supports =
+      css.match(
+        /@supports\s*\(width:\s*1cqw\)\s*\{[^@]*?\.u-tooltip--end::after\s*\{([^}]*)\}/,
+      )?.[1] ?? '';
+    expect(supports, 'no @supports (width: 1cqw) rule for .u-tooltip--end::after').toMatch(
+      /max-width:\s*min\(24rem,\s*calc\(100cqw - 5rem\)\)/,
+    );
+    // The plain rule stays as the fallback for a webview without container queries.
+    const base = css.match(/\.u-tooltip--end::after\s*\{([^}]*)\}/)![1];
+    expect(base).toMatch(/max-width:\s*min\(24rem, 90vw\)/);
+  });
+
+  it('the pane container is a container of inline size, and the FROM pane is one', () => {
+    expect(css).toMatch(/\.u-pane-container\s*\{[^}]*container-type:\s*inline-size/);
+    const win = readFileSync(resolve(__dirname, 'TranslateWindow.svelte'), 'utf8');
+    const pin = win.indexOf('onclick={togglePin}');
+    const section = win.lastIndexOf('<section', pin);
+    expect(win.slice(section, win.indexOf('>', section))).toMatch(/\bu-pane-container\b/);
+  });
 });

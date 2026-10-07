@@ -623,6 +623,21 @@ body {
     max-width: min(24rem, 90vw);
   }
 
+  /* A pane is a container of inline size (issue #52), so a tooltip inside it can be no wider than the
+     pane: the left pane shrinks to a quarter of the window and the window to about 780 px, and a
+     pane clips what overflows it. Where container queries are missing the plain max-width stands. */
+  .u-pane-container {
+    container-type: inline-size;
+  }
+
+  @supports (width: 1cqw) {
+    .u-tooltip--end::after {
+      /* 5rem: the pin button sits left of the clipboard button, so that much of the pane's width is
+         to the right of its right edge, where the tooltip is anchored. */
+      max-width: min(24rem, calc(100cqw - 5rem));
+    }
+  }
+
   .u-tooltip:hover::after,
   .u-tooltip:focus-visible::after {
     opacity: 1;
