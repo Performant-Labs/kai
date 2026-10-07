@@ -8,6 +8,8 @@ import {
   emptyChat,
   hasContext,
   isClearShortcut,
+  validateClearShortcut,
+  DEFAULT_CLEAR_SHORTCUT,
   shownFor,
   type ContextAnswer,
 } from './contextChat.ts';
@@ -198,5 +200,60 @@ describe('isClearShortcut', () => {
     ).toBe(true);
     expect(isClearShortcut(ev({}), 'Ctrl+X')).toBe(false);
     expect(isClearShortcut(ev({}), '')).toBe(false);
+  });
+});
+
+describe('isClearShortcut safety', () => {
+  const ev = (over: Partial<KeyboardEvent>) =>
+    ({
+      key: 'k',
+      metaKey: false,
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      ...over,
+    }) as KeyboardEvent;
+  it('never matches a combo without Cmd, Ctrl or Alt: it would fire while the user types', () => {
+    expect(isClearShortcut(ev({}), 'K')).toBe(false);
+    expect(isClearShortcut(ev({ shiftKey: true }), 'Shift+K')).toBe(false);
+  });
+});
+
+describe('validateClearShortcut', () => {
+  it('accepts a combo with a modifier and a key, written in the canonical order', () => {
+    expect(validateClearShortcut('cmd+shift+k')).toEqual({ ok: true, value: 'Cmd+Shift+K' });
+    expect(validateClearShortcut('Shift+Cmd+K')).toEqual({ ok: true, value: 'Cmd+Shift+K' });
+    expect(validateClearShortcut(' Ctrl + Alt + x ')).toEqual({ ok: true, value: 'Alt+Ctrl+X' });
+    expect(validateClearShortcut(DEFAULT_CLEAR_SHORTCUT)).toEqual({
+      ok: true,
+      value: DEFAULT_CLEAR_SHORTCUT,
+    });
+  });
+  it('treats an empty value as "no shortcut"', () => {
+    expect(validateClearShortcut('')).toEqual({ ok: true, value: '' });
+    expect(validateClearShortcut('   ')).toEqual({ ok: true, value: '' });
+  });
+  it('refuses a combo with no modifier, or only Shift, or no key', () => {
+    expect(validateClearShortcut('K')).toEqual({ ok: false, reason: 'needs_modifier' });
+    expect(validateClearShortcut('Shift+K')).toEqual({ ok: false, reason: 'needs_modifier' });
+    expect(validateClearShortcut('Cmd+Shift')).toEqual({ ok: false, reason: 'no_key' });
+    expect(validateClearShortcut('Cmd+')).toEqual({ ok: false, reason: 'no_key' });
+  });
+  it("refuses the keys the window already uses (Cmd+Enter translates, Cmd+Z undoes) and the system's editing keys", () => {
+    for (const c of [
+      'Cmd+Enter',
+      'Cmd+Z',
+      'Cmd+Shift+Z',
+      'Ctrl+Z',
+      'Ctrl+Y',
+      'Cmd+C',
+      'Cmd+V',
+      'Cmd+X',
+      'Cmd+A',
+      'Cmd+Q',
+      'Cmd+W',
+    ]) {
+      expect(validateClearShortcut(c), c).toEqual({ ok: false, reason: 'reserved' });
+    }
   });
 });

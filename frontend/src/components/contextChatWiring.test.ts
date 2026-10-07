@@ -91,3 +91,50 @@ describe('the chat panel (issue #48)', () => {
     expect(panel).toMatch(/onclick=\{oncancel\}/);
   });
 });
+
+describe('the clear-context shortcut is configurable in Settings > Shortcuts (issue #48)', () => {
+  const tab = readFileSync(resolve(__dirname, 'settings/ShortcutsTab.svelte'), 'utf8');
+  const tabScript = tab.slice(0, tab.indexOf('</script>'));
+  const tabCode = tabScript.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (m) =>
+    m.replace(/[^\n]/g, ' '),
+  );
+
+  it('has a field, a Record button and a Reset button for it', () => {
+    expect(tab).toMatch(/data-testid="clear-context-key"[\s\S]*bind:value=\{clearContextKey\}/);
+    expect(tab).toMatch(/data-testid="clear-context-record"[\s\S]*startRecord\('clearContext'\)/);
+    expect(tab).toMatch(
+      /data-testid="clear-context-reset"[\s\S]*clearContextKey = DEFAULT_CLEAR_SHORTCUT/,
+    );
+  });
+
+  it('records into the field like the other shortcuts', () => {
+    expect(tabCode).toMatch(/k === 'clearContext'\)\s*\{\s*clearContextKey = combo/);
+  });
+
+  it('validates before saving anything, refuses a bad combo with its own message, then stores and broadcasts', () => {
+    const start = tabCode.indexOf('async function saveShortcuts');
+    const body = tabCode.slice(start, tabCode.indexOf('await SaveConfig', start));
+    expect(body).toMatch(/validateClearShortcut\(clearContextKey\)/);
+    expect(body).toMatch(/if \(!check\.ok\)[\s\S]*Dialogs\.Error[\s\S]*return;/);
+    for (const key of [
+      'hkClearContextNeedsModifier',
+      'hkClearContextNoKey',
+      'hkClearContextReserved',
+    ]) {
+      expect(body).toContain(key);
+    }
+    expect(body).toMatch(/clearContextShortcut\.set\(check\.value\)/);
+    expect(body).toMatch(/emitEvent\(EventClearContextShortcutChanged, check\.value\)/);
+    expect(body.indexOf('validateClearShortcut')).toBeLessThan(
+      body.indexOf('clearContextShortcut.set'),
+    );
+  });
+
+  it('the translate window picks up a new shortcut without being reopened', () => {
+    expect(code).toMatch(
+      /onEvent\(EventClearContextShortcutChanged,[\s\S]*clearContextShortcut\.set\(v\)/,
+    );
+    expect(code).toMatch(/offClearShortcut\(\)/);
+    expect(code).toMatch(/const clearShortcut = \$derived\(\$clearContextShortcut\)/);
+  });
+});

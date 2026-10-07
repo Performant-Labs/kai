@@ -270,6 +270,13 @@ export const zh: Dict = {
     copyKeyDisabledHint: '自动剪贴板翻译已开启，复制键已自动关闭',
     hkFormatHint:
       '格式示例：Alt+A、Cmd+Shift+S（多个修饰键用 + 连接）。也可点击「录制」后直接按下组合键。',
+    hkClearContext: '清除聊天上下文',
+    hkClearContextHint: '在翻译窗口中生效。留空表示不设置快捷键。',
+    hkReset: '恢复默认',
+    hkClearContextNeedsModifier:
+      '清除上下文的快捷键需要包含 Cmd、Ctrl 或 Alt，否则输入时会误触发。',
+    hkClearContextNoKey: '清除上下文的快捷键需要包含一个按键，不能只有修饰键。',
+    hkClearContextReserved: '该组合已被占用（翻译、撤销、复制、粘贴或退出），请换一个。',
     hkRecord: '录制',
     hkRecording: '请按下快捷键…',
     enabled: '启用',

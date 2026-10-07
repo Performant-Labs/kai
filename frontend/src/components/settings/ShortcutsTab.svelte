@@ -16,8 +16,15 @@
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/appservice.ts';
   import { Dialogs } from '@wailsio/runtime';
   import { isMac as detectMac } from '../../runtime/platform';
-  import { onEvent } from '../../runtime';
-  import { EventAutoClipboardChanged, EventWindowClosing } from '../../utils/events';
+  import { onEvent, emitEvent } from '../../runtime';
+  import { get } from 'svelte/store';
+  import { clearContextShortcut } from '../../stores/clearContextShortcut';
+  import { validateClearShortcut, DEFAULT_CLEAR_SHORTCUT } from '../../utils/contextChat';
+  import {
+    EventAutoClipboardChanged,
+    EventClearContextShortcutChanged,
+    EventWindowClosing,
+  } from '../../utils/events';
   import { WindowSettings } from '../../constants/window';
   import { createPoller } from '../../utils/permissionPoller';
   import { track } from '../../utils/analytics';
@@ -57,7 +64,10 @@
   });
   // Recording state: the shortcut field name currently capturing a key (null = not recording).
   // Hotkeys and exec keys are two separate categories.
-  type RecordableKey = keyof HotkeyForm | keyof ExecKeyForm;
+  type RecordableKey = keyof HotkeyForm | keyof ExecKeyForm | 'clearContext';
+  // The translate window's "clear context" shortcut (issue #48): a window preference, not a global
+  // hotkey, so it lives in localStorage (stores/clearContextShortcut) and not in the config file.
+  let clearContextKey = $state(get(clearContextShortcut));
   let recordingKey = $state<RecordableKey | null>(null);
 
   // When auto-clipboard translation is on, the copy hotkey is automatically disabled (avoiding
@@ -199,7 +209,9 @@
     const k = recordingKey;
     recordingKey = null; // Clear first, preventing a duplicate keydown from the combo writing again
     if (k) {
-      if (k === 'copy') {
+      if (k === 'clearContext') {
+        clearContextKey = combo;
+      } else if (k === 'copy') {
         execKeyForm.copy.key = combo;
       } else {
         hotkeyForm[k].key = combo;
@@ -207,7 +219,7 @@
     }
   }
 
-  function startRecord(key: keyof HotkeyForm | 'copy') {
+  function startRecord(key: keyof HotkeyForm | 'copy' | 'clearContext') {
     // When the copy hotkey is locked by auto-clipboard (copyDisabled), forbid recording — a
     // backstop for the disabled attribute, preventing a click-through in edge cases from
     // modifying the copy hotkey.
@@ -291,6 +303,22 @@
   }
 
   async function saveShortcuts() {
+    // The clear-context shortcut is checked before anything is saved: a plain key would fire while
+    // typing, and a reserved one would clash with Translate, undo or copy.
+    const check = validateClearShortcut(clearContextKey);
+    if (!check.ok) {
+      const msg =
+        check.reason === 'needs_modifier'
+          ? t('settings.hkClearContextNeedsModifier')
+          : check.reason === 'no_key'
+            ? t('settings.hkClearContextNoKey')
+            : t('settings.hkClearContextReserved');
+      await Dialogs.Error({ Title: t('settings.hkSaveErrorTitle'), Message: msg });
+      return;
+    }
+    clearContextKey = check.value;
+    clearContextShortcut.set(check.value);
+    emitEvent(EventClearContextShortcutChanged, check.value);
     try {
       const cfg = (await GetConfig()) ?? ({} as any);
       const next = {
@@ -581,6 +609,37 @@
   {#if copyDisabled}
     <p class="u-muted -mt-2 text-xs">{t('settings.copyKeyDisabledHint')}</p>
   {/if}
+  <div class="flex items-center justify-between gap-4 border-t pt-4">
+    <label class="text-sm font-medium" for="hk-clear-context">{t('settings.hkClearContext')}</label>
+    <div class="flex items-center gap-2">
+      {#if recordingKey === 'clearContext'}
+        <span class="u-field w-56 px-3 py-1.5 text-sm u-text-warn">{t('settings.hkRecording')}</span
+        >
+      {:else}
+        <input
+          id="hk-clear-context"
+          class="u-field w-56 px-3 py-1.5 text-sm"
+          data-testid="clear-context-key"
+          placeholder={DEFAULT_CLEAR_SHORTCUT}
+          bind:value={clearContextKey}
+        />
+      {/if}
+      <button
+        type="button"
+        class="u-btn u-btn--ghost px-3 py-1.5 text-sm"
+        class:is-active={recordingKey === 'clearContext'}
+        data-testid="clear-context-record"
+        onclick={() => startRecord('clearContext')}>{t('settings.hkRecord')}</button
+      >
+      <button
+        type="button"
+        class="u-btn u-btn--ghost px-3 py-1.5 text-sm"
+        data-testid="clear-context-reset"
+        onclick={() => (clearContextKey = DEFAULT_CLEAR_SHORTCUT)}>{t('settings.hkReset')}</button
+      >
+    </div>
+  </div>
+  <p class="u-muted -mt-2 text-xs">{t('settings.hkClearContextHint')}</p>
   <p class="u-muted text-xs">{t('settings.hkFormatHint')}</p>
   <div class="flex justify-end pt-1">
     <button class="u-btn u-btn--primary px-4 py-1.5 text-sm" onclick={saveShortcuts}>

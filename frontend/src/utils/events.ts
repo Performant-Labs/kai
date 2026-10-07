@@ -58,6 +58,11 @@ export const EventEnginesChanged = 'kai:engines:changed';
 // switches in real time.
 export const EventAutoClipboardChanged = 'kai:auto-clipboard:changed';
 
+// EventClearContextShortcutChanged: broadcast after the settings page saves the translate window's
+// "clear context" shortcut (issue #48). payload: the shortcut string ("" = none). The translate
+// window sets its own store from it, so the new shortcut works without reopening the window.
+export const EventClearContextShortcutChanged = 'kai:clear-context-shortcut:changed';
+
 // EventCopyKeyFailed: broadcast when the copy-key branch of TriggerInput (issue #175 item 5)
 // simulated the copy key but never saw the clipboard change, so nothing was captured. No
 // payload. The translate window still Show()/Focus()es regardless (so the user sees it come to

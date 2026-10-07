@@ -281,6 +281,14 @@ export const en: Dict = {
     copyKeyDisabledHint: 'Auto clipboard translate is on; copy key is auto-disabled',
     hkFormatHint:
       'Example: Alt+A, Cmd+Shift+S (join modifiers with +). Or click "Record" then press the combo.',
+    hkClearContext: 'Clear chat context',
+    hkClearContextHint: 'Works in the translate window. Leave empty for no shortcut.',
+    hkReset: 'Reset',
+    hkClearContextNeedsModifier:
+      'The clear-context shortcut needs Cmd, Ctrl or Alt, or it would fire while you type.',
+    hkClearContextNoKey: 'The clear-context shortcut needs a key, not only modifiers.',
+    hkClearContextReserved:
+      'That combination is already used (translate, undo, copy, paste or quit). Pick another.',
     hkRecord: 'Record',
     hkRecording: 'Press the shortcut…',
     enabled: 'Enabled',

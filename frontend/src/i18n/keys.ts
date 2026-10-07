@@ -268,6 +268,12 @@ export type Dict = {
     hkCopyFallbackShort: string;
     copyKeyDisabledHint: string;
     hkFormatHint: string;
+    hkClearContext: string;
+    hkClearContextHint: string;
+    hkReset: string;
+    hkClearContextNeedsModifier: string;
+    hkClearContextNoKey: string;
+    hkClearContextReserved: string;
     hkRecord: string;
     hkRecording: string;
     enabled: string;

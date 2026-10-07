@@ -151,31 +151,62 @@ export function shownFor(
 /** The default "clear context" shortcut (Mac-only, like Cmd+Enter: metaKey, never ctrlKey). */
 export const DEFAULT_CLEAR_SHORTCUT = 'Cmd+Shift+K';
 
+type Combo = { alt: boolean; ctrl: boolean; meta: boolean; shift: boolean; key: string };
+
+/** Splits "Mod+Mod+Key" (Cmd/Command, Ctrl/Control, Shift, Alt/Option, any case) into its parts. */
+function parseCombo(combo: string): Combo {
+  const c: Combo = { alt: false, ctrl: false, meta: false, shift: false, key: '' };
+  for (const raw of combo.split('+')) {
+    const p = raw.trim().toLowerCase();
+    if (p === '') continue;
+    if (p === 'cmd' || p === 'command') c.meta = true;
+    else if (p === 'ctrl' || p === 'control') c.ctrl = true;
+    else if (p === 'shift') c.shift = true;
+    else if (p === 'alt' || p === 'option') c.alt = true;
+    else c.key = p;
+  }
+  return c;
+}
+
 /**
- * Whether a key event is the clear-context shortcut. `combo` is "Mod+Mod+Key" (Cmd/Command, Ctrl/Control,
- * Shift, Alt/Option); modifiers must match exactly. An empty combo matches nothing.
+ * Whether a key event is the clear-context shortcut. `combo` is "Mod+Mod+Key"; modifiers must match
+ * exactly. An empty combo matches nothing, and so does one without Cmd, Ctrl or Alt: a plain key
+ * (or Shift+key) would fire while the user types.
  */
 export function isClearShortcut(e: KeyboardEvent, combo: string = DEFAULT_CLEAR_SHORTCUT): boolean {
-  const parts = combo
-    .split('+')
-    .map((p) => p.trim().toLowerCase())
-    .filter((p) => p !== '');
-  if (parts.length === 0) return false;
-  const want = { meta: false, ctrl: false, shift: false, alt: false };
-  let key = '';
-  for (const p of parts) {
-    if (p === 'cmd' || p === 'command') want.meta = true;
-    else if (p === 'ctrl' || p === 'control') want.ctrl = true;
-    else if (p === 'shift') want.shift = true;
-    else if (p === 'alt' || p === 'option') want.alt = true;
-    else key = p;
-  }
-  if (key === '') return false;
+  const want = parseCombo(combo);
+  if (want.key === '' || !(want.meta || want.ctrl || want.alt)) return false;
   return (
-    e.key.toLowerCase() === key &&
+    e.key.toLowerCase() === want.key &&
     e.metaKey === want.meta &&
     e.ctrlKey === want.ctrl &&
     e.shiftKey === want.shift &&
     e.altKey === want.alt
   );
+}
+
+export type ShortcutCheck =
+  { ok: true; value: string } | { ok: false; reason: 'needs_modifier' | 'no_key' | 'reserved' };
+
+/** The keys the window or the system already uses for editing, translating and quitting. */
+function isReserved(c: Combo): boolean {
+  if (c.key === 'enter' && c.meta) return true; // Translate
+  if (c.alt) return false;
+  if ((c.meta || c.ctrl) && ['z', 'c', 'v', 'x', 'a', 'q', 'w'].includes(c.key)) return true;
+  return c.ctrl && !c.meta && c.key === 'y'; // redo
+}
+
+/**
+ * Checks the shortcut the user typed or recorded and writes it canonically (Alt, Ctrl, Cmd, Shift,
+ * then the key, the order the recorder writes). Empty means "no shortcut" and is allowed.
+ */
+export function validateClearShortcut(raw: string): ShortcutCheck {
+  if (raw.trim() === '') return { ok: true, value: '' };
+  const c = parseCombo(raw);
+  if (c.key === '') return { ok: false, reason: 'no_key' };
+  if (!(c.meta || c.ctrl || c.alt)) return { ok: false, reason: 'needs_modifier' };
+  if (isReserved(c)) return { ok: false, reason: 'reserved' };
+  const key = c.key.length === 1 ? c.key.toUpperCase() : c.key[0].toUpperCase() + c.key.slice(1);
+  const parts = [c.alt && 'Alt', c.ctrl && 'Ctrl', c.meta && 'Cmd', c.shift && 'Shift', key];
+  return { ok: true, value: parts.filter(Boolean).join('+') };
 }

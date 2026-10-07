@@ -78,6 +78,7 @@
     EventWindowClosing,
     EventEnginesChanged,
     EventAutoClipboardChanged,
+    EventClearContextShortcutChanged,
     EventCopyKeyFailed,
     EventDoubleCopyPermissionMissing,
     EventAccessibilityMissing,
@@ -154,6 +155,7 @@
   } from '../utils/sourceCorrection.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import ContextChatPanel from './ContextChatPanel.svelte';
+  import { clearContextShortcut } from '../stores/clearContextShortcut';
   import {
     emptyChat,
     clearChat,
@@ -164,7 +166,6 @@
     answerNoteKey,
     shownFor,
     isClearShortcut,
-    DEFAULT_CLEAR_SHORTCUT,
     type ContextChat,
     type ContextAnswer,
     type BoundRetranslation,
@@ -760,6 +761,10 @@
     const offEngines = onEvent(EventEnginesChanged, () => {
       loadEngines();
     });
+    // The settings page saved a new clear-context shortcut (issue #48): use it from now on.
+    const offClearShortcut = onEvent(EventClearContextShortcutChanged, (v) => {
+      if (typeof v === 'string') clearContextShortcut.set(v);
+    });
     // Initialization and first render: restore pin state, then wait for engines/languages/defaults to load.
     (async () => {
       // Restore the persisted pin state.
@@ -799,6 +804,7 @@
       offAccessibilityMissing();
       offClosing();
       offEngines();
+      offClearShortcut();
     };
   });
 
@@ -1099,11 +1105,7 @@
   // The retranslation shown in place of the engine's own result, bound to the text and engine it
   // was made for.
   let retrans = $state<BoundRetranslation | null>(null);
-  const clearShortcutStore = persisted<string>(
-    'kai:translate:clearContextShortcut',
-    DEFAULT_CLEAR_SHORTCUT,
-  );
-  const clearShortcut = $derived($clearShortcutStore);
+  const clearShortcut = $derived($clearContextShortcut);
   const shownRetrans = $derived(shownFor(retrans, input, activeEngine));
   // The sentence under the chat when another engine than the selected one did the retranslation.
   const retransNote = $derived(
