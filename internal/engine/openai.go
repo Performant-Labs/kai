@@ -82,9 +82,6 @@ func NewOpenAI(cfg *EngineConfig, client *http.Client) Translator {
 func (o *openaiTranslator) Name() string { return "openai" }
 
 func (o *openaiTranslator) Translate(ctx context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
-	if o.apiKey == "" {
-		return nil, ErrAPIKey
-	}
 	src := string(req.From)
 	dst := string(req.To)
 	if src == "" || src == "auto" {
@@ -96,11 +93,29 @@ func (o *openaiTranslator) Translate(ctx context.Context, req model.TranslateReq
 		srcName(src), dstName(dst), req.Text,
 	)
 
+	result, err := o.Prompt(ctx, i18n.T("engine.openai_system"), prompt)
+	if err != nil {
+		return nil, err
+	}
+	return &model.TranslateResult{
+		Engine: "openai",
+		From:   req.From,
+		To:     req.To,
+		Text:   req.Text,
+		Result: result,
+	}, nil
+}
+
+// Prompt runs one system + user prompt and returns the trimmed answer (Prompter).
+func (o *openaiTranslator) Prompt(ctx context.Context, system, user string) (string, error) {
+	if o.apiKey == "" {
+		return "", ErrAPIKey
+	}
 	params := openai.ChatCompletionNewParams{
 		Model: o.model,
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(i18n.T("engine.openai_system")),
-			openai.UserMessage(prompt),
+			openai.SystemMessage(system),
+			openai.UserMessage(user),
 		},
 	}
 
@@ -114,15 +129,15 @@ func (o *openaiTranslator) Translate(ctx context.Context, req model.TranslateReq
 			// unfixed semantics. So instead of bluntly claiming "model retired", pass through
 			// the API's real message and hint to check the endpoint/model match.
 			if apiErr.StatusCode == http.StatusGone {
-				return nil, fmt.Errorf(i18n.T("err.openai_model_gone"), o.model, apiErr.Message)
+				return "", fmt.Errorf(i18n.T("err.openai_model_gone"), o.model, apiErr.Message)
 			}
-			return nil, fmt.Errorf(i18n.T("err.openai_api_error"), apiErr.Message)
+			return "", fmt.Errorf(i18n.T("err.openai_api_error"), apiErr.Message)
 		}
-		return nil, fmt.Errorf("%s: %w", i18n.T("err.openai_do"), err)
+		return "", fmt.Errorf("%s: %w", i18n.T("err.openai_do"), err)
 	}
 
 	if len(completion.Choices) == 0 {
-		return nil, fmt.Errorf(i18n.T("err.openai_api_status"), "no choices")
+		return "", fmt.Errorf(i18n.T("err.openai_api_status"), "no choices")
 	}
 
 	msg := completion.Choices[0].Message
@@ -133,14 +148,7 @@ func (o *openaiTranslator) Translate(ctx context.Context, req model.TranslateReq
 	if result == "" && msg.Refusal != "" {
 		result = strings.TrimSpace(msg.Refusal)
 	}
-
-	return &model.TranslateResult{
-		Engine: "openai",
-		From:   req.From,
-		To:     req.To,
-		Text:   req.Text,
-		Result: result,
-	}, nil
+	return result, nil
 }
 
 // srcName/dstName convert internal language codes into natural-language names LLMs understand

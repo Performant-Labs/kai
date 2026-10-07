@@ -67,6 +67,16 @@ export function ReportSourceSwitchSkipped(reason: string): $CancellablePromise<v
     return $Call.ByID(947839581, reason);
 }
 
+/**
+ * RetranslateWithContext translates a text again in a context the user described in the result
+ * pane's chat (issue #48). The engine whose result is shown does it when it can follow a context;
+ * otherwise the on-device model, then a configured cloud LLM, do (see translate.Service). It is
+ * cancelled with CancelTranslate(requestID, "").
+ */
+export function RetranslateWithContext(req: model$0.ContextTranslateRequest): $CancellablePromise<model$0.ContextTranslateResult> {
+    return $Call.ByID(968639356, req);
+}
+
 export function ScreenshotOCR(engineName: string): $CancellablePromise<model$0.OcrResult | null> {
     return $Call.ByID(3318430308, engineName);
 }
