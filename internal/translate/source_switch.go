@@ -37,9 +37,11 @@ import (
 // write the persisted default pair.
 
 // switchMinRunes is the shortest text, in code points after trimming, that can switch anything.
-// It is the same floor #161 uses for correcting a pin (minPinCheckRunes): language detection is
-// unreliable on shorter text.
-const switchMinRunes = minPinCheckRunes
+// It is lower than #161's floor for correcting a pin (minPinCheckRunes): a switch also needs the
+// local detector's confidence (switchMinConfidence), which a short ambiguous text does not reach,
+// whereas a short phrase the detector is sure of ("In the meantime,") must not be "translated" from
+// the wrong pinned language and handed back unchanged.
+const switchMinRunes = 12
 
 // switchMinConfidence is the lowest local-detection confidence that can switch anything. Measured
 // on clear sentences NaturalLanguage answers 0.99 or more; ambiguous or mixed text lands well

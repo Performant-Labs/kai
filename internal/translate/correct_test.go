@@ -327,6 +327,28 @@ func TestCorrectSourceGuardsTheOutput(t *testing.T) {
 	assertNoCorrection(t, "input starts like a refusal", correct(svc, in, model.ESMX), in, model.CorrectionUnchanged)
 }
 
+// A correction that only drops the trailing punctuation the text ended with is the model being
+// pedantic about a fragment, not a fix: the text goes on as it came.
+func TestCorrectSourceDroppingTrailingPunctuationIsRejected(t *testing.T) {
+	for _, c := range []struct{ in, out string }{
+		{"Mientras tanto,", "Mientras tanto"},
+		{"Mientras tanto ,", "Mientras tanto"},
+		{"Nos vemos mañana!", "Nos vemos mañana"},
+	} {
+		svc := newCorrectService(t, &fakeCorrector{out: c.out}, spanishEverywhere())
+		got := correct(svc, c.in, model.ESMX)
+		assertNoCorrection(t, c.in, got, c.in, model.CorrectionRejected)
+		if got.Reason != "punctuation" {
+			t.Errorf("%q: Reason = %q, want punctuation", c.in, got.Reason)
+		}
+	}
+	// Adding or changing punctuation, or fixing a word as well, is still a correction.
+	svc := newCorrectService(t, &fakeCorrector{out: "Mientras tanto, voy."}, spanishEverywhere())
+	if got := correct(svc, "Mientras tanto, voi,", model.ESMX); !got.Corrected {
+		t.Errorf("a real fix alongside dropped punctuation was rejected: %+v", got)
+	}
+}
+
 func TestCorrectSourceTimeoutTranslatesTheOriginal(t *testing.T) {
 	fc := &fakeCorrector{block: true}
 	svc := newCorrectService(t, fc, spanishEverywhere())

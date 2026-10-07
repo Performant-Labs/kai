@@ -47,6 +47,8 @@ func TestRealDetectorSwitchesMexicanSpanishSelections(t *testing.T) {
 		"emoji slang":        "¡Qué onda, wey! 😂😂 ya ni la amuelas, llevo una hora esperándote aquí",
 		"half English half":  "Please review the attached document. Por favor revisen el documento adjunto antes de la junta.",
 		"no accents":         "no se que hacer con esto ahorita, ya le dije a mi jefe y no contesta",
+		"short question":     "¿Ya comiste?",
+		"nineteen":           "Sí, claro, ahorita.",
 		"all caps":           "AVISO IMPORTANTE: LA OFICINA ESTARÁ CERRADA EL LUNES",
 	} {
 		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.EN, To: model.FR})
@@ -66,13 +68,23 @@ func TestRealDetectorNeverSwitchesTextThatIsNotSpanish(t *testing.T) {
 		"code":                          "const total = items.reduce((a, b) => a + b.price, 0); // sum the prices",
 		"URL only":                      "https://www.ejemplo.com/noticias/2026/10/articulo-largo?id=12345",
 		"digits and punctuation":        "12345 67890 !!!! ????? ..... 12345",
-		"too short Spanish":             "¿Ya comiste?",
-		"nineteen code points":          "Sí, claro, ahorita.",
 		"plain English":                 "The quick brown fox jumps over the lazy dog again and again.",
 	} {
 		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.EN, To: model.FR})
 		if got.Switched {
 			t.Errorf("%s switched to %s: %+v", name, got.From, got)
+		}
+	}
+}
+
+// Issue: a short English phrase under a Spanish pin switches to English -> Spanish with the real
+// detector (it used to fall under the 20-code-point floor and come back "translated" unchanged).
+func TestRealDetectorSwitchesShortEnglishUnderSpanishPin(t *testing.T) {
+	svc := realSwitchService(t)
+	for _, text := range []string{"In the meantime, ", "Thank you very much", "See you tomorrow morning"} {
+		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.ESMX, To: model.EN})
+		if !got.Switched || got.From != model.EN || got.To != model.ESMX {
+			t.Errorf("%q: got %+v, want en -> es-MX", text, got)
 		}
 	}
 }

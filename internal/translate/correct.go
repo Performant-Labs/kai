@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"cnb.cool/dtapp/kai/internal/engine"
@@ -189,6 +190,11 @@ func (s *Service) rejectCorrection(input, output string, lang model.Language) st
 			return "refusal"
 		}
 	}
+	// Dropping only the trailing punctuation the text ended with ("Mientras tanto," -> "Mientras
+	// tanto") is the model being pedantic about a fragment, not a fix.
+	if out := strings.TrimSpace(output); out != "" && out == strings.TrimRightFunc(input, trailingPunct) && out != input {
+		return "punctuation"
+	}
 	in, out := utf8.RuneCountInString(input), utf8.RuneCountInString(output)
 	if out > in*correctMaxNumer/correctMaxDenom+correctLenSlack || out < in*correctMinNumer/correctMinDenom-correctLenSlack {
 		return "length"
@@ -202,6 +208,10 @@ func (s *Service) rejectCorrection(input, output string, lang model.Language) st
 	}
 	return ""
 }
+
+// trailingPunct is a rune that ends a text without being part of its words: whitespace or
+// punctuation.
+func trailingPunct(r rune) bool { return unicode.IsSpace(r) || unicode.IsPunct(r) }
 
 // correctionErrKind names a provider error for the log, without its text.
 func correctionErrKind(err error) string {

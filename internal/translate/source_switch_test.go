@@ -111,25 +111,36 @@ func TestPlanSourceSwitchKeepsDialectMatching(t *testing.T) {
 
 func TestPlanSourceSwitchShortTextNeverSwitches(t *testing.T) {
 	svc := newSwitchService(t, spanishDetector(), langpref.New())
-	nineteen := "Hola, como estas ok" // 19 code points
-	if n := utf8.RuneCountInString(nineteen); n != 19 {
-		t.Fatalf("fixture is %d code points, want 19", n)
+	eleven := "Hola, amigo" // 11 code points
+	if n := utf8.RuneCountInString(eleven); n != 11 {
+		t.Fatalf("fixture is %d code points, want 11", n)
 	}
-	twenty := nineteen + "?"
+	twelve := eleven + "s"
 	for _, tc := range []struct {
 		name string
 		text string
 		want bool
 	}{
-		{"19", nineteen, false},
-		{"20", twenty, true},
-		{"19 padded with whitespace", "   " + nineteen + "\n\n", false},
-		{"20 padded with whitespace", "\t" + twenty + "  ", true},
+		{"11", eleven, false},
+		{"12", twelve, true},
+		{"11 padded with whitespace", "   " + eleven + "\n\n", false},
+		{"12 padded with whitespace", "\t" + twelve + "  ", true},
 	} {
 		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: tc.text, From: model.EN, To: model.FR})
 		if got.Switched != tc.want {
 			t.Errorf("%s: Switched = %v, want %v", tc.name, got.Switched, tc.want)
 		}
+	}
+}
+
+// A short English phrase under a Spanish pin must switch, not be "translated" from Spanish to
+// English and handed back unchanged.
+func TestPlanSourceSwitchShortEnglishUnderSpanishPin(t *testing.T) {
+	det := &fakeDetector{lang: "en", conf: 0.99, ok: true}
+	svc := newSwitchService(t, det, langpref.New())
+	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "In the meantime, ", From: model.ESMX, To: model.EN})
+	if !got.Switched || got.From != model.EN || got.To != model.ESMX {
+		t.Fatalf("got %+v, want en -> es-MX", got)
 	}
 }
 
