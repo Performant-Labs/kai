@@ -43,10 +43,16 @@ const cmp = (a: Rule, b: Rule) =>
   a.spec[0] - b.spec[0] || a.spec[1] - b.spec[1] || a.spec[2] - b.spec[2] || a.order - b.order;
 
 /** Winning `transform` on a `.u-tooltip.u-tooltip--start` element in the given state. */
-function winningTransform(state: ':hover' | ':focus-visible'): string | undefined {
+function winningTransform(
+  state: ':hover' | ':focus-visible',
+  variant: 'start' | 'end' = 'start',
+): string | undefined {
   const matching = rules().filter(
     (r) =>
-      /^\.u-tooltip(\.u-tooltip--start|--start)?(:hover|:focus-visible)?::after$/.test(r.selector) &&
+      /^\.u-tooltip(\.u-tooltip--start|--start|\.u-tooltip--end|--end)?(:hover|:focus-visible)?::after$/.test(
+        r.selector,
+      ) &&
+      !(variant === 'start' ? /--end/ : /--start/).test(r.selector) &&
       (!/:(hover|focus-visible)/.test(r.selector) || r.selector.includes(state)) &&
       /transform:/.test(r.body),
   );
@@ -80,5 +86,64 @@ describe('tooltip CSS (duplicate/clipped tooltip fix)', () => {
     expect(start).toMatch(/left:\s*0/);
     expect(start).toMatch(/white-space:\s*normal/);
     expect(start).toMatch(/max-width:\s*min\(24rem, 90vw\)/);
+  });
+
+  // Issue #52: a trigger at the RIGHT end of a pane (the pin and auto-clipboard buttons in the FROM
+  // header) opens its tooltip leftwards, from the button's right edge; centred, it ran past the
+  // pane and was cut off.
+  for (const state of [':hover', ':focus-visible'] as const) {
+    it(`the end variant is not shifted by translateX(-50%) on ${state}`, () => {
+      const t = winningTransform(state, 'end');
+      expect(t, 'no transform rule found for the end variant').toBeDefined();
+      expect(t).not.toMatch(/translateX\(-50%\)/);
+      expect(t).toMatch(/translateY\(0\)/);
+    });
+  }
+
+  it('the end variant anchors at the right edge, wraps, and is bounded like the start variant', () => {
+    const end = css.match(/\.u-tooltip--end::after\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(end).toMatch(/left:\s*auto/);
+    expect(end).toMatch(/right:\s*0/);
+    expect(end).toMatch(/white-space:\s*normal/);
+    expect(end).toMatch(/width:\s*max-content/);
+    expect(end).toMatch(/max-width:\s*min\(24rem, 90vw\)/);
+  });
+
+  it('the pin and auto-clipboard buttons in the FROM header use the end variant', () => {
+    const win = readFileSync(resolve(__dirname, 'TranslateWindow.svelte'), 'utf8');
+    for (const handler of [
+      'onclick={togglePin}',
+      'onclick={() => applyAutoClipboard(!autoClipboard)}',
+    ]) {
+      const at = win.indexOf(handler);
+      expect(at, `${handler} not found`).toBeGreaterThan(-1);
+      const open = win.lastIndexOf('<button', at);
+      expect(win.slice(open, at)).toMatch(/class="[^"]*\bu-tooltip\b[^"]*\bu-tooltip--end\b/);
+    }
+  });
+
+  // A pane can be narrower than a tooltip: the left pane shrinks to a quarter of the window (the
+  // divider's minimum) and the window itself to about 780 px. The tooltip must never be wider than
+  // the room left of its trigger in the pane it opens in (the pin button sits left of the clipboard
+  // button, so about 5rem of the pane's width is not available to it), or the pane clips it; container query units measure the pane.
+  it('the end variant is bounded by the width of its pane (container query units), not only by the viewport', () => {
+    const supports =
+      css.match(
+        /@supports\s*\(width:\s*1cqw\)\s*\{[^@]*?\.u-tooltip--end::after\s*\{([^}]*)\}/,
+      )?.[1] ?? '';
+    expect(supports, 'no @supports (width: 1cqw) rule for .u-tooltip--end::after').toMatch(
+      /max-width:\s*min\(24rem,\s*calc\(100cqw - 5rem\)\)/,
+    );
+    // The plain rule stays as the fallback for a webview without container queries.
+    const base = css.match(/\.u-tooltip--end::after\s*\{([^}]*)\}/)![1];
+    expect(base).toMatch(/max-width:\s*min\(24rem, 90vw\)/);
+  });
+
+  it('the pane container is a container of inline size, and the FROM pane is one', () => {
+    expect(css).toMatch(/\.u-pane-container\s*\{[^}]*container-type:\s*inline-size/);
+    const win = readFileSync(resolve(__dirname, 'TranslateWindow.svelte'), 'utf8');
+    const pin = win.indexOf('onclick={togglePin}');
+    const section = win.lastIndexOf('<section', pin);
+    expect(win.slice(section, win.indexOf('>', section))).toMatch(/\bu-pane-container\b/);
   });
 });

@@ -611,6 +611,33 @@ body {
     max-width: min(24rem, 90vw);
   }
 
+  /* Right-anchored variant (issue #52): the mirror of --start, for a trigger at the right end of
+     a pane (the pin and auto-clipboard buttons), where the centred tooltip ran past the pane and
+     was cut off. It opens leftwards from the trigger's right edge. */
+  .u-tooltip--end::after {
+    left: auto;
+    right: 0;
+    transform: translateY(-2px);
+    white-space: normal;
+    width: max-content;
+    max-width: min(24rem, 90vw);
+  }
+
+  /* A pane is a container of inline size (issue #52), so a tooltip inside it can be no wider than the
+     pane: the left pane shrinks to a quarter of the window and the window to about 780 px, and a
+     pane clips what overflows it. Where container queries are missing the plain max-width stands. */
+  .u-pane-container {
+    container-type: inline-size;
+  }
+
+  @supports (width: 1cqw) {
+    .u-tooltip--end::after {
+      /* 5rem: the pin button sits left of the clipboard button, so that much of the pane's width is
+         to the right of its right edge, where the tooltip is anchored. */
+      max-width: min(24rem, calc(100cqw - 5rem));
+    }
+  }
+
   .u-tooltip:hover::after,
   .u-tooltip:focus-visible::after {
     opacity: 1;
@@ -621,7 +648,9 @@ body {
      win on hover and shift this left-anchored tooltip left by half its width, off the window
      edge. Doubled class raises specificity; placing it after also wins on order. */
   .u-tooltip.u-tooltip--start:hover::after,
-  .u-tooltip.u-tooltip--start:focus-visible::after {
+  .u-tooltip.u-tooltip--start:focus-visible::after,
+  .u-tooltip.u-tooltip--end:hover::after,
+  .u-tooltip.u-tooltip--end:focus-visible::after {
     transform: translateY(0);
   }
 
