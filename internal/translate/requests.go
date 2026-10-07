@@ -45,14 +45,20 @@ type requestRegistry struct {
 	mu        sync.Mutex
 	byID      map[string]*activeRequest
 	bySession map[string]string // session -> id of that session's newest request
+	seq       uint64            // the last sequence number handed out (see activeRequest.seq)
 }
 
 // activeRequest is one running request.
 type activeRequest struct {
 	id      string
 	session string
-	ctx     context.Context
-	cancel  context.CancelCauseFunc
+	// seq orders requests by when they opened, across every session: strictly increasing, handed out
+	// under the registry's lock. Something that must belong to the NEWEST request (the history rows an
+	// automatic translation holds, issue #57) compares it, so a late result of an older request can
+	// never replace a newer one's, whatever the timing.
+	seq    uint64
+	ctx    context.Context
+	cancel context.CancelCauseFunc
 
 	// The next three are guarded by requestRegistry.mu.
 	engines map[string]*engineRun
@@ -92,6 +98,8 @@ func (rr *requestRegistry) open(session, id string) *activeRequest {
 		engines: make(map[string]*engineRun),
 	}
 	rr.mu.Lock()
+	rr.seq++
+	ar.seq = rr.seq
 	if rr.byID == nil {
 		rr.byID = make(map[string]*activeRequest)
 		rr.bySession = make(map[string]string)

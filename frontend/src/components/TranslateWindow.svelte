@@ -101,6 +101,7 @@
     CorrectionAvailability,
     RetranslateWithContext,
     BackTranslate,
+    CommitAutoHistory,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/translatewrapper.ts';
   import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
   import { learnFromSelection } from '../utils/langLearn.ts';
@@ -157,6 +158,14 @@
   import { isTargetDisabled } from '../utils/targetCapability.ts';
   import ContextChatPanel from './ContextChatPanel.svelte';
   import { backTranslateOn } from '../stores/backTranslate';
+  import { autoTranslateOn } from '../stores/autoTranslate';
+  import {
+    AUTO_COMMIT_DELAY_MS,
+    autoKindOf,
+    autoTranslateDelay,
+    commitStillValid,
+    createAutoScheduler,
+  } from '../utils/autoTranslate.ts';
   import {
     acceptBack,
     backPair,
@@ -429,11 +438,37 @@
       return;
     }
     setSource(el.value, changeKindOf(e));
-    // A paste or a drop puts text into the source pane: an arrival, like the fill. Typing, cutting
-    // and undoing check nothing; typed text is checked when Translate is pressed.
-    if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop') {
+    // "Translate as I type" (issue #57): any edit ends the quiet moment a history write waited for, and
+    // starts (or restarts) the wait for the next pause. A paste or a drop translates at once.
+    commitAuto.cancel();
+    const delay = autoTranslateDelay({
+      enabled: $autoTranslateOn,
+      text: el.value,
+      kind: autoKindOf(inputType, (e as InputEvent).isComposing),
+      hasEngines: activeEngines.length > 0,
+    });
+    if (delay !== null) autoRun.schedule(delay);
+    // Nothing to translate yet (too short, blank, or an IME word still being composed): a wait left over
+    // from earlier typing must not fire on text that is not final. compositionend restarts it.
+    else autoRun.cancel();
+    // A paste or a drop puts text into the source pane: an arrival, like the fill. With "Translate as
+    // I type" off it is translated only when it switched the pair; with it on, the automatic
+    // translation above already does the whole flow (the switch included).
+    if ((inputType === 'insertFromPaste' || inputType === 'insertFromDrop') && delay === null) {
       translateIfSwitched(el.value);
     }
+  }
+
+  // An IME word is final at compositionend: translate after the usual pause from there.
+  function onSourceCompositionEnd(e: Event) {
+    const el = e.currentTarget as HTMLTextAreaElement;
+    const delay = autoTranslateDelay({
+      enabled: $autoTranslateOn,
+      text: el.value,
+      kind: 'typing',
+      hasEngines: activeEngines.length > 0,
+    });
+    if (delay !== null) autoRun.schedule(delay);
   }
 
   // A native undo or redo of the source textarea (the Edit menu's key equivalent, a context menu)
@@ -760,6 +795,12 @@
       // Global broadcast: only this window's (translate) closing is looked at, so closing another
       // window never touches the translation.
       if (name !== WindowTranslate) return;
+      // A translation still waiting for its pause is dropped: a hidden window must not start a request,
+      // which with a cloud engine costs money. A pending history write for the text on screen is made now,
+      // not lost with its timer (issue #57).
+      autoRun.cancel();
+      commitAuto.cancel();
+      commitAutoNow();
       // Issue #81: closing the translate window used to clear the text and the results here. It
       // no longer clears anything: the session (text, results, request marker; the languages
       // persist on their own) is retained, so reopening the window shows the last translation.
@@ -818,6 +859,9 @@
       offClosing();
       offEngines();
       offClearShortcut();
+      // Nothing waiting may fire on a window that is gone (issue #57).
+      autoRun.cancel();
+      commitAuto.cancel();
     };
   });
 
@@ -983,8 +1027,41 @@
   // Translate the source text, switching the pair first when the text is in another language: the
   // Translate button, Cmd+Enter and the fill (hotkey, tray, auto-clipboard) come here.
   function translateWithSwitch() {
+    // A translation the user asked for is not an automatic one, and replaces a pending wait.
+    autoRun.cancel();
+    nextAuto = false;
     return switcher.translateWithSwitch();
   }
+
+  // "Translate as I type" (issue #57). The automatic translation is the Translate button's own path,
+  // flagged so the backend holds its history row until the text has stopped changing.
+  let nextAuto = false;
+  const autoRun = createAutoScheduler(() => {
+    nextAuto = true;
+    void switcher.translateWithSwitch();
+  });
+  // The quiet moment after an automatic translation: the history write for the text still on screen.
+  // `autoCommit` names the automatic request waiting for it.
+  let autoCommit = $state<{ id: string; text: string } | null>(null);
+  const commitAuto = createAutoScheduler(commitAutoNow);
+  function commitAutoNow() {
+    const c = autoCommit;
+    if (!c) return;
+    if (!commitStillValid({ requestText: c.text, currentText: input, current: requestId === c.id }))
+      return;
+    autoCommit = null;
+    void Promise.resolve(CommitAutoHistory(c.id)).catch((e) =>
+      console.error(t('log.translateRequestFailed'), e),
+    );
+  }
+  $effect(() => {
+    // Once an automatic request has settled, wait for a quiet moment before the history write.
+    const waiting = autoCommit !== null && !awaiting;
+    untrack(() => {
+      if (waiting) commitAuto.schedule(AUTO_COMMIT_DELAY_MS);
+      else commitAuto.cancel();
+    });
+  });
 
   // A paste, or a result that arrived after the request went out: translate only when it switched.
   function translateIfSwitched(text: string, detected = '') {
@@ -1019,6 +1096,13 @@
   }
 
   async function doTranslate() {
+    // Whatever called this started the translation: a pending wait is over, and the flag says whether
+    // it was the automatic one (issue #57).
+    const auto = nextAuto;
+    nextAuto = false;
+    autoRun.cancel();
+    commitAuto.cancel();
+    autoCommit = null;
     if (!input.trim() || activeEngines.length === 0) return;
     loading = true;
     awaiting = true;
@@ -1041,6 +1125,7 @@
     usedCorrection = correctionShown(correction, input) ? correction : null;
     requestId = newRequestID();
     const id = requestId;
+    if (auto) autoCommit = { id, text: input };
     started = null;
     progress = {};
     try {
@@ -1052,6 +1137,7 @@
         to: toLang as TranslateLang,
         engine: '',
         request_id: requestId,
+        auto,
       });
       // A newer request replaced this one while the call was pending: it is not this request's
       // business any more.
@@ -1288,6 +1374,9 @@
   // bring the cleared window back. The cleared text is its own undo step (issue #118): Undo brings
   // the text back, and the result pane stays idle until the user translates again.
   function clearInput() {
+    autoRun.cancel();
+    commitAuto.cancel();
+    autoCommit = null;
     if (awaiting) cancelRequest();
     requestId = '';
     started = null;
@@ -1355,6 +1444,27 @@
           />
           <span>{t('translate.backTranslate')}</span>
           <span id="back-translate-tip" class="sr-only">{t('translate.backTranslateTip')}</span>
+        </label>
+        <!-- "Translate as I type" (issue #57): translate by itself when the user stops typing or pastes.
+             On by default; turn it off to translate only with the button or Cmd+Enter. -->
+        <label
+          class="u-tooltip u-tooltip--start flex items-center gap-2 text-xs"
+          class:u-muted={!$autoTranslateOn}
+          data-tooltip={t('translate.autoTranslateTip')}
+        >
+          <input
+            type="checkbox"
+            class="u-no-drag"
+            data-testid="auto-translate-checkbox"
+            aria-describedby="auto-translate-tip"
+            checked={$autoTranslateOn}
+            onchange={(e) => {
+              autoTranslateOn.set(e.currentTarget.checked);
+              if (!e.currentTarget.checked) autoRun.cancel();
+            }}
+          />
+          <span>{t('translate.autoTranslate')}</span>
+          <span id="auto-translate-tip" class="sr-only">{t('translate.autoTranslateTip')}</span>
         </label>
       </div>
       <div class="col-start-2 flex items-center justify-center gap-2">
@@ -1520,6 +1630,7 @@
           class="min-h-0 flex-1 resize-none bg-transparent p-4 text-base leading-relaxed outline-none whitespace-pre-wrap"
           value={input}
           oninput={onSourceInput}
+          oncompositionend={onSourceCompositionEnd}
           onbeforeinput={onSourceBeforeInput}
           onblur={endTypingRun}
           placeholder={t('translate.placeholder')}></textarea>

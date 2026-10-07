@@ -494,6 +494,14 @@ export interface TranslateRequest {
      * CancelTranslate takes. Empty: the backend generates one.
      */
     "request_id"?: string;
+
+    /**
+     * Auto marks a translation the window started by itself while the user is typing (issue #57).
+     * Its results are not written to the history when they arrive: the window commits them once the
+     * text has stopped changing (translate.Service.CommitAutoHistory), so a sentence typed over
+     * several pauses leaves one row, not one per pause.
+     */
+    "auto"?: boolean;
 }
 
 /**
