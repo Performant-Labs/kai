@@ -62,13 +62,15 @@ func NewGemini(cfg *EngineConfig) (*geminiTranslator, error) {
 func (e *geminiTranslator) Name() string { return "gemini" }
 
 func (e *geminiTranslator) translate(ctx context.Context, text, from, to string) (string, error) {
+	userPrompt := i18n.T("engine.openai_prompt")
+	return e.Prompt(ctx, i18n.T("engine.openai_system"), fmt.Sprintf(userPrompt, srcName(from), dstName(to), text))
+}
+
+// Prompt runs one system + user prompt and returns the answer (Prompter).
+func (e *geminiTranslator) Prompt(ctx context.Context, system, userContent string) (string, error) {
 	if e.model == "" {
 		return "", fmt.Errorf(i18n.T("err.gemini_model_required"))
 	}
-
-	system := i18n.T("engine.openai_system")
-	userPrompt := i18n.T("engine.openai_prompt")
-	userContent := fmt.Sprintf(userPrompt, srcName(from), dstName(to), text)
 
 	contents := []*genai.Content{
 		{Role: genai.RoleUser, Parts: []*genai.Part{{Text: userContent}}},
