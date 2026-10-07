@@ -448,7 +448,9 @@
       hasEngines: activeEngines.length > 0,
     });
     if (delay !== null) autoRun.schedule(delay);
-    else if (!(e as InputEvent).isComposing) autoRun.cancel();
+    // Nothing to translate yet (too short, blank, or an IME word still being composed): a wait left over
+    // from earlier typing must not fire on text that is not final. compositionend restarts it.
+    else autoRun.cancel();
     // A paste or a drop puts text into the source pane: an arrival, like the fill. With "Translate as
     // I type" off it is translated only when it switched the pair; with it on, the automatic
     // translation above already does the whole flow (the switch included).

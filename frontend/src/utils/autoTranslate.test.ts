@@ -30,11 +30,19 @@ describe('autoKindOf', () => {
     expect(autoKindOf('deleteByDrag', false)).toBe('typing');
   });
 
-  it('marks everything an IME is doing as composing', () => {
+  it('marks an IME word that is still being composed as composing', () => {
     expect(autoKindOf('insertCompositionText', true)).toBe('compose');
+    expect(autoKindOf('insertCompositionText', false)).toBe('compose');
     expect(autoKindOf('insertText', true)).toBe('compose');
-    expect(autoKindOf('deleteCompositionText', false)).toBe('compose');
-    expect(autoKindOf('insertFromComposition', false)).toBe('compose');
+    expect(autoKindOf('deleteContentBackward', true)).toBe('compose');
+  });
+
+  // WebKit (the app's engine) reports the commit of an IME word AFTER compositionend, as a
+  // deleteCompositionText and an insertFromComposition with isComposing false. The word is final
+  // then, so it is typing: a pause starts, instead of the wait compositionend started being cancelled.
+  it('treats the commit that follows compositionend as typing', () => {
+    expect(autoKindOf('deleteCompositionText', false)).toBe('typing');
+    expect(autoKindOf('insertFromComposition', false)).toBe('typing');
   });
 });
 

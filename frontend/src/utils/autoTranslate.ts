@@ -21,20 +21,15 @@ export type AutoKind = 'typing' | 'paste' | 'compose' | 'program';
 
 /**
  * The kind of an edit, read off its input event. A paste or a drop is one finished action. A cut or
- * a drag-out is typing: the text that is left is translated after a pause. Everything an IME does is
- * composing, whether or not it is still composing: the word is not final until the window hears
- * compositionend.
+ * a drag-out is typing: the text that is left is translated after a pause. An IME word that is still
+ * being composed is composing: it is not final, so nothing translates it. The commit of a composed
+ * word is typing again: WebKit reports it AFTER compositionend, as deleteCompositionText and
+ * insertFromComposition with isComposing false, so those must start a pause, not cancel the wait
+ * compositionend started.
  */
 export function autoKindOf(inputType: string, isComposing: boolean): AutoKind {
   if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop') return 'paste';
-  if (
-    isComposing ||
-    inputType === 'insertCompositionText' ||
-    inputType === 'deleteCompositionText' ||
-    inputType === 'insertFromComposition'
-  ) {
-    return 'compose';
-  }
+  if (isComposing || inputType === 'insertCompositionText') return 'compose';
   return 'typing';
 }
 

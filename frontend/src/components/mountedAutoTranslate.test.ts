@@ -218,6 +218,53 @@ describe('TranslateWindow, mounted: translate as I type (issue #57)', () => {
     expect(h.translate).toHaveBeenCalledTimes(1); // the pause did not translate it a second time
   });
 
+  // An IME word is not final until compositionend: nothing may translate it before.
+  const compose = (text: string, inputType = 'insertCompositionText') => {
+    source().value = text;
+    source().dispatchEvent(
+      new InputEvent('input', { bubbles: true, inputType, isComposing: true }),
+    );
+  };
+  const endComposition = () =>
+    source().dispatchEvent(new Event('compositionend', { bubbles: true }));
+
+  it('a composition never translates before it ends', async () => {
+    compose('nihao');
+    await advance(5000);
+    expect(h.translate).not.toHaveBeenCalled();
+  });
+
+  it('a composition cancels a wait that was already pending, and the pause restarts at compositionend', async () => {
+    type('Hola amigo');
+    await advance(300);
+    compose('Hola amigo ni'); // the user starts composing a word
+    await advance(5000);
+    expect(h.translate).not.toHaveBeenCalled(); // the old timer must not fire mid-composition
+    compose('Hola amigo 你好'); // the last update of the composition carries the final text
+    endComposition();
+    await advance(599);
+    expect(h.translate).not.toHaveBeenCalled();
+    await advance(1);
+    await flush();
+    expect(h.translate).toHaveBeenCalledTimes(1);
+    expect(reqOf(0).text).toBe('Hola amigo 你好');
+  });
+
+  it("WebKit's commit after compositionend does not cancel the wait that compositionend started", async () => {
+    compose('ni');
+    source().value = 'Hola amigo 你好';
+    endComposition(); // the pause starts here
+    await advance(300);
+    // WebKit reports the commit after compositionend, with isComposing false.
+    type('Hola amigo 你好', 'insertFromComposition');
+    await advance(599);
+    expect(h.translate).not.toHaveBeenCalled();
+    await advance(1);
+    await flush();
+    expect(h.translate).toHaveBeenCalledTimes(1);
+    expect(reqOf(0).text).toBe('Hola amigo 你好');
+  });
+
   it('Clear cancels a translation that was waiting', async () => {
     type(TEXT);
     await advance(300);
