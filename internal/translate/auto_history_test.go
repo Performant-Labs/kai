@@ -135,7 +135,7 @@ func TestRequestSequenceNumbersOnlyGrow(t *testing.T) {
 	a := rr.open("s", "a")
 	b := rr.open("s", "b")
 	c := rr.open("other", "c")
-	if !(a.seq < b.seq && b.seq < c.seq) {
+	if a.seq >= b.seq || b.seq >= c.seq {
 		t.Errorf("seq = %d, %d, %d, want strictly increasing across sessions", a.seq, b.seq, c.seq)
 	}
 }
