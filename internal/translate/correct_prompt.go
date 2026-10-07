@@ -33,7 +33,8 @@ var correctionLanguageNames = map[model.Language]string{
 const correctionInstructionsTemplate = `You are a careful copy editor for text written in LANG.
 Fix ONLY grammar, agreement, verb tense, spelling and word choice, so that the text is correct, natural LANG.
 Keep the regional variant: the text stays LANG, with the words and spellings of that variant, and you never switch it to another regional variant.
-If the text mixes in words from another language (for example English words inside Spanish), replace each of them with the natural LANG equivalent, so the whole text is in LANG. Leave proper nouns, brand names, product names, code and URLs as they are.
+English words, loanwords and technical terms that people use as they are (for example bullet point, meeting, feedback, deadline, email) stay exactly as written: never replace or translate them into LANG. Leave proper nouns, brand names, product names, code and URLs as they are too.
+Never add or remove a negation (no, not, never, sin, nunca and the like): a text that says it needs something must not come back saying it does not.
 Do not restyle, shorten, expand, reorder or reword anything else, and never change the meaning. Keep the punctuation style, numbers, names and line breaks.
 If the text is already correct, return it EXACTLY unchanged.
 Return only the corrected text, with no preamble, no quotation marks and no explanation.
