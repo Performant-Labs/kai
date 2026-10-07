@@ -117,7 +117,8 @@ func (s *Service) RetranslateWithContext(req model.ContextTranslateRequest) mode
 	system := ContextInstructions(req.From, req.To)
 	user := contextUserMessage(req, messages)
 
-	name, fallback, answer, err, reason := s.runContextProvider(run.ctx, req, system, user)
+	out := s.runContextProvider(run.ctx, req, system, user)
+	name, fallback, answer, err, reason := out.name, out.fallback, out.answer, out.err, out.reason
 	res.Engine, res.Fallback = name, fallback
 	cause := context.Cause(run.ctx)
 	switch {
@@ -154,22 +155,31 @@ func totalRunes(ss []string) int {
 	return n
 }
 
-// runContextProvider picks the provider and runs it. reason is not empty when no provider could be
-// used (then nothing ran).
-func (s *Service) runContextProvider(ctx context.Context, req model.ContextTranslateRequest, system, user string) (name string, fallback bool, answer string, err error, reason string) {
+// contextRun is what a provider did: who ran, what it answered or how it failed. reason is not
+// empty when no provider could be used (then nothing ran).
+type contextRun struct {
+	name     string
+	fallback bool
+	answer   string
+	err      error
+	reason   string
+}
+
+// runContextProvider picks the provider and runs it.
+func (s *Service) runContextProvider(ctx context.Context, req model.ContextTranslateRequest, system, user string) contextRun {
 	// 1. The engine whose result is shown, when it can follow a context.
 	if tr, ok := s.registry.GetTranslator(req.Engine); ok {
 		if p, ok := tr.(engine.Prompter); ok {
-			answer, err = p.Prompt(ctx, system, user)
-			return req.Engine, false, answer, err, ""
+			answer, err := p.Prompt(ctx, system, user)
+			return contextRun{name: req.Engine, answer: answer, err: err}
 		}
 	}
 	// 2. Apple's on-device model.
-	reason = reasonNoneAvailable
+	reason := reasonNoneAvailable
 	if s.corrector != nil {
 		if st := s.corrector.Availability(req.To); st.IsAvailable() {
-			answer, err = s.corrector.Correct(ctx, engine.CorrectRequest{Instructions: system, Text: user})
-			return s.corrector.Name(), true, answer, err, ""
+			answer, err := s.corrector.Correct(ctx, engine.CorrectRequest{Instructions: system, Text: user})
+			return contextRun{name: s.corrector.Name(), fallback: true, answer: answer, err: err}
 		} else if st != engine.CorrectionUnavailable {
 			reason = string(st)
 		}
@@ -181,10 +191,10 @@ func (s *Service) runContextProvider(ctx context.Context, req model.ContextTrans
 		}
 		if tr, ok := s.registry.GetTranslator(n); ok {
 			if p, ok := tr.(engine.Prompter); ok {
-				answer, err = p.Prompt(ctx, system, user)
-				return n, true, answer, err, ""
+				answer, err := p.Prompt(ctx, system, user)
+				return contextRun{name: n, fallback: true, answer: answer, err: err}
 			}
 		}
 	}
-	return "", false, "", nil, reason
+	return contextRun{reason: reason}
 }
