@@ -54,7 +54,49 @@ const (
 	correctMaxDenom = 10
 	correctMinNumer = 6 // out may be down to 0.6 x in
 	correctMinDenom = 10
+	// correctMaxChangedRatio is the most of the input's words a correction may change. A grammar
+	// fix touches a handful of words (a mixed-in English phrase swapped for Spanish changes about
+	// a third of a sentence); more than this is a rewrite, and the words the model had no reason
+	// to touch are meaning changes waiting to happen (#49: 5 of 8 words changed).
+	correctMaxChangedRatio = 0.4
+	// correctRatioMinWords is the fewest words a text needs for the ratio to mean anything: fixing
+	// two of three words of a fragment is a fix, not a rewrite.
+	correctRatioMinWords = 5
 )
+
+// negationWords are the words that negate, lower-cased, per base language code. A correction that
+// adds or removes one flips the meaning (#49: "Necessito" became "No necesito"). Languages without
+// a list are not checked for this yet.
+var negationWords = map[string]map[string]bool{
+	"en": setOf("no", "not", "never", "nor", "none", "nobody", "nothing", "neither", "nowhere", "cannot", "without"),
+	"es": setOf("no", "nunca", "jamás", "jamas", "sin", "tampoco", "nadie", "nada", "ni", "ninguno", "ninguna", "ningunos", "ningunas", "ningún", "ningun"),
+}
+
+func setOf(words ...string) map[string]bool {
+	m := make(map[string]bool, len(words))
+	for _, w := range words {
+		m[w] = true
+	}
+	return m
+}
+
+// countNegations counts the negation words of text in lang (English adds the "n't" forms). Zero
+// for a language without a list.
+func countNegations(text string, lang model.Language) int {
+	base, _, _ := strings.Cut(string(lang), "-")
+	base = strings.ToLower(base)
+	words := negationWords[base]
+	if words == nil {
+		return 0
+	}
+	n := 0
+	for _, w := range wordTokens(strings.ToLower(text)) {
+		if words[w] || (base == "en" && (strings.HasSuffix(w, "n't") || strings.HasSuffix(w, "n’t"))) {
+			n++
+		}
+	}
+	return n
+}
 
 // refusalPrefixes are how a model that declines usually starts its answer, lower-cased. A
 // corrected text starting with one that the input did not start with is a refusal, not a
@@ -177,8 +219,8 @@ func (s *Service) correctionLanguage(trimmed string, req model.CorrectionRequest
 }
 
 // rejectCorrection is the output guard: "" when the corrected text may be used, else the reason it
-// may not (empty, a refusal, wildly longer or shorter than the input, or in another language than
-// the one it was asked in).
+// may not (empty, a refusal, wildly longer or shorter than the input, in another language than
+// the one it was asked in, with a negation added or removed, or with too many words changed).
 func (s *Service) rejectCorrection(input, output string, lang model.Language) string {
 	if output == "" {
 		return "empty"
@@ -205,6 +247,14 @@ func (s *Service) rejectCorrection(input, output string, lang model.Language) st
 		if l, known := recognized(det); known && !l.Covers(lang) {
 			return "language"
 		}
+	}
+	// The meaning must not flip: no negation added or removed.
+	if countNegations(input, lang) != countNegations(output, lang) {
+		return "negation"
+	}
+	// A grammar fix is not a rewrite.
+	if ratio, words := changedWordRatio(input, output); words >= correctRatioMinWords && ratio > correctMaxChangedRatio {
+		return "too_many_changes"
 	}
 	return ""
 }

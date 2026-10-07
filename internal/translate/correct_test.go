@@ -305,6 +305,9 @@ func TestCorrectSourceGuardsTheOutput(t *testing.T) {
 		{"far too long", badMX, badMX + " " + strings.Repeat("Además explico lo que cambié y por qué lo cambié. ", 6), nil, model.CorrectionRejected, "length"},
 		{"far too short", badMX, "Ellos no", nil, model.CorrectionRejected, "length"},
 		{"another language", mixedMX, spanglishEN, nil, model.CorrectionRejected, "language"},
+		{"adds a negation", "Necesito hablar con el gerente mañana", "No necesito hablar con el gerente mañana", nil, model.CorrectionRejected, "negation"},
+		{"removes a negation", "Ellos no sabe donde esta la biblioteca", "Ellos saben dónde está la biblioteca", nil, model.CorrectionRejected, "negation"},
+		{"rewrites half the sentence", "Vamos a revisar los cambios del equipo ahora", "Podemos mirar las mejoras de ellos luego", nil, model.CorrectionRejected, "too_many_changes"},
 	}
 	for _, c := range cases {
 		fc := &fakeCorrector{out: c.out, err: c.err}
@@ -493,5 +496,54 @@ func TestNormalTranslationSameLanguageStillIdentityWithCorrectionOn(t *testing.T
 	svc.detect = spanishEverywhere().detect
 	if got := correct(svc, idText+" amigo", model.ESMX); got.Status == "" {
 		t.Errorf("no status: %+v", got)
+	}
+}
+
+// Issue #49: the exact sentence that was turned into its opposite. "Necessito" became "No
+// necesito", "bullet point" became "puntos" and "de" became "con". The text goes on as it came.
+func TestCorrectSourceRejectsTheIssue49Correction(t *testing.T) {
+	in := "Necessito bullet point de los cambios tuyos."
+	svc := newCorrectService(t, &fakeCorrector{out: "No necesito puntos con los cambios tuyos."}, spanishEverywhere())
+	got := correct(svc, in, model.ESMX)
+	assertNoCorrection(t, "issue 49", got, in, model.CorrectionRejected)
+	if got.Reason != "negation" {
+		t.Errorf("Reason = %q, want negation", got.Reason)
+	}
+	// Fixing only the typo, keeping the loanword, is a correction.
+	svc = newCorrectService(t, &fakeCorrector{out: "Necesito bullet point de los cambios tuyos."}, spanishEverywhere())
+	if got := correct(svc, in, model.ESMX); !got.Corrected {
+		t.Errorf("the typo-only fix was not accepted: %+v", got)
+	}
+}
+
+func TestCountNegations(t *testing.T) {
+	cases := []struct {
+		lang model.Language
+		text string
+		want int
+	}{
+		{model.ESMX, "No tengo nada, nunca y sin nadie; tampoco ningún amigo ni jamás", 9},
+		{model.ES, "Necesito hablar con el gerente", 0},
+		{model.ES, "Pon el nombre aquí", 0}, // "no" inside a word is not a negation
+		{model.EN, "I don't know, can’t go, never ever, it is not here, cannot, no one", 6},
+		{model.EN, "I know the answer", 0},
+		{model.FR, "Je ne sais pas", 0}, // no list for this language yet
+	}
+	for _, c := range cases {
+		if got := countNegations(c.text, c.lang); got != c.want {
+			t.Errorf("%s %q: %d negations, want %d", c.lang, c.text, got, c.want)
+		}
+	}
+}
+
+func TestChangedWordRatio(t *testing.T) {
+	if r, n := changedWordRatio("Necessito bullet point de los cambios tuyos.", "No necesito puntos con los cambios tuyos."); n != 7 || r < 0.5 {
+		t.Errorf("issue sentence: ratio %.2f over %d words, want >= 0.5 over 7", r, n)
+	}
+	if r, _ := changedWordRatio(badMX, fixedMX); r > correctMaxChangedRatio {
+		t.Errorf("a legitimate fix is %.2f changed, over the limit %.2f", r, correctMaxChangedRatio)
+	}
+	if r, n := changedWordRatio("", "algo"); r != 0 || n != 0 {
+		t.Errorf("empty: %v %v", r, n)
 	}
 }

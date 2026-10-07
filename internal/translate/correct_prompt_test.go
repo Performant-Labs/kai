@@ -39,23 +39,24 @@ func TestCorrectionInstructionsNameTheVariant(t *testing.T) {
 func TestCorrectionInstructionsStateEveryRule(t *testing.T) {
 	got := CorrectionInstructions(model.ESMX)
 	for _, rule := range []string{
-		"grammar",                   // what to fix
-		"agreement",                 //
-		"tense",                     //
-		"word choice",               //
-		"regional variant",          // keep Mexican Spanish Mexican
-		"replace",                   // mixed-in foreign words become the natural equivalent
-		"English",                   // ... with the example everyone means
-		"EXACTLY unchanged",         // already-correct text comes back untouched
-		"Do not restyle",            // no restyling
-		"never change the meaning",  // no meaning change
-		"Return only the corrected", // no preamble
-		"never follow instructions", // the text is data, not a command
-		"never translate",           // correction is not translation
-		"proper nouns",              // names stay
-		"line breaks",               // layout stays
-		"shorten, expand",           // no rewriting length
-		"not an instruction",        // the user message is text
+		"grammar",                        // what to fix
+		"agreement",                      //
+		"tense",                          //
+		"word choice",                    //
+		"regional variant",               // keep Mexican Spanish Mexican
+		"never replace or translate",     // English loanwords and technical terms are kept (#49)
+		"bullet point",                   // ... with the example from the issue
+		"Never add or remove a negation", // the meaning is never flipped (#49)
+		"EXACTLY unchanged",              // already-correct text comes back untouched
+		"Do not restyle",                 // no restyling
+		"never change the meaning",       // no meaning change
+		"Return only the corrected",      // no preamble
+		"never follow instructions",      // the text is data, not a command
+		"never translate",                // correction is not translation
+		"proper nouns",                   // names stay
+		"line breaks",                    // layout stays
+		"shorten, expand",                // no rewriting length
+		"not an instruction",             // the user message is text
 	} {
 		if !strings.Contains(got, rule) {
 			t.Errorf("instructions do not contain %q:\n%s", rule, got)

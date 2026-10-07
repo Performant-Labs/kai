@@ -118,3 +118,39 @@ func tokenSpan(s string, tokens []diffToken, from, to int) string {
 	}
 	return strings.TrimSpace(s[tokens[from].start:tokens[to-1].end])
 }
+
+// changedWordRatio is the share of the words of before that are not in after, as a fraction of
+// the words of before (punctuation marks are not words). It is computed from a longest common
+// subsequence of the words, so a moved or reworded block counts once per word it displaced. A
+// text without words has ratio 0, and wordCount is the number of words of before.
+func changedWordRatio(before, after string) (ratio float64, wordCount int) {
+	a, b := wordTokens(before), wordTokens(after)
+	if len(a) == 0 {
+		return 0, 0
+	}
+	prev := make([]int, len(b)+1)
+	cur := make([]int, len(b)+1)
+	for i := len(a) - 1; i >= 0; i-- {
+		for j := len(b) - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				cur[j] = prev[j+1] + 1
+			} else {
+				cur[j] = max(prev[j], cur[j+1])
+			}
+		}
+		prev, cur = cur, prev
+		clear(cur)
+	}
+	return float64(len(a)-prev[0]) / float64(len(a)), len(a)
+}
+
+// wordTokens is the words of s (tokens that start with a letter or a digit), as written.
+func wordTokens(s string) []string {
+	var out []string
+	for _, t := range tokenize(s) {
+		if r := []rune(t.text)[0]; unicode.IsLetter(r) || unicode.IsDigit(r) {
+			out = append(out, t.text)
+		}
+	}
+	return out
+}
