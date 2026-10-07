@@ -88,6 +88,13 @@ func (w *TranslateWrapper) BackTranslate(req model.TranslateRequest) model.BackT
 	return w.svc.BackTranslate(req)
 }
 
+// CommitAutoHistory writes to the history what the automatic translation requestID produced, once
+// the text it was made for has stopped changing (issue #57). It returns how many results it handed
+// to the history, and writes nothing for a request a newer one replaced.
+func (w *TranslateWrapper) CommitAutoHistory(requestID string) int {
+	return w.svc.CommitAutoHistory(requestID)
+}
+
 // CancelTranslate cancels the running translation request requestID (issue #109), or only its
 // engine when engine is not empty; the other engines keep running. It reports whether it found
 // something still running, and returns false, without any error, for an unknown or finished

@@ -241,6 +241,11 @@ type TranslateRequest struct {
 	// the call would race the first event. It tags every event of the request and is what
 	// CancelTranslate takes. Empty: the backend generates one.
 	RequestID string `json:"request_id,omitempty"`
+	// Auto marks a translation the window started by itself while the user is typing (issue #57).
+	// Its results are not written to the history when they arrive: the window commits them once the
+	// text has stopped changing (translate.Service.CommitAutoHistory), so a sentence typed over
+	// several pauses leaves one row, not one per pause.
+	Auto bool `json:"auto,omitempty"`
 }
 
 // Engine failure categories (TranslateResult.ErrorKind, issues #42 and #96). They live here, not

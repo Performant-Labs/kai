@@ -37,6 +37,15 @@ export function CancelTranslate(requestID: string, engine: string): $Cancellable
 }
 
 /**
+ * CommitAutoHistory writes to the history what the automatic translation requestID produced, once
+ * the text it was made for has stopped changing (issue #57). It returns how many results it handed
+ * to the history, and writes nothing for a request a newer one replaced.
+ */
+export function CommitAutoHistory(requestID: string): $CancellablePromise<number> {
+    return $Call.ByID(1462367678, requestID);
+}
+
+/**
  * CorrectSource corrects the grammar and word choice of text that just arrived, when the "correct
  * grammar and wording" setting is on and Apple's on-device model can run (issue #208). Every way
  * text arrives asks through this one call, right before PlanSourceSwitch, and translates the answer's
