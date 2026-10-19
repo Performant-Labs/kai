@@ -114,4 +114,39 @@ describe('Settings > Shortcuts: the History shortcut (issue #60)', () => {
     historyShortcut.subscribe((v) => (stored = v))();
     expect(stored).toBe('Cmd+Y');
   });
+
+  // The Record button path: onHotkeyKeydown's `k === 'history'` branch writes the pressed
+  // combination into historyKey. Nothing else tests it — typing into the field bypasses
+  // recording entirely — so this is what fails if that branch is removed.
+  const record = () =>
+    (target.querySelector('[data-testid="history-record"]') as HTMLButtonElement).click();
+  const press = (init: KeyboardEventInit) =>
+    window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }));
+
+  it('recording a combination writes it into the field, and it saves like a typed one', async () => {
+    record();
+    press({ key: 'h', altKey: true, shiftKey: true });
+    await flush();
+    expect(field().value).toBe('Alt+Shift+H');
+    await save();
+    expect(h.error).not.toHaveBeenCalled();
+    let stored = '';
+    historyShortcut.subscribe((v) => (stored = v))();
+    expect(stored).toBe('Alt+Shift+H');
+    expect(h.emit).toHaveBeenCalledWith('kai:history:shortcut-changed', 'Alt+Shift+H');
+  });
+
+  it('recording guards: Escape cancels without touching the value; modifiers alone wait', async () => {
+    record();
+    press({ key: 'Shift' }); // modifier only: still recording, nothing written
+    await flush();
+    expect(field()).toBeNull(); // the row shows the "recording" placeholder, not the input
+    press({ key: 'Escape' });
+    await flush();
+    expect(field().value).toBe('Cmd+Y'); // cancelled: untouched
+    // Recording is over: a later keydown writes nothing.
+    press({ key: 'h', altKey: true });
+    await flush();
+    expect(field().value).toBe('Cmd+Y');
+  });
 });
