@@ -8,6 +8,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ## [Unreleased]
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
+- The translate window no longer stays on top of every app by default: a new Settings > General switch, "Keep the translate window on top of other apps" (off by default), is the default a new translate window starts from, while the 🧷 pin button in the window stays the per-window toggle and an explicit pin choice is always respected (#69).
 
 ## [0.5.0] - 2026-10-19
 <!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->

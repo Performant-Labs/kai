@@ -26,6 +26,10 @@
   // Auto-switch source language (issue #200): ON by default, and a config without the value reads as
   // on; the Go side owns the default, this only mirrors it.
   let autoSwitchSource = $state(true);
+  // Keep the translate window on top of other apps (issue #69): the DEFAULT the translate
+  // window's pin state starts from, OFF for a fresh install; the window's own 🧷 button is the
+  // per-window toggle and its stored choice always wins.
+  let translateWindowOnTop = $state(false);
 
   // About card (issue #41): the installed version, whether it is a development build, and a short-lived
   // "Copied" on the copy button.
@@ -65,6 +69,7 @@
       const cfg = await GetConfig();
       if (cfg) analyticsEnabled = cfg.analytics_enabled ?? false;
       if (cfg) autoSwitchSource = cfg.auto_switch_source ?? true;
+      if (cfg) translateWindowOnTop = cfg.translate_window_on_top ?? false;
     } catch {
       /* Ignore read failures; fall back to the default (off) */
     }
@@ -117,6 +122,18 @@
       track('feature_toggled', { feature: 'auto_switch_source', enabled });
     } catch (err) {
       console.error(t('log.generalSaveAutoSwitchFailed'), err);
+    }
+  }
+
+  async function toggleTranslateWindowOnTop(e: Event) {
+    const enabled = (e.target as HTMLInputElement).checked;
+    translateWindowOnTop = enabled;
+    try {
+      const cfg = (await GetConfig()) ?? ({} as any);
+      await SaveConfig({ ...cfg, translate_window_on_top: enabled });
+      track('feature_toggled', { feature: 'translate_window_on_top', enabled });
+    } catch (err) {
+      console.error(t('log.generalSaveTranslateWindowOnTopFailed'), err);
     }
   }
 </script>
@@ -236,6 +253,19 @@
     title={t('settings.autoSwitchSourceHint')}
   >
     <input type="checkbox" checked={autoSwitchSource} onchange={toggleAutoSwitchSource} />
+    <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
+  </label>
+</div>
+
+<div class="u-card u-card--panel mt-5 p-5">
+  <div class="mb-1 text-sm font-medium">{t('settings.translateWindowOnTop')}</div>
+  <p class="u-muted mb-3 text-xs">{t('settings.translateWindowOnTopHint')}</p>
+  <label
+    class="u-switch"
+    aria-label={t('settings.translateWindowOnTop')}
+    title={t('settings.translateWindowOnTopHint')}
+  >
+    <input type="checkbox" checked={translateWindowOnTop} onchange={toggleTranslateWindowOnTop} />
     <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
   </label>
 </div>

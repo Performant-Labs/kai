@@ -188,6 +188,8 @@ export type Dict = {
     analyticsHint: string;
     autoSwitchSource: string;
     autoSwitchSourceHint: string;
+    translateWindowOnTop: string;
+    translateWindowOnTopHint: string;
     about: string;
     aboutVersion: string;
     aboutCopy: string;
@@ -445,6 +447,7 @@ export type Dict = {
     generalSaveLangFailed: string;
     generalSaveAnalyticsFailed: string;
     generalSaveAutoSwitchFailed: string;
+    generalSaveTranslateWindowOnTopFailed: string;
     generalCopyVersionFailed: string;
     shortcutSaveDoubleCopyFailed: string;
     generalSaveFontSizeFailed: string;

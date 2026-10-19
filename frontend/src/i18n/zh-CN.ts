@@ -186,6 +186,9 @@ export const zh: Dict = {
     autoSwitchSource: '自动切换源语言',
     autoSwitchSourceHint:
       '当文本的语言与源语言不同时，自动把源语言切换为该语言，把原来的源语言设为目标语言，并直接翻译。',
+    translateWindowOnTop: '将翻译窗口保持在其他应用上方',
+    translateWindowOnTopHint:
+      '新打开的翻译窗口的初始状态。默认关闭：窗口遵循正常的窗口层级。窗口内的 🧷 按钮仍可单独切换置顶，其保存的选择始终优先。',
     about: '关于',
     aboutVersion: '版本',
     aboutCopy: '复制版本',
@@ -454,6 +457,7 @@ export const zh: Dict = {
     generalSaveLangFailed: '[通用] 保存语言设置失败',
     generalSaveAnalyticsFailed: '[通用] 保存匿名统计开关失败',
     generalSaveAutoSwitchFailed: '[通用] 保存自动切换源语言开关失败',
+    generalSaveTranslateWindowOnTopFailed: '[通用] 保存翻译窗口置顶开关失败',
     generalCopyVersionFailed: '[通用] 复制应用版本失败',
     shortcutSaveDoubleCopyFailed: '[快捷键] 保存双击 Cmd+C 翻译开关失败',
     generalSaveFontSizeFailed: '[通用] 保存文字大小失败',

@@ -193,6 +193,9 @@ export const en: Dict = {
     autoSwitchSource: 'Auto-switch source language',
     autoSwitchSourceHint:
       'When text arrives in another language than the source shows, switch the source to it, make the old source the target, and translate.',
+    translateWindowOnTop: 'Keep the translate window on top of other apps',
+    translateWindowOnTopHint:
+      'The default a new translate window starts from. Off by default: the window stays in the normal window order. The pin (🧷) button in the window is the per-window toggle and its stored choice always wins.',
     about: 'About',
     aboutVersion: 'Version',
     aboutCopy: 'Copy version',
@@ -470,6 +473,7 @@ export const en: Dict = {
     generalSaveLangFailed: '[general] Failed to save language settings',
     generalSaveAnalyticsFailed: '[general] Failed to save anonymous analytics toggle',
     generalSaveAutoSwitchFailed: '[general] Failed to save auto-switch source language toggle',
+    generalSaveTranslateWindowOnTopFailed: '[general] Failed to save the translate-window on-top toggle',
     generalCopyVersionFailed: '[general] Failed to copy the app version',
     shortcutSaveDoubleCopyFailed: '[shortcuts] Failed to save double Cmd+C toggle',
     generalSaveFontSizeFailed: '[general] Failed to save text size',
