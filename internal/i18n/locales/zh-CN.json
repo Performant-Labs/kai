@@ -211,7 +211,6 @@
   "log.engine_table_empty_init": "config.db 引擎表为空，使用默认引擎初始化",
   "log.execkey_config": "执行键配置",
   "log.field_active": "当前已注册",
-  "log.field_content": "内容",
   "log.field_copykey": "复制键",
   "log.field_customkey": "自定义键",
   "log.field_enabled": "启用",
