@@ -272,6 +272,9 @@ describe('TranslateWindow, mounted: using a history entry (issue #60)', () => {
   });
 
   it('the history window closing puts this window’s pin back', async () => {
+    // Issue #69: the pin default is no longer "on" — seed an explicit stored choice so this
+    // test still exercises what it is about (the closing event restores THE persisted pin).
+    localStorage.setItem('kai:translate:pinned', JSON.stringify(true));
     await mountWindow();
     h.setAlwaysOnTop.mockClear();
     h.fire('kai:window:closing', 'history');
