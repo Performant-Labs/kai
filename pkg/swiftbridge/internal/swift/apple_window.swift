@@ -39,3 +39,18 @@ public func kai_window_set_webview_background(_ window: UInt, _ r: Int32, _ g: I
   nsWindow.backgroundColor = colour
   return 1
 }
+
+/// kai_window_set_appearance: window is the NSWindow pointer (Wails' NativeWindow()), dark picks
+/// darkAqua (1) or aqua (0). The title bar and the rest of the window chrome follow the window's
+/// appearance, which Wails sets only at creation from the theme resolved at launch (issue #8: a
+/// theme change after launch left a light title bar over dark content). Returns 1 when the window
+/// was updated, 0 when the window is missing (nothing is changed then).
+@_cdecl("kai_window_set_appearance")
+public func kai_window_set_appearance(_ window: UInt, _ dark: Int32) -> Int32 {
+  guard window != 0, let raw = UnsafeRawPointer(bitPattern: window) else { return 0 }
+  let win = Unmanaged<AnyObject>.fromOpaque(raw).takeUnretainedValue()
+  guard let nsWindow = win as? NSWindow else { return 0 }
+  let name: NSAppearance.Name = dark != 0 ? .darkAqua : .aqua
+  nsWindow.appearance = NSAppearance(named: name)
+  return 1
+}
