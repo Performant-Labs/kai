@@ -8,7 +8,8 @@ copy. Never check boxes here. The reasoning behind each step is in
 ## Pre-flight
 
 - [ ] 1. **Run `scripts/release-preflight.sh vX.Y.Z`** on the release Mac, in a clean checkout of `master`
-  - Machine: Apple Silicon macOS, the required tools, Go at least `go.mod`'s version, Kai not running
+  - Machine: Apple Silicon macOS, the required tools, Go at least `go.mod`'s version
+  - A running Kai is only a WARN here: quit it before step 15, because `release-local.sh` and `release-verify.sh` refuse while it runs
   - Commit: `origin` is the fork (never upstream), clean tree, `master` equal to `origin/master`, CI green on that exact commit, the version not already taken, `gh` able to push
   - Every FAIL must be fixed before going on. Each WARN is recorded below (Node version, updater, open PRs)
   - Output: `___`

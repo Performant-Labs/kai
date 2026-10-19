@@ -7,6 +7,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
+<!-- changelog-skip: release tooling, no user-facing change: #75 -->
 
 ## [0.5.0] - 2026-10-19
 <!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->

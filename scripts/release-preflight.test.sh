@@ -102,8 +102,11 @@ else
   "$tmp/Kai" 120 & fake_pid=$!
   sleep 1
   run "$tmp/good" --skip-github
-  has  "a running Kai fails"                          'FAIL.*Kai is running'
-  exit_is "  ... and exits 1"                        1
+  has  "a running Kai only warns"                     'WARN.*Kai is running'
+  hasnt "  ... and is not a failure"                  'FAIL.*Kai is running'
+  has  "  ... names the steps that need it closed"    'release-local.sh / release-verify.sh'
+  has  "  ... and the run still passes"              '^PASS'
+  exit_is "  ... and exits 0"                        0
   kill "$fake_pid" 2>/dev/null; wait "$fake_pid" 2>/dev/null; fake_pid=""
 fi
 

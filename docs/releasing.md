@@ -340,7 +340,7 @@ All version and changelog work lands on ONE branch, `release/vX.Y.Z`, in one PR.
 to `Performant-Labs/kai`, never upstream.
 
 1. Run `scripts/release-preflight.sh vX.Y.Z` on the release Mac, in a clean checkout of `master`. It
-   checks the machine (Apple Silicon macOS, tools, Go version, Kai not running) and the commit
+   checks the machine (Apple Silicon macOS, tools, Go version; a running Kai is only a warning, to be quit before the build) and the commit
    (clean, at `origin/master`, `origin` is the fork, CI green on that exact commit, the version
    free, `gh` able to push). Fix every FAIL first; record each WARN.
 2. Confirm the release commit (usually `master`'s tip) has a green CI run.
