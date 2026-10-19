@@ -263,11 +263,16 @@ clean: ## 清理构建产物
 	rm -rf frontend/dist frontend/bindings
 	rm -f kai bin/*
 
+# wails3 is pinned to go.mod's version (issue #73): the bindings-drift CI gate requires the
+# generator CI regenerates with to be the exact version that produced the committed
+# frontend/bindings (@latest drifts with every upstream release; beta.33 changed the
+# event-bindings layout). When upgrading wails, bump this version together with regenerating
+# and committing the bindings.
 tool-deps: ## 工具依赖
 	@echo "==> 安装必要的工具依赖..."
 
 	wails3 version || true
-	go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+	go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
 	-wails3 version
 	@echo "==> wails3 工具安装或更新完成"
 
