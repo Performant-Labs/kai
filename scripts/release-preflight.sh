@@ -204,13 +204,28 @@ else
     taken=()
     git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1 && taken+=("local tag")
     git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1 && taken+=("tag on origin")
-    git ls-remote --exit-code --heads origin "release/$version" >/dev/null 2>&1 && taken+=("branch release/$version")
+    # The release PR's own branch (steps 10 to 13) outlives the PR on GitHub. One that is already part
+    # of origin/master is that PR's leftover, not a version in use; one that is not is a release in
+    # progress. A tip this checkout does not have cannot be in master either.
+    leftover=""
+    rb="$(git ls-remote --heads origin "refs/heads/release/$version" 2>/dev/null | awk 'NR == 1 {print $1}')"
+    if [[ -n "$rb" ]]; then
+      if git merge-base --is-ancestor "$rb" origin/master 2>/dev/null; then
+        leftover="release/$version"
+      else
+        taken+=("branch release/$version (not merged into master)")
+      fi
+    fi
     gh api "repos/$repo/releases/tags/$version" >/dev/null 2>&1 && taken+=("GitHub release")
     if [[ ${#taken[@]} -eq 0 ]]; then
       ok "$version is not used yet"
     else
       fail "$version already exists: ${taken[*]}"
       hint "pick the next version, or finish that release instead"
+    fi
+    if [[ -n "$leftover" ]]; then
+      warn "branch $leftover is still on origin; it is merged into master, the leftover of its release PR"
+      hint "delete it: gh api -X DELETE repos/$repo/git/refs/heads/$leftover (merge release PRs with gh pr merge --merge --delete-branch)"
     fi
   else
     info "no version given: not checking that a tag or release name is free"

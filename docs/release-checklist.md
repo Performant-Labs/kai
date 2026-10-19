@@ -55,6 +55,7 @@ Steps 9-13 happen on ONE branch, `release/vX.Y.Z`, in one PR.
   - Known Issues = the list from step 7, verbatim, standing lines included (release notes are extracted from this section, so this is how the signing warning reaches them)
   - Fresh empty `## [Unreleased]` above it
 - [ ] 13. **Open the PR, get PR-Agent above 90, merge it, confirm CI is green on the merge commit**
+  - Merge with `gh pr merge --merge --delete-branch` so `release/vX.Y.Z` does not outlive the PR (a leftover one that is already in master only makes the pre-flight warn)
   - Every PR-Agent finding read and fixed or dismissed with a reason
 
 ## Tag and build

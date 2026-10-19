@@ -149,6 +149,39 @@ gh_run env FAKE_PRS='app/dependabot\naangelinsf\n' "$pf" --any-branch
 has  "a human PR warns"                               'WARN.*1 open non-bot PR'
 exit_is "  ... and still exits 0"                    0
 
+# The version check (12): a release/vX.Y.Z branch on origin that is already in master is the
+# leftover of a merged release PR (a warning); one that is not in master is a release in progress
+# (a failure). A fake `git` answers only `ls-remote` (no network); everything else is the real git.
+real_git="$(command -v git)"
+cat >"$tmp/fakebin/git" <<GITEOF
+#!/usr/bin/env bash
+if [[ "\$1" == ls-remote ]]; then
+  case "\$*" in
+    *--tags*) exit 2 ;;
+    *--heads*) [[ -n "\${FAKE_RB_SHA:-}" ]] && printf '%s\trefs/heads/release/v9.9.9\n' "\$FAKE_RB_SHA" ;;
+  esac
+  exit 0
+fi
+exec "$real_git" "\$@"
+GITEOF
+chmod +x "$tmp/fakebin/git"
+git -C "$tmp/good" update-ref refs/remotes/origin/master HEAD
+merged_sha="$(git -C "$tmp/good" rev-parse HEAD)"
+side_sha="$(git -C "$tmp/good" -c user.name=t -c user.email=t@t commit-tree -m side -p HEAD 'HEAD^{tree}')"
+gh_run env FAKE_CI=green "$pf" v9.9.9 --any-branch
+has  "no release branch: the version is free"         'ok.*v9.9.9 is not used yet'
+gh_run env FAKE_CI=green FAKE_RB_SHA="$merged_sha" "$pf" v9.9.9 --any-branch
+has  "a merged release branch is only a warning"      'WARN.*release/v9.9.9.*merged into master'
+hasnt "  ... not a failure"                           'already exists'
+has  "  ... and says how to delete it"                'gh api -X DELETE.*release/v9.9.9'
+has  "  ... and the run passes"                      '^PASS'
+exit_is "  ... and exits 0"                          0
+gh_run env FAKE_CI=green FAKE_RB_SHA="$side_sha" "$pf" v9.9.9 --any-branch
+has  "an unmerged release branch fails"               'FAIL.*v9.9.9 already exists:.*branch release/v9.9.9 (not merged into master)'
+exit_is "  ... and exits 1"                          1
+gh_run env FAKE_CI=green FAKE_RB_SHA=0123456789abcdef0123456789abcdef01234567 "$pf" v9.9.9 --any-branch
+has  "a branch tip this checkout does not have fails" 'FAIL.*v9.9.9 already exists:.*not merged into master'
+
 # Not a repo, bad arguments.
 mkdir "$tmp/empty"
 run "$tmp/empty" --skip-github
