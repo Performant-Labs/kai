@@ -165,11 +165,20 @@ func (w *WindowWrapper) ShowSettings() {
 // (default-pinned, issue #39) translate window. The translate window keeps running whatever
 // request it has; only its always-on-top level drops, and its close-side counterpart (the
 // EventWindowClosing broadcast in main.go) re-applies the pin when the history window closes.
+// The levelling rule itself lives in showHistory, so it is testable without a running app.
 func (w *WindowWrapper) ShowHistory() {
-	if tw := w.translateWindow(); tw != nil {
-		LowerForSettings(tw)
-	}
-	showAndFocus(w.historyWindow())
+	showHistory(w.translateWindow(), func() { showAndFocus(w.historyWindow()) })
+}
+
+// showHistory is ShowHistory's rule (issue #60), split from the app's window lookups so it
+// can be exercised with a fake window, exactly the shape of ToggleTranslateWindow: a visible
+// translate window is lowered first (LowerForSettings, issue #69's rule for a pinned window
+// not covering the newly opened one), then show summons the history window (the wrapper
+// passes showAndFocus, which a lazily built webview needs). A package-level func rather than
+// a WindowWrapper method so Wails generates no frontend binding for it.
+func showHistory(translate levelWindow, show func()) {
+	LowerForSettings(translate)
+	show()
 }
 
 // ShowScreenshotWindow summons the screenshot translate window (symmetric with
