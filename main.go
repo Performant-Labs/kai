@@ -489,6 +489,24 @@ func main() {
 		winTheme = application.Dark
 	}
 
+	// recolourOnShow re-applies a window's background when it becomes visible (#8's white-flash
+	// item, the residual hole). The other recolour hooks are WindowRuntimeReady — which fires
+	// only after the page's JS runtime has loaded — and the theme-change recolour below, so a
+	// window ordered on screen before its page loads (the launch show's 2 s translateReady cap,
+	// or any show in the app's first moments, while WebKit still has its default white webview
+	// background) composites white over the dark window. WindowShow (macOS: the occlusion-state
+	// change) fires as the window actually becomes visible; the re-apply is idempotent
+	// (transparent webview + underPageBackgroundColor + appearance), so every show carries the
+	// right colours whether or not the page has painted. Like the RuntimeReady hooks, the event
+	// fires off the main thread and the native calls must be dispatched onto it.
+	recolourOnShow := func(win application.Window) func(*application.WindowEvent) {
+		return func(*application.WindowEvent) {
+			application.InvokeAsync(func() {
+				applyWindowBackground(windowSvc, win, currentDark(), false)
+			})
+		}
+	}
+
 	// Settings window. Kai is a menu-bar app (tray, plus a Dock icon since issue #165's
 	// ActivationPolicyRegular): Settings starts hidden and opens only from the gear or the tray
 	// (see the Hide below).
@@ -556,6 +574,7 @@ func main() {
 			applyWindowBackground(windowSvc, settingsWindow, currentDark(), false)
 		})
 	})
+	settingsWindow.OnWindowEvent(events.Common.WindowShow, recolourOnShow(settingsWindow))
 
 	// History screen (issue #60): browses past translations, opened from the translate
 	// window's History button / Cmd+Y. Its own window, like Settings (the issue's recommended
@@ -611,6 +630,7 @@ func main() {
 			applyWindowBackground(windowSvc, historyWindow, currentDark(), false)
 		})
 	})
+	historyWindow.OnWindowEvent(events.Common.WindowShow, recolourOnShow(historyWindow))
 
 	// Input translate window: two-pane layout (issue #10, locked decision: always side by
 	// side) — default/minimum widths enlarged, no longer pinned to 420 (old MaxWidth removed);
@@ -656,6 +676,7 @@ func main() {
 			translateReadyOnce.Do(func() { close(translateReady) })
 		})
 	})
+	translateWindow.OnWindowEvent(events.Common.WindowShow, recolourOnShow(translateWindow))
 	// Issue #173 item 5: persist the translate window's size across relaunches. WindowDidResize
 	// fires on every intermediate frame of a drag, so the actual settings write is debounced
 	// (see persistTranslateWindowSize) — otherwise a single resize gesture could write the
@@ -720,6 +741,7 @@ func main() {
 			applyWindowBackground(windowSvc, screenshotWindow, currentDark(), false)
 		})
 	})
+	screenshotWindow.OnWindowEvent(events.Common.WindowShow, recolourOnShow(screenshotWindow))
 	_ = screenshotWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
 		// Red X = hide the window (don't quit): first broadcast kai:window:closing so the
