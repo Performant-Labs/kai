@@ -60,6 +60,22 @@ func LogAttrs() []any {
 
 func IsDev() bool { return Dev == "true" || Dev == "1" }
 
+// BrandVersion returns the brand-plus-version suffix every persistent window's native title
+// ends with (issue #69): "Kai <Version>" for a release, "Kai <Version> (dev)" for a dev build
+// (the short form of the About card's "Development build" marker, so a dev build is never
+// mistaken for a release). The local default (Version="dev") already says dev, so the marker
+// is not repeated: "Kai dev". The brand and the number are never translated; main.go appends
+// this after the translated window word ("Translate — Kai 0.5.0").
+func BrandVersion() string {
+	if IsDev() && Version != "dev" && Version != "" {
+		return "Kai " + Version + " (dev)"
+	}
+	if Version == "" {
+		return "Kai dev"
+	}
+	return "Kai " + Version
+}
+
 // DataHome returns the data root directory name (switches by mode; no home prefix)
 func DataHome() string {
 	if IsDev() {
