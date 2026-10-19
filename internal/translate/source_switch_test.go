@@ -109,13 +109,35 @@ func TestPlanSourceSwitchKeepsDialectMatching(t *testing.T) {
 	}
 }
 
-func TestPlanSourceSwitchShortTextNeverSwitches(t *testing.T) {
+// Issue #8 (the Alt-A item): a capture of a word or two of Mexican Spanish sat under the
+// code-point floor and was refused before the detector was even asked. A CONFIDENT local
+// detection now switches at any length — the detector's own certainty is the guard — so these
+// short captures switch.
+func TestPlanSourceSwitchShortCaptureWithConfidentDetectionSwitches(t *testing.T) {
 	svc := newSwitchService(t, spanishDetector(), langpref.New())
+	for name, text := range map[string]string{
+		"11 code points": "Buenos días",
+		"7 code points":  "Ahorita",
+		"padded":         "   Buenos días\n\n",
+	} {
+		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.EN, To: model.FR})
+		if !got.Switched || got.From != model.ESMX || got.To != model.EN {
+			t.Errorf("%s: got %+v, want es-MX -> en (a confident detection has no floor)", name, got)
+		}
+	}
+}
+
+// The floor still guards every answer that carries no confidence of its own (#8): an engine hint
+// (no local detector), and a local detection under the confidence bar — including the #54
+// promotion. There a length guess is the only guard, as before.
+func TestPlanSourceSwitchFloorGuardsAnswersWithoutConfidence(t *testing.T) {
 	eleven := "Hola, amigo" // 11 code points
 	if n := utf8.RuneCountInString(eleven); n != 11 {
 		t.Fatalf("fixture is %d code points, want 11", n)
 	}
 	twelve := eleven + "s"
+	// The hint path (detector unavailable, the engine's detection in req.Detected): the floor
+	// decides, exactly as before.
 	for _, tc := range []struct {
 		name string
 		text string
@@ -126,10 +148,30 @@ func TestPlanSourceSwitchShortTextNeverSwitches(t *testing.T) {
 		{"11 padded with whitespace", "   " + eleven + "\n\n", false},
 		{"12 padded with whitespace", "\t" + twelve + "  ", true},
 	} {
-		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: tc.text, From: model.EN, To: model.FR})
+		svc := newSwitchService(t, &fakeDetector{ok: false}, langpref.New())
+		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: tc.text, From: model.EN, To: model.FR, Detected: model.ESMX})
 		if got.Switched != tc.want {
-			t.Errorf("%s: Switched = %v, want %v", tc.name, got.Switched, tc.want)
+			t.Errorf("hint, %s: Switched = %v (reason %q), want %v", tc.name, got.Switched, got.Reason, tc.want)
 		}
+		if !tc.want && got.Reason != model.SwitchReasonTooShort {
+			t.Errorf("hint, %s: Reason = %q, want too_short", tc.name, got.Reason)
+		}
+	}
+	// A local detection under the confidence bar on short text: too_short, not below_confidence
+	// (the floor still names the reason there is no switch).
+	svc := newSwitchService(t, &fakeDetector{lang: "es", conf: 0.5, ok: true}, langpref.New())
+	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: eleven, From: model.EN, To: model.FR}); got.Switched || got.Reason != model.SwitchReasonTooShort {
+		t.Errorf("short low-confidence local: got %+v, want too_short and no switch", got)
+	}
+	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: twelve, From: model.EN, To: model.FR})
+	if got.Switched || got.Reason != model.SwitchReasonBelowConfidence {
+		t.Errorf("long low-confidence local: got %+v, want below_confidence and no switch", got)
+	}
+	// Empty text is nothing to detect, whatever a broken detector might claim.
+	lying := spanishDetector()
+	svc = newSwitchService(t, lying, langpref.New())
+	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "   \t ", From: model.EN, To: model.FR}); got.Switched || got.Reason != model.SwitchReasonTooShort || lying.calls != 0 {
+		t.Errorf("blank text: got %+v (detector ran %d times), want too_short and no detection", got, lying.calls)
 	}
 }
 
@@ -145,13 +187,14 @@ func TestPlanSourceSwitchShortEnglishUnderSpanishPin(t *testing.T) {
 }
 
 func TestPlanSourceSwitchCountsCodePointsNotBytes(t *testing.T) {
-	det := &fakeDetector{lang: "zh", conf: 0.99, ok: true}
-	svc := newSwitchService(t, det, langpref.New())
-	// 10 Chinese characters are 30 bytes but 10 code points: too short.
-	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "今天天气很好我们去玩", From: model.EN, To: model.FR}); got.Switched {
+	// The floor — which guards the no-confidence answers (#8) — counts code points, not bytes:
+	// 10 Chinese characters are 30 bytes but 10 code points, under it. A confident local detection
+	// has no floor at all, so the hint path is where the counting shows.
+	svc := newSwitchService(t, &fakeDetector{ok: false}, langpref.New())
+	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "今天天气很好我们去玩", From: model.EN, To: model.FR, Detected: model.ZH}); got.Switched {
 		t.Errorf("10 code points (30 bytes) switched: %+v", got)
 	}
-	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: strings.Repeat("今天天气很好", 4), From: model.EN, To: model.FR})
+	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: strings.Repeat("今天天气很好", 4), From: model.EN, To: model.FR, Detected: model.ZH})
 	if !got.Switched || !got.From.SameAs(model.ZH) || got.To != model.EN {
 		t.Errorf("24 Chinese code points: got %+v, want zh -> en", got)
 	}
@@ -305,7 +348,7 @@ func TestPlanSourceSwitchReportsTheReason(t *testing.T) {
 		want string
 	}{
 		{"switched", mk(spanishDetector()), req, "switched"},
-		{"too short", mk(spanishDetector()), model.SourceSwitchRequest{Text: "Hola amigo", From: model.EN, To: model.FR}, "too_short"},
+		{"too short", mk(&fakeDetector{ok: false}), model.SourceSwitchRequest{Text: "Hola amigo", From: model.EN, To: model.FR}, "too_short"},
 		{"auto source", mk(spanishDetector()), model.SourceSwitchRequest{Text: spanish, From: model.Auto, To: model.EN}, "source_auto"},
 		{"same language", mk(spanishDetector()), model.SourceSwitchRequest{Text: spanish, From: model.ESMX, To: model.EN}, "same_language"},
 		{"below confidence", mk(&fakeDetector{lang: "es", conf: 0.5, ok: true}), req, "below_confidence"},
@@ -380,7 +423,7 @@ func TestPlanSourceSwitchLogNamesWhoAnsweredAndWhyNot(t *testing.T) {
 	}{
 		{"hint answered", &fakeDetector{ok: false}, model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.FR, Detected: model.ESMX}, []string{"by=hint", "detected=es-MX", "reason=switched"}},
 		{"below confidence", &fakeDetector{lang: "es", conf: 0.5, ok: true}, model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.FR}, []string{"by=local", "detected=es", "confidence=0.5", "reason=below_confidence"}},
-		{"too short", spanishDetector(), model.SourceSwitchRequest{Text: "Hola amigo", From: model.EN, To: model.FR}, []string{"reason=too_short", "runes=10"}},
+		{"too short", &fakeDetector{ok: false}, model.SourceSwitchRequest{Text: "Hola amigo", From: model.EN, To: model.FR}, []string{"reason=too_short", "runes=10"}},
 		{"nothing detected", &fakeDetector{ok: false}, model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.FR}, []string{"by=none", "reason=no_detection"}},
 		{"auto source", spanishDetector(), model.SourceSwitchRequest{Text: spanish, From: model.Auto, To: model.EN}, []string{"reason=source_auto"}},
 	} {
@@ -404,8 +447,15 @@ func TestPlanSourceSwitchIgnoresLinks(t *testing.T) {
 		t.Errorf("a link alone: got %+v (detector ran %d times), want too_short and no detection", got, det.calls)
 	}
 	got = svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "Mira esto: " + link + " www.otro.mx/pagina", From: model.EN, To: model.FR})
-	if got.Switched || got.Reason != "too_short" {
-		t.Errorf("a few words and links: got %+v, want too_short", got)
+	// #8: the few words that are left (10 code points) carry the language on their own once the
+	// detector is sure — a confident detection has no floor.
+	if !got.Switched || strings.Contains(det.seen, "ejemplo.com") {
+		t.Errorf("a few words and links: got %+v, detector saw %q; want a switch on the words alone", got, det.seen)
+	}
+	// Without a local detector the floor still decides what is left after the links are gone.
+	hint := newSwitchService(t, &fakeDetector{ok: false}, langpref.New())
+	if got := hint.PlanSourceSwitch(model.SourceSwitchRequest{Text: "Mira esto: " + link, From: model.EN, To: model.FR, Detected: model.ESMX}); got.Switched || got.Reason != model.SwitchReasonTooShort {
+		t.Errorf("a few words and links on a hint: got %+v, want too_short", got)
 	}
 	got = svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: spanish + " " + link, From: model.EN, To: model.FR})
 	if !got.Switched || strings.Contains(det.seen, "ejemplo.com") {

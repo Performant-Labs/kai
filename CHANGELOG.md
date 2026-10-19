@@ -8,6 +8,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ## [Unreleased]
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
+- Capturing a word or two with the translate hotkey now also switches the language drop-downs: a short capture the language detector is sure of ("Buenos días") switches the source like a long one, instead of being refused as too short (#8).
 
 ## [0.5.0] - 2026-10-19
 <!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->
