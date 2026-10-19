@@ -17,6 +17,7 @@ declare module "@wailsio/runtime" {
         interface CustomEvents {
             "kai:auto-clipboard:changed": boolean;
             "kai:fontsize:changed": number;
+            "kai:history:use": events$0.HistoryUsePayload;
             "kai:hotkeys:changed": string[] | null;
             "kai:input:fill": string;
             "kai:locale:changed": events$0.LocaleChangedPayload;

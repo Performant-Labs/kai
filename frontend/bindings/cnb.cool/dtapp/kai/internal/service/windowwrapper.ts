@@ -46,17 +46,6 @@ export function SetApp(app: application$0.App | null): $CancellablePromise<void>
 }
 
 /**
- * ShowScreenshotWindow summons the screenshot translate window (symmetric with
- * ShowTranslateWindow).
- * Note: main.go's EventWindowShow('screenshot') still goes through the standalone
- * showScreenshotWindow() package-level function; it can later be migrated here uniformly so
- * all window summons choke-point through WindowWrapper.
- */
-export function ShowScreenshotWindow(): $CancellablePromise<void> {
-    return $Call.ByID(3066686029);
-}
-
-/**
  * ShowHistory opens the history screen (issue #60), in front of a pinned translate window —
  * the same levelling ShowSettings applies, so the history window is not hidden behind the
  * (default-pinned, issue #39) translate window. The translate window keeps running whatever
@@ -65,6 +54,17 @@ export function ShowScreenshotWindow(): $CancellablePromise<void> {
  */
 export function ShowHistory(): $CancellablePromise<void> {
     return $Call.ByID(681670227);
+}
+
+/**
+ * ShowScreenshotWindow summons the screenshot translate window (symmetric with
+ * ShowTranslateWindow).
+ * Note: main.go's EventWindowShow('screenshot') still goes through the standalone
+ * showScreenshotWindow() package-level function; it can later be migrated here uniformly so
+ * all window summons choke-point through WindowWrapper.
+ */
+export function ShowScreenshotWindow(): $CancellablePromise<void> {
+    return $Call.ByID(3066686029);
 }
 
 /**
