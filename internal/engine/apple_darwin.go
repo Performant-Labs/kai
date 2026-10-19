@@ -90,9 +90,9 @@ func warmTranslatePair(src, dst string) (sl, tl string, ok bool) {
 // #173 item 8. Intended to be called once at launch, in its own goroutine (main.go), for the
 // user's current default_from/default_to language pair, so the first real translate() call
 // for that pair skips the prepareTranslation() cost.
-// Issue #10: it warms the session the fast-mode setting selects — kai_warm_translate_strategy
-// with the current strategy when the setting is on and the dylib has the symbol (an older
-// bridge keeps warming the default session; the first fast call then pays its own prepare).
+// Issue #10: warmEntryFor (apple_speed.go, unit-tested there) picks the entry — the strategy
+// warm when the fast-mode setting is on and the dylib has the symbol; an older bridge keeps
+// warming the default session, and the first fast call then pays its own prepare.
 // Best-effort: swallows a missing dylib (Available()==false) and any Swift-side failure
 // (e.g. the pair's language pack isn't installed) without returning an error — a failed warm
 // never blocks or breaks translation, it just means the first call pays the usual cost.
@@ -104,11 +104,7 @@ func WarmTranslate(src, dst string) {
 	if !ok {
 		return
 	}
-	if fast := appleFastTranslate.Load(); fast && swiftbridge.KaiWarmTranslateStrategy != nil {
-		swiftbridge.KaiWarmTranslateStrategy(sl, tl, appleStrategyInt32())
-		return
-	}
-	swiftbridge.KaiWarmTranslate(sl, tl)
+	warmEntryFor(appleFastTranslate.Load(), swiftbridge.KaiWarmTranslateStrategy, swiftbridge.KaiWarmTranslate)(sl, tl)
 }
 
 // SupportsAutoSource: system translation (Translation.framework) supports auto-detecting the
@@ -120,11 +116,11 @@ func (s *appleTranslator) SupportsAutoSource() bool { return true }
 // When src is "auto" (or empty), Swift auto-detects the source language with NaturalLanguage,
 // constrained to the locally installed list; the target language must be explicit.
 //
-// Issue #10, the fast mode: the strategy comes from the setting (appleStrategyInt32). When the
-// pair's traditional language pack is missing, the bridge answers the fixed
-// low_latency_pack_missing code and this method retries the same text once with strategy 0
-// (the slow mode) instead of failing, attaching the err.apple_low_latency_pack_missing notice
-// to the result so the user is told in plain words what happened and how to install the pack.
+// Issue #10, the fast mode: translateWithSpeedMode (apple_speed.go) runs the call at the
+// setting's strategy and, when the pair's traditional language pack is missing, retries the
+// same text once with the slow mode instead of failing, returning the
+// err.apple_low_latency_pack_missing notice for the result so the user is told in plain words
+// what happened and how to install the pack.
 //
 // The call has no time limit of its own (issue #111): it returns when Apple is done, or when ctx
 // ends. A ctx that ends first cancels the Swift call (runCancellable) and Translate returns
@@ -169,30 +165,27 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	if !swiftbridge.Available() || swiftbridge.KaiTranslateCancel == nil {
 		return nil, fmt.Errorf(i18n.T("err.swiftbridge_unavailable"))
 	}
-	strategy := appleStrategyInt32()
 	// One 64 KiB output buffer, enough for a long translation + JSON wrapping (#106: the
 	// bridge writes at most cap-1 bytes; enginelimits' guard mirrors this size — the literal
-	// appears exactly once in the package). The missing-pack retry below reuses it: the two
+	// appears exactly once in the package). The missing-pack retry reuses it: the two
 	// attempts are sequential and each overwrites the whole payload.
 	outBuf := make([]byte, 1<<16)
-	tr, err := s.translateViaBridge(ctx, sl, tl, text, strategy, outBuf)
+	// Issue #10's speed rule lives in translateWithSpeedMode (apple_speed.go, unit-tested
+	// there): the chosen strategy, and when the fast mode's language pack is missing, one
+	// retry with the slow mode that carries the plain-words notice on its success. This side
+	// only closes it over the real bridge call and the request's liveness.
+	tr, notice, err := translateWithSpeedMode(
+		func() bool { return ctx.Err() == nil },
+		func(strategy int32) (*swiftbridge.TranslateSuccess, error) {
+			return s.translateViaBridge(ctx, sl, tl, text, strategy, outBuf)
+		})
 	if err != nil {
 		// ctx had already ended: the bridge was never called, and the error is the ctx's cause,
 		// never error copy (the translate service decides cancelled or superseded from it).
 		return nil, err
 	}
-	// The fast mode's language pack is missing: translate with the slow mode this time instead
-	// of failing, and say so on the result (issue #10). A ctx that ended while the fast attempt
-	// answered is handled inside translateViaBridge (the cancel outcome wins); the retry only
-	// runs while the request is still alive.
-	notice := ""
-	if tr.Code == swiftbridge.BridgeErrLowLatencyPackMissing && strategy != 0 && ctx.Err() == nil {
-		slog.Warn(i18n.T("err.apple_low_latency_pack_missing"), "from", sl, "to", tl)
-		notice = i18n.T("err.apple_low_latency_pack_missing")
-		tr, err = s.translateViaBridge(ctx, sl, tl, text, 0, outBuf)
-		if err != nil {
-			return nil, err
-		}
+	if notice != "" {
+		slog.Warn(notice, "from", sl, "to", tl)
 	}
 	if tr.Code != "" {
 		// Swift custom error: log it here (this is the only place that knows the request's
@@ -274,21 +267,18 @@ func (s *appleTranslator) translateViaBridge(ctx context.Context, sl, tl, text s
 }
 
 // callBridgePayload is the raw blocking call both strategies share: the cancel token and the
-// entry-point choice (strategy vs plain), with no payload interpretation.
+// entry-point call itself, with no payload interpretation. The entry choice (the strategy
+// symbol when the loaded dylib has it, the old kai_translate otherwise) is translateEntryFor's,
+// in apple_speed.go, unit-tested there; the degraded flag only feeds a Debug log.
 func (s *appleTranslator) callBridgePayload(ctx context.Context, sl, tl, text string, strategy int32, outBuf []byte) ([]byte, int32, error) {
 	token := nextAppleToken()
-	strategyEntry := swiftbridge.KaiTranslateStrategy
-	if strategy != 0 && strategyEntry == nil {
+	entry, degraded := translateEntryFor(swiftbridge.KaiTranslateStrategy, swiftbridge.KaiTranslate)
+	if degraded && strategy != 0 {
 		slog.Debug(i18n.T("log.apple_strategy_entry_missing"), "from", sl, "to", tl)
-		strategy = 0
 	}
 	var n int32
 	payload, err := runCancellable(ctx, token, func() []byte {
-		if strategy != 0 && strategyEntry != nil {
-			n = strategyEntry(sl, tl, text, token, strategy, unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // required for the Swift interop; buffer is allocated on the Go side
-		} else {
-			n = swiftbridge.KaiTranslate(sl, tl, text, token, unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // required for the Swift interop; buffer is allocated on the Go side
-		}
+		n = entry(sl, tl, text, token, strategy, unsafe.Pointer(&outBuf[0]), int32(len(outBuf))) //nolint:gosec // required for the Swift interop; buffer is allocated on the Go side
 		if n < 0 {
 			return nil
 		}

@@ -3,6 +3,10 @@ package engine
 import (
 	"sync/atomic"
 	"unicode"
+	"unsafe"
+
+	"cnb.cool/dtapp/kai/internal/i18n"
+	"cnb.cool/dtapp/kai/pkg/swiftbridge"
 )
 
 // The System engine's speed mode (issue #10). Apple's Translation.framework gained a strategy
@@ -112,4 +116,80 @@ func AppleProgressHint(engineName, text string) (estimatedMs int64, suggestFast 
 		return 0, false
 	}
 	return EstimateAppleTranslateMs(text), SuggestFastSystemTranslate(engineName, text)
+}
+
+// ---- the darwin wiring's decisions, pure so they run (and fail) on any OS ---------------------
+//
+// apple_darwin.go builds only on macOS, so every decision it needs lives here as a function of
+// injected bridge calls (PR review: reading its source with strings.Contains verified nothing).
+// The darwin file's job is only to close these over the real swiftbridge symbols.
+
+// The bridge entry points' shapes (pkg/swiftbridge's KaiTranslateStrategy / KaiTranslate).
+type (
+	appleTranslateEntry = func(src, dst, text string, token int64, strategy int32, out unsafe.Pointer, outCap int32) int32
+	appleTranslatePlain = func(src, dst, text string, token int64, out unsafe.Pointer, outCap int32) int32
+)
+
+// translateEntryFor picks the kai_translate entry point for a strategy call (issue #10): the
+// strategy-taking symbol when the loaded dylib has it; otherwise the old kai_translate, wrapped
+// so the strategy parameter is simply dropped (an older dylib serves the default path — the fast
+// mode is unavailable until the bridge is rebuilt, which degraded reports for a Debug log).
+func translateEntryFor(strategyEntry appleTranslateEntry, plainEntry appleTranslatePlain) (entry appleTranslateEntry, degraded bool) {
+	if strategyEntry != nil {
+		return strategyEntry, false
+	}
+	return func(src, dst, text string, token int64, _ int32, out unsafe.Pointer, outCap int32) int32 {
+		return plainEntry(src, dst, text, token, out, outCap)
+	}, true
+}
+
+// warmEntryFor picks the kai_warm_translate entry point (issue #10): the strategy warm with
+// strategy 1 when the setting is on AND the dylib has the symbol; otherwise the plain warm of
+// the default session (the setting off, or an older dylib).
+func warmEntryFor(
+	fast bool,
+	strategyEntry func(src, dst string, strategy int32) int32,
+	plainEntry func(src, dst string) int32,
+) func(src, dst string) int32 {
+	if fast && strategyEntry != nil {
+		return func(src, dst string) int32 { return strategyEntry(src, dst, 1) }
+	}
+	return plainEntry
+}
+
+// translateWithSpeedMode runs one System-engine translation through call at the strategy the
+// setting picks, applying the missing-pack rule of issue #10: when the fast mode's traditional
+// language pack is not installed (the bridge answers the fixed low_latency_pack_missing code),
+// the same text is retried ONCE with strategy 0 — the slow mode — instead of failing.
+//
+// call receives the strategy and returns that call's parsed payload, or a call error (a dead
+// ctx, the buffer, a parse failure), which is returned unchanged and never retried. canRetry
+// says whether the request is still alive (apple_darwin.go closes over ctx.Err() == nil): a
+// request that ended while the fast attempt answered does not pay the slow retry.
+//
+// The returned notice is the localized err.apple_low_latency_pack_missing copy, set only when
+// the fallback ran AND the slow retry succeeded — it rides the successful result as its Notice.
+// A slow retry that answers an error code of its own is returned as that payload with no notice
+// and no third call (the caller's ordinary error path renders it); a pack-missing payload at
+// strategy 0 (the setting off) is passed through unretried the same way.
+func translateWithSpeedMode(
+	canRetry func() bool,
+	call func(strategy int32) (*swiftbridge.TranslateSuccess, error),
+) (res *swiftbridge.TranslateSuccess, notice string, err error) {
+	strategy := appleStrategyInt32()
+	res, err = call(strategy)
+	if err != nil {
+		return nil, "", err
+	}
+	if strategy != 0 && res.Code == swiftbridge.BridgeErrLowLatencyPackMissing && canRetry() {
+		res, err = call(0)
+		if err != nil {
+			return nil, "", err
+		}
+		if res.Code == "" {
+			return res, i18n.T("err.apple_low_latency_pack_missing"), nil
+		}
+		return res, "", nil
+	}
+	return res, "", nil
 }
