@@ -6,6 +6,18 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 `scripts/changelog-check.sh` lists merged PRs this section does not cover.
 
 ## [Unreleased]
+<!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->
+
+### Enhancements
+- Under the result pane there is now a chat for when the context is wrong: each message translates the text again with the context you give, and earlier messages build on each other. The context stays in force for the next texts until you clear it (a Clear context button, or the window shortcut Cmd+Shift+K, which can be changed in Settings > Shortcuts), an indicator shows while it is active even with the chat closed, and "Show the engine's own translation" brings back the engine's own result. When the selected engine cannot follow a context (System / Translation framework), the retranslation goes to Apple's on-device model, then a configured cloud LLM, and the chat says which one did it (#48).
+- A new toolbar switch, "Show a back-translation" (off by default, because it doubles the translation calls), translates the result back into the source language and shows it, labelled, under the result, so a translation can be checked in your own language. Copy copies only the translation, and the switch is remembered (#56).
+- Text typed or pasted into the FROM pane is now translated with no click: a new toolbar switch, "Translate as I type", is on by default. Typed text translates after a 600 ms pause (a burst of typing is one request, for the last text, and nothing fires in the middle of an IME composition), pasted or dropped text at once, and fewer than 3 characters start nothing. Turn the switch off to translate only with the button or Cmd+Enter. History keeps one row per typing session instead of one per pause, so half-typed text is never saved (#57).
+
+### Bug Fixes
+- The automatic source switch now switches shorter texts: the length floor is 12 characters instead of 20 (the confidence bar is unchanged), so "In the meantime," under a pinned Spanish source switches to English -> Spanish. Correct grammar and wording no longer "fixes" a text by dropping its trailing punctuation (#46).
+- Correct grammar and wording no longer accepts a correction that changes the meaning: a correction that adds or removes a negation word is rejected (English and Spanish word lists for now), and so is one that drops more than 40% of the input words, for texts of 5 or more words. English loanwords and technical terms ("bullet point", "meeting", "feedback") are kept as written (#49).
+- The tooltips of the pin and auto-clipboard buttons at the right end of the FROM pane are no longer cut off at the pane's edge ("Stop keeping this window on top of others" showed as "...on t"): they now open leftwards from the button and their width follows the pane's, so they fit even when the left pane is shrunk to a quarter of the window (#52).
+- When the text you send is already in the target language, the automatic source switch now switches at a lower confidence (0.5 instead of 0.8): a Spanish sentence with one misplaced accent, under English -> Spanish (Mexico), switches the pair and translates instead of answering that source and target are the same. Every other case keeps the 0.8 bar (#54).
 
 ## [0.4.1] - 2026-10-05
 
