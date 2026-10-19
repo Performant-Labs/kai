@@ -70,6 +70,7 @@
   "err.engine_unsupported_target": "{{.engine}} 不支持将{{.lang}}作为目标语言",
   "err.apple_need_target": "系统翻译需要显式指定目标语言",
   "err.apple_no_source_lang": "系统翻译自动检测失败：本机未安装可用的源语言包",
+  "err.apple_low_latency_pack_missing": "快速翻译需要尚未安装的语言包，本次文本已改用标准（较慢）模式翻译。请在“系统设置”>“通用”>“语言与地区”>“翻译语言”中下载语言包。",
   "err.apple_empty_text": "待翻译文本为空",
   "err.apple_target_required": "系统翻译需要显式指定目标语言",
   "err.apple_null_image": "OCR 失败：图片数据为空",

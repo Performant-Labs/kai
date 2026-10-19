@@ -70,6 +70,7 @@
   "err.engine_unsupported_target": "{{.engine}} does not support {{.lang}} as a target language",
   "err.apple_need_target": "system translator requires explicit target language",
   "err.apple_no_source_lang": "system translation auto-detect failed: no installed source language pack available",
+  "err.apple_low_latency_pack_missing": "Faster translation needs a language pack that is not installed, so this text was translated with the standard, slower mode. Download the pack in System Settings > General > Language & Region > Translation Languages.",
   "err.apple_empty_text": "translation text is empty",
   "err.apple_target_required": "system translator requires explicit target language",
   "err.apple_null_image": "OCR failed: image data is null",

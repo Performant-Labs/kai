@@ -182,21 +182,37 @@ let translateRegistry = TranslateRegistry()
 actor SessionEntry {
   private let source: Locale.Language
   private let target: Locale.Language
+  // Issue #10: which strategy this entry's session is built for. A plain Bool, not a
+  // TranslationSession.Strategy, so the 26.4-only type is referenced only inside #available
+  // guards below and the file still compiles against older SDKs.
+  private let lowLatency: Bool
   private var session: TranslationSession?
 
-  init(source: Locale.Language, target: Locale.Language) {
+  init(source: Locale.Language, target: Locale.Language, lowLatency: Bool) {
     self.source = source
     self.target = target
+    self.lowLatency = lowLatency
   }
 
   private func preparedSession() async throws -> TranslationSession {
     if let existing = session {
       return existing
     }
-    let s = TranslationSession(installedSource: source, target: target)
+    let s = makeSession()
     try await s.prepareTranslation()
     session = s
     return s
+  }
+
+  /// Builds this entry's session: with the fast strategy when asked and the OS has it (macOS
+  /// 26.4+, issue #10), else exactly today's default initializer (which an older OS, or the
+  /// setting off, keeps). The strategy is fixed per entry — a session is never reused across
+  /// strategies; the cache key holds the other side of that promise.
+  private func makeSession() -> TranslationSession {
+    if lowLatency, #available(macOS 26.4, *) {
+      return TranslationSession(installedSource: source, target: target, preferredStrategy: .lowLatency)
+    }
+    return TranslationSession(installedSource: source, target: target)
   }
 
   /// Prepares the session if it is not already cached, discarding the result.
@@ -238,34 +254,51 @@ final class TranslationSessionCache: @unchecked Sendable {
   private let lock = NSLock()
   private var entries: [String: SessionEntry] = [:]
 
-  private func entry(source: Locale.Language, target: Locale.Language) -> SessionEntry {
-    let key = "\(source.maximalIdentifier)->\(target.maximalIdentifier)"
+  /// The cache key of a (source, target, strategy) triple (issue #10): the strategy rides in
+  /// the key as a "#0"/"#1" suffix, so the fast and the slow mode each own their session for a
+  /// pair and switching the setting never reuses a session built for the other strategy.
+  private static func strategyKey(
+    _ source: Locale.Language, _ target: Locale.Language, _ lowLatency: Bool
+  ) -> String {
+    "\(source.maximalIdentifier)->\(target.maximalIdentifier)#\(lowLatency ? 1 : 0)"
+  }
+
+  private func entry(source: Locale.Language, target: Locale.Language, lowLatency: Bool) -> SessionEntry {
+    let key = Self.strategyKey(source, target, lowLatency)
     lock.lock()
     defer { lock.unlock() }
     if let existing = entries[key] {
       return existing
     }
-    let e = SessionEntry(source: source, target: target)
+    let e = SessionEntry(source: source, target: target, lowLatency: lowLatency)
     entries[key] = e
     return e
   }
 
-  /// Warms the cache for (source, target): see SessionEntry.warm.
-  func warm(source: Locale.Language, target: Locale.Language) async {
-    await entry(source: source, target: target).warm()
+  /// Warms the cache for (source, target) at the given strategy: see SessionEntry.warm.
+  func warm(source: Locale.Language, target: Locale.Language, lowLatency: Bool) async {
+    await entry(source: source, target: target, lowLatency: lowLatency).warm()
   }
 
-  /// Translates text using the cached (or newly prepared) session for (source, target): see
-  /// SessionEntry.translate. Two calls for different pairs run fully concurrently (different
-  /// SessionEntry actors); two calls for the same pair serialize on that pair's actor.
-  func translate(source: Locale.Language, target: Locale.Language, text: String) async throws
+  /// Translates text using the cached (or newly prepared) session for (source, target) at the
+  /// given strategy: see SessionEntry.translate. Two calls for different pairs run fully
+  /// concurrently (different SessionEntry actors); two calls for the same pair and strategy
+  /// serialize on that pair's actor.
+  func translate(
+    source: Locale.Language, target: Locale.Language, lowLatency: Bool, text: String
+  ) async throws
     -> (response: TranslationSession.Response, getSessionMs: Int, translateMs: Int)
   {
-    try await entry(source: source, target: target).translate(text: text)
+    try await entry(source: source, target: target, lowLatency: lowLatency).translate(text: text)
   }
 }
 
-// kai_translate: performs one system translation synchronously.
+// kai_translate / kai_translate_strategy (issue #10): perform one system translation
+// synchronously. The body lives in kaiTranslateImpl; the two @_cdecl entry points are thin
+// wrappers over it — kai_translate keeps the pre-#10 C signature (strategy always 0, today's
+// default path) so an older Go binary still works against a dylib built from these sources, and
+// kai_translate_strategy adds the strategy parameter (0 the default high-fidelity path, 1 Apple's
+// low-latency fast mode; any other value reads as 0).
 // src/dst are BCP-47 codes (e.g. "en" / "zh-Hans"); src may be an empty string for
 // auto-detect.
 // token names this call for kai_translate_cancel (issue #111); the Go side allocates one per call,
@@ -275,7 +308,10 @@ final class TranslationSessionCache: @unchecked Sendable {
 // out receives the JSON {"result":"...","from":"..."} (TranslateSuccess); on failure out gets
 // {"code":"...","detail":"..."} (BridgeError), plus "from" (the language NaturalLanguage detected)
 // when the source was auto and a language was detected before the framework failed (issue #80). A
-// cancelled call gets {"code":"cancelled",...} and translates nothing further.
+// cancelled call gets {"code":"cancelled",...} and translates nothing further. With strategy 1
+// and the pair's traditional language pack not installed, out gets the fixed
+// {"code":"low_latency_pack_missing",...} and nothing is translated: the Go engine falls back to
+// the slow mode for that call (issue #10).
 @_cdecl("kai_translate")
 public func kai_translate(
   _ src: UnsafePointer<CChar>?,
@@ -285,11 +321,40 @@ public func kai_translate(
   _ out: UnsafeMutablePointer<CChar>?,
   _ out_cap: Int32
 ) -> Int32 {
+  kaiTranslateImpl(
+    src: src, dst: dst, text: text, token: token, strategy: 0, out: out, out_cap: out_cap)
+}
+
+@_cdecl("kai_translate_strategy")
+public func kai_translate_strategy(
+  _ src: UnsafePointer<CChar>?,
+  _ dst: UnsafePointer<CChar>?,
+  _ text: UnsafePointer<CChar>?,
+  _ token: Int64,
+  _ strategy: Int32,
+  _ out: UnsafeMutablePointer<CChar>?,
+  _ out_cap: Int32
+) -> Int32 {
+  kaiTranslateImpl(
+    src: src, dst: dst, text: text, token: token, strategy: strategy, out: out, out_cap: out_cap)
+}
+
+func kaiTranslateImpl(
+  src: UnsafePointer<CChar>?,
+  dst: UnsafePointer<CChar>?,
+  text: UnsafePointer<CChar>?,
+  token: Int64,
+  strategy: Int32,
+  out: UnsafeMutablePointer<CChar>?,
+  out_cap: Int32
+) -> Int32 {
   let sourceCode = src.flatMap { String(cString: $0) } ?? ""
   let targetCode = dst.flatMap { String(cString: $0) } ?? ""
   let inputText = text.flatMap { String(cString: $0) } ?? ""
+  let lowLatency = strategy == 1
 
-  bridgeFileLog(bridgeLogText("translate.call", sourceCode, targetCode, inputText.utf8.count))
+  bridgeFileLog(
+    bridgeLogText("translate.call", sourceCode, targetCode, inputText.utf8.count, strategy))
 
   guard !inputText.isEmpty else {
     bridgeFileLog(bridgeLogText("translate.empty"), level: BRIDGE_LOG_WARN)
@@ -395,15 +460,38 @@ public func kai_translate(
     }
     let detectMs = Int(Date().timeIntervalSince(detectStart) * 1000)
     let sourceLang = Locale.Language(identifier: effectiveSource)
+
+    // Issue #10: the fast mode runs on the traditional language packs, which are downloaded
+    // separately from the Apple Intelligence models. Before building a low-latency session,
+    // ask the strategy-aware availability (macOS 26.4+; an older OS keeps the default session
+    // below and the strategy is silently ignored). A pair that is not .installed would make the
+    // session fail with notInstalled, so it is answered here as the fixed
+    // low_latency_pack_missing code and nothing is translated: the Go engine falls back to the
+    // slow mode for this call and tells the user how to install the pack. A pack downloaded
+    // while the app runs is picked up by the next call — the check is per call, never cached.
+    if lowLatency, #available(macOS 26.4, *) {
+      let fastAvailability = LanguageAvailability(preferredStrategy: .lowLatency)
+      let status = await fastAvailability.status(from: sourceLang, to: targetLang)
+      if status != .installed {
+        let detail =
+          "low-latency language pack not installed for \(effectiveSource)->\(targetCode). download it in system settings > general > language & region > translation languages."
+        bridgeFileLog(bridgeLogText("translate.low_latency_pack_missing", detail))
+        job.finish(
+          bridgeErrorJSON(
+            code: BRIDGE_ERR_LOW_LATENCY_PACK_MISSING, detail: detail, from: detectedFrom))
+        return
+      }
+    }
+
     do {
       // Issue #173 item 8: was `TranslationSession(installedSource:target:)` +
       // `prepareTranslation()` inline here, on every call. Now backed by
-      // TranslationSessionCache, so only the first call for a given (source, target) pair
-      // pays the session-creation + prepareTranslation cost; every later call for the same
-      // pair (the overwhelmingly common case — most users translate one language pair) reuses
-      // the already-prepared session.
+      // TranslationSessionCache, so only the first call for a given (source, target, strategy)
+      // triple pays the session-creation + prepareTranslation cost; every later call for the
+      // same pair and strategy (the overwhelmingly common case — most users translate one
+      // language pair) reuses the already-prepared session.
       let (resp, getSessionMs, translateCallMs) = try await TranslationSessionCache.shared
-        .translate(source: sourceLang, target: targetLang, text: inputText)
+        .translate(source: sourceLang, target: targetLang, lowLatency: lowLatency, text: inputText)
       let from = resp.sourceLanguage.languageCode?.identifier ?? sourceCode
       job.finish(bridgeEncode(TranslateSuccess(result: resp.targetText, from: from)))
       bridgeFileLog(bridgeLogText("translate.done", from, targetCode, resp.targetText.utf8.count))
@@ -453,13 +541,17 @@ public func kai_translate_cancel(_ token: Int64) -> Int32 {
   return found ? 1 : 0
 }
 
-// kai_warm_translate: warms (creates + prepareTranslation()s) a TranslationSessionCache entry
-// for (src, dst) so the first real kai_translate call for that pair skips the
-// prepareTranslation cost (issue #173 item 8). Go calls this once at launch, in its own
-// goroutine, for the user's default language pair (main.go), and it is harmless — a cheap
-// no-op — if that pair later turns out to already be cached (e.g. a translate happened before
-// warming finished) or if src/dst are empty (auto-detect has no fixed pair to warm; the caller
-// skips the call in that case, but this still no-ops safely if it didn't).
+// kai_warm_translate / kai_warm_translate_strategy: warms (creates + prepareTranslation()s) a
+// TranslationSessionCache entry for (src, dst) so the first real translate call for that pair
+// skips the prepareTranslation cost (issue #173 item 8). kai_warm_translate_strategy (issue #10)
+// adds the strategy parameter (0 default, 1 low latency) so the setting's own session is the one
+// warmed; kai_warm_translate keeps the pre-#10 signature and warms the default session.
+// Go calls these once at launch, in its own goroutine, for the user's default language pair
+// (main.go), and it is harmless — a cheap no-op — if that pair later turns out to already be
+// cached (e.g. a translate happened before warming finished) or if src/dst are empty
+// (auto-detect has no fixed pair to warm; the caller skips the call in that case, but this still
+// no-ops safely if it didn't). A low-latency warm of a pair whose pack is missing fails quietly
+// (warm swallows it); the first real call reports the missing pack and the Go side falls back.
 // Blocks the calling thread until warming finishes or fails; the Go side calls this off the
 // main goroutine so it never blocks app startup. Always returns 1 (best-effort: a warm
 // failure — e.g. the pair's language pack is not installed — is not fatal, since kai_translate
@@ -469,19 +561,37 @@ public func kai_warm_translate(
   _ src: UnsafePointer<CChar>?,
   _ dst: UnsafePointer<CChar>?
 ) -> Int32 {
+  kaiWarmTranslateImpl(src: src, dst: dst, strategy: 0)
+}
+
+@_cdecl("kai_warm_translate_strategy")
+public func kai_warm_translate_strategy(
+  _ src: UnsafePointer<CChar>?,
+  _ dst: UnsafePointer<CChar>?,
+  _ strategy: Int32
+) -> Int32 {
+  kaiWarmTranslateImpl(src: src, dst: dst, strategy: strategy)
+}
+
+func kaiWarmTranslateImpl(
+  src: UnsafePointer<CChar>?,
+  dst: UnsafePointer<CChar>?,
+  strategy: Int32
+) -> Int32 {
   let sourceCode = src.flatMap { String(cString: $0) } ?? ""
   let targetCode = dst.flatMap { String(cString: $0) } ?? ""
   guard !sourceCode.isEmpty, !targetCode.isEmpty else {
     // No fixed pair to warm (source is auto-detect, or target unset); not an error.
     return 1
   }
-  bridgeFileLog(bridgeLogText("translate.warm_start", sourceCode, targetCode))
+  bridgeFileLog(bridgeLogText("translate.warm_start", sourceCode, targetCode, strategy))
   let start = Date()
   let sema = DispatchSemaphore(value: 0)
   Task {
     await TranslationSessionCache.shared.warm(
       source: Locale.Language(identifier: sourceCode),
-      target: Locale.Language(identifier: targetCode))
+      target: Locale.Language(identifier: targetCode),
+      lowLatency: strategy == 1)
     sema.signal()
   }
   sema.wait()

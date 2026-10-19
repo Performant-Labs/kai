@@ -63,11 +63,21 @@ var (
 	KaiSetLocale              func(locale string)
 	KaiTranslate              func(src string, dst string, text string, token int64, out unsafe.Pointer, outCap int32) int32
 	KaiTranslateCancel        func(token int64) int32
+	// KaiTranslateStrategy is kai_translate's strategy-taking form (issue #10): strategy 0 is
+	// exactly KaiTranslate (the default high-fidelity path), 1 is Apple's low-latency fast mode.
+	// A separate symbol, not a wider kai_translate, so an older dylib (nil here) still serves the
+	// old entry point and translation keeps working — only the fast mode is unavailable until the
+	// bridge is rebuilt.
+	KaiTranslateStrategy func(src string, dst string, text string, token int64, strategy int32, out unsafe.Pointer, outCap int32) int32
 	// KaiWarmTranslate warms (creates + prepareTranslation()s) the Apple engine's cached
 	// TranslationSession for (src, dst) — issue #173 item 8. Blocks the calling goroutine
 	// until warming finishes or fails; main.go calls it in its own goroutine at launch so
 	// startup is never blocked on it.
 	KaiWarmTranslate func(src string, dst string) int32
+	// KaiWarmTranslateStrategy is kai_warm_translate's strategy-taking form (issue #10): warms
+	// the session the fast-mode setting will actually use. Same nil-means-older-dylib rule as
+	// KaiTranslateStrategy.
+	KaiWarmTranslateStrategy func(src string, dst string, strategy int32) int32
 	// KaiDetectLanguage detects the language of text locally with NaturalLanguage's
 	// NLLanguageRecognizer and writes {"lang":"es","confidence":0.99} (DetectedLanguage) into out
 	// (issue #200). A synchronous, pure computation: safe from any goroutine, no main-thread rule.
@@ -212,7 +222,9 @@ func registerAll(h uintptr) {
 	register(&KaiSetLocale, "kai_set_locale")
 	register(&KaiTranslate, "kai_translate")
 	register(&KaiTranslateCancel, "kai_translate_cancel")
+	register(&KaiTranslateStrategy, "kai_translate_strategy")
 	register(&KaiWarmTranslate, "kai_warm_translate")
+	register(&KaiWarmTranslateStrategy, "kai_warm_translate_strategy")
 	register(&KaiDetectLanguage, "kai_detect_language")
 	register(&KaiCorrect, "kai_correct")
 	register(&KaiCorrectAvailability, "kai_correct_availability")

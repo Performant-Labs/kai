@@ -31,6 +31,7 @@
   "err.apple_empty_text": "translation text is empty",
   "err.apple_lang_buffer": "[dynamic-bridge] Failed to get system language list: output buffer insufficient",
   "err.apple_lang_parse": "[dynamic-bridge] Failed to get system language list: parse error",
+  "err.apple_low_latency_pack_missing": "Faster translation needs a language pack that is not installed, so this text was translated with the standard, slower mode. Download the pack in System Settings > General > Language & Region > Translation Languages.",
   "err.apple_need_target": "system translator requires explicit target language",
   "err.apple_no_source_lang": "system translation auto-detect failed: no installed source language pack available",
   "err.apple_null_image": "OCR failed: image data is null",
