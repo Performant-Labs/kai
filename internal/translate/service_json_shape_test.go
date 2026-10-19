@@ -28,6 +28,49 @@ func TestTranslateProgressPayloadJSONShape(t *testing.T) {
 	}
 }
 
+// Issue #10: a result may carry a localized notice (the System engine's missing-pack
+// fallback note); it is omitempty like the other optional fields.
+func TestTranslateResultNoticeJSONShape(t *testing.T) {
+	b, _ := json.Marshal(model.TranslateResult{Engine: "e", Notice: "n"})
+	if !strings.Contains(string(b), `"notice":"n"`) {
+		t.Errorf("TranslateResult JSON %s lacks notice", b)
+	}
+	b, _ = json.Marshal(model.TranslateResult{Engine: "e"})
+	if strings.Contains(string(b), "notice") {
+		t.Errorf("a result without a notice must omit it (omitempty): %s", b)
+	}
+}
+
+// Issue #10: the started progress event is where the System engine's estimate and the
+// faster-setting suggestion ride; runEngine is the only emitter of the started phase.
+func TestRunEngineEmitsEstimateAndSuggestion(t *testing.T) {
+	src, err := os.ReadFile("service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	if !strings.Contains(s, "engine.AppleProgressHint(run.name, req.Text)") {
+		t.Error("runEngine must compute the started event's hint through engine.AppleProgressHint")
+	}
+	for _, field := range []string{"EstimatedMs:", "SuggestFast:"} {
+		if !strings.Contains(s, field) {
+			t.Errorf("runEngine's started payload must set %s", field)
+		}
+	}
+	// The engine's notice survives the one place an engine result is copied into the fan-out's
+	// result (callEngine); anything else that rebuilds a result would drop it silently.
+	if !strings.Contains(s, "Notice: res.Notice,") {
+		t.Error("callEngine's result copy must carry Notice")
+	}
+	chunkSrc, err := os.ReadFile("service_chunk.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(chunkSrc), "Notice: c.notice,") {
+		t.Error("the chunked call's assembled result must carry the first chunk's notice")
+	}
+}
+
 func TestTranslateResultCancelledAndRequestIDJSONShape(t *testing.T) {
 	b, _ := json.Marshal(model.TranslateResult{Engine: "e", RequestID: "r", Cancelled: true})
 	var m map[string]any

@@ -63,7 +63,11 @@ export interface ThemeChangedPayload {
  * RequestID and Engine say whose progress it is. StartedAtMs is the backend clock (epoch
  * milliseconds) at which the engine's call began: informational only, because the frontend
  * times an engine from the moment it received the started event and never compares clocks. Done
- * and Total are only meaningful for ProgressPhaseChunk.
+ * and Total are only meaningful for ProgressPhaseChunk. EstimatedMs and SuggestFast are only
+ * meaningful for ProgressPhaseStarted (issue #10): the estimated duration of the engine's work
+ * in milliseconds and whether the window should offer the faster-System-translation setting —
+ * both zero (and absent from the JSON) for every engine but the System engine, which is the
+ * only one with a measured rate.
  */
 export interface TranslateProgressPayload {
     "request_id": string;
@@ -76,4 +80,18 @@ export interface TranslateProgressPayload {
     "started_at_ms": number;
     "done": number;
     "total": number;
+
+    /**
+     * EstimatedMs is how long the started engine's work is estimated to take (issue #10): a
+     * hint for the progress line's "about N left", never a limit. Zero when there is no
+     * estimate (every engine but the System engine).
+     */
+    "estimated_ms"?: number;
+
+    /**
+     * SuggestFast says the window should offer the "faster System translation" setting for this
+     * text (issue #10): the System engine, the setting off, and an estimate past the "a minute
+     * or two" line. The window only suggests — the setting is never switched silently.
+     */
+    "suggest_fast"?: boolean;
 }

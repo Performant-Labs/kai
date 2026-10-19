@@ -57,11 +57,23 @@ export type ProgressState = {
   lastActivityAt: number;
   /** The last chunk progress, when the engine reports any. */
   chunk?: { done: number; total: number } | null;
+  /**
+   * The backend's measured-rate estimate of the whole call, from the started event (issue #10;
+   * the System engine only). Absent/0 when there is no estimate; once parts land, the
+   * proportional ETA replaces it.
+   */
+  estimatedMs?: number;
 };
 
 /** The engine has just started: elapsed time and the silence clock both begin now. */
-export function startProgress(engine: string, nowMs: number): ProgressState {
-  return { engine, startedAt: nowMs, lastActivityAt: nowMs, chunk: null };
+export function startProgress(engine: string, nowMs: number, estimatedMs?: number): ProgressState {
+  return {
+    engine,
+    startedAt: nowMs,
+    lastActivityAt: nowMs,
+    chunk: null,
+    estimatedMs: estimatedMs || undefined,
+  };
 }
 
 /**
@@ -89,6 +101,31 @@ export interface ProgressLine {
   /** Only for kind 'chunk'. */
   done?: number;
   total?: number;
+  /**
+   * Time left, ms (issue #10): for chunk, proportional from the parts already finished (which
+   * reflects whatever mode is really running); before any part, the started event's
+   * measured-rate estimate minus elapsed. Present on every kind, stalled included — a long
+   * System translation goes silent between parts, and the ETA is exactly what makes that
+   * wait legible. Undefined when there is nothing honest to show (no estimate, no parts yet,
+   * every part done, or the estimate spent).
+   */
+  remainingMs?: number;
+}
+
+/**
+ * The single place the time-left rule lives (issue #10): the parts already finished outrank the
+ * started estimate, because they measure the mode that is actually running (fast or slow). Done
+ * parts price the rest proportionally: elapsed * (total - done) / done. With no parts yet, the
+ * started estimate spends itself against elapsed and disappears once passed — it is a hint, not
+ * a promise. Null when nothing honest can be said.
+ */
+function timeLeftMs(state: ProgressState, elapsedMs: number): number | undefined {
+  if (state.chunk && state.chunk.done >= 1 && state.chunk.total > state.chunk.done) {
+    return (elapsedMs * (state.chunk.total - state.chunk.done)) / state.chunk.done;
+  }
+  const estimate = state.estimatedMs ?? 0;
+  if (estimate > elapsedMs) return estimate - elapsedMs;
+  return undefined;
 }
 
 /**
@@ -98,8 +135,9 @@ export interface ProgressLine {
  */
 export function progressLine(state: ProgressState, nowMs: number): ProgressLine {
   const elapsedMs = Math.max(0, nowMs - state.startedAt);
+  const remainingMs = timeLeftMs(state, elapsedMs);
   if (nowMs - state.lastActivityAt >= STILL_WAITING_AFTER_MS) {
-    return { kind: 'stalled', engine: state.engine, elapsedMs };
+    return { kind: 'stalled', engine: state.engine, elapsedMs, remainingMs };
   }
   if (state.chunk) {
     return {
@@ -108,9 +146,10 @@ export function progressLine(state: ProgressState, nowMs: number): ProgressLine 
       elapsedMs,
       done: state.chunk.done,
       total: state.chunk.total,
+      remainingMs,
     };
   }
-  return { kind: 'working', engine: state.engine, elapsedMs };
+  return { kind: 'working', engine: state.engine, elapsedMs, remainingMs };
 }
 
 /** Whole minutes and the remaining whole seconds of a duration in ms (negative counts as 0). */

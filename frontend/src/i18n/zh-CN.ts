@@ -135,6 +135,8 @@ export const zh: Dict = {
     stillWaiting: '仍在等待 {engine}，已 {seconds} 秒',
     stillWaitingMin: '仍在等待 {engine}，已 {minutes} 分 {seconds} 秒',
     part: '正在翻译第 {done} / {total} 部分',
+    timeLeft: '约剩 {time}',
+    fastSuggestion: '按当前质量，这段文本约需 {time}。可在设置中开启“更快的系统翻译”（质量较低）。',
     translateShortcutHint: '立即翻译（或按 ⌘+Enter）',
   },
   settings: {
@@ -201,6 +203,9 @@ export const zh: Dict = {
     engineOpErrorTitle: '操作失败',
     engineSystemLangs: '系统翻译支持的语言',
     engineSystemLangsEmpty: '暂无可用的系统语言包',
+    fastSystemTranslate: '更快的系统翻译（质量较低）',
+    fastSystemTranslateHint:
+      '使用 Apple 的快速翻译模式：约快 12 倍，质量明显下降。需要传统语言包（在 系统设置 > 通用 > 语言与地区 > 翻译语言 中下载）；缺少语言包时将改用标准模式翻译，并在结果中说明。',
     engineSchema: '配置项',
     engineNoSchema: '该引擎无需额外配置',
     engineLangsHintTesseract:
@@ -398,6 +403,7 @@ export const zh: Dict = {
     persistLangPrefFailed: '[输入翻译] 持久化语言偏好失败',
     learnLangVariantFailed: '[输入翻译] 记录语言变体偏好失败',
     setPrimaryFailed: '[设置] 设为主引擎失败',
+    engineSaveFastSystemFailed: '[设置] 保存快速翻译开关失败',
     loadEngineListFailed: '[输入翻译] 加载引擎列表失败',
     loadLangListFailed: '[输入翻译] 加载语言列表失败',
     translateRequestFailed: '[输入翻译] 翻译请求失败',

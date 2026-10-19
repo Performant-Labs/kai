@@ -169,6 +169,7 @@ func (s *Service) callEngineChunked(ctx context.Context, reg engine.Translator, 
 		To:     req.To,
 		Text:   req.Text,
 		Result: c.join(len(c.chunks), true),
+		Notice: c.notice,
 	}, nil
 }
 
@@ -183,6 +184,9 @@ type chunkedCall struct {
 	parts    int // the parts in all
 	finished int // the parts whose every chunk has answered
 	open     int // the first chunk that has not answered
+	// notice is the first non-empty Notice a chunk's result carried (issue #10: the System
+	// engine's missing-pack fallback note, the same for every chunk of one request).
+	notice string
 }
 
 func newChunkedCall(chunks []Chunk, to model.Language) *chunkedCall {
@@ -197,6 +201,9 @@ func newChunkedCall(chunks []Chunk, to model.Language) *chunkedCall {
 func (c *chunkedCall) answer(i int, res *model.TranslateResult) bool {
 	if i == 0 {
 		c.from = res.From
+	}
+	if res.Notice != "" && c.notice == "" {
+		c.notice = res.Notice
 	}
 	c.answers[i] = strings.TrimSpace(res.Result)
 	c.answered[i] = true

@@ -139,6 +139,8 @@ export type Dict = {
     stillWaiting: string;
     stillWaitingMin: string;
     part: string;
+    timeLeft: string;
+    fastSuggestion: string;
     translateShortcutHint: string;
   };
   settings: {
@@ -202,6 +204,8 @@ export type Dict = {
     engineOpErrorTitle: string;
     engineSystemLangs: string;
     engineSystemLangsEmpty: string;
+    fastSystemTranslate: string;
+    fastSystemTranslateHint: string;
     engineSchema: string;
     engineNoSchema: string;
     engineLangsHintTesseract: string;
@@ -390,6 +394,7 @@ export type Dict = {
     persistLangPrefFailed: string;
     learnLangVariantFailed: string;
     setPrimaryFailed: string;
+    engineSaveFastSystemFailed: string;
     loadEngineListFailed: string;
     loadLangListFailed: string;
     translateRequestFailed: string;

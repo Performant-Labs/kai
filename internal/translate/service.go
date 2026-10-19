@@ -426,6 +426,7 @@ func (s *Service) callEngine(ctx context.Context, reg engine.Translator, engineN
 			Result:   res.Result,
 			Phonetic: res.Phonetic,
 			Dict:     res.Dict,
+			Notice:   res.Notice,
 		}
 	}()
 
@@ -664,12 +665,18 @@ func (s *Service) runEngine(ar *activeRequest, run *engineRun, reg engine.Transl
 	}
 	now := time.Now().UnixMilli()
 	run.startedAtMs.Store(now)
+	// Issue #10: the started event is where the System engine's measured-rate estimate and the
+	// faster-setting suggestion ride (both zero for every other engine); the window owns how —
+	// and whether — to show them.
+	estimatedMs, suggestFast := engine.AppleProgressHint(run.name, req.Text)
 	ar.emitIfLive(func() {
 		s.emit(events.EventTranslateProgress, events.TranslateProgressPayload{
 			RequestID:   ar.id,
 			Engine:      run.name,
 			Phase:       events.ProgressPhaseStarted,
 			StartedAtMs: now,
+			EstimatedMs: estimatedMs,
+			SuggestFast: suggestFast,
 		})
 	})
 	progress := func(done, total int) { s.reportProgress(ar.id, run.name, done, total) }
