@@ -8,6 +8,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ## [Unreleased]
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
+<!-- changelog-skip: release tooling, no user-facing change: #78 (release.sh phase 1: state machine, static phases, dry-run) -->
 +- Every window's title bar now ends with the running version, e.g. "Translate — Kai 0.5.0" (a development build says so), so the build is visible without opening Settings (#69).
 
 ## [0.5.0] - 2026-10-19
