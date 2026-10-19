@@ -328,13 +328,13 @@ func TestTranslateEntryFor(t *testing.T) {
 		strategy int32
 		called   bool
 	}
-	strat := func(src, dst, text string, token int64, strategy int32, out unsafe.Pointer, outCap int32) int32 {
+	strategyEntry := func(src, dst, text string, token int64, strategy int32, out unsafe.Pointer, outCap int32) int32 {
 		stratGot.called = true
 		stratGot.strategy = strategy
 		return 9
 	}
 	// Both symbols: the strategy entry is used as-is, strategy passed through.
-	entry, degraded := translateEntryFor(strat, plain)
+	entry, degraded := translateEntryFor(strategyEntry, plain)
 	if entry("en", "fr", "x", 3, 1, nil, 16) != 9 || !stratGot.called || stratGot.strategy != 1 {
 		t.Fatal("with the strategy symbol present it must be called with the strategy")
 	}
@@ -360,8 +360,8 @@ func TestWarmEntryFor(t *testing.T) {
 	var plainCalled, stratCalled bool
 	var stratStrategy int32
 	plain := func(src, dst string) int32 { plainCalled = true; return 1 }
-	strat := func(src, dst string, strategy int32) int32 { stratCalled = true; stratStrategy = strategy; return 1 }
-	warmEntryFor(true, strat, plain)("en", "fr")
+	strategyEntry := func(src, dst string, strategy int32) int32 { stratCalled = true; stratStrategy = strategy; return 1 }
+	warmEntryFor(true, strategyEntry, plain)("en", "fr")
 	if !stratCalled || stratStrategy != 1 || plainCalled {
 		t.Fatal("fast on + symbol present: the strategy warm must run with strategy 1")
 	}
@@ -371,7 +371,7 @@ func TestWarmEntryFor(t *testing.T) {
 		t.Fatal("fast on but older dylib: the plain warm must run")
 	}
 	plainCalled, stratCalled = false, false
-	warmEntryFor(false, strat, plain)("en", "fr")
+	warmEntryFor(false, strategyEntry, plain)("en", "fr")
 	if !plainCalled || stratCalled {
 		t.Fatal("fast off: the plain warm must run even though the symbol exists")
 	}
