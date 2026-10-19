@@ -65,6 +65,20 @@ func (w *WindowWrapper) screenshotWindow() application.Window {
 	return win
 }
 
+// historyWindow fetches the history screen's window handle by name (same style as the
+// others; issue #60).
+func (w *WindowWrapper) historyWindow() application.Window {
+	if w.app == nil {
+		return nil
+	}
+	win, ok := w.app.Window.GetByName(model.WindowHistory)
+	if !ok {
+		slog.Error(i18n.T("log.window_handle_failed"), slog.String("window", model.WindowHistory))
+		return nil
+	}
+	return win
+}
+
 // showAndFocus summons and ensures the window is really visible.
 // Note: Wails v3 lazily creates the webview implementation (impl) for Hidden windows.
 // On the first Show() call, if impl is still nil, the underlying layer only triggers Run()
@@ -144,6 +158,27 @@ func (w *WindowWrapper) ShowSettings() {
 		LowerForSettings(tw)
 	}
 	showAndFocus(w.settingsWindow())
+}
+
+// ShowHistory opens the history screen (issue #60), in front of a pinned translate window —
+// the same levelling ShowSettings applies, so the history window is not hidden behind the
+// (default-pinned, issue #39) translate window. The translate window keeps running whatever
+// request it has; only its always-on-top level drops, and its close-side counterpart (the
+// EventWindowClosing broadcast in main.go) re-applies the pin when the history window closes.
+// The levelling rule itself lives in showHistory, so it is testable without a running app.
+func (w *WindowWrapper) ShowHistory() {
+	showHistory(w.translateWindow(), func() { showAndFocus(w.historyWindow()) })
+}
+
+// showHistory is ShowHistory's rule (issue #60), split from the app's window lookups so it
+// can be exercised with a fake window, exactly the shape of ToggleTranslateWindow: a visible
+// translate window is lowered first (LowerForSettings, issue #69's rule for a pinned window
+// not covering the newly opened one), then show summons the history window (the wrapper
+// passes showAndFocus, which a lazily built webview needs). A package-level func rather than
+// a WindowWrapper method so Wails generates no frontend binding for it.
+func showHistory(translate levelWindow, show func()) {
+	LowerForSettings(translate)
+	show()
 }
 
 // ShowScreenshotWindow summons the screenshot translate window (symmetric with

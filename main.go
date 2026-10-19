@@ -100,6 +100,7 @@ func init() {
 	application.RegisterEvent[struct{}](kevents.EventWindowScreenshot)
 	application.RegisterEvent[struct{}](kevents.EventScreenshotRecapture)
 	application.RegisterEvent[kevents.ScreenshotRetranslatePayload](kevents.EventScreenshotRetranslate)
+	application.RegisterEvent[kevents.HistoryUsePayload](kevents.EventHistoryUse)
 }
 
 // formatBuildTime parses the UTC RFC3339 time injected at build time (e.g. 2006-01-02T15:04:05Z)
@@ -412,6 +413,8 @@ func main() {
 			windowSvc.ShowSettings()
 		case "screenshot":
 			showScreenshotWindow()
+		case "history":
+			windowSvc.ShowHistory()
 		}
 	})
 
@@ -443,7 +446,8 @@ func main() {
 		}()
 	})
 
-	// Native title-bar tone for the three persistent windows (settings / translate / screenshot):
+	// Native title-bar tone for the persistent windows (settings / translate / screenshot /
+	// history):
 	// set from the "in-app theme" at creation, consistent with the updater window
 	// (pkg/wails-updater-providers). Wails beta.15 has no public API on either the Go or the
 	// frontend runtime for "switch a persistent window's theme at runtime", so this only
@@ -532,6 +536,61 @@ func main() {
 		application.InvokeAsync(func() {
 			windowSvc.DisableRestoration(settingsWindow)
 			applyWindowBackground(windowSvc, settingsWindow, currentDark(), false)
+		})
+	})
+
+	// History screen (issue #60): browses past translations, opened from the translate
+	// window's History button / Cmd+Y. Its own window, like Settings (the issue's recommended
+	// decision): the translate window keeps its size and the history can stay open beside it —
+	// and it keeps working while a translation is running. Resizable (long texts and long
+	// lists live here; Settings is the locked one, not this), created hidden like the others
+	// and summoned through WindowWrapper.ShowHistory (showAndFocus + lowering a pinned
+	// translate window).
+	historyWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:   model.WindowHistory,
+		Title:  i18n.T("window.history_title"),
+		Width:  760,
+		Height: 560,
+		// A floor, not a lock: the list reflows and the rows clamp, so any size above this
+		// stays usable.
+		MinWidth:         560,
+		MinHeight:        400,
+		URL:              "/history.html",
+		BackgroundColour: bgColour,
+		Mac: application.MacWindow{
+			Appearance: macAppearance,
+		},
+		Windows: application.WindowsWindow{
+			HiddenOnTaskbar: false,
+			Theme:           winTheme,
+		},
+		// Title bar minimize/maximize/close buttons
+		MinimiseButtonState: application.ButtonHidden,
+		MaximiseButtonState: application.ButtonHidden,
+		CloseButtonState:    application.ButtonEnabled,
+	})
+	// Red X = hide, not destroy (same as Settings): the window is only a view over history.db,
+	// nothing owns state worth discarding, and re-summoning a prebuilt window is the fast path
+	// showAndFocus relies on.
+	_ = historyWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		// The translate window lowered its pin so this window could show in front of it
+		// (WindowWrapper.ShowHistory); tell it this window is closing so it re-applies the
+		// pin, exactly as for Settings (issue #69).
+		if app != nil {
+			app.Event.Emit(kevents.EventWindowClosing, model.WindowHistory)
+		}
+		historyWindow.Hide()
+	})
+	historyWindow.Center()
+	historyWindow.Hide()
+	// Issue #163: opt out of macOS Secure State Restoration once the native window actually
+	// exists (see the settings-window comment above).
+	historyWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) {
+		// Main-thread dispatch required — see the settings-window comment above.
+		application.InvokeAsync(func() {
+			windowSvc.DisableRestoration(historyWindow)
+			applyWindowBackground(windowSvc, historyWindow, currentDark(), false)
 		})
 	})
 
@@ -816,7 +875,7 @@ func main() {
 	recolourWindows := func() {
 		dark := currentDark()
 		application.InvokeAsync(func() {
-			for _, w := range []application.Window{settingsWindow, translateWindow, screenshotWindow} {
+			for _, w := range []application.Window{settingsWindow, translateWindow, screenshotWindow, historyWindow} {
 				applyWindowBackground(windowSvc, w, dark, true)
 			}
 		})
@@ -864,6 +923,7 @@ var (
 	translateWindow  application.Window
 	settingsWindow   application.Window
 	screenshotWindow application.Window
+	historyWindow    application.Window
 )
 
 // showScreenshotWindow summons the screenshot translate window to the foreground (the red X

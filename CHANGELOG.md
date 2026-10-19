@@ -7,6 +7,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+### Enhancements
+- A History screen now opens from the translate window (a History button beside the gear, or Cmd+Y): past translations grouped by day with the time, the language pair, the engine and an OCR mark, searched and filtered by pair and engine, paged as you scroll, with Use (puts the entry's source, result, languages and engine back into the panes without translating anything), Copy and Delete per row, and a confirmed Clear all. The Settings history tab shows the same list (#60; supersedes the history-view part of #9).
+
 ### Bug Fixes
 - The title bar of the Settings and translate windows now follows the theme; it used to stay white while the content was dark in the dark theme, because the window's macOS appearance was set only at launch (#8).
 - The About panel (the menu bar's About Kai item) now opens in front of kai's windows, including a pinned always-on-top translate window (#8).
