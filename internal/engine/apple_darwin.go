@@ -170,7 +170,12 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 		return nil, fmt.Errorf(i18n.T("err.swiftbridge_unavailable"))
 	}
 	strategy := appleStrategyInt32()
-	tr, err := s.translateViaBridge(ctx, sl, tl, text, strategy)
+	// One 64 KiB output buffer, enough for a long translation + JSON wrapping (#106: the
+	// bridge writes at most cap-1 bytes; enginelimits' guard mirrors this size — the literal
+	// appears exactly once in the package). The missing-pack retry below reuses it: the two
+	// attempts are sequential and each overwrites the whole payload.
+	outBuf := make([]byte, 1<<16)
+	tr, err := s.translateViaBridge(ctx, sl, tl, text, strategy, outBuf)
 	if err != nil {
 		// ctx had already ended: the bridge was never called, and the error is the ctx's cause,
 		// never error copy (the translate service decides cancelled or superseded from it).
@@ -178,13 +183,13 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 	}
 	// The fast mode's language pack is missing: translate with the slow mode this time instead
 	// of failing, and say so on the result (issue #10). A ctx that ended while the fast attempt
-	// answered is handled inside callBridge/callBridgePayload (the cancel outcome wins); the
-	// retry only runs while the request is still alive.
+	// answered is handled inside translateViaBridge (the cancel outcome wins); the retry only
+	// runs while the request is still alive.
 	notice := ""
 	if tr.Code == swiftbridge.BridgeErrLowLatencyPackMissing && strategy != 0 && ctx.Err() == nil {
 		slog.Warn(i18n.T("err.apple_low_latency_pack_missing"), "from", sl, "to", tl)
 		notice = i18n.T("err.apple_low_latency_pack_missing")
-		tr, err = s.translateViaBridge(ctx, sl, tl, text, 0)
+		tr, err = s.translateViaBridge(ctx, sl, tl, text, 0, outBuf)
 		if err != nil {
 			return nil, err
 		}
@@ -246,9 +251,10 @@ func (s *appleTranslator) Translate(ctx context.Context, req model.TranslateRequ
 // strategy 0 uses the plain kai_translate entry point (today's default path); a non-zero
 // strategy goes through kai_translate_strategy when the dylib has it — an older bridge without
 // the symbol silently serves the default path (the fast mode needs a rebuilt bridge; logged
-// once per call at Debug).
-func (s *appleTranslator) translateViaBridge(ctx context.Context, sl, tl, text string, strategy int32) (*swiftbridge.TranslateSuccess, error) {
-	payload, n, err := s.callBridgePayload(ctx, sl, tl, text, strategy)
+// once per call at Debug). outBuf is the caller's output buffer, reused across this request's
+// at most two attempts.
+func (s *appleTranslator) translateViaBridge(ctx context.Context, sl, tl, text string, strategy int32, outBuf []byte) (*swiftbridge.TranslateSuccess, error) {
+	payload, n, err := s.callBridgePayload(ctx, sl, tl, text, strategy, outBuf)
 	if err != nil {
 		return nil, err
 	}
@@ -267,10 +273,9 @@ func (s *appleTranslator) translateViaBridge(ctx context.Context, sl, tl, text s
 	return &tr, nil
 }
 
-// callBridgePayload is the raw blocking call both strategies share: the buffer, the cancel
-// token and the entry-point choice (strategy vs plain), with no payload interpretation.
-func (s *appleTranslator) callBridgePayload(ctx context.Context, sl, tl, text string, strategy int32) ([]byte, int32, error) {
-	outBuf := make([]byte, 1<<16) // 64KB output buffer, enough for a long translation + JSON wrapping
+// callBridgePayload is the raw blocking call both strategies share: the cancel token and the
+// entry-point choice (strategy vs plain), with no payload interpretation.
+func (s *appleTranslator) callBridgePayload(ctx context.Context, sl, tl, text string, strategy int32, outBuf []byte) ([]byte, int32, error) {
 	token := nextAppleToken()
 	strategyEntry := swiftbridge.KaiTranslateStrategy
 	if strategy != 0 && strategyEntry == nil {

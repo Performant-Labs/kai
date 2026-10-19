@@ -47,7 +47,7 @@ func TestAppleDarwinLowLatencyFallback(t *testing.T) {
 	if !strings.Contains(src, "swiftbridge.BridgeErrLowLatencyPackMissing") {
 		t.Error("apple_darwin.go does not handle the low_latency_pack_missing code")
 	}
-	if !strings.Contains(src, "s.translateViaBridge(ctx, sl, tl, text, 0)") {
+	if !strings.Contains(src, "s.translateViaBridge(ctx, sl, tl, text, 0, outBuf)") {
 		t.Error("the missing-pack path must retry the same text with strategy 0 (the slow mode)")
 	}
 	if !strings.Contains(src, `i18n.T("err.apple_low_latency_pack_missing")`) {

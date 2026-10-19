@@ -7,6 +7,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+### Enhancements
+- Settings > Translation Engines (the System engine's panel) now has a "Faster System translation (lower quality)" switch, off by default. When on, the System engine uses Apple's fast translation mode (about 12x faster, lower quality); while translating, the progress line shows the time left and each finished part, and a text that will take more than a couple of minutes is offered the switch. When the fast mode's language pack is missing, the text is translated with the standard mode instead and the result says how to install the pack (#10).
+
 ## [0.4.1] - 2026-10-05
 
 ### Enhancements
