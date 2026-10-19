@@ -204,6 +204,7 @@
     ShowHistory,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
   import { restoredPair, restoredResult } from '../utils/historyList.ts';
+  import { isSettingsShortcut } from '../utils/settingsShortcut.ts';
 
   // The retained session (issue #81): the source text, the per-engine results and the request
   // marker survive closing the window and an app restart, so reopening shows the last translation.
@@ -537,6 +538,7 @@
       return;
     }
     if (handleHistoryShortcut(e)) return;
+    if (handleSettingsShortcut(e)) return;
     const action = shortcutAction(e);
     if (action === null) return;
     e.preventDefault();
@@ -569,6 +571,19 @@
     if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
     e.preventDefault();
     void ShowHistory();
+    return true;
+  }
+
+  // Cmd+, opens Settings (issue #8 collector): the standard macOS shortcut for an app's
+  // settings. Mac-only (metaKey, never ctrlKey), no Alt/Shift, and in scope everywhere in this
+  // window exactly like Cmd+Y — WebKit binds nothing to Cmd+, in the source textarea, and
+  // opening Settings is a window action, not a text action. Routes through the same ShowSettings
+  // binding as the gear (no second path): the Go side lowers a pinned translate window there
+  // (#69), and this window stays open, so a press with Settings already up just refocuses it.
+  function handleSettingsShortcut(e: KeyboardEvent): boolean {
+    if (!isSettingsShortcut(e)) return false;
+    e.preventDefault();
+    void ShowSettings();
     return true;
   }
 
