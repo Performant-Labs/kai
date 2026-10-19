@@ -3,6 +3,7 @@ package translate
 import (
 	"encoding/json"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -58,15 +59,19 @@ func TestRunEngineEmitsEstimateAndSuggestion(t *testing.T) {
 		}
 	}
 	// The engine's notice survives the one place an engine result is copied into the fan-out's
-	// result (callEngine); anything else that rebuilds a result would drop it silently.
-	if !strings.Contains(s, "Notice: res.Notice,") {
+	// result (callEngine) and the chunk assembly's join; anything else that rebuilds a result
+	// would drop it silently. Whitespace-tolerant regexps, not exact literals: gofmt aligns
+	// struct-literal fields ("Notice:   res.Notice," beside "Phonetic:"), and the exact-literal
+	// form of this check failed on CI for exactly that reason while the copy was present.
+	noticeCopy := regexp.MustCompile(`Notice:\s+res\.Notice,`)
+	if !noticeCopy.MatchString(s) {
 		t.Error("callEngine's result copy must carry Notice")
 	}
 	chunkSrc, err := os.ReadFile("service_chunk.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(chunkSrc), "Notice: c.notice,") {
+	if !regexp.MustCompile(`Notice:\s+c\.notice,`).MatchString(chunkSrc) {
 		t.Error("the chunked call's assembled result must carry the first chunk's notice")
 	}
 }
