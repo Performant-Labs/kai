@@ -414,6 +414,31 @@ func TestPlanSourceSwitchLogsOneInfoLinePerDecisionWithoutContent(t *testing.T) 
 	}
 }
 
+// Issue #8 (#16's chosen deliverable): a miss must be diagnosable from the log alone. The decision
+// line carries the whole story — the detection, the pair the window shows (from/to), and, when it
+// switched, the pair it chose (result_from -> result_to); a miss carries the reason instead and
+// names no chosen pair.
+func TestPlanSourceSwitchLogNamesTheChosenPair(t *testing.T) {
+	buf := captureLog(t)
+	svc := newSwitchService(t, spanishDetector(), langpref.New())
+	svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.FR})
+	for _, want := range []string{"reason=switched", "from=en", "to=fr", "result_from=es-MX", "result_to=en"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("a switch's log line lacks %q: %s", want, buf.String())
+		}
+	}
+
+	buf = captureLog(t)
+	svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: spanish, From: model.ESMX, To: model.EN})
+	out := buf.String()
+	if !strings.Contains(out, "reason=same_language") {
+		t.Errorf("a miss's log line lacks its reason: %s", out)
+	}
+	if strings.Contains(out, "result_from=es") {
+		t.Errorf("a miss names a chosen pair: %s", out)
+	}
+}
+
 func TestPlanSourceSwitchLogNamesWhoAnsweredAndWhyNot(t *testing.T) {
 	for _, tc := range []struct {
 		name string

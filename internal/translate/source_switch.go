@@ -70,13 +70,16 @@ var urlPattern = regexp.MustCompile(`(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)\S+`)
 // source. Otherwise nothing changes. See the file comment for the rules.
 func (s *Service) PlanSourceSwitch(req model.SourceSwitchRequest) model.SourceSwitch {
 	plan, d := s.planSourceSwitch(req)
-	// One line per decision (issue #16): the detection and why it ended as it did. Never the text
-	// (issue #203): only its length.
-	// The build too (issue #16), so the line stands alone in a pasted log.
+	// One line per decision (issue #16): the detection and why it ended as it did — the inputs
+	// (detected, confidence, by, from/to: the pair the window shows) and the answer (reason, and
+	// for a switch the pair it chose, result_from -> result_to; empty on every miss). Never the
+	// text (issue #203): only its length. The build too (issue #16), so the line stands alone in
+	// a pasted log; the line above it (the hotkey's "[Hotkey] Copy key read clipboard" or the
+	// auto-clipboard / double Cmd+C line) names the path the text arrived by.
 	slog.Info(i18n.T("log.source_switch_plan"), append([]any{
 		"reason", plan.Reason, "detected", string(d.lang), "confidence", d.confidence,
 		"runes", d.runes, "by", d.by, "from", string(req.From), "to", string(req.To),
-		"result_from", string(plan.From),
+		"result_from", string(plan.From), "result_to", string(plan.To),
 	}, buildinfo.LogAttrs()...)...)
 	return plan
 }
