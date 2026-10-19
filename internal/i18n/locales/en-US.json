@@ -180,6 +180,7 @@
   "log.apple_query_langs": "[dynamic-bridge] Querying system available languages",
   "log.apple_query_langs_done": "[dynamic-bridge] Querying system available languages done",
   "log.apple_setlog_std": "[engine] Non-macOS SetLogConfig uses standard slog (no file redirect)",
+  "log.apple_strategy_entry_missing": "[dynamic-bridge] Bridge build has no kai_translate_strategy; translating with the default mode",
   "log.apple_translate_done": "[dynamic-bridge] System translation done",
   "log.apple_translate_invoke": "[dynamic-bridge] System translation invoked",
   "log.autostart_disable_failed": "Failed to disable autostart",
