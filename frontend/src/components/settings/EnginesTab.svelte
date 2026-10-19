@@ -656,13 +656,18 @@
         </div>
       </div>
     {/if}
-    {#if (schema?.fields?.length ?? 0) === 0}
+    {#if (schema?.fields?.length ?? 0) === 0 && !(schema?.kind === 'translate' && schema?.builtin)}
       <div class="flex flex-1 flex-col items-center justify-center text-center">
         <p class="u-muted text-sm">{t('settings.engineNoSchema')}</p>
       </div>
     {:else}
       <div class="u-card mt-4 space-y-4 px-4 py-3">
         {#if schema?.kind === 'translate' && schema?.builtin}
+          <!-- The System engine's own panel. Deliberately OUTSIDE the "has config fields"
+               branch above: apple's real schema has no fields (nothing to configure), so a
+               panel placed only in the fields branch would never render for it — exactly the
+               bug the mounted test caught (the language list and the faster-translation toggle
+               were unreachable). The "no extra config" placeholder yields to this panel. -->
           <div>
             <p class="u-label mb-2">{t('settings.engineSystemLangs')}</p>
             {#if systemLangsLoading}
