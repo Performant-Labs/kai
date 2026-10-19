@@ -87,6 +87,10 @@
         selectedId = rows[0]?.id ?? null;
       }
     } catch (e) {
+      // A load that a newer load or a local mutation already superseded does not own the
+      // list any more: its failure belongs to a query nobody is waiting for, so it is
+      // dropped like its result would be (PR #67 review).
+      if (token !== loadToken) return;
       console.error(t('log.historyLoadFailed'), e);
       await Dialogs.Error({
         Title: t('history.opErrorTitle'),
@@ -98,6 +102,20 @@
         loadingMore = false;
       }
     }
+  }
+
+  // Invalidates every load still in flight (PR #67 review): a clear or a delete changes
+  // rows/total locally, and a page append that left before the change would otherwise write
+  // its stale rows and count back over the user's action when it lands. Advancing loadToken
+  // makes loadPage's arrival checks drop it; the loading flags are reset here because a
+  // dropped load's finally sees a newer token and deliberately leaves them alone, and no load
+  // owns them any more. A reload (a filter or keyword change) already invalidates this way by
+  // starting a fresh load of its own — this is the same rule for the mutations that change
+  // the list without asking the backend for it.
+  function invalidateLoads() {
+    loadToken++;
+    loading = false;
+    loadingMore = false;
   }
 
   function reload() {
@@ -121,10 +139,13 @@
   }
 
   // Delete one entry: the row leaves the list locally (no refetch, so the scroll position and
-  // the loaded pages stay), and the matching total drops.
+  // the loaded pages stay), and the matching total drops. The local change invalidates every
+  // in-flight load first (invalidateLoads), so a page append that left before the deletion
+  // cannot write its stale rows back over the shortened list when it lands.
   async function deleteRow(id: number) {
     try {
       await DeleteHistory(id);
+      invalidateLoads();
       rows = rows.filter((r) => r.id !== id);
       total = Math.max(0, total - 1);
       if (selectedId === id) selectedId = rows[0]?.id ?? null;
@@ -157,6 +178,9 @@
     if (answer !== t('history.clearConfirmYes')) return;
     try {
       await ClearHistory();
+      // The emptied list invalidates every in-flight load (invalidateLoads), so a page
+      // append that left before the clear cannot repopulate the list when it lands.
+      invalidateLoads();
       rows = [];
       total = 0;
       selectedId = null;
