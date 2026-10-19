@@ -11,5 +11,148 @@
       "agent": "orchestrator",
       "template": "Invoke the `pipeline_preflight` tool with issueNumber \"$1\" (omit if no argument), rigor \"$2\" (default second-opinion), and uiSurface \"$3\" (\"true\" only for UI stories).\n\nThe tool returns a structured PRE-FLIGHT report: every pass/fail/N-A check, the configured agent→model mapping, and the human-owned responsibilities. Present the full report to the operator.\n\nIf the report is PRE-FLIGHT: FAIL — STOP. Do not begin survey-brief. List each FAIL row and the human action it requires, and wait for the operator to resolve or waive them.\n\nIf the report is PRE-FLIGHT: PASS — proceed to survey-brief (read AGENTS.md and the handoffs directory named in .opencode/pipeline.config.json), then drive the phases with pipeline_advance in the order the plugin reports (pipeline_status). Phases design and ui-walkthrough are skipped (declared, never silent) unless uiSurface is true. The review-rigor dial is $2. The plugin, not the model, owns phase order, RED/GREEN, rigor gates, and named stops."
     }
+  },
+  "plugin": [
+    "./.aftersight/releases/opencode/runner/opencode-plugin.ts"
+  ],
+  "agent": {
+    "orchestrator": {
+      "description": "Coding pipeline Orchestrator (O): runs a story end to end. Its real permissions are this entry's `permission` block (task deny-catch-all plus the pipeline-subagent allow-list).",
+      "mode": "primary",
+      "color": "info",
+      "prompt": "{file:./.aftersight/prompts/orchestrator.md}",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "task": {
+          "*": "deny",
+          "tester": "allow",
+          "designer": "allow",
+          "architecture-reviewer": "allow",
+          "feature-implementor": "allow",
+          "playwright-ui-walkthrough": "allow",
+          "spec-auditor": "allow",
+          "final-reviewer": "allow"
+        }
+      }
+    },
+    "tester": {
+      "description": "Coding pipeline Tester (T): test-first. Its real permissions are this entry's `permission` block (edits the project's test paths and handoffs only, task deny).",
+      "mode": "subagent",
+      "color": "success",
+      "prompt": "{file:./.aftersight/prompts/tester.md}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "**/*_test.go": "allow",
+          "**/testdata/**": "allow",
+          "docs/handoffs/**": "allow",
+          ".worktrees/*/docs/handoffs/**": "allow"
+        },
+        "bash": "allow",
+        "task": "deny"
+      }
+    },
+    "feature-implementor": {
+      "description": "Coding pipeline Feature Implementor (F): writes the production code that makes the T-red tests pass. Its real permissions are this entry's `permission` block (edits the project's production paths and handoffs only, test paths denied, task deny).",
+      "mode": "subagent",
+      "color": "warning",
+      "prompt": "{file:./.aftersight/prompts/feature-implementor.md}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "internal/**": "allow",
+          ".worktrees/*/internal/**": "allow",
+          "pkg/**": "allow",
+          ".worktrees/*/pkg/**": "allow",
+          "main.go": "allow",
+          ".worktrees/*/main.go": "allow",
+          "frontend/src/**": "allow",
+          ".worktrees/*/frontend/src/**": "allow",
+          "**/*.swift": "allow",
+          "docs/handoffs/**": "allow",
+          ".worktrees/*/docs/handoffs/**": "allow",
+          "**/*_test.go": "deny",
+          "**/testdata/**": "deny"
+        },
+        "bash": "allow",
+        "task": "deny"
+      }
+    },
+    "architecture-reviewer": {
+      "description": "Coding pipeline Architecture Reviewer (A): reviews the plan (architecture-review) and the diff for drift and duplication (a-dup). Its real permissions are this entry's `permission` block (read-only except its own handoffs).",
+      "mode": "subagent",
+      "color": "info",
+      "prompt": "{file:./.aftersight/prompts/architecture-reviewer.md}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "docs/handoffs/**": "allow",
+          ".worktrees/*/docs/handoffs/**": "allow"
+        },
+        "bash": "allow",
+        "task": "deny"
+      }
+    },
+    "spec-auditor": {
+      "description": "Coding pipeline Spec Auditor (S): the final spec-compliance authority; audits the finished diff against the story brief. Its real permissions are this entry's `permission` block (read-only except its own handoffs).",
+      "mode": "subagent",
+      "color": "error",
+      "prompt": "{file:./.aftersight/prompts/spec-auditor.md}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "docs/handoffs/**": "allow",
+          ".worktrees/*/docs/handoffs/**": "allow"
+        },
+        "bash": "allow",
+        "task": "deny"
+      }
+    },
+    "final-reviewer": {
+      "description": "Coding pipeline Final Reviewer (FR): in a merged final review, one dispatch writes final-review.md with PART A (the a-dup anti-duplication gate) and PART B (the spec audit). Its real permissions are this entry's `permission` block (read-only except its own handoffs).",
+      "mode": "subagent",
+      "color": "info",
+      "prompt": "{file:./.aftersight/prompts/final-reviewer.md}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "docs/handoffs/**": "allow",
+          ".worktrees/*/docs/handoffs/**": "allow"
+        },
+        "bash": "allow",
+        "task": "deny"
+      }
+    },
+    "designer": {
+      "description": "Coding pipeline Designer (D): runs only when the story has a UI surface, before tests and code; produces or ingests the low-fi wireframe. Its real permissions are this entry's `permission` block (read-only except its own handoffs).",
+      "mode": "subagent",
+      "color": "warning",
+      "prompt": "{file:./.aftersight/prompts/designer.md}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "docs/handoffs/**": "allow",
+          ".worktrees/*/docs/handoffs/**": "allow"
+        },
+        "bash": "allow",
+        "task": "deny"
+      }
+    },
+    "playwright-ui-walkthrough": {
+      "description": "Coding pipeline UI Walkthrough (U): drives the live UI in a real headless browser and reports PASS/REWORK with evidence; runs only when the story has a UI surface. Its real permissions are this entry's `permission` block (read-only except its own handoffs).",
+      "mode": "subagent",
+      "color": "warning",
+      "prompt": "{file:./.aftersight/prompts/playwright-ui-walkthrough.md}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "docs/handoffs/**": "allow",
+          ".worktrees/*/docs/handoffs/**": "allow"
+        },
+        "bash": "allow",
+        "task": "deny"
+      }
+    }
   }
 }
