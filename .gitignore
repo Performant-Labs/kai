@@ -24,3 +24,6 @@ pkg/swiftbridge/internal/swift/libkai_bridge.dylib
 docs/*-*-*.md
 
 .env
+docs/handoffs/state.json
+docs/handoffs/*/.stage/
+.claude/worktrees/
