@@ -1,6 +1,6 @@
 module cnb.cool/dtapp/kai
 
-go 1.27.1
+go 1.27.2
 
 ignore ./frontend
 
@@ -97,7 +97,7 @@ require (
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	google.golang.org/api v0.298.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260918162117-cecb64721679 // indirect
