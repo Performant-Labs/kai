@@ -141,6 +141,19 @@ jobs:
           GOBIN: ${{ env.GO_BIN_DIR }}
         run: make bindings
 
+      # 绑定漂移门禁（issue #73）：上一步重新生成 frontend/bindings 后，工作树必须与提交的内容
+      # 完全一致（含未跟踪文件——不同版本的生成器会新增或遗漏文件，例如 wails3 beta.33 改变了
+      # 事件绑定的目录布局）。不一致即失败；修复方式：本地运行 make bindings 并提交其输出。
+      - name: 校验提交的绑定与生成结果一致
+        run: |
+          status="$(git status --porcelain -- frontend/bindings)"
+          if [ -n "$status" ]; then
+            echo "::error::frontend/bindings 与 make bindings 的生成结果不一致——请运行 make bindings 并提交其输出（见 docs/releasing.md「What a build changes in the tree」）"
+            echo "$status"
+            git diff -- frontend/bindings
+            exit 1
+          fi
+
       - name: 生成图标资源
         env:
           GOPATH: ${{ env.GO_PATH_DIR }}
