@@ -110,6 +110,13 @@ const (
 	// is wrong" is exactly the bug report. This event lets the frontend show a toast instead,
 	// so a failed capture is visibly a failure, not indistinguishable from a stale success.
 	EventCopyKeyFailed = "kai:copykey:failed"
+
+	// EventHistoryUse is emitted (frontend, from the history screen or the Settings history
+	// tab) when the user picks "Use" on a history entry (issue #60): the translate window
+	// puts the entry's source, result, languages and engine back into its panes. payload:
+	// HistoryUsePayload. Aligned with the frontend's EventHistoryUse in
+	// frontend/src/utils/events.ts.
+	EventHistoryUse = "kai:history:use"
 )
 
 // Session identifiers for the screenshot/OCR cache: separating entry points so they never
@@ -177,4 +184,16 @@ type ScreenshotRetranslatePayload struct {
 	Session string         `json:"session"`
 	From    model.Language `json:"from"`
 	To      model.Language `json:"to"`
+}
+
+// HistoryUsePayload carries the EventHistoryUse event (issue #60): the history entry whose
+// "Use" the user picked. The translate window restores these into its panes: Text into the
+// source pane, Result as the engine's stored result, FromLang/ToLang into the two selects,
+// Engine as the selected engine. Nothing is translated until the user asks.
+type HistoryUsePayload struct {
+	Text     string `json:"text"`
+	Result   string `json:"result"`
+	FromLang string `json:"from_lang"`
+	ToLang   string `json:"to_lang"`
+	Engine   string `json:"engine"`
 }

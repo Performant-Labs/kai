@@ -65,6 +65,20 @@ func (w *WindowWrapper) screenshotWindow() application.Window {
 	return win
 }
 
+// historyWindow fetches the history screen's window handle by name (same style as the
+// others; issue #60).
+func (w *WindowWrapper) historyWindow() application.Window {
+	if w.app == nil {
+		return nil
+	}
+	win, ok := w.app.Window.GetByName(model.WindowHistory)
+	if !ok {
+		slog.Error(i18n.T("log.window_handle_failed"), slog.String("window", model.WindowHistory))
+		return nil
+	}
+	return win
+}
+
 // showAndFocus summons and ensures the window is really visible.
 // Note: Wails v3 lazily creates the webview implementation (impl) for Hidden windows.
 // On the first Show() call, if impl is still nil, the underlying layer only triggers Run()
@@ -144,6 +158,18 @@ func (w *WindowWrapper) ShowSettings() {
 		LowerForSettings(tw)
 	}
 	showAndFocus(w.settingsWindow())
+}
+
+// ShowHistory opens the history screen (issue #60), in front of a pinned translate window —
+// the same levelling ShowSettings applies, so the history window is not hidden behind the
+// (default-pinned, issue #39) translate window. The translate window keeps running whatever
+// request it has; only its always-on-top level drops, and its close-side counterpart (the
+// EventWindowClosing broadcast in main.go) re-applies the pin when the history window closes.
+func (w *WindowWrapper) ShowHistory() {
+	if tw := w.translateWindow(); tw != nil {
+		LowerForSettings(tw)
+	}
+	showAndFocus(w.historyWindow())
 }
 
 // ShowScreenshotWindow summons the screenshot translate window (symmetric with
