@@ -12,10 +12,16 @@ import (
 )
 
 // Issue #16: the source switch through the REAL NaturalLanguage detector (the Swift bridge), on
-// realistic Mexican Spanish selections. Measured 2026-09-30 on macOS: every sample below scores
-// 0.95 or more as es, including Spanish with English words, names, numbers, URLs, line breaks and
-// chat text, so the detector's confidence is not what makes Alt-A miss. The samples are invented.
-// The negatives pin the hard rule: text that is not in the other language never switches.
+// realistic Mexican Spanish selections. Measured 2026-09-30 on macOS: every sample of 12 code
+// points or more scores 0.95 or better as es, including Spanish with English words, names,
+// numbers, URLs, line breaks and chat text, so the detector's confidence is not what makes Alt-A
+// miss. The samples are invented. The negatives pin the hard rule: text that is not in the other
+// language never switches.
+//
+// Issue #8 (the Alt-A item): the sub-floor samples ("Buenos días", "Nos vemos") are pinned by the
+// floor exemption for confident local detections; they were NOT measured (the Linux runner and Io
+// cannot load the bridge), so this suite on the Mac is their execution gate. If NaturalLanguage
+// scores one of them under 0.8, that is a finding, not a flake.
 
 func realSwitchService(t *testing.T) *Service {
 	t.Helper()
@@ -49,6 +55,8 @@ func TestRealDetectorSwitchesMexicanSpanishSelections(t *testing.T) {
 		"no accents":         "no se que hacer con esto ahorita, ya le dije a mi jefe y no contesta",
 		"short question":     "¿Ya comiste?",
 		"nineteen":           "Sí, claro, ahorita.",
+		"eleven (#8)":        "Buenos días",
+		"nine (#8)":          "Nos vemos",
 		"all caps":           "AVISO IMPORTANTE: LA OFICINA ESTARÁ CERRADA EL LUNES",
 	} {
 		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.EN, To: model.FR})

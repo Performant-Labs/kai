@@ -2,8 +2,9 @@
 //
 // Text that arrives in another language than the pinned source dropdown shows switches the
 // dropdown to that language, makes the old source the target, and translates. The DECISION is the
-// backend's (translate.Service.PlanSourceSwitch: local detection, the 20-code-point floor, the
-// confidence check, dialect matching, the setting): this window compares no languages and counts no
+// backend's (translate.Service.PlanSourceSwitch: local detection, the confidence check, the
+// code-point floor — which guards only answers without a confident local detection, #8 — dialect
+// matching, the setting): this window compares no languages and counts no
 // characters. What lives here is the small pure gate between that answer and the two selects, and
 // the undo cue, so vitest covers it without the bindings (like swapLangs.ts).
 //
