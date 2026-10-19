@@ -8,7 +8,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ## [Unreleased]
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
-- The History shortcut (Cmd+Y by default) can now be changed in Settings > Shortcuts, like the clear-context key; leave it empty for no shortcut (#60).
+- The History shortcut (Cmd+Y by default) can now be changed in Settings > Shortcuts, like the clear-context key; leave it empty for no shortcut (#79).
+- Every window's title bar now ends with the running version, e.g. "Translate — Kai 0.5.0" (a development build says so), so the build is visible without opening Settings (#69).
+- Cmd+, now opens Settings from the translate, screenshot and settings windows — the standard macOS shortcut — and the tray menu's Settings item shows it (#8).
 
 ## [0.5.0] - 2026-10-19
 <!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->

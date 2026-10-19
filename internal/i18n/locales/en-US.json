@@ -321,9 +321,9 @@
   "menu.tooltip": "Kai - Translate & OCR",
   "notification.update_available_subtitle": "New version {{.version}} found, click \"Check for Updates\" to install",
   "notification.update_available_title": "Kai update available",
-  "window.history_title": "Kai History",
-  "window.screenshot_title": "Kai Screenshot Translate",
+  "window.history_title": "History",
+  "window.screenshot_title": "Screenshot Translate",
   "window.selection_title": "Kai Selection",
-  "window.settings_title": "Kai Settings",
-  "window.translate_title": "Kai Translate"
+  "window.settings_title": "Settings",
+  "window.translate_title": "Translate"
 }
