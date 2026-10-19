@@ -95,10 +95,12 @@ if [[ -f frontend/.nvmrc ]] && command -v node >/dev/null 2>&1; then
   fi
 fi
 
-# 5. Kai must not be running: release-verify.sh refuses while it is.
+# 5. Kai running: only release-local.sh and release-verify.sh need it closed (they launch their own
+# copy and Kai allows one instance), and both refuse while it runs. So it is a warning here, not a
+# reason to stop at step 1 hours before the build.
 if pgrep -x Kai >/dev/null 2>&1; then
-  fail "Kai is running"
-  hint "quit it: release-verify.sh needs to launch its own copy, and Kai allows one instance"
+  warn "Kai is running"
+  hint "quit it before release-local.sh / release-verify.sh (checklist steps 15 and 16): they refuse while it runs"
 else
   ok "Kai is not running"
 fi
