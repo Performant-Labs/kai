@@ -34,18 +34,21 @@ func NewHistoryWrapper(store *historystore.Store, cs *configstore.Store) *Histor
 	return &HistoryWrapper{store: store, configStore: cs}
 }
 
-// engineIDByName resolves an engine name (the value the frontend filters on) to its config
-// id. An empty name matches any engine (0 = the filter's "any" value). A name no configured
-// engine has resolves to -1, an id no row carries, so it matches nothing (issue #60).
-func (w *HistoryWrapper) engineIDByName(ctx context.Context, engine string) int64 {
-	if engine == "" || w.configStore == nil {
-		return 0
+// engineLookup is the configstore-backed EngineIDLookup the wrapper hands to
+// historystore.FilterFrom: a name resolves when a configured engine carries it. Every
+// decision about what a name means (empty = any engine, unresolvable = no engine) lives in
+// historystore.ResolveEngineID, pure and tested there (PR #67 review: the wrapper stays thin).
+func (w *HistoryWrapper) engineLookup(ctx context.Context) historystore.EngineIDLookup {
+	return func(name string) (int64, bool) {
+		if w.configStore == nil {
+			return 0, false
+		}
+		eng, err := w.configStore.GetEngineByName(ctx, name)
+		if err != nil || eng == nil {
+			return 0, false
+		}
+		return eng.ID, true
 	}
-	eng, err := w.configStore.GetEngineByName(ctx, engine)
-	if err != nil || eng == nil {
-		return -1
-	}
-	return eng.ID
 }
 
 // GetHistory queries translation history with pagination and the history screen's filters
@@ -60,12 +63,9 @@ func (w *HistoryWrapper) GetHistory(keyword, fromLang, toLang, engine string, of
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	rows, err := w.store.QueryByFilter(ctx, historystore.HistoryFilter{
-		Keyword:  keyword,
-		FromLang: fromLang,
-		ToLang:   toLang,
-		EngineID: w.engineIDByName(ctx, engine),
-	}, int64(limit), int64(offset))
+	rows, err := w.store.QueryByFilter(
+		ctx, historystore.FilterFrom(keyword, fromLang, toLang, engine, w.engineLookup(ctx)),
+		int64(limit), int64(offset))
 	if err != nil {
 		return nil
 	}
@@ -99,12 +99,8 @@ func (w *HistoryWrapper) CountHistory(keyword, fromLang, toLang, engine string) 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	n, err := w.store.CountByFilter(ctx, historystore.HistoryFilter{
-		Keyword:  keyword,
-		FromLang: fromLang,
-		ToLang:   toLang,
-		EngineID: w.engineIDByName(ctx, engine),
-	})
+	n, err := w.store.CountByFilter(
+		ctx, historystore.FilterFrom(keyword, fromLang, toLang, engine, w.engineLookup(ctx)))
 	if err != nil {
 		return 0
 	}

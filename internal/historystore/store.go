@@ -113,6 +113,44 @@ type HistoryFilter struct {
 	EngineID int64
 }
 
+// EngineIDLookup resolves an engine's name to its config id: ok is false when no configured
+// engine carries that name. The wrapper supplies the configstore-backed implementation; here
+// it is only a function argument, so the resolution rules stay pure and testable on any
+// builder.
+type EngineIDLookup func(name string) (id int64, ok bool)
+
+// ResolveEngineID decides the EngineID of a HistoryFilter from the engine's name (issue #60):
+// an empty name matches any engine (0, the filter's "any" value); a name the lookup resolves
+// matches that engine's rows; any other name — unknown, unresolvable, or a nil lookup —
+// matches nothing (-1, an id no row carries), so a stale engine name can never widen a filter
+// into the whole history.
+func ResolveEngineID(engine string, lookup EngineIDLookup) int64 {
+	if engine == "" {
+		return 0
+	}
+	if lookup == nil {
+		return -1
+	}
+	id, ok := lookup(engine)
+	if !ok {
+		return -1
+	}
+	return id
+}
+
+// FilterFrom builds the HistoryFilter of a history-screen query (issue #60): the keyword and
+// the pair pass through as they are, and the engine name is resolved through lookup with
+// ResolveEngineID's rules. This is the one place the wrapper's arguments become a filter, so
+// what the store is asked with is exactly what was carried.
+func FilterFrom(keyword, fromLang, toLang, engine string, lookup EngineIDLookup) HistoryFilter {
+	return HistoryFilter{
+		Keyword:  keyword,
+		FromLang: fromLang,
+		ToLang:   toLang,
+		EngineID: ResolveEngineID(engine, lookup),
+	}
+}
+
 // QueryByFilter searches history by keyword plus the language-pair and engine filters of the
 // history screen (issue #60), newest first, paged.
 func (s *Store) QueryByFilter(ctx context.Context, f HistoryFilter, limit, offset int64) ([]History, error) {
