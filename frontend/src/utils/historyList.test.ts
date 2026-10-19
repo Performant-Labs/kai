@@ -114,10 +114,9 @@ describe('filter options derived from the loaded rows (issue #60)', () => {
   });
 
   it('lists the distinct engines that produced rows', () => {
-    expect(engineOptions([row({ engine: 'google' }), row({ engine: '' }), row({ engine: 'apple' })])).toEqual([
-      'google',
-      'apple',
-    ]);
+    expect(
+      engineOptions([row({ engine: 'google' }), row({ engine: '' }), row({ engine: 'apple' })]),
+    ).toEqual(['google', 'apple']);
   });
 });
 

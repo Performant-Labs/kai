@@ -61,15 +61,27 @@ function startOfDay(ts: number): number {
   return d.getTime();
 }
 
+// The day-start of the local calendar day BEFORE ts's. A calendar-day step (setDate), never
+// `ts - 86400000`: on the day after a DST transition a local day is 23 or 25 hours, so a
+// fixed 24-hour subtraction lands an hour off midnight and mislabels yesterday's rows as
+// older (PR #67 review).
+function startOfPrevDay(ts: number): number {
+  const d = new Date(ts);
+  d.setDate(d.getDate() - 1);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 /**
  * Groups rows into day headings, following the order they arrive in (the backend's newest
  * first): a row opens a new group whenever its calendar day differs from the previous row's.
- * `now` decides which days are "today" and "yesterday".
+ * `now` decides which days are "today" and "yesterday" (calendar-day comparisons, so a DST
+ * day is labelled by its date, not by being exactly 24 hours long).
  */
 export function groupDays(items: HistoryRow[], now: number): DayGroup[] {
   const groups: DayGroup[] = [];
   const today = startOfDay(now);
-  const dayMs = 86400000;
+  const yesterday = startOfPrevDay(now);
   for (const item of items) {
     const key = dayKey(item.created_at);
     const last = groups[groups.length - 1];
@@ -79,7 +91,7 @@ export function groupDays(items: HistoryRow[], now: number): DayGroup[] {
     }
     const start = startOfDay(item.created_at);
     const kind: DayGroup['kind'] =
-      start === today ? 'today' : start === today - dayMs ? 'yesterday' : 'older';
+      start === today ? 'today' : start === yesterday ? 'yesterday' : 'older';
     groups.push({ key, kind, date: key, items: [item] });
   }
   return groups;
