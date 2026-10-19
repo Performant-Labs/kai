@@ -109,6 +109,7 @@ export const en: Dict = {
     failedTooLong: 'Text is too long for {engine}',
     failedUnsupported: "{engine} can't translate this language pair",
     copy: 'Copy the translated result to your clipboard',
+    copyBack: 'Copy the back-translation to your clipboard',
     result: 'Result',
     noResult: 'No result yet',
     activeEngines: 'Active engines',
