@@ -220,9 +220,9 @@ func newCancelService(t *testing.T, engs ...engine.Translator) (*Service, *recEm
 
 func historyRows(t *testing.T, hist *historystore.Store, keyword string) int {
 	t.Helper()
-	rows, err := hist.QueryByKeyword(context.Background(), keyword, 50, 0)
+	rows, err := hist.Query(context.Background(), historystore.Filter{Keyword: keyword}, 50, 0)
 	if err != nil {
-		t.Fatalf("QueryByKeyword: %v", err)
+		t.Fatalf("Query: %v", err)
 	}
 	return len(rows)
 }

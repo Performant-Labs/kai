@@ -79,6 +79,8 @@
     EventEnginesChanged,
     EventAutoClipboardChanged,
     EventClearContextShortcutChanged,
+    EventHistoryUse,
+    EventHistoryShortcutChanged,
     EventCopyKeyFailed,
     EventDoubleCopyPermissionMissing,
     EventAccessibilityMissing,
@@ -197,7 +199,12 @@
     GetConfig,
     SaveConfig,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
-  import { ShowSettings } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
+  import {
+    ShowSettings,
+    ShowHistory,
+  } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
+  import { historyShortcut } from '../stores/historyShortcut';
+  import { useMapping, type HistoryUsePayload } from '../utils/historyUse.ts';
 
   // The retained session (issue #81): the source text, the per-engine results and the request
   // marker survive closing the window and an app restart, so reopening shows the last translation.
@@ -527,6 +534,11 @@
       clearContext();
       return;
     }
+    if (isClearShortcut(e, historyKey)) {
+      e.preventDefault();
+      openHistory();
+      return;
+    }
     const action = shortcutAction(e);
     if (action === null) return;
     e.preventDefault();
@@ -819,6 +831,12 @@
     const offClearShortcut = onEvent(EventClearContextShortcutChanged, (v) => {
       if (typeof v === 'string') clearContextShortcut.set(v);
     });
+    // The History window's "Use" (issue #60): an entry is put back in the panes, nothing is translated.
+    const offHistoryUse = onEvent(EventHistoryUse, (p: HistoryUsePayload) => applyHistoryUse(p));
+    // The settings page saved a new History shortcut (issue #60): use it from now on.
+    const offHistoryShortcut = onEvent(EventHistoryShortcutChanged, (v) => {
+      if (typeof v === 'string') historyShortcut.set(v);
+    });
     // Initialization and first render: restore pin state, then wait for engines/languages/defaults to load.
     (async () => {
       // Restore the persisted pin state.
@@ -859,6 +877,8 @@
       offClosing();
       offEngines();
       offClearShortcut();
+      offHistoryUse();
+      offHistoryShortcut();
       // Nothing waiting may fire on a window that is gone (issue #57).
       autoRun.cancel();
       commitAuto.cancel();
@@ -1278,6 +1298,7 @@
   // was made for.
   let retrans = $state<BoundRetranslation | null>(null);
   const clearShortcut = $derived($clearContextShortcut);
+  const historyKey = $derived($historyShortcut);
   const shownRetrans = $derived(shownFor(retrans, input, activeEngine));
   // The sentence under the chat when another engine than the selected one did the retranslation.
   const retransNote = $derived(
@@ -1365,6 +1386,53 @@
     // The retranslation is shown through the edited map: take it out of there too.
     edited = dropRetranslation(edited, retrans);
     retrans = null;
+  }
+
+  // Opens the History window (issue #60): its own window, beside this one, which stays as it is.
+  function openHistory() {
+    ShowHistory().catch((e) => console.error(t('log.historyUseFailed'), e));
+  }
+
+  // "Use" in the History window (issue #60): the entry's source, result, languages and engine are put
+  // back, the way a retained session is restored (issue #81): the result is shown, but it is not a
+  // request of this run, so no engine reads as failed. Nothing is translated and nothing is
+  // asked of the backend; the "Translate as I type" and back-translation switches are not touched.
+  // A wait for a pause, or a request still open, belongs to the text being replaced and is dropped
+  // (a history write that was waiting is made first, as when the window is closed).
+  function applyHistoryUse(p: HistoryUsePayload) {
+    if (!p || typeof p.text !== 'string') return;
+    const m = useMapping(p, {
+      languages: languages.map((l) => l.value),
+      engines: activeEngines.map((e) => e.value),
+      active: activeEngine,
+    });
+    autoRun.cancel();
+    commitAuto.cancel();
+    commitAutoNow();
+    autoCommit = null;
+    if (awaiting) cancelRequest();
+    requestId = '';
+    started = null;
+    progress = {};
+    awaiting = false;
+    loading = false;
+    setSource(m.input, 'program');
+    // The old text's switch and correction do not describe this one.
+    switcher.newArrival();
+    switchCue = null;
+    correction = null;
+    usedCorrection = null;
+    edited = new Map();
+    retrans = null;
+    if (m.from !== null) fromLang = m.from as TranslateLang;
+    if (m.to !== null) toLang = m.to as TranslateLang;
+    if (m.from !== null || m.to !== null) void persistLangs();
+    if (m.engine !== '') setLastUsedEngine(m.engine);
+    results = m.results as unknown as Record<string, TranslateResult>;
+    requestedTo = m.requestedTo;
+    requested = Object.keys(m.results).length > 0;
+    requestedThisRun = false;
+    showToast(t('history.restored'), 3200);
   }
 
   // Back to the idle window (issue #81): the four retained fields (text, results, requested target,
@@ -1529,7 +1597,31 @@
            button's. Label reuses the titlebar.settings key (issue #69); the tooltip (issue #173)
            is the more descriptive titlebar.settingsHint, distinct so the error-panel's visible
            "Settings" button text (below) stays short. -->
-      <div class="col-start-3 flex justify-end">
+      <div class="col-start-3 flex items-center justify-end gap-1">
+        <!-- History (issue #60): opens the History window beside this one. Glyph: Lucide "history"
+             (ISC). The shortcut, when there is one, is part of the tooltip. -->
+        <button
+          class="u-icon-btn u-no-drag"
+          onclick={openHistory}
+          aria-label={t('history.title')}
+          title={historyKey ? `${t('history.open')} (${historyKey})` : t('history.open')}
+          data-testid="open-history"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+            <path d="M12 7v5l4 2" />
+          </svg>
+        </button>
         <button
           class="u-icon-btn u-no-drag"
           onclick={() => ShowSettings()}

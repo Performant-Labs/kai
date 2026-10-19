@@ -7,6 +7,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+### Enhancements
+- New History screen (#60): a History button in the translate window (and Cmd+Y, configurable in Settings > Shortcuts) opens it in its own window, beside the translate window. Each entry shows when it was translated, the language pair, the engine and an OCR mark; the list is grouped by day and loads as you scroll. You can search, filter by language pair and engine, copy a result, delete an entry, or clear everything after a confirmation. "Use" puts an entry's source, result, languages and engine back in the translate window without translating anything. The History tab in Settings now shows the same list.
+
 ## [0.4.1] - 2026-10-05
 
 ### Enhancements

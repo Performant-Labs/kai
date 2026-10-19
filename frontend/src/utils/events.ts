@@ -124,3 +124,12 @@ export interface ScreenshotRetranslatePayload {
   from: string; // TranslateLang: auto | zh | en | ...
   to: string; // TranslateLang
 }
+
+// EventHistoryUse: the History window's "Use" on an entry (issue #60). payload: HistoryUsePayload
+// (utils/historyUse.ts). The translate window puts the entry's source, result, languages and
+// engine back in its panes; it does not translate. Aligned with internal/events/events.go.
+export const EventHistoryUse = 'kai:history:use';
+
+// EventHistoryShortcutChanged: the Settings > Shortcuts tab saved a new History shortcut (issue #60),
+// payload: string (the combo, '' for none). Like EventClearContextShortcutChanged.
+export const EventHistoryShortcutChanged = 'kai:history:shortcut-changed';

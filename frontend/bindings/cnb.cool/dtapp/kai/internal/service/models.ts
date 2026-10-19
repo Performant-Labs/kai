@@ -82,6 +82,32 @@ export interface EngineListItem {
 }
 
 /**
+ * HistoryEngine is an engine present in the history, with its resolved name.
+ */
+export interface HistoryEngine {
+    "id": number;
+    "engine": string;
+}
+
+/**
+ * HistoryFacets is what the filter dropdowns offer: only values that exist in the data.
+ */
+export interface HistoryFacets {
+    "pairs": HistoryPair[] | null;
+    "engines": HistoryEngine[] | null;
+}
+
+/**
+ * HistoryFilter narrows the list (issue #60). A zero field means "any".
+ */
+export interface HistoryFilter {
+    "keyword": string;
+    "from_lang": string;
+    "to_lang": string;
+    "engine_id": number;
+}
+
+/**
  * HistoryItem is a single history entry returned to the frontend (time as a millisecond
  * timestamp, engine ID resolved to a readable name).
  */
@@ -90,6 +116,11 @@ export interface HistoryItem {
      * History record auto-increment primary key
      */
     "id": number;
+
+    /**
+     * Engine config ID (0 when unknown); the engine filter key
+     */
+    "engine_id": number;
 
     /**
      * Source text
@@ -125,6 +156,22 @@ export interface HistoryItem {
      * Creation time (millisecond timestamp)
      */
     "created_at": number;
+}
+
+/**
+ * HistoryPage is one page of results plus the total under the same filter.
+ */
+export interface HistoryPage {
+    "items": HistoryItem[] | null;
+    "total": number;
+}
+
+/**
+ * HistoryPair is a language pair present in the history.
+ */
+export interface HistoryPair {
+    "from_lang": string;
+    "to_lang": string;
 }
 
 /**

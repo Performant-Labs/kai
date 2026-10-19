@@ -19,10 +19,13 @@
   import { onEvent, emitEvent } from '../../runtime';
   import { get } from 'svelte/store';
   import { clearContextShortcut } from '../../stores/clearContextShortcut';
+  import { historyShortcut } from '../../stores/historyShortcut';
   import { validateClearShortcut, DEFAULT_CLEAR_SHORTCUT } from '../../utils/contextChat';
+  import { validateHistoryShortcut, DEFAULT_HISTORY_SHORTCUT } from '../../utils/historyShortcut';
   import {
     EventAutoClipboardChanged,
     EventClearContextShortcutChanged,
+    EventHistoryShortcutChanged,
     EventWindowClosing,
   } from '../../utils/events';
   import { WindowSettings } from '../../constants/window';
@@ -64,10 +67,12 @@
   });
   // Recording state: the shortcut field name currently capturing a key (null = not recording).
   // Hotkeys and exec keys are two separate categories.
-  type RecordableKey = keyof HotkeyForm | keyof ExecKeyForm | 'clearContext';
+  type RecordableKey = keyof HotkeyForm | keyof ExecKeyForm | 'clearContext' | 'history';
   // The translate window's "clear context" shortcut (issue #48): a window preference, not a global
   // hotkey, so it lives in localStorage (stores/clearContextShortcut) and not in the config file.
   let clearContextKey = $state(get(clearContextShortcut));
+  // The translate window's "open History" shortcut (issue #60), kept the same way.
+  let historyKey = $state(get(historyShortcut));
   let recordingKey = $state<RecordableKey | null>(null);
 
   // When auto-clipboard translation is on, the copy hotkey is automatically disabled (avoiding
@@ -211,6 +216,8 @@
     if (k) {
       if (k === 'clearContext') {
         clearContextKey = combo;
+      } else if (k === 'history') {
+        historyKey = combo;
       } else if (k === 'copy') {
         execKeyForm.copy.key = combo;
       } else {
@@ -219,7 +226,7 @@
     }
   }
 
-  function startRecord(key: keyof HotkeyForm | 'copy' | 'clearContext') {
+  function startRecord(key: keyof HotkeyForm | 'copy' | 'clearContext' | 'history') {
     // When the copy hotkey is locked by auto-clipboard (copyDisabled), forbid recording — a
     // backstop for the disabled attribute, preventing a click-through in edge cases from
     // modifying the copy hotkey.
@@ -316,9 +323,26 @@
       await Dialogs.Error({ Title: t('settings.hkSaveErrorTitle'), Message: msg });
       return;
     }
+    // The History shortcut gets the same check, and may not be the clear-context one.
+    const historyCheck = validateHistoryShortcut(historyKey, check.value);
+    if (!historyCheck.ok) {
+      const msg =
+        historyCheck.reason === 'needs_modifier'
+          ? t('settings.hkHistoryNeedsModifier')
+          : historyCheck.reason === 'no_key'
+            ? t('settings.hkHistoryNoKey')
+            : historyCheck.reason === 'same_as_clear'
+              ? t('settings.hkHistorySameAsClear')
+              : t('settings.hkHistoryReserved');
+      await Dialogs.Error({ Title: t('settings.hkSaveErrorTitle'), Message: msg });
+      return;
+    }
     clearContextKey = check.value;
     clearContextShortcut.set(check.value);
     emitEvent(EventClearContextShortcutChanged, check.value);
+    historyKey = historyCheck.value;
+    historyShortcut.set(historyCheck.value);
+    emitEvent(EventHistoryShortcutChanged, historyCheck.value);
     try {
       const cfg = (await GetConfig()) ?? ({} as any);
       const next = {
@@ -640,6 +664,37 @@
     </div>
   </div>
   <p class="u-muted -mt-2 text-xs">{t('settings.hkClearContextHint')}</p>
+  <div class="flex items-center justify-between gap-4 border-t pt-4">
+    <label class="text-sm font-medium" for="hk-history">{t('settings.hkHistory')}</label>
+    <div class="flex items-center gap-2">
+      {#if recordingKey === 'history'}
+        <span class="u-field w-56 px-3 py-1.5 text-sm u-text-warn">{t('settings.hkRecording')}</span
+        >
+      {:else}
+        <input
+          id="hk-history"
+          class="u-field w-56 px-3 py-1.5 text-sm"
+          data-testid="history-key"
+          placeholder={DEFAULT_HISTORY_SHORTCUT}
+          bind:value={historyKey}
+        />
+      {/if}
+      <button
+        type="button"
+        class="u-btn u-btn--ghost px-3 py-1.5 text-sm"
+        class:is-active={recordingKey === 'history'}
+        data-testid="history-record"
+        onclick={() => startRecord('history')}>{t('settings.hkRecord')}</button
+      >
+      <button
+        type="button"
+        class="u-btn u-btn--ghost px-3 py-1.5 text-sm"
+        data-testid="history-reset"
+        onclick={() => (historyKey = DEFAULT_HISTORY_SHORTCUT)}>{t('settings.hkReset')}</button
+      >
+    </div>
+  </div>
+  <p class="u-muted -mt-2 text-xs">{t('settings.hkHistoryHint')}</p>
   <p class="u-muted text-xs">{t('settings.hkFormatHint')}</p>
   <div class="flex justify-end pt-1">
     <button class="u-btn u-btn--primary px-4 py-1.5 text-sm" onclick={saveShortcuts}>

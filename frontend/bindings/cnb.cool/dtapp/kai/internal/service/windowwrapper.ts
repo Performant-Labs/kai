@@ -46,6 +46,14 @@ export function SetApp(app: application$0.App | null): $CancellablePromise<void>
 }
 
 /**
+ * ShowHistory opens the History window (issue #60). Unlike ShowSettings it leaves a pinned
+ * translate window where it is: the history is meant to sit beside it.
+ */
+export function ShowHistory(): $CancellablePromise<void> {
+    return $Call.ByID(681670227);
+}
+
+/**
  * ShowScreenshotWindow summons the screenshot translate window (symmetric with
  * ShowTranslateWindow).
  * Note: main.go's EventWindowShow('screenshot') still goes through the standalone

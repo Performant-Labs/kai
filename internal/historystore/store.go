@@ -91,17 +91,56 @@ func (s *Store) FindByKey(ctx context.Context, text, fromLang, toLang string, en
 	return id, err
 }
 
-// QueryByKeyword searches history by keyword; an empty keyword returns everything, newest
-// first.
-func (s *Store) QueryByKeyword(ctx context.Context, keyword string, limit, offset int64) ([]History, error) {
+// Filter narrows the history list (issue #60). A zero field means "any".
+type Filter struct {
+	Keyword  string // matched against source text and result
+	FromLang string
+	ToLang   string
+	EngineID int64
+}
+
+// Query returns the entries matching f, newest first.
+func (s *Store) Query(ctx context.Context, f Filter, limit, offset int64) ([]History, error) {
 	return s.QueryHistory(ctx, QueryHistoryParams{
-		Column1: keyword,
-		Limit:   limit,
-		Offset:  offset,
+		Keyword:   f.Keyword,
+		FromLang:  f.FromLang,
+		ToLang:    f.ToLang,
+		EngineID:  f.EngineID,
+		RowLimit:  limit,
+		RowOffset: offset,
 	})
 }
 
-// CountByKeyword returns the number of history entries matching the keyword.
-func (s *Store) CountByKeyword(ctx context.Context, keyword string) (int64, error) {
-	return s.CountHistory(ctx, keyword)
+// Count returns the number of entries matching f.
+func (s *Store) Count(ctx context.Context, f Filter) (int64, error) {
+	return s.CountHistory(ctx, CountHistoryParams{
+		Keyword:  f.Keyword,
+		FromLang: f.FromLang,
+		ToLang:   f.ToLang,
+		EngineID: f.EngineID,
+	})
+}
+
+// Pair is a (source, target) language pair present in the history.
+type Pair struct {
+	FromLang string
+	ToLang   string
+}
+
+// Pairs lists the distinct language pairs in the history, for the filter dropdown.
+func (s *Store) Pairs(ctx context.Context) ([]Pair, error) {
+	rows, err := s.DistinctPairs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Pair, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Pair(r))
+	}
+	return out, nil
+}
+
+// EngineIDs lists the distinct engine IDs in the history, for the filter dropdown.
+func (s *Store) EngineIDs(ctx context.Context) ([]int64, error) {
+	return s.DistinctEngineIDs(ctx)
 }

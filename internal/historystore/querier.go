@@ -10,8 +10,10 @@ import (
 
 type Querier interface {
 	ClearHistory(ctx context.Context) error
-	CountHistory(ctx context.Context, dollar_1 interface{}) (int64, error)
+	CountHistory(ctx context.Context, arg CountHistoryParams) (int64, error)
 	DeleteHistory(ctx context.Context, id int64) error
+	DistinctEngineIDs(ctx context.Context) ([]int64, error)
+	DistinctPairs(ctx context.Context) ([]DistinctPairsRow, error)
 	FindDuplicate(ctx context.Context, arg FindDuplicateParams) (int64, error)
 	InsertHistory(ctx context.Context, arg InsertHistoryParams) (int64, error)
 	QueryHistory(ctx context.Context, arg QueryHistoryParams) ([]History, error)

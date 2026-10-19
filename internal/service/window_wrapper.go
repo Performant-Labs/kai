@@ -51,6 +51,18 @@ func (w *WindowWrapper) settingsWindow() application.Window {
 	return win
 }
 
+func (w *WindowWrapper) historyWindow() application.Window {
+	if w.app == nil {
+		return nil
+	}
+	win, ok := w.app.Window.GetByName(model.WindowHistory)
+	if !ok {
+		slog.Error(i18n.T("log.window_handle_failed"), slog.String("window", model.WindowHistory))
+		return nil
+	}
+	return win
+}
+
 // screenshotWindow fetches the screenshot translate window handle by name (same style as
 // translateWindow/settingsWindow).
 func (w *WindowWrapper) screenshotWindow() application.Window {
@@ -144,6 +156,12 @@ func (w *WindowWrapper) ShowSettings() {
 		LowerForSettings(tw)
 	}
 	showAndFocus(w.settingsWindow())
+}
+
+// ShowHistory opens the History window (issue #60). Unlike ShowSettings it leaves a pinned
+// translate window where it is: the history is meant to sit beside it.
+func (w *WindowWrapper) ShowHistory() {
+	showAndFocus(w.historyWindow())
 }
 
 // ShowScreenshotWindow summons the screenshot translate window (symmetric with

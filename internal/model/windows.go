@@ -9,4 +9,6 @@ const (
 	WindowSettings = "settings"
 	// WindowScreenshot is the screenshot translate window (/screenshot.html)
 	WindowScreenshot = "screenshot"
+	// WindowHistory is the translation history window (/history.html), issue #60
+	WindowHistory = "history"
 )

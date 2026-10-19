@@ -23,6 +23,11 @@ export {
 export type {
     AllEngineItem,
     EngineListItem,
+    HistoryEngine,
+    HistoryFacets,
+    HistoryFilter,
     HistoryItem,
+    HistoryPage,
+    HistoryPair,
     NamedItem
 } from "./models.js";

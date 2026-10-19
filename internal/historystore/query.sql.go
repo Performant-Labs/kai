@@ -21,10 +21,25 @@ func (q *Queries) ClearHistory(ctx context.Context) error {
 const countHistory = `-- name: CountHistory :one
 SELECT COUNT(*) FROM history
 WHERE (?1 = '' OR text LIKE '%' || ?1 || '%' OR result LIKE '%' || ?1 || '%')
+  AND (?2 = '' OR from_lang = ?2)
+  AND (?3 = '' OR to_lang = ?3)
+  AND (?4 = 0 OR engine_id = ?4)
 `
 
-func (q *Queries) CountHistory(ctx context.Context, dollar_1 interface{}) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countHistory, dollar_1)
+type CountHistoryParams struct {
+	Keyword  interface{} `json:"keyword"`
+	FromLang interface{} `json:"from_lang"`
+	ToLang   interface{} `json:"to_lang"`
+	EngineID interface{} `json:"engine_id"`
+}
+
+func (q *Queries) CountHistory(ctx context.Context, arg CountHistoryParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countHistory,
+		arg.Keyword,
+		arg.FromLang,
+		arg.ToLang,
+		arg.EngineID,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -37,6 +52,65 @@ DELETE FROM history WHERE id = ?
 func (q *Queries) DeleteHistory(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteHistory, id)
 	return err
+}
+
+const distinctEngineIDs = `-- name: DistinctEngineIDs :many
+SELECT DISTINCT engine_id FROM history ORDER BY engine_id
+`
+
+func (q *Queries) DistinctEngineIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, distinctEngineIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var engine_id int64
+		if err := rows.Scan(&engine_id); err != nil {
+			return nil, err
+		}
+		items = append(items, engine_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const distinctPairs = `-- name: DistinctPairs :many
+SELECT DISTINCT from_lang, to_lang FROM history ORDER BY from_lang, to_lang
+`
+
+type DistinctPairsRow struct {
+	FromLang string `json:"from_lang"`
+	ToLang   string `json:"to_lang"`
+}
+
+func (q *Queries) DistinctPairs(ctx context.Context) ([]DistinctPairsRow, error) {
+	rows, err := q.db.QueryContext(ctx, distinctPairs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DistinctPairsRow{}
+	for rows.Next() {
+		var i DistinctPairsRow
+		if err := rows.Scan(&i.FromLang, &i.ToLang); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const findDuplicate = `-- name: FindDuplicate :one
@@ -101,18 +175,31 @@ const queryHistory = `-- name: QueryHistory :many
 SELECT id, text, result, from_lang, to_lang, engine_id, from_ocr, created_at
 FROM history
 WHERE (?1 = '' OR text LIKE '%' || ?1 || '%' OR result LIKE '%' || ?1 || '%')
-ORDER BY created_at DESC
-LIMIT ?2 OFFSET ?3
+  AND (?2 = '' OR from_lang = ?2)
+  AND (?3 = '' OR to_lang = ?3)
+  AND (?4 = 0 OR engine_id = ?4)
+ORDER BY created_at DESC, id DESC
+LIMIT ?6 OFFSET ?5
 `
 
 type QueryHistoryParams struct {
-	Column1 interface{} `json:"column_1"`
-	Limit   int64       `json:"limit"`
-	Offset  int64       `json:"offset"`
+	Keyword   interface{} `json:"keyword"`
+	FromLang  interface{} `json:"from_lang"`
+	ToLang    interface{} `json:"to_lang"`
+	EngineID  interface{} `json:"engine_id"`
+	RowOffset int64       `json:"row_offset"`
+	RowLimit  int64       `json:"row_limit"`
 }
 
 func (q *Queries) QueryHistory(ctx context.Context, arg QueryHistoryParams) ([]History, error) {
-	rows, err := q.db.QueryContext(ctx, queryHistory, arg.Column1, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, queryHistory,
+		arg.Keyword,
+		arg.FromLang,
+		arg.ToLang,
+		arg.EngineID,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

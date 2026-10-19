@@ -397,6 +397,8 @@ func main() {
 			windowSvc.ShowTranslateWindow()
 		case "settings":
 			windowSvc.ShowSettings()
+		case "history":
+			windowSvc.ShowHistory()
 		case "screenshot":
 			showScreenshotWindow()
 		}
@@ -519,6 +521,45 @@ func main() {
 		application.InvokeAsync(func() {
 			windowSvc.DisableRestoration(settingsWindow)
 			applyWindowBackground(windowSvc, settingsWindow, currentDark(), false)
+		})
+	})
+
+	// History window (issue #60): opened from the translate window, kept beside it, so unlike
+	// Settings it is resizable and does not lower a pinned translate window. Starts hidden and
+	// the red X only hides it, like Settings.
+	historyWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             model.WindowHistory,
+		Title:            i18n.T("window.history_title"),
+		Width:            1000,
+		Height:           700,
+		MinWidth:         640,
+		MinHeight:        480,
+		URL:              "/history.html",
+		BackgroundColour: bgColour,
+		Mac: application.MacWindow{
+			Appearance: macAppearance,
+		},
+		Windows: application.WindowsWindow{
+			HiddenOnTaskbar: false,
+			Theme:           winTheme,
+		},
+		MinimiseButtonState: application.ButtonEnabled,
+		MaximiseButtonState: application.ButtonHidden,
+		CloseButtonState:    application.ButtonEnabled,
+	})
+	_ = historyWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		if app != nil {
+			app.Event.Emit(kevents.EventWindowClosing, model.WindowHistory)
+		}
+		historyWindow.Hide()
+	})
+	historyWindow.Center()
+	historyWindow.Hide()
+	historyWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) {
+		application.InvokeAsync(func() {
+			windowSvc.DisableRestoration(historyWindow)
+			applyWindowBackground(windowSvc, historyWindow, currentDark(), false)
 		})
 	})
 
@@ -803,7 +844,7 @@ func main() {
 	recolourWindows := func() {
 		dark := currentDark()
 		application.InvokeAsync(func() {
-			for _, w := range []application.Window{settingsWindow, translateWindow, screenshotWindow} {
+			for _, w := range []application.Window{settingsWindow, historyWindow, translateWindow, screenshotWindow} {
 				applyWindowBackground(windowSvc, w, dark, true)
 			}
 		})
@@ -850,6 +891,7 @@ var (
 	tray             *application.SystemTray
 	translateWindow  application.Window
 	settingsWindow   application.Window
+	historyWindow    application.Window
 	screenshotWindow application.Window
 )
 

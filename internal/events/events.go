@@ -96,6 +96,17 @@ const (
 	// EventAccessibilityMissing in frontend/src/utils/events.ts.
 	EventAccessibilityMissing = "kai:accessibility:missing"
 
+	// EventHistoryUse is emitted by the History window's "Use" button (issue #60). Payload:
+	// an object built by the frontend (source text, result, from/to language, engine name). The
+	// translate window puts them back in its panes and selects the engine; it does not translate.
+	// Aligned with the frontend's EventHistoryUse in frontend/src/utils/events.ts.
+	EventHistoryUse = "kai:history:use"
+
+	// EventHistoryShortcutChanged is broadcast when the user changes the "open History" shortcut
+	// in Settings > Shortcuts (issue #60), payload: string (the new combo, "" for none). The
+	// translate window re-reads it, as with the clear-context shortcut (#48).
+	EventHistoryShortcutChanged = "kai:history:shortcut-changed"
+
 	// EventCopyKeyFailed is emitted when the copy-key branch of TriggerInput (issue #175 item
 	// 5) simulates the copy key but pollClipboardText never sees the clipboard change —
 	// CopySelection returns "". No payload.

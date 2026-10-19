@@ -125,9 +125,9 @@ const idText = "Hola mundo"
 
 func idHistoryRows(t *testing.T, hist *historystore.Store) int {
 	t.Helper()
-	rows, err := hist.QueryByKeyword(context.Background(), "Hola", 50, 0)
+	rows, err := hist.Query(context.Background(), historystore.Filter{Keyword: "Hola"}, 50, 0)
 	if err != nil {
-		t.Fatalf("QueryByKeyword: %v", err)
+		t.Fatalf("Query: %v", err)
 	}
 	return len(rows)
 }

@@ -17,6 +17,7 @@ export type Dict = {
     translate_title: string;
     settings_title: string;
     screenshot_title: string;
+    history_title: string;
   };
   screenshot: {
     original: string;
@@ -43,6 +44,40 @@ export type Dict = {
     close: string;
     settings: string;
     settingsHint: string;
+  };
+  history: {
+    title: string;
+    open: string;
+    restored: string;
+    searchPlaceholder: string;
+    clearAll: string;
+    clearConfirmTitle: string;
+    clearConfirmMessage: string;
+    today: string;
+    yesterday: string;
+    ocr: string;
+    source: string;
+    result: string;
+    use: string;
+    useHint: string;
+    copy: string;
+    delete: string;
+    showMore: string;
+    showLess: string;
+    empty: string;
+    emptyHint: string;
+    noMatch: string;
+    noMatchHint: string;
+    clearFilters: string;
+    filterPair: string;
+    filterEngine: string;
+    filterAny: string;
+    loading: string;
+    count: string;
+    loadError: string;
+    deleteError: string;
+    clearError: string;
+    errorTitle: string;
   };
   common: {
     cancel: string;
@@ -280,6 +315,12 @@ export type Dict = {
     hkClearContextNeedsModifier: string;
     hkClearContextNoKey: string;
     hkClearContextReserved: string;
+    hkHistory: string;
+    hkHistoryHint: string;
+    hkHistoryNeedsModifier: string;
+    hkHistoryNoKey: string;
+    hkHistoryReserved: string;
+    hkHistorySameAsClear: string;
     hkRecord: string;
     hkRecording: string;
     enabled: string;
@@ -307,20 +348,6 @@ export type Dict = {
     permCollapse: string;
     history: string;
     historyTitle: string;
-    historyClear: string;
-    historyEmpty: string;
-    historySearchPlaceholder: string;
-    historyPageInfo: string;
-    historyPrev: string;
-    historyNext: string;
-    historyOpErrorTitle: string;
-    historyOkTitle: string;
-    historyLoadError: string;
-    historyDeleteError: string;
-    historyClearError: string;
-    historyCleared: string;
-    historySource: string;
-    historyResult: string;
     close: string;
   };
   lang: {
@@ -413,6 +440,7 @@ export type Dict = {
     historyLoadFailed: string;
     historyDeleteFailed: string;
     historyClearFailed: string;
+    historyUseFailed: string;
     engineLoadOcrLangsFailed: string;
     engineLoadListFailed: string;
     engineReadConfigFailed: string;

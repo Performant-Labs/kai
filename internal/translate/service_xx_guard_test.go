@@ -64,9 +64,9 @@ func newXXService(t *testing.T, detected string) (*Service, *xxServer, *historys
 
 func historyTos(t *testing.T, hist *historystore.Store) []string {
 	t.Helper()
-	rows, err := hist.QueryByKeyword(context.Background(), "Hola", 50, 0)
+	rows, err := hist.Query(context.Background(), historystore.Filter{Keyword: "Hola"}, 50, 0)
 	if err != nil {
-		t.Fatalf("QueryByKeyword: %v", err)
+		t.Fatalf("Query: %v", err)
 	}
 	var out []string
 	for _, r := range rows {

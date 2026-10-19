@@ -29,7 +29,7 @@ func TestMainAppliesTheWebViewBackgroundToEveryWindowAndOnThemeChange(t *testing
 		t.Fatal(err)
 	}
 	src := string(b)
-	for _, w := range []string{"settingsWindow", "translateWindow", "screenshotWindow"} {
+	for _, w := range []string{"settingsWindow", "historyWindow", "translateWindow", "screenshotWindow"} {
 		if !strings.Contains(src, "applyWindowBackground(windowSvc, "+w+", currentDark(), false)") {
 			t.Errorf("main.go must call applyWindowBackground for %s when it becomes ready", w)
 		}
