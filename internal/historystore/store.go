@@ -94,14 +94,44 @@ func (s *Store) FindByKey(ctx context.Context, text, fromLang, toLang string, en
 // QueryByKeyword searches history by keyword; an empty keyword returns everything, newest
 // first.
 func (s *Store) QueryByKeyword(ctx context.Context, keyword string, limit, offset int64) ([]History, error) {
-	return s.QueryHistory(ctx, QueryHistoryParams{
-		Column1: keyword,
-		Limit:   limit,
-		Offset:  offset,
-	})
+	return s.QueryByFilter(ctx, HistoryFilter{Keyword: keyword}, limit, offset)
 }
 
 // CountByKeyword returns the number of history entries matching the keyword.
 func (s *Store) CountByKeyword(ctx context.Context, keyword string) (int64, error) {
-	return s.CountHistory(ctx, keyword)
+	return s.CountByFilter(ctx, HistoryFilter{Keyword: keyword})
+}
+
+// HistoryFilter narrows a history query (issue #60): the empty value matches everything.
+// Keyword matches source and result text; FromLang/ToLang compare the stored pair exactly;
+// EngineID compares the stored engine id. Zero is not a valid engine id (it is the "unknown
+// engine" default), so EngineID 0 means "any engine".
+type HistoryFilter struct {
+	Keyword  string
+	FromLang string
+	ToLang   string
+	EngineID int64
+}
+
+// QueryByFilter searches history by keyword plus the language-pair and engine filters of the
+// history screen (issue #60), newest first, paged.
+func (s *Store) QueryByFilter(ctx context.Context, f HistoryFilter, limit, offset int64) ([]History, error) {
+	return s.QueryHistory(ctx, QueryHistoryParams{
+		Column1: f.Keyword,
+		Limit:   limit,
+		Offset:  offset,
+		Column4: f.FromLang,
+		Column5: f.ToLang,
+		Column6: f.EngineID,
+	})
+}
+
+// CountByFilter returns the number of history entries matching the filter (issue #60).
+func (s *Store) CountByFilter(ctx context.Context, f HistoryFilter) (int64, error) {
+	return s.CountHistory(ctx, CountHistoryParams{
+		Column1: f.Keyword,
+		Column2: f.FromLang,
+		Column3: f.ToLang,
+		Column4: f.EngineID,
+	})
 }
