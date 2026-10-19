@@ -353,7 +353,7 @@ to `Performant-Labs/kai`, never upstream.
 7. `scripts/release-bump.sh X.Y.Z`.
 8. Restructure `CHANGELOG.md`: `[Unreleased]` becomes `[X.Y.Z] - date`, Known Issues verbatim
    from step 3 (standing lines included), a fresh empty `[Unreleased]` above.
-9. Commit, open a PR, get PR-Agent above 90, merge, confirm CI is green on the merge commit.
+9. Commit, open a PR, get PR-Agent above 90, merge (`gh pr merge --merge --delete-branch`, so the release branch does not outlive the PR; the pre-flight only warns about a leftover one that is already in master), confirm CI is green on the merge commit.
 10. `git tag -a vX.Y.Z -m "vX.Y.Z"` on the merge commit, `git push origin vX.Y.Z`. (Holler signs
    its tags; no signing key is configured for this repo, so these are annotated only.)
 11. Build on Apple Silicon **from that tag**, in a clean checkout:
