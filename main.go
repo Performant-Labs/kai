@@ -117,6 +117,18 @@ func formatBuildTime(raw string) string {
 	return t.Local().Format("2006-01-02 15:04:05")
 }
 
+// windowTitle composes a persistent window's native title (issue #69): the translated window
+// word plus the running build's brand-version suffix, e.g. "Translate — Kai 0.5.0", zh
+// "翻译 — Kai 0.5.0". The window word comes from i18n as before; the suffix (buildinfo.
+// BrandVersion) carries the brand and version and is never translated — the brand used to
+// live inside the translated window.word titles ("Kai Translate") and moved here so it is not
+// said twice now that every title ends in it. Titles are set at window creation as today, so
+// a language change mid-session does not retitle already-created windows (pre-existing
+// behavior, restart follows the new language).
+func windowTitle(key string) string {
+	return i18n.T(key) + " — " + buildinfo.BrandVersion()
+}
+
 func main() {
 	// ── Phase one: create the data directories (runs earliest; the user language is not yet
 	// known, so failure messages are hardcoded rather than localized) ──
@@ -482,7 +494,7 @@ func main() {
 	// (see the Hide below).
 	settingsWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   model.WindowSettings,
-		Title:  i18n.T("window.settings_title"),
+		Title:  windowTitle("window.settings_title"),
 		Width:  1280,
 		Height: 800,
 		// Issue #173 item 7 first tried a MinWidth/MinHeight floor (900x600) to keep Settings
@@ -554,7 +566,7 @@ func main() {
 	// translate window).
 	historyWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   model.WindowHistory,
-		Title:  i18n.T("window.history_title"),
+		Title:  windowTitle("window.history_title"),
 		Width:  760,
 		Height: 560,
 		// A floor, not a lock: the list reflows and the rows clamp, so any size above this
@@ -612,7 +624,7 @@ func main() {
 	translateWidth, translateHeight := translateWindowSize(settingsService, widthForDefaultText(960), 640, widthForDefaultText(780), 520)
 	translateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             model.WindowTranslate,
-		Title:            i18n.T("window.translate_title"),
+		Title:            windowTitle("window.translate_title"),
 		Width:            translateWidth,
 		Height:           translateHeight,
 		MinWidth:         widthForDefaultText(780),
@@ -674,7 +686,7 @@ func main() {
 	// Summoned by the screenshot hotkey/EventScreenshotOCR.
 	screenshotWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             model.WindowScreenshot,
-		Title:            i18n.T("window.screenshot_title"),
+		Title:            windowTitle("window.screenshot_title"),
 		Width:            widthForDefaultText(900),
 		Height:           600,
 		MinWidth:         widthForDefaultText(600),
