@@ -6,6 +6,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 `scripts/changelog-check.sh` lists merged PRs this section does not cover.
 
 ## [Unreleased]
+
+## [0.5.0] - 2026-10-19
 <!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->
 
 ### Enhancements
@@ -26,7 +28,14 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - Kai is now built with Go 1.27.2 and `golang.org/x/net` 0.60.0, which fix vulnerabilities published against Go 1.27.1's standard library (`net/http`, `crypto/tls`, `net/textproto`) and against x/net 0.59.0; the build's vulnerability scan failed until then (#64, #65).
 
 ### Known Issues
-- The 0.4.1 note "Kai's log records the text you select or copy" is fixed in this build: the hotkey log lines carry the length only (#11). Log files written by 0.4.1 and earlier still contain what was selected or copied then, so check or delete `~/.kai/logs` before sharing an old log.
+- Alt-A sometimes captures the right Mexican Spanish text but does not switch the language drop-downs (at least 3 of 20 translations for one user). The cause is not found yet and this build has not shown it again either way. Every `[source switch]` log line names the build, so when it happens, send `~/.kai/logs/kai.log` (and that day's `kai-YYYY-MM-DD.log.gz` if it was an earlier day) ([#16](https://github.com/Performant-Labs/kai/issues/16)).
+- Log files written by 0.4.1 and earlier still contain the text you selected or copied on the hotkey paths; this build no longer writes it. Kai keeps logs for 30 days in `~/.kai/logs`: delete the old files if that text was private, and do not paste an old log into an issue without checking it ([#11](https://github.com/Performant-Labs/kai/issues/11)).
+- Faster System translation (Settings > Translation Engines) is off by default. It needs macOS 26.4 or later and the traditional translation language packs for the pair (System Settings > General > Language & Region > Translation Languages); without them Kai says so and uses the standard mode for that translation. Apple's fast mode reads noticeably worse than the standard one, and its quality has not been checked on real text in several language pairs yet ([#10](https://github.com/Performant-Labs/kai/issues/10)).
+- The translate window stays on top of every other app until you hide it (the pin button in its FROM pane turns that off for the session); there is no setting for the default yet ([#69](https://github.com/Performant-Labs/kai/issues/69)).
+- Screen Recording: macOS may not list Kai in Privacy & Security > Screen & System Audio Recording when you click Grant access (it did not for the development build; for this release it is unverified). If Kai is not listed, click + in that list, add Kai, switch it on, then restart Kai.
+- The in-app updater has not yet been seen to find a release on a real install, so do not count on it: install 0.5.0 by hand (the disk image, the zip, or `scripts/install-release.sh`). Kai 0.2.0 looks in the archived private repository and cannot offer any update.
+- Permissions are granted to the app's signing identity. 0.5.0 is signed with the same "Kai Release" certificate as 0.4.x, so the grants should carry over, but that is not yet verified on other Macs ([#36](https://github.com/Performant-Labs/kai/issues/36)); if Alt+A stops copying after an update, remove Kai from the list in Privacy & Security and add it again.
+- The certificate is self-signed, so macOS still blocks a copy downloaded with a browser as coming from an unidentified developer: install with `gh release download` and `scripts/install-release.sh`, or run `xattr -dr com.apple.quarantine /Applications/Kai.app`.
 
 ## [0.4.1] - 2026-10-05
 
