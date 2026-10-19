@@ -51,8 +51,14 @@ vi.mock('@wailsio/runtime', () => ({
   System: { IsDarkMode: async () => false },
 }));
 vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/historywrapper.ts', () => ({
-  GetHistory: (kw: string, from: string, to: string, engine: string, offset: number, limit: number) =>
-    h.getHistory(kw, from, to, engine, offset, limit),
+  GetHistory: (
+    kw: string,
+    from: string,
+    to: string,
+    engine: string,
+    offset: number,
+    limit: number,
+  ) => h.getHistory(kw, from, to, engine, offset, limit),
   CountHistory: (kw: string, from: string, to: string, engine: string) =>
     h.countHistory(kw, from, to, engine),
   DeleteHistory: (id: number) => h.del(id),
@@ -186,9 +192,7 @@ describe('HistoryScreen, mounted (issue #60)', () => {
     // The row meta: pair names, engine name, the OCR mark.
     expect(text()).toContain('English → Spanish');
     expect(text()).toContain('Google');
-    expect(target.querySelector('[data-testid="history-row-ocr"]')?.textContent).toContain(
-      'OCR',
-    );
+    expect(target.querySelector('[data-testid="history-row-ocr"]')?.textContent).toContain('OCR');
     // The first load asks the backend with empty filters and the first page.
     expect(h.getHistory).toHaveBeenCalledWith('', '', '', '', 0, 50);
     expect(h.countHistory).toHaveBeenCalledWith('', '', '', '');
@@ -235,7 +239,9 @@ describe('HistoryScreen, mounted (issue #60)', () => {
       '[data-testid="history-engine-filter"]',
     ) as HTMLSelectElement;
     expect([...engineSel.options].map((o) => o.value)).toEqual(['', 'google', 'apple']);
-    const pairSel = target.querySelector('[data-testid="history-pair-filter"]') as HTMLSelectElement;
+    const pairSel = target.querySelector(
+      '[data-testid="history-pair-filter"]',
+    ) as HTMLSelectElement;
     expect([...pairSel.options].map((o) => o.value)).toEqual(['', 'en->es', 'es->en']);
     pairSel.value = 'es->en';
     pairSel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -297,6 +303,32 @@ describe('HistoryScreen, mounted (issue #60)', () => {
     expect(h.del).toHaveBeenCalledWith(2);
     expect(rows()).toHaveLength(1);
     expect(h.getHistory).not.toHaveBeenCalled(); // updated locally, no reload
+  });
+
+  // Coverage ported from the WIP history-screen branch (710cd7b): the delete-failure branch —
+  // the row stays and the error dialog says so.
+  it('a failed delete keeps the entry and says so', async () => {
+    resetStore([row({ id: 1 }), row({ id: 2, created_at: NOW - 2 * 60_000 })]);
+    await mountScreen();
+    h.del.mockImplementation(() => Promise.reject(new Error('db gone')));
+    (rows()[1].querySelector('[data-testid="history-delete"]') as HTMLButtonElement).click();
+    await flush();
+    expect(rows()).toHaveLength(2); // nothing removed
+    expect(h.error).toHaveBeenCalledTimes(1);
+  });
+
+  // Coverage ported from the WIP history-screen branch (710cd7b): keys pressed inside the
+  // search box are the box's — Delete edits the text and removes no row.
+  it('Delete in the search box edits the text and removes nothing', async () => {
+    resetStore([row({ id: 1 }), row({ id: 2, created_at: NOW - 2 * 60_000 })]);
+    await mountScreen();
+    const search = target.querySelector('[data-testid="history-search"]') as HTMLInputElement;
+    search.focus();
+    // Bubbles up to the window listener, whose guard must see the input as the target.
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    await flush();
+    expect(h.del).not.toHaveBeenCalled();
+    expect(rows()).toHaveLength(2);
   });
 
   it('Clear all asks for a confirmation and only clears on the clearing answer', async () => {

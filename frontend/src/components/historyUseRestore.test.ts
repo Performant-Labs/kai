@@ -105,6 +105,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts', () => 
 
 import TranslateWindow from './TranslateWindow.svelte';
 import { backTranslateOn } from '../stores/backTranslate';
+import { historyShortcut } from '../stores/historyShortcut';
 
 let app: Record<string, unknown> | undefined;
 let target: HTMLElement;
@@ -140,6 +141,9 @@ async function mountWindow() {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   localStorage.clear();
+  // The persisted history-shortcut store outlives localStorage.clear (its in-memory value is
+  // set at import time); every test starts from the default Cmd+Y.
+  historyShortcut.set('Cmd+Y');
   h.handlers.clear();
   h.emit.mockReset();
   h.plan.mockReset();
@@ -269,6 +273,45 @@ describe('TranslateWindow, mounted: using a history entry (issue #60)', () => {
     const btn = target.querySelector('[data-testid="history-button"]') as HTMLButtonElement;
     expect(btn.getAttribute('aria-label')).toBe('History');
     expect(btn.getAttribute('title')).toBe('Browse past translations (Cmd+Y)');
+  });
+
+  it('a shortcut saved in Settings opens it, and the default stops firing (issue #60)', async () => {
+    historyShortcut.set('Alt+H');
+    await mountWindow();
+    key('h', { altKey: true });
+    await flush();
+    expect(h.showHistory).toHaveBeenCalledTimes(1);
+    // The default no longer belongs to the window.
+    key('y', { metaKey: true });
+    await flush();
+    expect(h.showHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('an empty shortcut means no key opens it; the button still does', async () => {
+    historyShortcut.set('');
+    await mountWindow();
+    key('y', { metaKey: true });
+    key('h', { altKey: true });
+    await flush();
+    expect(h.showHistory).not.toHaveBeenCalled();
+    (target.querySelector('[data-testid="history-button"]') as HTMLButtonElement).click();
+    await flush();
+    expect(h.showHistory).toHaveBeenCalledTimes(1);
+    // The tooltip says what it does without naming a key.
+    const btn = target.querySelector('[data-testid="history-button"]') as HTMLButtonElement;
+    expect(btn.getAttribute('title')).toBe('Browse past translations');
+  });
+
+  it('follows a shortcut saved while the window is open', async () => {
+    await mountWindow();
+    h.fire('kai:history:shortcut-changed', 'Alt+H');
+    await flush();
+    key('h', { altKey: true });
+    await flush();
+    expect(h.showHistory).toHaveBeenCalledTimes(1);
+    key('y', { metaKey: true });
+    await flush();
+    expect(h.showHistory).toHaveBeenCalledTimes(1);
   });
 
   it('the history window closing puts this window’s pin back', async () => {
