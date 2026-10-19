@@ -34,8 +34,27 @@ func NewHistoryWrapper(store *historystore.Store, cs *configstore.Store) *Histor
 	return &HistoryWrapper{store: store, configStore: cs}
 }
 
-// GetHistory queries translation history with pagination.
-func (w *HistoryWrapper) GetHistory(keyword string, offset, limit int) []HistoryItem {
+// engineLookup is the configstore-backed EngineIDLookup the wrapper hands to
+// historystore.FilterFrom: a name resolves when a configured engine carries it. Every
+// decision about what a name means (empty = any engine, unresolvable = no engine) lives in
+// historystore.ResolveEngineID, pure and tested there (PR #67 review: the wrapper stays thin).
+func (w *HistoryWrapper) engineLookup(ctx context.Context) historystore.EngineIDLookup {
+	return func(name string) (int64, bool) {
+		if w.configStore == nil {
+			return 0, false
+		}
+		eng, err := w.configStore.GetEngineByName(ctx, name)
+		if err != nil || eng == nil {
+			return 0, false
+		}
+		return eng.ID, true
+	}
+}
+
+// GetHistory queries translation history with pagination and the history screen's filters
+// (issue #60): keyword matches source and result text, fromLang/toLang compare the stored
+// pair, engine names the engine. An empty filter value matches anything.
+func (w *HistoryWrapper) GetHistory(keyword, fromLang, toLang, engine string, offset, limit int) []HistoryItem {
 	if w.store == nil {
 		return nil
 	}
@@ -44,7 +63,9 @@ func (w *HistoryWrapper) GetHistory(keyword string, offset, limit int) []History
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	rows, err := w.store.QueryByKeyword(ctx, keyword, int64(limit), int64(offset))
+	rows, err := w.store.QueryByFilter(
+		ctx, historystore.FilterFrom(keyword, fromLang, toLang, engine, w.engineLookup(ctx)),
+		int64(limit), int64(offset))
 	if err != nil {
 		return nil
 	}
@@ -70,15 +91,16 @@ func (w *HistoryWrapper) GetHistory(keyword string, offset, limit int) []History
 	return out
 }
 
-// CountHistory returns the total history count matching the keyword, for the frontend's page
-// count.
-func (w *HistoryWrapper) CountHistory(keyword string) int64 {
+// CountHistory returns the total history count matching the keyword and filters, for the
+// frontend's page count.
+func (w *HistoryWrapper) CountHistory(keyword, fromLang, toLang, engine string) int64 {
 	if w.store == nil {
 		return 0
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	n, err := w.store.CountByKeyword(ctx, keyword)
+	n, err := w.store.CountByFilter(
+		ctx, historystore.FilterFrom(keyword, fromLang, toLang, engine, w.engineLookup(ctx)))
 	if err != nil {
 		return 0
 	}

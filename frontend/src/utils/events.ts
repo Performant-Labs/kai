@@ -82,6 +82,12 @@ export const EventDoubleCopyPermissionMissing = 'kai:doublecopy:permission-missi
 // Go side. TranslateWindow shows a toast that says what to enable and where.
 export const EventAccessibilityMissing = 'kai:accessibility:missing';
 
+// EventHistoryUse: emitted (frontend) when the user picks "Use" on a history entry (issue #60):
+// the history screen or the Settings history tab broadcasts it, and the translate window puts the
+// entry's source, result, languages and engine back into its panes. Nothing is translated until
+// the user asks. payload: HistoryUsePayload.
+export const EventHistoryUse = 'kai:history:use';
+
 // Event payload type definitions (aligned with the Go-side structs in internal/events/events.go)
 
 // LocaleChangedPayload: language-change event arguments.
@@ -127,4 +133,15 @@ export interface ScreenshotRetranslatePayload {
   session: string; // ScreenshotSessionScreenshot | ScreenshotSessionInput
   from: string; // TranslateLang: auto | zh | en | ...
   to: string; // TranslateLang
+}
+
+// HistoryUsePayload: EventHistoryUse arguments (aligned with internal/events/events.go).
+// The history entry whose "Use" was picked: Text goes into the source pane, Result becomes the
+// engine's stored result, FromLang/ToLang the two selects, Engine the selected engine.
+export interface HistoryUsePayload {
+  text: string;
+  result: string;
+  from_lang: string;
+  to_lang: string;
+  engine: string;
 }

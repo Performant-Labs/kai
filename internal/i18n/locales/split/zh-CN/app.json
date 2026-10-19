@@ -3,6 +3,7 @@
   "app.description": "跨平台翻译 & OCR 工具",
   "window.translate_title": "Kai 翻译",
   "window.settings_title": "Kai 设置",
+  "window.history_title": "Kai 历史记录",
   "window.selection_title": "Kai 划词",
   "window.screenshot_title": "Kai 截图翻译",
   "notification.update_available_title": "Kai 有更新可用",

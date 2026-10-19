@@ -17,6 +17,7 @@ export type Dict = {
     translate_title: string;
     settings_title: string;
     screenshot_title: string;
+    history_title: string;
   };
   screenshot: {
     original: string;
@@ -142,6 +143,35 @@ export type Dict = {
     timeLeft: string;
     fastSuggestion: string;
     translateShortcutHint: string;
+    historyHint: string;
+  };
+  history: {
+    title: string;
+    searchPlaceholder: string;
+    allPairs: string;
+    allEngines: string;
+    clearAll: string;
+    clearConfirmTitle: string;
+    clearConfirmMessage: string;
+    clearConfirmYes: string;
+    clearConfirmNo: string;
+    empty: string;
+    noMatch: string;
+    today: string;
+    yesterday: string;
+    ocr: string;
+    use: string;
+    copy: string;
+    showMore: string;
+    showLess: string;
+    loadMore: string;
+    loading: string;
+    opErrorTitle: string;
+    loadError: string;
+    deleteError: string;
+    clearError: string;
+    clearedTitle: string;
+    cleared: string;
   };
   settings: {
     title: string;
@@ -310,21 +340,6 @@ export type Dict = {
     permExpand: string;
     permCollapse: string;
     history: string;
-    historyTitle: string;
-    historyClear: string;
-    historyEmpty: string;
-    historySearchPlaceholder: string;
-    historyPageInfo: string;
-    historyPrev: string;
-    historyNext: string;
-    historyOpErrorTitle: string;
-    historyOkTitle: string;
-    historyLoadError: string;
-    historyDeleteError: string;
-    historyClearError: string;
-    historyCleared: string;
-    historySource: string;
-    historyResult: string;
     close: string;
   };
   lang: {
@@ -418,6 +433,7 @@ export type Dict = {
     historyLoadFailed: string;
     historyDeleteFailed: string;
     historyClearFailed: string;
+    historyCloseFailed: string;
     engineLoadOcrLangsFailed: string;
     engineLoadListFailed: string;
     engineReadConfigFailed: string;

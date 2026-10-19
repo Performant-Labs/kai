@@ -6,6 +6,20 @@
 import * as model$0 from "../model/models.js";
 
 /**
+ * HistoryUsePayload carries the EventHistoryUse event (issue #60): the history entry whose
+ * "Use" the user picked. The translate window restores these into its panes: Text into the
+ * source pane, Result as the engine's stored result, FromLang/ToLang into the two selects,
+ * Engine as the selected engine. Nothing is translated until the user asks.
+ */
+export interface HistoryUsePayload {
+    "text": string;
+    "result": string;
+    "from_lang": string;
+    "to_lang": string;
+    "engine": string;
+}
+
+/**
  * LocaleChangedPayload carries the UI language change event.
  * Note: this is the UI display language — an entirely separate system from the translation
  * languages (model.Language: auto/zh/en/...); never mix them.

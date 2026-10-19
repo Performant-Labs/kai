@@ -46,6 +46,17 @@ export function SetApp(app: application$0.App | null): $CancellablePromise<void>
 }
 
 /**
+ * ShowHistory opens the history screen (issue #60), in front of a pinned translate window —
+ * the same levelling ShowSettings applies, so the history window is not hidden behind the
+ * (default-pinned, issue #39) translate window. The translate window keeps running whatever
+ * request it has; only its always-on-top level drops, and its close-side counterpart (the
+ * EventWindowClosing broadcast in main.go) re-applies the pin when the history window closes.
+ */
+export function ShowHistory(): $CancellablePromise<void> {
+    return $Call.ByID(681670227);
+}
+
+/**
  * ShowScreenshotWindow summons the screenshot translate window (symmetric with
  * ShowTranslateWindow).
  * Note: main.go's EventWindowShow('screenshot') still goes through the standalone
