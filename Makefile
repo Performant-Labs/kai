@@ -263,11 +263,14 @@ clean: ## 清理构建产物
 	rm -rf frontend/dist frontend/bindings
 	rm -f kai bin/*
 
+# wails3 固定为 go.mod 的同一版本（issue #73）：bindings 漂移 CI 门禁要求 CI 重新生成绑定用的
+# 生成器版本与生成已提交 frontend/bindings 的版本完全一致（@latest 会随上游发布漂移，例如
+# beta.33 改了事件绑定的目录布局）。升级 wails 时需同步修改此版本号并重新生成、提交 bindings。
 tool-deps: ## 工具依赖
 	@echo "==> 安装必要的工具依赖..."
 
 	wails3 version || true
-	go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+	go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
 	-wails3 version
 	@echo "==> wails3 工具安装或更新完成"
 
