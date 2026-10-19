@@ -7,6 +7,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+- A History screen now opens from the translate window (a History button beside the gear, or Cmd+Y): past translations grouped by day with the time, the language pair, the engine and an OCR mark, searched and filtered by pair and engine, paged as you scroll, with Use (puts the entry's source, result, languages and engine back into the panes without translating anything), Copy and Delete per row, and a confirmed Clear all. The Settings history tab shows the same list (#60; supersedes the history-view part of #9).
+
 ## [0.4.1] - 2026-10-05
 
 ### Enhancements
