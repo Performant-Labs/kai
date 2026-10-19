@@ -2160,12 +2160,40 @@
               placeholder={t('translate.noResult')}></textarea>
             {#if backShown}
               <!-- The result translated back into the source language (issue #56), under the
-                 result and in a muted label: it only helps to check the translation; Copy copies
-                 the translation above, never this. -->
+                  result and in a muted label: it only helps to check the translation. The
+                  pane-header Copy still copies the translation above; this block's own control
+                  (issue #8) copies the back-translation itself — never the source text, and the
+                  copied text never reaches a log (#11). -->
               <div class="u-border-t shrink-0 px-4 py-3" data-testid="back-translation">
-                <p class="u-muted text-2xs">
-                  ↩ {t('translate.backLabel', { lang: langName(backShown.lang) })}
-                </p>
+                <div class="flex items-center justify-between gap-2">
+                  <p class="u-muted text-2xs">
+                    ↩ {t('translate.backLabel', { lang: langName(backShown.lang) })}
+                  </p>
+                  <!-- The same control family as the pane-header Copy: an icon button through
+                       the same copy() path (clipboard write + the shared "Copied" toast), with
+                       its own tooltip naming what it copies. -->
+                  <button
+                    class="u-icon-btn u-no-drag"
+                    onclick={() => copy(backShown.text)}
+                    aria-label={t('translate.copyBack')}
+                    title={t('translate.copyBack')}
+                    data-testid="back-translation-copy"
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                </div>
                 <p class="whitespace-pre-wrap text-sm leading-relaxed">{backShown.text}</p>
               </div>
             {:else if backBusy}
