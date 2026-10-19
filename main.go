@@ -219,13 +219,19 @@ func main() {
 
 	i18n.SetLocale(settingsService.Get().Language)
 
+	// Issue #10: sync the "faster System translation" setting into the engine at startup and on
+	// every settings change. The engine reads its own copy per call, so a toggle applies to the
+	// next translation without any restart.
+	engine.SetAppleFastTranslate(settingsService.Get().FastSystemTranslate)
+
 	// Runtime language switching: when settings.json is changed externally / hot-reloaded,
 	// OnChange syncs the backend i18n locale so backend errors/log copy follow the UI language
 	// (complements the proactive sync inside SaveConfig). Also syncs log level / cleanup policy
-	// (log section).
+	// (log section), and the faster-translation switch (issue #10).
 	settingsService.OnChange(func(cfg *settings.Settings) {
 		i18n.SetLocale(cfg.Language)
 		applyLogConfig(logRotator, frontendLogSvc, cfg.Log, homeDir)
+		engine.SetAppleFastTranslate(cfg.FastSystemTranslate)
 		// Sync language/theme changes to the updater (auto resolves to the real language/system
 		// appearance), refreshing subsequent Check/Download copy.
 		if updaterProvider != nil {

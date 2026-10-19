@@ -41,7 +41,9 @@ var (
 	KaiSetLocale              func(locale string)
 	KaiTranslate              func(src string, dst string, text string, token int64, out unsafe.Pointer, outCap int32) int32
 	KaiTranslateCancel        func(token int64) int32
+	KaiTranslateStrategy      func(src string, dst string, text string, token int64, strategy int32, out unsafe.Pointer, outCap int32) int32
 	KaiWarmTranslate          func(src string, dst string) int32
+	KaiWarmTranslateStrategy  func(src string, dst string, strategy int32) int32
 	KaiDetectLanguage         func(text string, out unsafe.Pointer, outCap int32) int32
 	KaiCorrect                func(instructions string, text string, out unsafe.Pointer, outCap int32) int32
 	KaiCorrectAvailability    func(locale string, out unsafe.Pointer, outCap int32) int32

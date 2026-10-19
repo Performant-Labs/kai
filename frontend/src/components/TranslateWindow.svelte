@@ -261,6 +261,9 @@
   // What is known about each running engine of the request (its started and chunk events), which
   // the progress line is drawn from.
   let progress = $state<Record<string, ProgressState>>({});
+  // Whether this request already showed the "offer the faster System translation setting" toast
+  // (issue #10): once per request, never a silent switch.
+  let suggestedFast = false;
   // The clock the progress line reads: this window's own, re-read once a second while a request is
   // open, so the elapsed time is measured from when this window heard of the engine, never from the
   // backend's clock.
@@ -647,19 +650,27 @@
     activeEngine && progress[activeEngine] ? progressLine(progress[activeEngine], nowMs) : null,
   );
   // The progress line's copy. progressLine decides which line it is and holds the facts; this only
-  // words them.
+  // words them. A time-left, when there is one honest to show, follows every line (issue #10):
+  // from the parts already finished (proportional, whatever mode is really running) or, until
+  // the first part lands, the backend's measured-rate estimate.
   function progressText(line: ProgressLine): string {
     const engine = engineName(line.engine);
+    const left =
+      line.remainingMs !== undefined
+        ? ' · ' + t('translate.timeLeft', { time: formatClock(line.remainingMs) })
+        : '';
     if (line.kind === 'chunk') {
-      return t('translate.part', { done: line.done ?? 0, total: line.total ?? 0 });
+      return t('translate.part', { done: line.done ?? 0, total: line.total ?? 0 }) + left;
     }
     if (line.kind === 'stalled') {
       const { minutes, seconds } = splitElapsed(line.elapsedMs);
-      return minutes > 0
-        ? t('translate.stillWaitingMin', { engine, minutes, seconds })
-        : t('translate.stillWaiting', { engine, seconds });
+      const waiting =
+        minutes > 0
+          ? t('translate.stillWaitingMin', { engine, minutes, seconds })
+          : t('translate.stillWaiting', { engine, seconds });
+      return waiting + left;
     }
-    return t('translate.workingOn', { engine, time: formatClock(line.elapsedMs) });
+    return t('translate.workingOn', { engine, time: formatClock(line.elapsedMs) }) + left;
   }
   // A status dot's tooltip and accessible label: the engine name, plus its state once it has one
   // (an idle dot has nothing to report, so its label is the engine name alone). A failed engine that
@@ -774,7 +785,20 @@
           [payload.engine]: applyChunk(current, { done: payload.done, total: payload.total }, now),
         };
       } else {
-        progress = { ...progress, [payload.engine]: startProgress(payload.engine, now) };
+        // The started event may carry the System engine's estimate and the faster-setting
+        // suggestion (issue #10). The estimate feeds the progress line's time-left; the
+        // suggestion is a toast, once per request — the setting is never switched silently.
+        progress = {
+          ...progress,
+          [payload.engine]: startProgress(payload.engine, now, payload.estimated_ms),
+        };
+        if (payload.suggest_fast && payload.estimated_ms && !suggestedFast) {
+          suggestedFast = true;
+          showToast(
+            t('translate.fastSuggestion', { time: formatClock(payload.estimated_ms) }),
+            12000,
+          );
+        }
       }
     });
     const offInputFill = onEvent(EventInputFill, (text: string) => {
@@ -1164,6 +1188,7 @@
     if (auto) autoCommit = { id, text: input };
     started = null;
     progress = {};
+    suggestedFast = false; // the faster-setting toast is once per request (issue #10)
     try {
       // Multi-engine concurrency is handled in parallel by the backend across enabled engines, independent of any single engine;
       // the bindings-generated TranslateRequest.engine is required, so pass an empty string to satisfy the type (the backend ignores it).
@@ -1487,6 +1512,7 @@
     requestId = '';
     started = null;
     progress = {};
+    suggestedFast = false;
     setSource('', 'program');
     correction = null;
     usedCorrection = null;
@@ -2099,9 +2125,17 @@
             {/if}
             {#if activeResult.identity}
               <!-- Same language on both sides (issue #80): the result is the source text, not a
-                 translation; say so. Display only, never changes either select. -->
+                  translation; say so. Display only, never changes either select. -->
               <p class="u-muted px-4 text-xs first:pt-4" data-testid="identity-result">
                 {t('translate.identity')}
+              </p>
+            {/if}
+            {#if activeResult.notice}
+              <!-- The engine attached a note to an otherwise successful translation (issue #10):
+                  the System engine translated with the slow mode because the fast mode's language
+                  pack was missing. Already localized by the backend; display only. -->
+              <p class="u-muted px-4 text-2xs first:pt-4" data-testid="result-notice">
+                {activeResult.notice}
               </p>
             {/if}
             <textarea

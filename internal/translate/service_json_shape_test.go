@@ -28,6 +28,19 @@ func TestTranslateProgressPayloadJSONShape(t *testing.T) {
 	}
 }
 
+// Issue #10: a result may carry a localized notice (the System engine's missing-pack
+// fallback note); it is omitempty like the other optional fields.
+func TestTranslateResultNoticeJSONShape(t *testing.T) {
+	b, _ := json.Marshal(model.TranslateResult{Engine: "e", Notice: "n"})
+	if !strings.Contains(string(b), `"notice":"n"`) {
+		t.Errorf("TranslateResult JSON %s lacks notice", b)
+	}
+	b, _ = json.Marshal(model.TranslateResult{Engine: "e"})
+	if strings.Contains(string(b), "notice") {
+		t.Errorf("a result without a notice must omit it (omitempty): %s", b)
+	}
+}
+
 func TestTranslateResultCancelledAndRequestIDJSONShape(t *testing.T) {
 	b, _ := json.Marshal(model.TranslateResult{Engine: "e", RequestID: "r", Cancelled: true})
 	var m map[string]any

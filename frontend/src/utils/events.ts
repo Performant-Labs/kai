@@ -110,6 +110,8 @@ export interface ThemeChangedPayload {
 // phase 'started' is sent once per engine when its call begins, before any result; 'chunk' reports
 // done of total parts finished (chunked translation, #84). started_at_ms is the backend clock and
 // is informational only: elapsed time is measured from the moment this window received the event.
+// estimated_ms / suggest_fast (issue #10, started only): the System engine's measured-rate
+// estimate and whether to offer the faster-System-translation setting; absent for other engines.
 export interface TranslateProgressPayload {
   request_id: string;
   engine: string;
@@ -117,6 +119,8 @@ export interface TranslateProgressPayload {
   started_at_ms: number;
   done: number;
   total: number;
+  estimated_ms?: number;
+  suggest_fast?: boolean;
 }
 
 // ScreenshotRetranslatePayload: screenshot-translation change-language-and-retranslate event arguments.

@@ -61,6 +61,14 @@ type Settings struct {
 	// off. Read through readDoubleCopyTranslate, not mapstructure, so a garbled value cannot fail
 	// the whole settings load.
 	DoubleCopyTranslate bool `json:"double_copy_translate" mapstructure:"-"`
+	// FastSystemTranslate is the "faster System translation (lower quality)" switch (issue #10):
+	// when on, the System (Apple) engine translates with Apple's low-latency strategy — the
+	// traditional language-pack models, roughly 12x faster and noticeably lower quality than the
+	// default Apple Intelligence path. OFF by default so nothing changes for anyone who does not
+	// choose it, and only an explicit true turns it on: a missing key, or a value that is not a
+	// boolean, reads as off. Read through readFastSystemTranslate, not mapstructure, so a garbled
+	// value cannot fail the whole settings load. Applies to the System engine only.
+	FastSystemTranslate bool `json:"fast_system_translate" mapstructure:"-"`
 	// CorrectSourceText is the "correct grammar and wording" switch (issue #208): when text arrives,
 	// Apple's on-device model first fixes its grammar and word choice (and swaps mixed-in foreign
 	// words) in the same language, and the corrected text is what gets translated. OFF by default,
@@ -321,6 +329,25 @@ func readDoubleCopyTranslate(v *viper.Viper) bool {
 	return false
 }
 
+// fastSystemTranslateKey is the settings.json key of Settings.FastSystemTranslate.
+const fastSystemTranslateKey = "fast_system_translate"
+
+// readFastSystemTranslate reads Settings.FastSystemTranslate from the loaded file: a boolean is
+// taken as it is (a "true"/"false" string too), and everything else, a missing key, null, a
+// number, an object, a word, is OFF, the default. Like readDoubleCopyTranslate, a setting that
+// trades quality for speed must never turn itself on from a damaged file.
+func readFastSystemTranslate(v *viper.Viper) bool {
+	switch x := v.Get(fastSystemTranslateKey).(type) {
+	case bool:
+		return x
+	case string:
+		if b, err := strconv.ParseBool(strings.TrimSpace(x)); err == nil {
+			return b
+		}
+	}
+	return false
+}
+
 // correctSourceTextKey is the settings.json key of Settings.CorrectSourceText.
 const correctSourceTextKey = "correct_source_text"
 
@@ -413,6 +440,7 @@ func NewService(dataDir string) (*Service, error) {
 	s.cfg.AutoSwitchSource = readAutoSwitchSource(v)
 	s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(v)
 	s.cfg.CorrectSourceText = readCorrectSourceText(v)
+	s.cfg.FastSystemTranslate = readFastSystemTranslate(v)
 	s.cfg.FontSize = readFontSize(v)
 	s.cfg.normalizeLanguages()
 	s.cfg.normalizeUpdaterSource()
@@ -476,6 +504,7 @@ func (s *Service) startWatching() {
 			s.cfg.AutoSwitchSource = readAutoSwitchSource(s.v)
 			s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(s.v)
 			s.cfg.CorrectSourceText = readCorrectSourceText(s.v)
+			s.cfg.FastSystemTranslate = readFastSystemTranslate(s.v)
 			s.cfg.FontSize = readFontSize(s.v)
 			s.cfg.normalizeLanguages()
 			s.cfg.normalizeUpdaterSource()
@@ -520,6 +549,7 @@ func (s *Service) writeConfig() error {
 	w.Set(autoSwitchSourceKey, s.cfg.AutoSwitchSource)
 	w.Set(doubleCopyTranslateKey, s.cfg.DoubleCopyTranslate)
 	w.Set(correctSourceTextKey, s.cfg.CorrectSourceText)
+	w.Set(fastSystemTranslateKey, s.cfg.FastSystemTranslate)
 	w.Set(fontSizeKey, NormalizeFontSize(s.cfg.FontSize))
 	w.Set("copy_key_snapshot", s.cfg.CopyKeySnapshot)
 	w.Set("tts", s.cfg.TTS)

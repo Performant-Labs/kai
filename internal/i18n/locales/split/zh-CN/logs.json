@@ -4,6 +4,7 @@
   "log.tray_ready": "托盘菜单已就绪",
   "log.update_check": "检查更新",
   "log.apple_translate_invoke": "[动态桥接] 系统翻译调用",
+  "log.apple_strategy_entry_missing": "[动态桥接] 桥接库缺少 kai_translate_strategy，使用默认模式翻译",
   "log.apple_translate_done": "[动态桥接] 系统翻译完成",
   "log.apple_query_langs": "[动态桥接] 查询系统可用语言列表",
   "log.apple_query_langs_done": "[动态桥接] 查询系统可用语言列表完成",

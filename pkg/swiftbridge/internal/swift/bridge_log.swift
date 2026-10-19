@@ -88,16 +88,17 @@ public func kai_set_locale(_ locale: UnsafePointer<CChar>?) {
 func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
   let zh: [String: String] = [
     "log.config_applied": "日志配置已应用 dir=%@ level=%d retention_days=%d compress=%@",
-    "translate.call": "系统翻译调用 src=%@ dst=%@ 文本长度=%d",
+    "translate.call": "系统翻译调用 src=%@ dst=%@ 文本长度=%d 策略=%d",
     "translate.empty": "系统翻译失败: 文本为空",
     "translate.no_target": "系统翻译失败: 缺少目标语言",
     "translate.detect_src": "系统翻译自动检测源语言=%@ dst=%@",
     "translate.detect_fail": "系统翻译自动检测失败且无已安装语言回退 dst=%@",
+    "translate.low_latency_pack_missing": "快速模式缺少语言包: %@",
     "translate.fail": "系统翻译失败: %@",
     "translate.done": "系统翻译完成 from=%@ dst=%@ 译文长度=%d",
     "translate.timing":
       "系统翻译耗时明细(ms) 已安装语言查询=%d 语言检测=%d 获取已就绪会话(含首次prepareTranslation)=%d translate()=%d 总计=%d",
-    "translate.warm_start": "正在预热系统翻译会话 src=%@ dst=%@",
+    "translate.warm_start": "正在预热系统翻译会话 src=%@ dst=%@ 策略=%d",
     "translate.warm_done": "系统翻译会话预热完成 src=%@ dst=%@ 耗时(ms)=%d",
     "translate.cancel": "系统翻译取消 token=%lld 状态=%@",
     "translate.drain": "系统翻译取消后，被弃用的任务已结束 取消后耗时=%@s",
@@ -132,17 +133,18 @@ func bridgeLogText(_ key: String, _ args: CVarArg...) -> String {
   ]
   let en: [String: String] = [
     "log.config_applied": "log config applied dir=%@ level=%d retention_days=%d compress=%@",
-    "translate.call": "system translate call src=%@ dst=%@ text_len=%d",
+    "translate.call": "system translate call src=%@ dst=%@ text_len=%d strategy=%d",
     "translate.empty": "translate failed: empty text",
     "translate.no_target": "translate failed: missing target language",
     "translate.detect_src": "system translate auto-detected source=%@ dst=%@",
     "translate.detect_fail":
       "system translate auto-detect failed and no installed language fallback dst=%@",
+    "translate.low_latency_pack_missing": "low-latency language pack missing: %@",
     "translate.fail": "translate failed: %@",
     "translate.done": "system translate done from=%@ dst=%@ result_len=%d",
     "translate.timing":
       "system translate timing(ms) installed_langs=%d detect=%d session_ready(incl. first prepareTranslation)=%d translate_call=%d total=%d",
-    "translate.warm_start": "warming system translate session src=%@ dst=%@",
+    "translate.warm_start": "warming system translate session src=%@ dst=%@ strategy=%d",
     "translate.warm_done": "system translate session warm done src=%@ dst=%@ elapsed_ms=%d",
     "translate.cancel": "system translate cancel token=%lld state=%@",
     "translate.drain": "system translate: cancelled task finished unwinding %@s after the cancel",

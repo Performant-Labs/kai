@@ -142,6 +142,9 @@ export const en: Dict = {
     stillWaiting: 'Still waiting on {engine}, {seconds} s',
     stillWaitingMin: 'Still waiting on {engine}, {minutes} min {seconds} s',
     part: 'Translating part {done} of {total}',
+    timeLeft: 'about {time} left',
+    fastSuggestion:
+      'This text will take about {time} at the current quality. Faster System translation (lower quality) can be enabled in Settings.',
     translateShortcutHint: 'Translate now (or press Cmd+Enter)',
     historyHint: 'Browse past translations (Cmd+Y)',
   },
@@ -239,6 +242,9 @@ export const en: Dict = {
     engineOpErrorTitle: 'Operation failed',
     engineSystemLangs: 'Languages supported by system translation',
     engineSystemLangsEmpty: 'No system language pack available',
+    fastSystemTranslate: 'Faster System translation (lower quality)',
+    fastSystemTranslateHint:
+      "Use Apple's fast translation mode: about 12x faster, noticeably lower quality. It needs the traditional language packs (download them in System Settings > General > Language & Region > Translation Languages); when a pack is missing, the text is translated with the standard mode and the result says so. The fast mode needs macOS 26.4 or later; on older systems this switch has no effect.",
     engineSchema: 'Fields',
     engineNoSchema: 'This engine needs no extra config',
     engineLangsHintTesseract:
@@ -428,6 +434,7 @@ export const en: Dict = {
     persistLangPrefFailed: '[input] Failed to persist language preference',
     learnLangVariantFailed: '[input] Failed to record language variant preference',
     setPrimaryFailed: '[settings] Failed to set primary engine',
+    engineSaveFastSystemFailed: '[settings] Failed to save the faster-translation switch',
     loadEngineListFailed: '[input] Failed to load engine list',
     loadLangListFailed: '[input] Failed to load language list',
     translateRequestFailed: '[input] Translation request failed',

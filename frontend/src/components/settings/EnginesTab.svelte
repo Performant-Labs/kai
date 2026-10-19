@@ -30,6 +30,7 @@
   import { Dialogs } from '@wailsio/runtime';
   import { emitEvent } from '../../runtime';
   import { EventEnginesChanged } from '../../utils/events';
+  import { track } from '../../utils/analytics';
   let engines = $state<AllEngineItem[]>([]);
 
   // Grouped display by Kind: translate engines / OCR engines (TTS's apple engine is grouped under translate)
@@ -184,6 +185,7 @@
   onMount(() => {
     loadEngines();
     loadPrimary();
+    loadFastSystemTranslate();
   });
 
   async function loadOcrLangs() {
@@ -214,6 +216,32 @@
       primaryEngine = cfg?.default_engine ?? '';
     } catch (e) {
       console.error(t('log.setPrimaryFailed'), e);
+    }
+  }
+
+  // Faster System translation (issue #10): the System engine's speed/quality switch, off by
+  // default. Read with the primary engine at mount; changes persist via SaveConfig and apply to
+  // the next translation (the Go engine reads the setting per call through its own sync).
+  let fastSystemTranslate = $state(false);
+
+  async function loadFastSystemTranslate() {
+    try {
+      const cfg = await GetConfig();
+      fastSystemTranslate = cfg?.fast_system_translate ?? false;
+    } catch {
+      /* Ignore read failures; fall back to the default (off) */
+    }
+  }
+
+  async function toggleFastSystemTranslate(e: Event) {
+    const enabled = (e.target as HTMLInputElement).checked;
+    fastSystemTranslate = enabled;
+    try {
+      const cfg = (await GetConfig()) ?? ({} as any);
+      await SaveConfig({ ...cfg, fast_system_translate: enabled });
+      track('feature_toggled', { feature: 'fast_system_translate', enabled });
+    } catch (err) {
+      console.error(t('log.engineSaveFastSystemFailed'), err);
     }
   }
 
@@ -628,13 +656,18 @@
         </div>
       </div>
     {/if}
-    {#if (schema?.fields?.length ?? 0) === 0}
+    {#if (schema?.fields?.length ?? 0) === 0 && !(schema?.kind === 'translate' && schema?.builtin)}
       <div class="flex flex-1 flex-col items-center justify-center text-center">
         <p class="u-muted text-sm">{t('settings.engineNoSchema')}</p>
       </div>
     {:else}
       <div class="u-card mt-4 space-y-4 px-4 py-3">
         {#if schema?.kind === 'translate' && schema?.builtin}
+          <!-- The System engine's own panel. Deliberately OUTSIDE the "has config fields"
+               branch above: apple's real schema has no fields (nothing to configure), so a
+               panel placed only in the fields branch would never render for it — exactly the
+               bug the mounted test caught (the language list and the faster-translation toggle
+               were unreachable). The "no extra config" placeholder yields to this panel. -->
           <div>
             <p class="u-label mb-2">{t('settings.engineSystemLangs')}</p>
             {#if systemLangsLoading}
@@ -648,6 +681,22 @@
             {:else}
               <p class="u-muted text-xs">{t('settings.engineSystemLangsEmpty')}</p>
             {/if}
+          </div>
+          <!-- Faster System translation (issue #10): the System engine's speed/quality switch.
+               Off by default; applies to this engine only; a missing language pack falls back to
+               the standard mode and says so on the result. -->
+          <div class="u-border-t pt-3">
+            <div class="mb-1 text-sm font-medium">{t('settings.fastSystemTranslate')}</div>
+            <p class="u-muted mb-2 text-xs">{t('settings.fastSystemTranslateHint')}</p>
+            <label class="u-switch" aria-label={t('settings.fastSystemTranslate')}>
+              <input
+                type="checkbox"
+                checked={fastSystemTranslate}
+                onchange={toggleFastSystemTranslate}
+                data-testid="fast-system-translate"
+              />
+              <span class="u-switch__track"><span class="u-switch__thumb"></span></span>
+            </label>
           </div>
         {/if}
         {#each schema?.fields ?? [] as f}

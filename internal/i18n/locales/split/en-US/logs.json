@@ -4,6 +4,7 @@
   "log.tray_ready": "Tray menu ready",
   "log.update_check": "Checking for updates",
   "log.apple_translate_invoke": "[dynamic-bridge] System translation invoked",
+  "log.apple_strategy_entry_missing": "[dynamic-bridge] Bridge build has no kai_translate_strategy; translating with the default mode",
   "log.apple_translate_done": "[dynamic-bridge] System translation done",
   "log.apple_query_langs": "[dynamic-bridge] Querying system available languages",
   "log.apple_query_langs_done": "[dynamic-bridge] Querying system available languages done",
