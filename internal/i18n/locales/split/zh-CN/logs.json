@@ -68,7 +68,6 @@
   "log.screenrecording_query": "[动态桥接] 屏幕录制授权查询",
   "log.screenrecording_request": "[动态桥接] 屏幕录制授权请求 弹出系统授权框",
   "log.field_source": "来源",
-  "log.field_content": "内容",
   "log.field_type": "类型",
   "log.field_reason": "原因",
   "log.field_active": "当前已注册",

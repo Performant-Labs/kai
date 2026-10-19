@@ -395,6 +395,19 @@ func main() {
 	windowSvc.SetApp(app)
 	trSvc.SetApp(app) // Propagate app to translate.Service; screenshot OCR/translate results rely on Event.Emit broadcasts to the frontend
 
+	// Issue #8: the menu bar's About item must open the About panel in front of kai's windows
+	// (the native orderFrontStandardAboutPanel: selector left it below a pinned translate
+	// window). Installed before Run, like every app-menu change; the show itself is dispatched
+	// on the main thread because the bridge talks to AppKit. A bridge that failed to load
+	// falls back to Wails' own About dialog, so the item never becomes a silent no-op.
+	installAboutMenu(app, func() {
+		application.InvokeAsync(func() {
+			if !service.ShowAboutPanelInFront() {
+				app.Menu.ShowAbout()
+			}
+		})
+	})
+
 	// Frontend summons windows via runtime.EventsEmit('kai:window:show', 'settings'|'translate')
 	app.Event.On(kevents.EventWindowShow, func(e *application.CustomEvent) {
 		name, _ := e.Data.(string)

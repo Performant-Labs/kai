@@ -105,6 +105,13 @@ var (
 	// KaiWindowSetWebviewBackground (issue #22) makes a window's web view draw no background of its own and
 	// sets the colour behind the page; the window is the native NSWindow pointer, r g b are 0-255. Main thread only.
 	KaiWindowSetWebviewBackground func(window uintptr, r int32, g int32, b int32) int32
+	// KaiWindowSetAppearance (issue #8) sets a window's NSAppearance so the title bar follows the theme;
+	// Wails sets the appearance only at creation, from the theme resolved at launch. The window is the native
+	// NSWindow pointer, dark picks darkAqua (1) or aqua (0). Main thread only.
+	KaiWindowSetAppearance func(window uintptr, dark int32) int32
+	// KaiShowAboutPanel (issue #8) shows the standard About panel in front of the app's windows (the native
+	// orderFrontStandardAboutPanel: selector leaves it below a pinned always-on-top window). Main thread only.
+	KaiShowAboutPanel func() int32
 	// Launch kind (issue #17). KaiLaunchObserve registers the launch-event observers and must run
 	// before NSApplication runs; KaiLaunchKind returns 0 unknown, 1 user launch, 2 login-item
 	// launch. Neither needs the main thread.
@@ -236,6 +243,8 @@ func registerAll(h uintptr) {
 	register(&KaiDoubleCopyPasteboard, "kai_doublecopy_pasteboard")
 	register(&KaiDoubleCopyIngest, "kai_doublecopy_ingest")
 	register(&KaiWindowSetWebviewBackground, "kai_window_set_webview_background")
+	register(&KaiWindowSetAppearance, "kai_window_set_appearance")
+	register(&KaiShowAboutPanel, "kai_show_about_panel")
 	register(&KaiLaunchObserve, "kai_launch_observe")
 	register(&KaiLaunchKind, "kai_launch_kind")
 }

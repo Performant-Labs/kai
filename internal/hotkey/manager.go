@@ -154,13 +154,12 @@ func (h *Manager) TriggerInput() {
 		// translate" key) reads the clipboard directly and translates.
 		// No simulated copy, no touching the selection, no clobbering the user's clipboard —
 		// avoiding double triggering with the original copy key.
-		text := h.execKeyCtrl.ReadClipboard()
-		h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_auto_clipboard")), slog.Int(i18n.T("log.field_length"), len(text)), slog.String(i18n.T("log.field_content"), text))
 		var emitter eventEmitter
 		if h.app != nil {
 			emitter = h.app.Event
 		}
-		showAndFill(w, emitter, text)
+		text := h.execKeyCtrl.ReadClipboard()
+		h.deliverAutoClipboard(w, emitter, text)
 	case cfg.ExecKeys.Copy.Key != "" && cfg.ExecKeys.Copy.Enabled:
 		// Issue #175 item 5: CopySelection backs up/clears/copies/restores the one shared
 		// system clipboard, which is only safe as an atomic sequence. A second overlapping
@@ -219,6 +218,15 @@ func showAndFill(w windowShower, emitter eventEmitter, text string) {
 	}
 }
 
+// deliverAutoClipboard is the auto-clipboard branch's arrival step: the same shape as
+// deliverDoubleCopy below. Issue #11: the line carries the source and the length only — never
+// the content, because anything on the clipboard can be private and kai.log gets pasted into
+// issues.
+func (h *Manager) deliverAutoClipboard(w windowShower, emitter eventEmitter, text string) {
+	h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_auto_clipboard")), slog.Int(i18n.T("log.field_length"), len(text)))
+	showAndFill(w, emitter, text)
+}
+
 // windowShower is the slice of application.Window that triggerCopyKey drives (fakeable).
 type windowShower interface {
 	Show() application.Window
@@ -248,7 +256,9 @@ func (h *Manager) triggerCopyKey(w windowShower, emitter eventEmitter, copySelec
 		}
 		return
 	}
-	h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_copy_key")), slog.Int(i18n.T("log.field_length"), len(sel)), slog.String(i18n.T("log.field_content"), sel))
+	// Issue #11: never log the captured text itself — only its length. What a user selects or
+	// copies can be a password or a private message, and kai.log gets pasted into issues.
+	h.log.Info(i18n.T("log.hotkey_read_clipboard"), slog.String(i18n.T("log.field_source"), i18n.T("log.source_copy_key")), slog.Int(i18n.T("log.field_length"), len(sel)))
 	w.Show()
 	w.Focus()
 	if emitter != nil {

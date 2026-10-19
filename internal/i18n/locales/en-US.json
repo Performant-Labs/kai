@@ -213,7 +213,6 @@
   "log.engine_table_empty_init": "config.db engine table is empty, initializing with default engines",
   "log.execkey_config": "Exec key config",
   "log.field_active": "active",
-  "log.field_content": "content",
   "log.field_copykey": "copy key",
   "log.field_customkey": "custom key",
   "log.field_enabled": "enabled",
