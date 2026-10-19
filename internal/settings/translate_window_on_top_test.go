@@ -42,6 +42,25 @@ func TestTranslateWindowOnTopGarbledValueReadsOff(t *testing.T) {
 	}
 }
 
+// The case string branch of readTranslateWindowOnTop: a boolean spelled out as a string is
+// weak-decoded, exactly like auto_switch_source / correct_source_text (strconv.ParseBool —
+// so "1"/"0" count too). This test is what fails if that branch is deleted.
+func TestTranslateWindowOnTopBooleanStringIsWeakDecoded(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want bool
+	}{
+		{`{"translate_window_on_top":"true"}`, true},
+		{`{"translate_window_on_top":"false"}`, false},
+		{`{"translate_window_on_top":"1"}`, true},
+		{`{"translate_window_on_top":"0"}`, false},
+	} {
+		if got := loadWith(t, tc.body).TranslateWindowOnTop; got != tc.want {
+			t.Errorf("%s reads as %v, want %v", tc.body, got, tc.want)
+		}
+	}
+}
+
 func TestTranslateWindowOnTopExplicitTrueAndRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"translate_window_on_top":true}`), 0o600); err != nil {
