@@ -241,16 +241,6 @@ export interface Settings {
     "double_copy_translate": boolean;
 
     /**
-     * CorrectSourceText is the "correct grammar and wording" switch (issue #208): when text arrives,
-     * Apple's on-device model first fixes its grammar and word choice (and swaps mixed-in foreign
-     * words) in the same language, and the corrected text is what gets translated. OFF by default,
-     * and only an explicit true turns it on: a missing key, or a value that is not a boolean, reads
-     * as off. Read through readCorrectSourceText, not mapstructure, so a garbled value cannot fail
-     * the whole settings load.
-     */
-    "correct_source_text": boolean;
-
-    /**
      * FastSystemTranslate is the "faster System translation (lower quality)" switch (issue #10):
      * when on, the System (Apple) engine translates with Apple's low-latency strategy — the
      * traditional language-pack models, roughly 12x faster and noticeably lower quality than the
@@ -260,6 +250,16 @@ export interface Settings {
      * value cannot fail the whole settings load. Applies to the System engine only.
      */
     "fast_system_translate": boolean;
+
+    /**
+     * CorrectSourceText is the "correct grammar and wording" switch (issue #208): when text arrives,
+     * Apple's on-device model first fixes its grammar and word choice (and swaps mixed-in foreign
+     * words) in the same language, and the corrected text is what gets translated. OFF by default,
+     * and only an explicit true turns it on: a missing key, or a value that is not a boolean, reads
+     * as off. Read through readCorrectSourceText, not mapstructure, so a garbled value cannot fail
+     * the whole settings load.
+     */
+    "correct_source_text": boolean;
 
     /**
      * FontSize is the text size in percent of the pre-#195 size (issue #195). One of

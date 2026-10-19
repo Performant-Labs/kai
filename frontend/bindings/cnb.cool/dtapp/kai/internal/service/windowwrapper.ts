@@ -29,6 +29,17 @@ export function ApplyWebViewBackground(win: application$0.Window, r: number, g: 
 }
 
 /**
+ * ApplyWindowAppearance makes win's title bar (window chrome) follow the theme (issue #8): Wails
+ * sets a window's appearance only at creation, from the theme resolved at launch, so the title bar
+ * kept the launch-time colour after a theme change. Call it on the main thread (wrap in
+ * application.InvokeAsync), once the native window exists and again whenever the theme changes. A
+ * no-op where there is no native window.
+ */
+export function ApplyWindowAppearance(win: application$0.Window, dark: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1742050194, win, dark);
+}
+
+/**
  * DisableRestoration opts win out of macOS's Secure State Restoration ("Resume", issue #163):
  * see docs/handoffs/163-brief.md. Must be called after the window's native handle exists
  * (win.NativeWindow() is non-nil only once WebviewWindow.Run() has executed) — wire it to
@@ -51,6 +62,7 @@ export function SetApp(app: application$0.App | null): $CancellablePromise<void>
  * (default-pinned, issue #39) translate window. The translate window keeps running whatever
  * request it has; only its always-on-top level drops, and its close-side counterpart (the
  * EventWindowClosing broadcast in main.go) re-applies the pin when the history window closes.
+ * The levelling rule itself lives in showHistory, so it is testable without a running app.
  */
 export function ShowHistory(): $CancellablePromise<void> {
     return $Call.ByID(681670227);
