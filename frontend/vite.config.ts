@@ -22,6 +22,7 @@ export default defineConfig({
         translate: resolve(__dirname, 'translate.html'),
         settings: resolve(__dirname, 'settings.html'),
         screenshot: resolve(__dirname, 'screenshot.html'),
+        history: resolve(__dirname, 'history.html'),
       },
     },
   },
