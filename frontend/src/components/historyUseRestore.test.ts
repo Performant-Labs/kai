@@ -261,6 +261,16 @@ describe('TranslateWindow, mounted: using a history entry (issue #60)', () => {
     expect(h.showHistory).toHaveBeenCalledTimes(2);
   });
 
+  it("the History button's accessible name is the localized word, not the raw key (PR #67 review)", async () => {
+    // translate.history must exist in the active catalog: t() falls back to the dotted path
+    // itself for a missing key, so this pins the key's presence (and fails as
+    // 'translate.history' the moment it is dropped from a locale).
+    await mountWindow();
+    const btn = target.querySelector('[data-testid="history-button"]') as HTMLButtonElement;
+    expect(btn.getAttribute('aria-label')).toBe('History');
+    expect(btn.getAttribute('title')).toBe('Browse past translations (Cmd+Y)');
+  });
+
   it('the history window closing puts this window’s pin back', async () => {
     await mountWindow();
     h.setAlwaysOnTop.mockClear();
