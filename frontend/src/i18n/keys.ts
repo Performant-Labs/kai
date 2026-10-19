@@ -109,6 +109,7 @@ export type Dict = {
     failedTooLong: string;
     failedUnsupported: string;
     copy: string;
+    copyBack: string;
     result: string;
     noResult: string;
     activeEngines: string;

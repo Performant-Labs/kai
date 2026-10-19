@@ -103,6 +103,7 @@ export const zh: Dict = {
     failedTooLong: '文本超出 {engine} 的长度限制',
     failedUnsupported: '{engine} 不支持该语言对',
     copy: '将翻译结果复制到剪贴板',
+    copyBack: '将回译复制到剪贴板',
     result: '翻译结果',
     noResult: '暂无结果',
     activeEngines: '已启用引擎',

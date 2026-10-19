@@ -13,6 +13,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - When a captured text does not switch the language drop-downs, the log now tells the whole story — the detected language, the pair the window shows, the pair chosen, and the reason it did not switch — so a miss can be diagnosed from the log alone (#8).
 - Every window's title bar now ends with the running version, e.g. "Translate — Kai 0.5.0" (a development build says so), so the build is visible without opening Settings (#69).
 - Cmd+, now opens Settings from the translate, screenshot and settings windows — the standard macOS shortcut — and the tray menu's Settings item shows it (#8).
+- The back-translation under the result now has its own copy button, same as the result's: click it to copy the back-translation (never the source text) with the same "Copied" confirmation (#8).
 
 ## [0.5.0] - 2026-10-19
 <!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->
