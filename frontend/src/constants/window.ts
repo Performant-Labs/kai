@@ -3,3 +3,4 @@
 export const WindowTranslate = 'translate';
 export const WindowSettings = 'settings';
 export const WindowScreenshot = 'screenshot';
+export const WindowHistory = 'history';

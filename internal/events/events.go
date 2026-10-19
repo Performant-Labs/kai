@@ -110,6 +110,13 @@ const (
 	// is wrong" is exactly the bug report. This event lets the frontend show a toast instead,
 	// so a failed capture is visibly a failure, not indistinguishable from a stale success.
 	EventCopyKeyFailed = "kai:copykey:failed"
+
+	// EventHistoryUse is emitted (frontend, from the history screen or the Settings history
+	// tab) when the user picks "Use" on a history entry (issue #60): the translate window
+	// puts the entry's source, result, languages and engine back into its panes. payload:
+	// HistoryUsePayload. Aligned with the frontend's EventHistoryUse in
+	// frontend/src/utils/events.ts.
+	EventHistoryUse = "kai:history:use"
 )
 
 // Session identifiers for the screenshot/OCR cache: separating entry points so they never
@@ -136,7 +143,11 @@ const (
 // RequestID and Engine say whose progress it is. StartedAtMs is the backend clock (epoch
 // milliseconds) at which the engine's call began: informational only, because the frontend
 // times an engine from the moment it received the started event and never compares clocks. Done
-// and Total are only meaningful for ProgressPhaseChunk.
+// and Total are only meaningful for ProgressPhaseChunk. EstimatedMs and SuggestFast are only
+// meaningful for ProgressPhaseStarted (issue #10): the estimated duration of the engine's work
+// in milliseconds and whether the window should offer the faster-System-translation setting —
+// both zero (and absent from the JSON) for every engine but the System engine, which is the
+// only one with a measured rate.
 type TranslateProgressPayload struct {
 	RequestID   string `json:"request_id"`
 	Engine      string `json:"engine"`
@@ -144,6 +155,14 @@ type TranslateProgressPayload struct {
 	StartedAtMs int64  `json:"started_at_ms"`
 	Done        int    `json:"done"`
 	Total       int    `json:"total"`
+	// EstimatedMs is how long the started engine's work is estimated to take (issue #10): a
+	// hint for the progress line's "about N left", never a limit. Zero when there is no
+	// estimate (every engine but the System engine).
+	EstimatedMs int64 `json:"estimated_ms,omitempty"`
+	// SuggestFast says the window should offer the "faster System translation" setting for this
+	// text (issue #10): the System engine, the setting off, and an estimate past the "a minute
+	// or two" line. The window only suggests — the setting is never switched silently.
+	SuggestFast bool `json:"suggest_fast,omitempty"`
 }
 
 // LocaleChangedPayload carries the UI language change event.
@@ -177,4 +196,16 @@ type ScreenshotRetranslatePayload struct {
 	Session string         `json:"session"`
 	From    model.Language `json:"from"`
 	To      model.Language `json:"to"`
+}
+
+// HistoryUsePayload carries the EventHistoryUse event (issue #60): the history entry whose
+// "Use" the user picked. The translate window restores these into its panes: Text into the
+// source pane, Result as the engine's stored result, FromLang/ToLang into the two selects,
+// Engine as the selected engine. Nothing is translated until the user asks.
+type HistoryUsePayload struct {
+	Text     string `json:"text"`
+	Result   string `json:"result"`
+	FromLang string `json:"from_lang"`
+	ToLang   string `json:"to_lang"`
+	Engine   string `json:"engine"`
 }

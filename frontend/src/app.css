@@ -278,6 +278,23 @@ body {
     border-color: var(--app-border);
   }
 
+  /* Issue #60: the history list's keyboard-selected row. A left accent bar, matching the
+     engine dots' accent ring: visible without changing the row's layout. */
+  .u-history-selected {
+    box-shadow: inset 3px 0 0 var(--app-accent);
+    background: var(--app-card);
+  }
+
+  /* Issue #60: the "OCR" mark on a history row that came from a screenshot: a small bordered
+     chip after the engine name, muted like the rest of the meta line. */
+  .u-history-ocr {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0 0.375rem;
+    border: 1px solid var(--app-border);
+    border-radius: 9999px;
+  }
+
   .u-border-r {
     border-right: 1px solid var(--app-border);
   }

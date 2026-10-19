@@ -41,7 +41,9 @@ var (
 	KaiSetLocale              func(locale string)
 	KaiTranslate              func(src string, dst string, text string, token int64, out unsafe.Pointer, outCap int32) int32
 	KaiTranslateCancel        func(token int64) int32
+	KaiTranslateStrategy      func(src string, dst string, text string, token int64, strategy int32, out unsafe.Pointer, outCap int32) int32
 	KaiWarmTranslate          func(src string, dst string) int32
+	KaiWarmTranslateStrategy  func(src string, dst string, strategy int32) int32
 	KaiDetectLanguage         func(text string, out unsafe.Pointer, outCap int32) int32
 	KaiCorrect                func(instructions string, text string, out unsafe.Pointer, outCap int32) int32
 	KaiCorrectAvailability    func(locale string, out unsafe.Pointer, outCap int32) int32
@@ -54,6 +56,8 @@ var (
 	KaiDoubleCopyIngest       func(keycode int32, flags uint64, autorepeat int32, srcPid int32) int32
 
 	KaiWindowSetWebviewBackground func(window uintptr, r int32, g int32, b int32) int32
+	KaiWindowSetAppearance        func(window uintptr, dark int32) int32
+	KaiShowAboutPanel             func() int32
 	KaiLaunchObserve              func() int32
 	KaiLaunchKind                 func() int32
 )

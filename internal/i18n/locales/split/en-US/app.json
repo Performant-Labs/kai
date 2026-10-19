@@ -3,6 +3,7 @@
   "app.description": "Cross-platform Translate & OCR tool",
   "window.translate_title": "Kai Translate",
   "window.settings_title": "Kai Settings",
+  "window.history_title": "Kai History",
   "window.selection_title": "Kai Selection",
   "window.screenshot_title": "Kai Screenshot Translate",
   "notification.update_available_title": "Kai update available",

@@ -21,10 +21,25 @@ func (q *Queries) ClearHistory(ctx context.Context) error {
 const countHistory = `-- name: CountHistory :one
 SELECT COUNT(*) FROM history
 WHERE (?1 = '' OR text LIKE '%' || ?1 || '%' OR result LIKE '%' || ?1 || '%')
+  AND (?2 = '' OR from_lang = ?2)
+  AND (?3 = '' OR to_lang = ?3)
+  AND (?4 = 0 OR engine_id = ?4)
 `
 
-func (q *Queries) CountHistory(ctx context.Context, dollar_1 interface{}) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countHistory, dollar_1)
+type CountHistoryParams struct {
+	Column1 interface{} `json:"column_1"`
+	Column2 interface{} `json:"column_2"`
+	Column3 interface{} `json:"column_3"`
+	Column4 interface{} `json:"column_4"`
+}
+
+func (q *Queries) CountHistory(ctx context.Context, arg CountHistoryParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countHistory,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -101,6 +116,9 @@ const queryHistory = `-- name: QueryHistory :many
 SELECT id, text, result, from_lang, to_lang, engine_id, from_ocr, created_at
 FROM history
 WHERE (?1 = '' OR text LIKE '%' || ?1 || '%' OR result LIKE '%' || ?1 || '%')
+  AND (?4 = '' OR from_lang = ?4)
+  AND (?5 = '' OR to_lang = ?5)
+  AND (?6 = 0 OR engine_id = ?6)
 ORDER BY created_at DESC
 LIMIT ?2 OFFSET ?3
 `
@@ -109,10 +127,20 @@ type QueryHistoryParams struct {
 	Column1 interface{} `json:"column_1"`
 	Limit   int64       `json:"limit"`
 	Offset  int64       `json:"offset"`
+	Column4 interface{} `json:"column_4"`
+	Column5 interface{} `json:"column_5"`
+	Column6 interface{} `json:"column_6"`
 }
 
 func (q *Queries) QueryHistory(ctx context.Context, arg QueryHistoryParams) ([]History, error) {
-	rows, err := q.db.QueryContext(ctx, queryHistory, arg.Column1, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, queryHistory,
+		arg.Column1,
+		arg.Limit,
+		arg.Offset,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+	)
 	if err != nil {
 		return nil, err
 	}

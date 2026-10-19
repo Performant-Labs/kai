@@ -251,6 +251,17 @@ export interface Settings {
     "correct_source_text": boolean;
 
     /**
+     * FastSystemTranslate is the "faster System translation (lower quality)" switch (issue #10):
+     * when on, the System (Apple) engine translates with Apple's low-latency strategy — the
+     * traditional language-pack models, roughly 12x faster and noticeably lower quality than the
+     * default Apple Intelligence path. OFF by default so nothing changes for anyone who does not
+     * choose it, and only an explicit true turns it on: a missing key, or a value that is not a
+     * boolean, reads as off. Read through readFastSystemTranslate, not mapstructure, so a garbled
+     * value cannot fail the whole settings load. Applies to the System engine only.
+     */
+    "fast_system_translate": boolean;
+
+    /**
      * FontSize is the text size in percent of the pre-#195 size (issue #195). One of
      * FontSizeSteps, 120 (DefaultFontSize) by default: a fresh install, an old settings.json
      * without the key, and any value that is not one of the six all read as 120. Read through

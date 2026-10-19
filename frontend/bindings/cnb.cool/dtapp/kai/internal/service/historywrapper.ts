@@ -24,11 +24,11 @@ export function ClearHistory(): $CancellablePromise<void> {
 }
 
 /**
- * CountHistory returns the total history count matching the keyword, for the frontend's page
- * count.
+ * CountHistory returns the total history count matching the keyword and filters, for the
+ * frontend's page count.
  */
-export function CountHistory(keyword: string): $CancellablePromise<number> {
-    return $Call.ByID(534557787, keyword);
+export function CountHistory(keyword: string, fromLang: string, toLang: string, engine: string): $CancellablePromise<number> {
+    return $Call.ByID(534557787, keyword, fromLang, toLang, engine);
 }
 
 /**
@@ -39,8 +39,10 @@ export function DeleteHistory(id: number): $CancellablePromise<void> {
 }
 
 /**
- * GetHistory queries translation history with pagination.
+ * GetHistory queries translation history with pagination and the history screen's filters
+ * (issue #60): keyword matches source and result text, fromLang/toLang compare the stored
+ * pair, engine names the engine. An empty filter value matches anything.
  */
-export function GetHistory(keyword: string, offset: number, limit: number): $CancellablePromise<$models.HistoryItem[] | null> {
-    return $Call.ByID(1672926790, keyword, offset, limit);
+export function GetHistory(keyword: string, fromLang: string, toLang: string, engine: string, offset: number, limit: number): $CancellablePromise<$models.HistoryItem[] | null> {
+    return $Call.ByID(1672926790, keyword, fromLang, toLang, engine, offset, limit);
 }

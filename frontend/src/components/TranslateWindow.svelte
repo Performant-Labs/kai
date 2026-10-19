@@ -76,15 +76,17 @@
     EventTranslateProgress,
     EventInputFill,
     EventWindowClosing,
+    EventWindowShow,
     EventEnginesChanged,
     EventAutoClipboardChanged,
     EventClearContextShortcutChanged,
     EventCopyKeyFailed,
     EventDoubleCopyPermissionMissing,
     EventAccessibilityMissing,
+    EventHistoryUse,
   } from '../utils/events';
-  import type { TranslateProgressPayload } from '../utils/events';
-  import { WindowSettings, WindowTranslate } from '../constants/window';
+  import type { TranslateProgressPayload, HistoryUsePayload } from '../utils/events';
+  import { WindowSettings, WindowHistory, WindowTranslate } from '../constants/window';
   import type { TranslateResult } from '@bindings/cnb.cool/dtapp/kai/internal/model/models.ts';
   import type {
     AllEngineItem,
@@ -197,7 +199,11 @@
     GetConfig,
     SaveConfig,
   } from '@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts';
-  import { ShowSettings } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
+  import {
+    ShowSettings,
+    ShowHistory,
+  } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
+  import { restoredPair, restoredResult } from '../utils/historyList.ts';
 
   // The retained session (issue #81): the source text, the per-engine results and the request
   // marker survive closing the window and an app restart, so reopening shows the last translation.
@@ -255,6 +261,9 @@
   // What is known about each running engine of the request (its started and chunk events), which
   // the progress line is drawn from.
   let progress = $state<Record<string, ProgressState>>({});
+  // Whether this request already showed the "offer the faster System translation setting" toast
+  // (issue #10): once per request, never a silent switch.
+  let suggestedFast = false;
   // The clock the progress line reads: this window's own, re-read once a second while a request is
   // open, so the elapsed time is measured from when this window heard of the engine, never from the
   // backend's clock.
@@ -527,6 +536,7 @@
       clearContext();
       return;
     }
+    if (handleHistoryShortcut(e)) return;
     const action = shortcutAction(e);
     if (action === null) return;
     e.preventDefault();
@@ -546,6 +556,19 @@
     if (e.key !== 'Enter' || !e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
     e.preventDefault();
     if (!awaiting && input.trim() && !correcting) translateWithSwitch();
+    return true;
+  }
+
+  // Cmd+Y opens the history screen (issue #60): the Mac convention for history. Mac-only
+  // (metaKey, never ctrlKey — Ctrl+Y stays the window's redo), no Alt/Shift, and unlike
+  // undo/redo it is in scope everywhere in this window, the source textarea included: WebKit
+  // binds nothing to Cmd+Y there, and "browse past translations" is a window action, not a
+  // text action. The history window works on its own while a translation here keeps running.
+  function handleHistoryShortcut(e: KeyboardEvent): boolean {
+    if (typeof e.key !== 'string' || e.key.toLowerCase() !== 'y') return false;
+    if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+    e.preventDefault();
+    void ShowHistory();
     return true;
   }
 
@@ -627,19 +650,27 @@
     activeEngine && progress[activeEngine] ? progressLine(progress[activeEngine], nowMs) : null,
   );
   // The progress line's copy. progressLine decides which line it is and holds the facts; this only
-  // words them.
+  // words them. A time-left, when there is one honest to show, follows every line (issue #10):
+  // from the parts already finished (proportional, whatever mode is really running) or, until
+  // the first part lands, the backend's measured-rate estimate.
   function progressText(line: ProgressLine): string {
     const engine = engineName(line.engine);
+    const left =
+      line.remainingMs !== undefined
+        ? ' · ' + t('translate.timeLeft', { time: formatClock(line.remainingMs) })
+        : '';
     if (line.kind === 'chunk') {
-      return t('translate.part', { done: line.done ?? 0, total: line.total ?? 0 });
+      return t('translate.part', { done: line.done ?? 0, total: line.total ?? 0 }) + left;
     }
     if (line.kind === 'stalled') {
       const { minutes, seconds } = splitElapsed(line.elapsedMs);
-      return minutes > 0
-        ? t('translate.stillWaitingMin', { engine, minutes, seconds })
-        : t('translate.stillWaiting', { engine, seconds });
+      const waiting =
+        minutes > 0
+          ? t('translate.stillWaitingMin', { engine, minutes, seconds })
+          : t('translate.stillWaiting', { engine, seconds });
+      return waiting + left;
     }
-    return t('translate.workingOn', { engine, time: formatClock(line.elapsedMs) });
+    return t('translate.workingOn', { engine, time: formatClock(line.elapsedMs) }) + left;
   }
   // A status dot's tooltip and accessible label: the engine name, plus its state once it has one
   // (an idle dot has nothing to report, so its label is the engine name alone). A failed engine that
@@ -754,7 +785,20 @@
           [payload.engine]: applyChunk(current, { done: payload.done, total: payload.total }, now),
         };
       } else {
-        progress = { ...progress, [payload.engine]: startProgress(payload.engine, now) };
+        // The started event may carry the System engine's estimate and the faster-setting
+        // suggestion (issue #10). The estimate feeds the progress line's time-left; the
+        // suggestion is a toast, once per request — the setting is never switched silently.
+        progress = {
+          ...progress,
+          [payload.engine]: startProgress(payload.engine, now, payload.estimated_ms),
+        };
+        if (payload.suggest_fast && payload.estimated_ms && !suggestedFast) {
+          suggestedFast = true;
+          showToast(
+            t('translate.fastSuggestion', { time: formatClock(payload.estimated_ms) }),
+            12000,
+          );
+        }
       }
     });
     const offInputFill = onEvent(EventInputFill, (text: string) => {
@@ -763,6 +807,9 @@
       setSource(text, 'program');
       // A new arrival is a new text: an undo of an earlier switch does not carry over to it.
       switcher.newArrival();
+      // The history restore's back-translation hold is over too (issue #60): a new text
+      // arrived, the toggle's standing rule applies again.
+      historyShown = false;
       translateWithSwitch();
     });
     // Issue #175 item 5: the copy-key branch simulated a copy but never saw the clipboard
@@ -785,8 +832,10 @@
     });
     const offClosing = onEvent(EventWindowClosing, (name: string) => {
       // Issue #69: opening Settings drops this window out of always-on-top so Settings is not
-      // hidden behind a pinned window; when Settings closes, put the persisted pin back.
-      if (name === WindowSettings) {
+      // hidden behind a pinned window; when Settings closes, put the persisted pin back. The
+      // history window (issue #60) lowers this window the same way (WindowWrapper.ShowHistory),
+      // so its close gets the same pin restore.
+      if (name === WindowSettings || name === WindowHistory) {
         Window.SetAlwaysOnTop($pinnedStore).catch((e) =>
           console.error(t('log.restorePinFailed'), e),
         );
@@ -818,6 +867,12 @@
     // The settings page saved a new clear-context shortcut (issue #48): use it from now on.
     const offClearShortcut = onEvent(EventClearContextShortcutChanged, (v) => {
       if (typeof v === 'string') clearContextShortcut.set(v);
+    });
+    // "Use" on a history entry (issue #60): the history screen (or the Settings history tab)
+    // broadcast an entry; put it back into the panes. Translates nothing — see
+    // applyHistoryUse.
+    const offHistoryUse = onEvent(EventHistoryUse, (p: HistoryUsePayload) => {
+      applyHistoryUse(p);
     });
     // Initialization and first render: restore pin state, then wait for engines/languages/defaults to load.
     (async () => {
@@ -859,6 +914,7 @@
       offClosing();
       offEngines();
       offClearShortcut();
+      offHistoryUse();
       // Nothing waiting may fire on a window that is gone (issue #57).
       autoRun.cancel();
       commitAuto.cancel();
@@ -1092,6 +1148,8 @@
     toLang = to as TranslateLang;
     if (activeDisplay !== '') setSource(activeDisplay, 'program');
     persistLangs();
+    // The swap asks for a translation: the history restore's back-translation hold lifts.
+    historyShown = false;
     doTranslate();
   }
 
@@ -1103,6 +1161,8 @@
     autoRun.cancel();
     commitAuto.cancel();
     autoCommit = null;
+    // A real translation was asked for: the history restore's back-translation hold lifts.
+    historyShown = false;
     if (!input.trim() || activeEngines.length === 0) return;
     loading = true;
     awaiting = true;
@@ -1128,6 +1188,7 @@
     if (auto) autoCommit = { id, text: input };
     started = null;
     progress = {};
+    suggestedFast = false; // the faster-setting toast is once per request (issue #10)
     try {
       // Multi-engine concurrency is handled in parallel by the backend across enabled engines, independent of any single engine;
       // the bindings-generated TranslateRequest.engine is required, so pass an empty string to satisfy the type (the backend ignores it).
@@ -1236,7 +1297,9 @@
 
   $effect(() => {
     const wanted = shouldBackTranslate({
-      enabled: $backTranslateOn,
+      // A history restore holds the back-translation off (issue #60): "Use" translates
+      // nothing, a back-translation included, until the user asks for something again.
+      enabled: $backTranslateOn && !historyShown,
       displayed: activeDisplay,
       isResult: pane === 'result',
       failed: Boolean(activeResult?.error),
@@ -1265,6 +1328,74 @@
       void startBack(displayed, engine, pair);
     });
   });
+
+  // "Use" from the history screen (issue #60): put the entry's source, result, languages and
+  // engine back into the panes, ready to copy or translate again. Nothing is translated by
+  // this — no request is started, and the "Translate as I type" and back-translation switches
+  // keep their state. A request still running is stopped (the way Clear stops it): its late
+  // results belong to the text the user just chose to replace, and would otherwise land on top
+  // of the restored pane.
+  // historyShown holds the back-translation off while the restored result is on screen: the
+  // toggle's standing rule ("translate the shown result back") would otherwise fire a
+  // translation the user never asked for — the one thing "Use" promises not to do. It lifts at
+  // the next thing the user asks for: a translate, a Clear, a swap, a fill.
+  let historyShown = $state(false);
+
+  function applyHistoryUse(p: HistoryUsePayload) {
+    if (typeof p !== 'object' || p === null) return;
+    const { text, result, from_lang, to_lang, engine } = p;
+    if (
+      typeof text !== 'string' ||
+      typeof result !== 'string' ||
+      typeof from_lang !== 'string' ||
+      typeof to_lang !== 'string' ||
+      typeof engine !== 'string'
+    ) {
+      return;
+    }
+    const entry = { text, result, from_lang, to_lang, engine };
+    autoRun.cancel();
+    commitAuto.cancel();
+    autoCommit = null;
+    if (awaiting) cancelRequest();
+    requestId = '';
+    started = null;
+    progress = {};
+    retrans = null;
+    correction = null;
+    usedCorrection = null;
+    edited = new Map();
+    setSource(text, 'program');
+    // The stored translation becomes the engine's own finished result: the pane shows it as a
+    // result (it satisfies the retained session's entry rule, so it survives a window close
+    // like any result), and this run asked nothing — another engine without a result reads
+    // idle, never failed (issue #81's run-local marker).
+    const hasResult = engine !== '' && result !== '';
+    results = hasResult ? { [engine]: restoredResult(entry) } : {};
+    requested = hasResult;
+    requestedTo = hasResult ? to_lang : '';
+    requestedThisRun = false;
+    awaiting = false;
+    loading = false;
+    // The pair the two selects can actually hold (a stored value the loaded language list
+    // does not offer keeps that side as it is, so a select never points at a missing option);
+    // a restore is not a choice, so nothing is taught to the variant store.
+    const pair = restoredPair(
+      entry,
+      languages.map((l) => l.value),
+      targetLanguages.map((l) => l.value),
+    );
+    if (pair.from) fromLang = pair.from as TranslateLang;
+    if (pair.to) toLang = pair.to as TranslateLang;
+    persistLangs();
+    if (engine) setLastUsedEngine(engine);
+    switcher.newArrival();
+    historyShown = true;
+    // Used while this window was hidden (the Settings history tab): bring it forward so the
+    // restore is something to see. From the history window this window is already open —
+    // re-showing would only steal the focus back from it, so it is left alone.
+    if (document.visibilityState === 'hidden') emitEvent(EventWindowShow, 'translate');
+  }
 
   // The context chat (issue #48). The context the user gave is kept across texts until it is
   // cleared (the button, or the shortcut): nothing below is reset when the text or the pair
@@ -1381,6 +1512,7 @@
     requestId = '';
     started = null;
     progress = {};
+    suggestedFast = false;
     setSource('', 'program');
     correction = null;
     usedCorrection = null;
@@ -1391,6 +1523,7 @@
     awaiting = false;
     loading = false;
     edited = new Map();
+    historyShown = false;
   }
 </script>
 
@@ -1522,14 +1655,41 @@
         </select>
       </div>
 
-      <!-- Settings gear (issue #69): app-level configuration, so it sits at the toolbar's right end,
-           outside both cards. Opens the Settings window through the existing WindowWrapper
-           binding (ShowSettings, no new Go API); this window stays open. Not a toggle, so it never
-           gets the --active styling. Glyph: Lucide "settings" (ISC), inline like the swap
-           button's. Label reuses the titlebar.settings key (issue #69); the tooltip (issue #173)
-           is the more descriptive titlebar.settingsHint, distinct so the error-panel's visible
-           "Settings" button text (below) stays short. -->
-      <div class="col-start-3 flex justify-end">
+      <!-- Right column of the toolbar: the History button (issue #60) beside the Settings gear
+           (issue #69). History is where the user's own work lives, so it gets the same place of
+           honour as Settings; opens the history window through WindowWrapper.ShowHistory (which
+           lowers this window's pin the way Settings does), and Cmd+Y does the same. Glyph:
+           Lucide "history" (ISC), inline like the swap button's. -->
+      <div class="col-start-3 flex items-center justify-end gap-1">
+        <button
+          class="u-icon-btn u-no-drag"
+          data-testid="history-button"
+          onclick={() => void ShowHistory()}
+          aria-label={t('translate.history')}
+          title={t('translate.historyHint')}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+            <path d="M12 7v5l4 2" />
+          </svg>
+        </button>
+        <!-- Settings gear (issue #69): app-level configuration, so it sits at the toolbar's right end,
+            outside both cards. Opens the Settings window through the existing WindowWrapper
+            binding (ShowSettings, no new Go API); this window stays open. Not a toggle, so it never
+            gets the --active styling. Glyph: Lucide "settings" (ISC), inline like the swap
+            button's. Label reuses the titlebar.settings key (issue #69); the tooltip (issue #173)
+            is the more descriptive titlebar.settingsHint, distinct so the error-panel's visible
+            "Settings" button text (below) stays short. -->
         <button
           class="u-icon-btn u-no-drag"
           onclick={() => ShowSettings()}
@@ -1965,9 +2125,17 @@
             {/if}
             {#if activeResult.identity}
               <!-- Same language on both sides (issue #80): the result is the source text, not a
-                 translation; say so. Display only, never changes either select. -->
+                  translation; say so. Display only, never changes either select. -->
               <p class="u-muted px-4 text-xs first:pt-4" data-testid="identity-result">
                 {t('translate.identity')}
+              </p>
+            {/if}
+            {#if activeResult.notice}
+              <!-- The engine attached a note to an otherwise successful translation (issue #10):
+                  the System engine translated with the slow mode because the fast mode's language
+                  pack was missing. Already localized by the backend; display only. -->
+              <p class="u-muted px-4 text-2xs first:pt-4" data-testid="result-notice">
+                {activeResult.notice}
               </p>
             {/if}
             <textarea

@@ -53,7 +53,9 @@ describe('requestSettled (D9: what replaces the timer)', () => {
     expect(requestSettled(null, { google: { engine: 'google', result: 'x' } })).toBe(false);
   });
   it('is false until every started engine has an entry in results', () => {
-    expect(requestSettled(['apple', 'google'], { google: { engine: 'google', result: 'x' } })).toBe(false);
+    expect(requestSettled(['apple', 'google'], { google: { engine: 'google', result: 'x' } })).toBe(
+      false,
+    );
   });
   it('is true once every started engine reported, whatever the outcome', () => {
     const results = {
@@ -122,6 +124,62 @@ describe('formatClock', () => {
     expect(formatClock(7_400)).toBe('00:07');
     expect(formatClock(65_000)).toBe('01:05');
     expect(formatClock(600_000)).toBe('10:00');
+  });
+});
+
+// Issue #10: time remaining on the progress line. Two sources, in order of trust: the parts
+// already finished (a proportional ETA, which reflects whatever mode is actually running), and,
+// until the first part lands, the backend's measured-rate estimate from the started event.
+describe('time remaining (issue #10)', () => {
+  it('working: the started estimate yields estimate - elapsed, and disappears once spent', () => {
+    // Started at t=1000; the 20 s read is inside the 30 s stall threshold, so it is 'working'.
+    const s = startProgress('apple', 1_000, 180_000);
+    const line = progressLine(s, 21_000);
+    expect(line.kind).toBe('working');
+    expect(line.elapsedMs).toBe(20_000);
+    expect(line.remainingMs).toBe(160_000);
+    // The estimate is a hint, not a promise: once elapsed passes it, no time-left is shown.
+    expect(progressLine(s, 181_000).remainingMs).toBeUndefined();
+    expect(progressLine(s, 301_000).remainingMs).toBeUndefined();
+  });
+  it('working without an estimate (every engine but the System engine): no time-left', () => {
+    const s = startProgress('google', 0);
+    expect(progressLine(s, 10_000).remainingMs).toBeUndefined();
+  });
+  it('chunk: proportional from the parts done — 3 of 12 after 60 s leaves 180 s', () => {
+    let s = startProgress('apple', 0, 999_000);
+    s = applyChunk(s, { done: 3, total: 12 }, 55_000);
+    const line = progressLine(s, 60_000);
+    expect(line.kind).toBe('chunk');
+    expect(line.remainingMs).toBe(180_000); // 60 s * (12-3)/3
+  });
+  it('chunk: the proportional ETA replaces the started estimate (it outranks it once parts land)', () => {
+    let s = startProgress('apple', 0, 50_000);
+    s = applyChunk(s, { done: 1, total: 2 }, 30_000);
+    expect(progressLine(s, 30_000).remainingMs).toBe(30_000); // 30 s * (2-1)/1, not 50-30
+  });
+  it('chunk with every part done: no time-left', () => {
+    let s = startProgress('apple', 0, 10_000);
+    s = applyChunk(s, { done: 4, total: 4 }, 40_000);
+    expect(progressLine(s, 41_000).remainingMs).toBeUndefined();
+  });
+  it('stalled keeps the time-left (a long System translation goes silent between parts; the ETA is what makes the wait legible)', () => {
+    let s = startProgress('apple', 0, 180_000);
+    s = applyChunk(s, { done: 1, total: 4 }, 10_000);
+    const read = 10_000 + STILL_WAITING_AFTER_MS + 1;
+    const line = progressLine(s, read);
+    expect(line.kind).toBe('stalled');
+    // Proportional from ALL the elapsed time (1 part in read ms): read * (4-1)/1.
+    expect(line.remainingMs).toBe(read * 3);
+  });
+  it('applyChunk keeps the started estimate for the next state', () => {
+    const s0 = startProgress('apple', 0, 90_000);
+    const s1 = applyChunk(s0, { done: 1, total: 3 }, 10_000);
+    expect(s1.estimatedMs).toBe(90_000);
+  });
+  it('a zero/absent estimate never shows a time-left', () => {
+    const s = startProgress('apple', 0, 0);
+    expect(progressLine(s, 5_000).remainingMs).toBeUndefined();
   });
 });
 

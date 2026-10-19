@@ -25,6 +25,10 @@ let BRIDGE_ERR_BITMAP_CTX_FAILED: String = "bitmap_ctx_failed"
 let BRIDGE_ERR_BITMAP_REDRAW_FAILED: String = "bitmap_redraw_failed"
 let BRIDGE_ERR_OCR_TIMEOUT: String = "ocr_timeout"
 let BRIDGE_ERR_NO_SOURCE_LANG: String = "no_source_lang"
+// kai_translate_strategy with the fast strategy (issue #10): the pair's traditional language
+// pack (what .lowLatency needs) is not installed. The Go engine falls back to the slow mode for
+// this call and renders err.apple_low_latency_pack_missing; detail is technical context only.
+let BRIDGE_ERR_LOW_LATENCY_PACK_MISSING: String = "low_latency_pack_missing"
 // Apple system-level translation/recognition errors (e.g. localized errors thrown by
 // Translation.framework / Vision).
 // detail carries the system's localizedDescription — not translatable copy, technical context

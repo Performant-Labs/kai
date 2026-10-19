@@ -584,4 +584,13 @@ export interface TranslateResult {
      * The translate window shows it as a note.
      */
     "detected_from"?: Language;
+
+    /**
+     * Notice is a localized, already user-facing note attached to an otherwise successful
+     * translation (issue #10): the System engine sets it when the fast mode's language pack was
+     * missing and the text was translated with the slow mode instead. Engines set it; the
+     * translate service carries it through callEngine and the chunk assembly untouched. The
+     * window shows it as a muted note under the result; it is never an error and never history.
+     */
+    "notice"?: string;
 }

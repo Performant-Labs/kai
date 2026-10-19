@@ -19,6 +19,18 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - The tooltips of the pin and auto-clipboard buttons at the right end of the FROM pane are no longer cut off at the pane's edge ("Stop keeping this window on top of others" showed as "...on t"): they now open leftwards from the button and their width follows the pane's, so they fit even when the left pane is shrunk to a quarter of the window (#52).
 - When the text you send is already in the target language, the automatic source switch now switches at a lower confidence (0.5 instead of 0.8): a Spanish sentence with one misplaced accent, under English -> Spanish (Mexico), switches the pair and translates instead of answering that source and target are the same. Every other case keeps the 0.8 bar (#54).
 
+### Enhancements
+- Settings > Translation Engines (the System engine's panel) now has a "Faster System translation (lower quality)" switch, off by default. When on, the System engine uses Apple's fast translation mode (about 12x faster, lower quality); while translating, the progress line shows the time left and each finished part, and a text that will take more than a couple of minutes is offered the switch. When the fast mode's language pack is missing, the text is translated with the standard mode instead and the result says how to install the pack (#10).
+- A History screen now opens from the translate window (a History button beside the gear, or Cmd+Y): past translations grouped by day with the time, the language pair, the engine and an OCR mark, searched and filtered by pair and engine, paged as you scroll, with Use (puts the entry's source, result, languages and engine back into the panes without translating anything), Copy and Delete per row, and a confirmed Clear all. The Settings history tab shows the same list (#60; supersedes the history-view part of #9).
+
+### Bug Fixes
+- The title bar of the Settings and translate windows now follows the theme; it used to stay white while the content was dark in the dark theme, because the window's macOS appearance was set only at launch (#8).
+- The About panel (the menu bar's About Kai item) now opens in front of kai's windows, including a pinned always-on-top translate window (#8).
+- Kai no longer writes the text you select or copy into its log on the hotkey paths (the Alt+A auto-clipboard and copy-key branches); those lines now carry only the length, like the double Cmd+C path already did, so a log pasted into an issue cannot leak private text (#11).
+
+### Known Issues
+- The 0.4.1 note "Kai's log records the text you select or copy" is fixed in this build: the hotkey log lines carry the length only (#11). Log files written by 0.4.1 and earlier still contain what was selected or copied then, so check or delete `~/.kai/logs` before sharing an old log.
+
 ## [0.4.1] - 2026-10-05
 
 ### Enhancements

@@ -82,6 +82,12 @@ export const EventDoubleCopyPermissionMissing = 'kai:doublecopy:permission-missi
 // Go side. TranslateWindow shows a toast that says what to enable and where.
 export const EventAccessibilityMissing = 'kai:accessibility:missing';
 
+// EventHistoryUse: emitted (frontend) when the user picks "Use" on a history entry (issue #60):
+// the history screen or the Settings history tab broadcasts it, and the translate window puts the
+// entry's source, result, languages and engine back into its panes. Nothing is translated until
+// the user asks. payload: HistoryUsePayload.
+export const EventHistoryUse = 'kai:history:use';
+
 // Event payload type definitions (aligned with the Go-side structs in internal/events/events.go)
 
 // LocaleChangedPayload: language-change event arguments.
@@ -104,6 +110,8 @@ export interface ThemeChangedPayload {
 // phase 'started' is sent once per engine when its call begins, before any result; 'chunk' reports
 // done of total parts finished (chunked translation, #84). started_at_ms is the backend clock and
 // is informational only: elapsed time is measured from the moment this window received the event.
+// estimated_ms / suggest_fast (issue #10, started only): the System engine's measured-rate
+// estimate and whether to offer the faster-System-translation setting; absent for other engines.
 export interface TranslateProgressPayload {
   request_id: string;
   engine: string;
@@ -111,6 +119,8 @@ export interface TranslateProgressPayload {
   started_at_ms: number;
   done: number;
   total: number;
+  estimated_ms?: number;
+  suggest_fast?: boolean;
 }
 
 // ScreenshotRetranslatePayload: screenshot-translation change-language-and-retranslate event arguments.
@@ -123,4 +133,15 @@ export interface ScreenshotRetranslatePayload {
   session: string; // ScreenshotSessionScreenshot | ScreenshotSessionInput
   from: string; // TranslateLang: auto | zh | en | ...
   to: string; // TranslateLang
+}
+
+// HistoryUsePayload: EventHistoryUse arguments (aligned with internal/events/events.go).
+// The history entry whose "Use" was picked: Text goes into the source pane, Result becomes the
+// engine's stored result, FromLang/ToLang the two selects, Engine the selected engine.
+export interface HistoryUsePayload {
+  text: string;
+  result: string;
+  from_lang: string;
+  to_lang: string;
+  engine: string;
 }

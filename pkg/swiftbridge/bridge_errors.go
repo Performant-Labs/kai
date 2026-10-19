@@ -20,21 +20,22 @@ package swiftbridge
 
 // Error-code constants: literals must match the Swift side's BRIDGE_ERR_* exactly.
 const (
-	BridgeErrEmptyText          = "empty_text"           // Swift: BRIDGE_ERR_EMPTY_TEXT  -> err.apple_empty_text
-	BridgeErrTargetRequired     = "target_required"      // Swift: BRIDGE_ERR_TARGET_REQUIRED -> err.apple_target_required
-	BridgeErrNullImage          = "null_image"           // Swift: BRIDGE_ERR_NULL_IMAGE  -> err.apple_null_image
-	BridgeErrDecodeFailed       = "decode_failed"        // Swift: BRIDGE_ERR_DECODE_FAILED -> err.apple_decode_failed
-	BridgeErrEmptyImage         = "empty_image"          // Swift: BRIDGE_ERR_EMPTY_IMAGE -> err.apple_empty_image
-	BridgeErrBitmapCtxFailed    = "bitmap_ctx_failed"    // Swift: BRIDGE_ERR_BITMAP_CTX_FAILED -> err.apple_bitmap_ctx_failed
-	BridgeErrBitmapRedrawFailed = "bitmap_redraw_failed" // Swift: BRIDGE_ERR_BITMAP_REDRAW_FAILED -> err.apple_bitmap_redraw_failed
-	BridgeErrOcrTimeout         = "ocr_timeout"          // Swift: BRIDGE_ERR_OCR_TIMEOUT -> err.apple_ocr_timeout
-	BridgeErrNoSourceLang       = "no_source_lang"       // Swift: BRIDGE_ERR_NO_SOURCE_LANG -> err.apple_no_source_lang
-	BridgeErrAppleTranslate     = "apple_translate"      // Swift: BRIDGE_ERR_APPLE_TRANSLATE (system-level; reuses err.apple_translate_engine)
-	BridgeErrAppleOcr           = "apple_ocr"            // Swift: BRIDGE_ERR_APPLE_OCR (system-level; reuses err.vision_ocr_engine)
-	BridgeErrCancelled          = "cancelled"            // Swift: BRIDGE_ERR_CANCELLED (kai_translate cancelled by kai_translate_cancel; no copy: reported through the ctx)
-	BridgeErrCorrectRefused     = "correct_refused"      // Swift: BRIDGE_ERR_CORRECT_REFUSED (kai_correct: the model declined; no copy: the text is translated as it came)
-	BridgeErrCorrectFailed      = "correct_failed"       // Swift: BRIDGE_ERR_CORRECT_FAILED (kai_correct: any other failure; no copy)
-	BridgeErrCorrectTimeout     = "correct_timeout"      // Swift: BRIDGE_ERR_CORRECT_TIMEOUT (kai_correct: no answer in time; no copy)
+	BridgeErrEmptyText             = "empty_text"               // Swift: BRIDGE_ERR_EMPTY_TEXT  -> err.apple_empty_text
+	BridgeErrTargetRequired        = "target_required"          // Swift: BRIDGE_ERR_TARGET_REQUIRED -> err.apple_target_required
+	BridgeErrNullImage             = "null_image"               // Swift: BRIDGE_ERR_NULL_IMAGE  -> err.apple_null_image
+	BridgeErrDecodeFailed          = "decode_failed"            // Swift: BRIDGE_ERR_DECODE_FAILED -> err.apple_decode_failed
+	BridgeErrEmptyImage            = "empty_image"              // Swift: BRIDGE_ERR_EMPTY_IMAGE -> err.apple_empty_image
+	BridgeErrBitmapCtxFailed       = "bitmap_ctx_failed"        // Swift: BRIDGE_ERR_BITMAP_CTX_FAILED -> err.apple_bitmap_ctx_failed
+	BridgeErrBitmapRedrawFailed    = "bitmap_redraw_failed"     // Swift: BRIDGE_ERR_BITMAP_REDRAW_FAILED -> err.apple_bitmap_redraw_failed
+	BridgeErrOcrTimeout            = "ocr_timeout"              // Swift: BRIDGE_ERR_OCR_TIMEOUT -> err.apple_ocr_timeout
+	BridgeErrNoSourceLang          = "no_source_lang"           // Swift: BRIDGE_ERR_NO_SOURCE_LANG -> err.apple_no_source_lang
+	BridgeErrLowLatencyPackMissing = "low_latency_pack_missing" // Swift: BRIDGE_ERR_LOW_LATENCY_PACK_MISSING -> err.apple_low_latency_pack_missing (issue #10: the fast mode's traditional language pack is not installed; the Go engine falls back to the slow mode and shows that copy)
+	BridgeErrAppleTranslate        = "apple_translate"          // Swift: BRIDGE_ERR_APPLE_TRANSLATE (system-level; reuses err.apple_translate_engine)
+	BridgeErrAppleOcr              = "apple_ocr"                // Swift: BRIDGE_ERR_APPLE_OCR (system-level; reuses err.vision_ocr_engine)
+	BridgeErrCancelled             = "cancelled"                // Swift: BRIDGE_ERR_CANCELLED (kai_translate cancelled by kai_translate_cancel; no copy: reported through the ctx)
+	BridgeErrCorrectRefused        = "correct_refused"          // Swift: BRIDGE_ERR_CORRECT_REFUSED (kai_correct: the model declined; no copy: the text is translated as it came)
+	BridgeErrCorrectFailed         = "correct_failed"           // Swift: BRIDGE_ERR_CORRECT_FAILED (kai_correct: any other failure; no copy)
+	BridgeErrCorrectTimeout        = "correct_timeout"          // Swift: BRIDGE_ERR_CORRECT_TIMEOUT (kai_correct: no answer in time; no copy)
 )
 
 // Swift-side constants (mirror; the real definitions live in
@@ -49,6 +50,7 @@ const (
 //	let BRIDGE_ERR_BITMAP_REDRAW_FAILED= "bitmap_redraw_failed"
 //	let BRIDGE_ERR_OCR_TIMEOUT         = "ocr_timeout"
 //	let BRIDGE_ERR_NO_SOURCE_LANG      = "no_source_lang"
+//	let BRIDGE_ERR_LOW_LATENCY_PACK_MISSING = "low_latency_pack_missing"
 //	let BRIDGE_ERR_APPLE_TRANSLATE     = "apple_translate"
 //	let BRIDGE_ERR_APPLE_OCR           = "apple_ocr"
 //	let BRIDGE_ERR_CANCELLED           = "cancelled"
