@@ -71,7 +71,7 @@ func TestRunEngineEmitsEstimateAndSuggestion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`Notice:\s+c\.notice,`).MatchString(chunkSrc) {
+	if !regexp.MustCompile(`Notice:\s+c\.notice,`).MatchString(string(chunkSrc)) {
 		t.Error("the chunked call's assembled result must carry the first chunk's notice")
 	}
 }
