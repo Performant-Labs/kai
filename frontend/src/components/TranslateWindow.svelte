@@ -14,12 +14,19 @@
   // state is the "keep the translate window on top of other apps" setting (off by default) —
   // the default the window starts from, read once per mount, not a live toggle. The 🧷 button
   // keeps its meaning: the per-window, per-session toggle, and a stored choice always wins over
-  // the default. The old #39 forced-re-pin migration is gone: a stored false stays false.
+  // the default (including one made while the setting is still loading — see the mount init).
+  // The old #39 forced-re-pin migration is gone: a stored false stays false.
   const storedPinRaw =
     typeof localStorage !== 'undefined' ? localStorage.getItem(pinKey('translate')) : null;
   const pinnedStore = persisted<boolean>(pinKey('translate'), false);
   let pinned = $derived($pinnedStore);
+  // Set by the first explicit 🧷 toggle. The mount init applies the setting default only
+  // while this is false: a click made while the config loads is an explicit choice, and an
+  // explicit choice always wins over the default (localStorage cannot tell that click from
+  // the initial value persisted's subscribe auto-writes, so the flag is the discriminator).
+  let pinTouched = false;
   async function togglePin() {
+    pinTouched = true;
     const next = !pinned;
     pinnedStore.set(next);
     try {
@@ -894,12 +901,17 @@
     // then wait for engines/languages/defaults to load.
     (async () => {
       // #69: the pin default is the setting, read once per mount BEFORE the state is applied:
-      // a stored 🧷 choice wins, otherwise the setting decides (off when unreadable).
+      // a stored 🧷 choice wins, otherwise the setting decides (off when unreadable). A click
+      // made while the config was loading is an explicit choice and is never overwritten —
+      // hence pinTouched; storedPinRaw was captured before the store existed, so it holds the
+      // user's prior choice, not the initial value the subscribe auto-writes.
       try {
         const cfg = await GetConfig();
-        pinnedStore.set(initialPin(storedPinRaw, cfg?.translate_window_on_top === true));
+        if (!pinTouched) {
+          pinnedStore.set(initialPin(storedPinRaw, cfg?.translate_window_on_top === true));
+        }
       } catch {
-        /* Config unreadable: keep the off default */
+        /* Config unreadable: keep the current state, never override a click */
       }
       // Apply the resolved pin state.
       try {

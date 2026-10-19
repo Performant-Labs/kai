@@ -23,6 +23,7 @@ const h = vi.hoisted(() => {
     learn: vi.fn(),
     saveConfig: vi.fn(async (_c: unknown) => {}),
     setAlwaysOnTop: vi.fn(async (_b: boolean) => {}),
+    getConfig: vi.fn(),
     config: { default_from: 'en', default_to: 'fr', auto_clipboard: false } as Record<
       string,
       unknown
@@ -84,13 +85,14 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts', () => 
 }));
 vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/configwrapper.ts', () => ({
   GetLanguages: async () => ['auto', 'en', 'fr', 'es'].map((v) => ({ value: v, name: v })),
-  GetConfig: async () => ({ ...h.config }),
+  GetConfig: () => h.getConfig(),
   SaveConfig: (c: unknown) => h.saveConfig(c),
   GetTheme: async () => 'light',
   SetTheme: async () => {},
 }));
 
 import TranslateWindow from './TranslateWindow.svelte';
+import { en } from '../i18n/en-US.ts';
 
 let app: Record<string, unknown> | undefined;
 let target: HTMLElement;
@@ -114,6 +116,8 @@ beforeEach(() => {
   h.plan.mockReset();
   h.plan.mockResolvedValue({ switched: false, from: '', to: '' });
   h.setAlwaysOnTop.mockReset();
+  h.getConfig.mockReset();
+  h.getConfig.mockImplementation(async () => ({ ...h.config }));
   h.config = { default_from: 'en', default_to: 'fr', auto_clipboard: false };
 });
 
@@ -158,5 +162,33 @@ describe('TranslateWindow, mounted: where the pin state starts (issue #69)', () 
   it('the old migration flag is never written', async () => {
     await mountWindow();
     expect(localStorage.getItem('kai:translate:pinnedModalDefault')).toBeNull();
+  });
+
+  // The race (PR-Agent finding): the pin default is applied after `await GetConfig()`. A 🧷
+  // click made while that config load is still pending writes an explicit choice, and an
+  // explicit choice always wins — the default must not overwrite it when the await resolves.
+  it('a pin click while the config is still loading survives the default being applied', async () => {
+    let release!: (v: Record<string, unknown>) => void;
+    const gate = new Promise<Record<string, unknown>>((r) => (release = r));
+    h.getConfig.mockImplementation(() => gate); // pending until the test releases it
+    h.config.translate_window_on_top = false; // the default that would be applied
+    await mountWindow(); // parks inside the init at `await GetConfig()`
+
+    // The explicit choice: click 🧷 while the config is pending (nothing stored, so this pins).
+    const pinButton = target.querySelector(
+      `[aria-label="${en.translate.pin}"]`,
+    ) as HTMLButtonElement;
+    expect(pinButton).not.toBeNull();
+    pinButton.click();
+    await flush();
+    expect(localStorage.getItem('kai:translate:pinned')).toBe(JSON.stringify(true));
+    expect(h.setAlwaysOnTop).toHaveBeenCalledWith(true);
+
+    // The config lands; the default (off) must NOT overwrite the click.
+    release({ ...h.config });
+    await flush();
+    expect(localStorage.getItem('kai:translate:pinned')).toBe(JSON.stringify(true));
+    expect(h.setAlwaysOnTop).not.toHaveBeenCalledWith(false);
+    expect(h.setAlwaysOnTop.mock.calls[h.setAlwaysOnTop.mock.calls.length - 1][0]).toBe(true);
   });
 });
