@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // Issue #69: the "keep the translate window on top of other apps" setting is OFF by default
@@ -91,5 +92,50 @@ func TestTranslateWindowOnTopExplicitTrueAndRoundTrip(t *testing.T) {
 	}
 	if svc3.Get().TranslateWindowOnTop {
 		t.Fatal("false did not survive the save/load round trip")
+	}
+}
+
+// Editing settings.json while the app runs (the file watcher's hot reload) picks the setting
+// up through the same weak decoding as a load. This is what fails if the hot-reload
+// assignment `s.cfg.TranslateWindowOnTop = readTranslateWindowOnTop(s.v)` is removed.
+func TestTranslateWindowOnTopHotReload(t *testing.T) {
+	dir := t.TempDir()
+	svc, err := NewService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "settings.json")
+	waitFor := func(want bool) bool {
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			svc.mu.RLock()
+			got := svc.cfg.TranslateWindowOnTop
+			svc.mu.RUnlock()
+			if got == want {
+				return true
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		return false
+	}
+	if err := os.WriteFile(path, []byte(`{"translate_window_on_top":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !waitFor(true) {
+		t.Fatal("hot reload did not pick up translate_window_on_top true")
+	}
+	// Back to off, then on again as a boolean string: the reload path must weak-decode it
+	// exactly like a load does (readTranslateWindowOnTop, not mapstructure).
+	if err := os.WriteFile(path, []byte(`{"translate_window_on_top":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !waitFor(false) {
+		t.Fatal("hot reload did not pick up translate_window_on_top false")
+	}
+	if err := os.WriteFile(path, []byte(`{"translate_window_on_top":"true"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !waitFor(true) {
+		t.Fatal(`hot reload did not weak-decode "true" as on`)
 	}
 }
