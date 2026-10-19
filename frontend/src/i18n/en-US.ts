@@ -147,7 +147,8 @@ export const en: Dict = {
     fastSuggestion:
       'This text will take about {time} at the current quality. Faster System translation (lower quality) can be enabled in Settings.',
     translateShortcutHint: 'Translate now (or press Cmd+Enter)',
-    historyHint: 'Browse past translations (Cmd+Y)',
+    historyHintKey: 'Browse past translations ({shortcut})',
+    historyHintNone: 'Browse past translations',
   },
   history: {
     title: 'History',
@@ -330,6 +331,14 @@ export const en: Dict = {
     hkClearContextNeedsModifier:
       'The clear-context shortcut needs Cmd, Ctrl or Alt, or it would fire while you type.',
     hkClearContextNoKey: 'The clear-context shortcut needs a key, not only modifiers.',
+    hkHistory: 'Open history',
+    hkHistoryHint: 'Works in the translate window. Leave empty for no shortcut.',
+    hkHistoryNeedsModifier:
+      'The history shortcut needs Cmd, Ctrl or Alt, or it would fire while you type.',
+    hkHistoryNoKey: 'The history shortcut needs a key, not only modifiers.',
+    hkHistoryReserved:
+      'That combination is already used (translate, undo, copy, paste or quit). Pick another.',
+    hkHistorySameAsClear: 'That is the clear-context shortcut. Pick another.',
     hkClearContextReserved:
       'That combination is already used (translate, undo, copy, paste or quit). Pick another.',
     hkRecord: 'Record',

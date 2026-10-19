@@ -140,7 +140,8 @@ export const zh: Dict = {
     timeLeft: '约剩 {time}',
     fastSuggestion: '按当前质量，这段文本约需 {time}。可在设置中开启“更快的系统翻译”（质量较低）。',
     translateShortcutHint: '立即翻译（或按 ⌘+Enter）',
-    historyHint: '浏览过往翻译（⌘Y）',
+    historyHintKey: '浏览过往翻译（{shortcut}）',
+    historyHintNone: '浏览过往翻译',
   },
   history: {
     title: '历史记录',
@@ -318,6 +319,12 @@ export const zh: Dict = {
     hkClearContextNeedsModifier:
       '清除上下文的快捷键需要包含 Cmd、Ctrl 或 Alt，否则输入时会误触发。',
     hkClearContextNoKey: '清除上下文的快捷键需要包含一个按键，不能只有修饰键。',
+    hkHistory: '打开历史记录',
+    hkHistoryHint: '在翻译窗口中生效。留空表示不设置快捷键。',
+    hkHistoryNeedsModifier: '历史记录的快捷键需要包含 Cmd、Ctrl 或 Alt，否则输入时会误触发。',
+    hkHistoryNoKey: '历史记录的快捷键需要包含一个按键，不能只有修饰键。',
+    hkHistoryReserved: '该组合已被占用（翻译、撤销、复制、粘贴或退出），请换一个。',
+    hkHistorySameAsClear: '该组合是"清除上下文"的快捷键，请换一个。',
     hkClearContextReserved: '该组合已被占用（翻译、撤销、复制、粘贴或退出），请换一个。',
     hkRecord: '录制',
     hkRecording: '请按下快捷键…',

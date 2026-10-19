@@ -88,6 +88,12 @@ export const EventAccessibilityMissing = 'kai:accessibility:missing';
 // the user asks. payload: HistoryUsePayload.
 export const EventHistoryUse = 'kai:history:use';
 
+// EventHistoryShortcutChanged: broadcast after the Settings > Shortcuts tab saves the translate
+// window's "open History" shortcut (issue #60), exactly like EventClearContextShortcutChanged for
+// the clear-context key (#48). payload: the shortcut string ("" = none). Frontend-only: nothing in
+// Go emits or hears it.
+export const EventHistoryShortcutChanged = 'kai:history:shortcut-changed';
+
 // Event payload type definitions (aligned with the Go-side structs in internal/events/events.go)
 
 // LocaleChangedPayload: language-change event arguments.

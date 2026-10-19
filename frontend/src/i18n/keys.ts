@@ -144,7 +144,8 @@ export type Dict = {
     timeLeft: string;
     fastSuggestion: string;
     translateShortcutHint: string;
-    historyHint: string;
+    historyHintKey: string;
+    historyHintNone: string;
   };
   history: {
     title: string;
@@ -315,6 +316,12 @@ export type Dict = {
     hkClearContextNeedsModifier: string;
     hkClearContextNoKey: string;
     hkClearContextReserved: string;
+    hkHistory: string;
+    hkHistoryHint: string;
+    hkHistoryNeedsModifier: string;
+    hkHistoryNoKey: string;
+    hkHistoryReserved: string;
+    hkHistorySameAsClear: string;
     hkRecord: string;
     hkRecording: string;
     enabled: string;
