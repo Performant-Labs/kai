@@ -62,9 +62,7 @@
   const pair = $derived(pairOpts.find((p) => p.value === pairValue) ?? null);
   // The states read "empty" and "nothing matches" differently (issue #60): a filter (keyword,
   // pair or engine) makes an empty result a miss, not a never-used list.
-  const filtered = $derived(
-    keyword.trim() !== '' || pairValue !== '' || engineValue !== '',
-  );
+  const filtered = $derived(keyword.trim() !== '' || pairValue !== '' || engineValue !== '');
 
   let loadToken = 0;
   // One load of one page: append when offset > 0, replace otherwise. loadToken discards a
@@ -147,11 +145,12 @@
     try {
       // The confirm is native (issue #60: "Clear all with a confirmation"): the question's
       // own buttons name the two outcomes; only the "clear" one proceeds.
-      answer = (await Dialogs.Question({
-        Title: t('history.clearConfirmTitle'),
-        Message: t('history.clearConfirmMessage'),
-        Buttons: [t('history.clearConfirmYes'), t('history.clearConfirmNo')],
-      })) ?? '';
+      answer =
+        (await Dialogs.Question({
+          Title: t('history.clearConfirmTitle'),
+          Message: t('history.clearConfirmMessage'),
+          Buttons: [t('history.clearConfirmYes'), t('history.clearConfirmNo')],
+        })) ?? '';
     } catch {
       return;
     }
@@ -269,17 +268,32 @@
 
   onMount(() => {
     reload();
-    // Pages load as the sentinel scrolls into view (issue #60: "loaded in pages as the user
-    // scrolls"). The Load more button below the list stays regardless: the fallback where
-    // IntersectionObserver is missing, and the explicit control.
-    if (typeof IntersectionObserver === 'undefined' || !sentinelEl) return;
+  });
+
+  // Pages load as the sentinel scrolls into view (issue #60: "loaded in pages as the user
+  // scrolls"). The sentinel exists only while more pages remain (the {#if canLoadMore(...)}
+  // block around it), so the observer is armed by an effect that waits for it, never in
+  // onMount: at mount the list is empty, canLoadMore is false, the sentinel is not rendered
+  // and a one-shot registration silently never happens — which is exactly how the first
+  // version lost auto-scroll pagination (PR #67 review). bind:this fills sentinelEl during
+  // the DOM update and the effect runs after it. Reading rows.length and total re-arms the
+  // observer for every appended page, so a sentinel that is STILL visible after a load keeps
+  // loading (a fresh observer fires for already-intersecting elements; a reused one would
+  // not, its intersection state never having changed) until the viewport fills. The effect's
+  // cleanup disconnects whenever the sentinel leaves (the last page arrived, a filter change
+  // emptied the list, or the component unmounted). The Load more button below the list stays
+  // regardless: the fallback where IntersectionObserver is missing, and the explicit control.
+  $effect(() => {
+    if (!canLoadMore(rows.length, total)) return;
+    const el = sentinelEl;
+    if (el === null || typeof IntersectionObserver === 'undefined') return;
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((en) => en.isIntersecting)) void loadMore();
       },
       { root: listEl },
     );
-    io.observe(sentinelEl);
+    io.observe(el);
     return () => io.disconnect();
   });
 </script>
@@ -341,7 +355,10 @@
     aria-label={t('history.title')}
   >
     {#if loading}
-      <div class="u-muted flex items-center justify-center py-16 text-sm" data-testid="history-loading">
+      <div
+        class="u-muted flex items-center justify-center py-16 text-sm"
+        data-testid="history-loading"
+      >
         {t('history.loading')}
       </div>
     {:else if rows.length === 0}
