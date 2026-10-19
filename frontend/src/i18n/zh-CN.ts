@@ -205,7 +205,7 @@ export const zh: Dict = {
     engineSystemLangsEmpty: '暂无可用的系统语言包',
     fastSystemTranslate: '更快的系统翻译（质量较低）',
     fastSystemTranslateHint:
-      '使用 Apple 的快速翻译模式：约快 12 倍，质量明显下降。需要传统语言包（在 系统设置 > 通用 > 语言与地区 > 翻译语言 中下载）；缺少语言包时将改用标准模式翻译，并在结果中说明。',
+      '使用 Apple 的快速翻译模式：约快 12 倍，质量明显下降。需要传统语言包（在 系统设置 > 通用 > 语言与地区 > 翻译语言 中下载）；缺少语言包时将改用标准模式翻译，并在结果中说明。快速模式需要 macOS 26.4 或更高版本；在更早的系统上此开关不会生效。',
     engineSchema: '配置项',
     engineNoSchema: '该引擎无需额外配置',
     engineLangsHintTesseract:

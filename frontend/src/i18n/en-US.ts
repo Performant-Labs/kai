@@ -214,7 +214,7 @@ export const en: Dict = {
     engineSystemLangsEmpty: 'No system language pack available',
     fastSystemTranslate: 'Faster System translation (lower quality)',
     fastSystemTranslateHint:
-      "Use Apple's fast translation mode: about 12x faster, noticeably lower quality. It needs the traditional language packs (download them in System Settings > General > Language & Region > Translation Languages); when a pack is missing, the text is translated with the standard mode and the result says so.",
+      "Use Apple's fast translation mode: about 12x faster, noticeably lower quality. It needs the traditional language packs (download them in System Settings > General > Language & Region > Translation Languages); when a pack is missing, the text is translated with the standard mode and the result says so. The fast mode needs macOS 26.4 or later; on older systems this switch has no effect.",
     engineSchema: 'Fields',
     engineNoSchema: 'This engine needs no extra config',
     engineLangsHintTesseract:

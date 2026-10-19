@@ -90,4 +90,11 @@ describe('issue #10 copy exists and differs between locales', () => {
     expect(en.settings.fastSystemTranslateHint).toBeTruthy();
     expect(zh.settings.fastSystemTranslateHint).toBeTruthy();
   });
+
+  // Reviewer's note 1: on macOS older than 26.4 the bridge's #available guard silently builds
+  // the default (slow) session, so the fast mode is unavailable; the hint must say so.
+  it('the hint says the fast mode needs macOS 26.4 or later, in both locales', () => {
+    expect(en.settings.fastSystemTranslateHint).toContain('26.4');
+    expect(zh.settings.fastSystemTranslateHint).toContain('26.4');
+  });
 });
