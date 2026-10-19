@@ -180,3 +180,16 @@ var setWindowWebViewBackground = SetWindowWebViewBackground
 func (w *WindowWrapper) ApplyWebViewBackground(win application.Window, r, g, b uint8) {
 	applyWebViewBackground(win, r, g, b, setWindowWebViewBackground)
 }
+
+// setWindowAppearance defaults to the real SetWindowAppearance (darwin: Swift bridge; elsewhere a
+// no-op). A package var so tests can swap it.
+var setWindowAppearance = SetWindowAppearance
+
+// ApplyWindowAppearance makes win's title bar (window chrome) follow the theme (issue #8): Wails
+// sets a window's appearance only at creation, from the theme resolved at launch, so the title bar
+// kept the launch-time colour after a theme change. Call it on the main thread (wrap in
+// application.InvokeAsync), once the native window exists and again whenever the theme changes. A
+// no-op where there is no native window.
+func (w *WindowWrapper) ApplyWindowAppearance(win application.Window, dark bool) {
+	applyWindowAppearance(win, dark, setWindowAppearance)
+}

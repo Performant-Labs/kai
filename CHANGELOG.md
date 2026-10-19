@@ -7,6 +7,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+### Bug Fixes
+- The title bar of the Settings and translate windows now follows the theme; it used to stay white while the content was dark in the dark theme, because the window's macOS appearance was set only at launch (#8).
+
 ## [0.4.1] - 2026-10-05
 
 ### Enhancements
