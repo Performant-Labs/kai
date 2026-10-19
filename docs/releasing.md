@@ -238,6 +238,13 @@ would not make a build reproducible, and it would change the app icon in a proce
 they are allowed to differ. The icon itself is fixed by the tracked sources (`build/appicon.png`,
 `build/appicon.icon`).
 
+`frontend/bindings/` is the opposite case: it is generated (`make bindings`) and must always match
+the committed files exactly. CI (`push.yml`) regenerates it on every push and PR and fails the job
+when the tree differs — including untracked files, so a different generator version shows up too,
+which is why `make tool-deps` pins `wails3` to the version in `go.mod`
+([#73](https://github.com/Performant-Labs/kai/issues/73)). When that check fails, run
+`make bindings` and commit the result.
+
 Anything **else** changed after the build means the app was not built from the tag as committed.
 `scripts/release-tree-check.sh vX.Y.Z` checks that HEAD is exactly the tag and that only those two
 files differ.
