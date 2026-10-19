@@ -6,6 +6,8 @@
   import { rootStyle } from '../stores/theme';
   import { rootStyleToStyle } from '../utils/style';
   import { track } from '../utils/analytics';
+  import { isSettingsShortcut } from '../utils/settingsShortcut.ts';
+  import { ShowSettings } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
   import { Lang, type LangCode } from '../constants/lang';
   import GeneralTab from './settings/GeneralTab.svelte';
   import EnginesTab from './settings/EnginesTab.svelte';
@@ -57,7 +59,22 @@
     track('settings_opened', { tab });
     return userLang.subscribe((l) => (curLang = l));
   });
+
+  // Cmd+, opens Settings (issue #8 collector): the standard macOS shortcut for an app's
+  // settings, answered by every Kai window — Settings itself included, so a press here does not
+  // feel dead. Mac-only (metaKey, never ctrlKey, no Alt/Shift — settingsShortcut.ts), IME
+  // composition keeps its keys. A press while Settings is focused re-runs the same ShowSettings
+  // binding the gear and the tray use; its showAndFocus just refocuses this window (and the Go
+  // side lowers a pinned translate window, #69), so it cannot toggle or close anything.
+  function onKeydown(e: KeyboardEvent) {
+    if (e.isComposing) return;
+    if (!isSettingsShortcut(e)) return;
+    e.preventDefault();
+    void ShowSettings();
+  }
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="u-surface flex h-full w-full flex-col" style={rootStyleToStyle($rootStyle)}>
   <div class="flex flex-1 overflow-hidden">

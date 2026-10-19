@@ -141,6 +141,21 @@ jobs:
           GOBIN: ${{ env.GO_BIN_DIR }}
         run: make bindings
 
+      # Bindings-drift gate (issue #73): after the previous step regenerates frontend/bindings,
+      # the working tree must exactly match what is committed — untracked files included, since
+      # a different generator version adds or drops files (wails3 beta.33 changed the
+      # event-bindings layout). Any difference fails the job; the fix is to run make bindings
+      # locally and commit its output.
+      - name: Check committed bindings match the generated ones
+        run: |
+          status="$(git status --porcelain -- frontend/bindings)"
+          if [ -n "$status" ]; then
+            echo "::error::frontend/bindings differs from what make bindings generates — run make bindings and commit its output (see docs/releasing.md, \"What a build changes in the tree\")"
+            echo "$status"
+            git diff -- frontend/bindings
+            exit 1
+          fi
+
       - name: 生成图标资源
         env:
           GOPATH: ${{ env.GO_PATH_DIR }}
