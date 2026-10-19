@@ -10,8 +10,17 @@ import (
 	"cnb.cool/dtapp/kai/internal/model"
 )
 
-// Issue #10 behavior tests. They drive the real service with fake engines and fail when the
-// behavior is removed; the source-text guards in service_json_shape_test.go only pin wording.
+// Issue #10 behavior tests. They drive the real Service (callEngine, the chunk assembly,
+// runEngine and its emitted events) and fail when the behavior is removed.
+//
+// Why a Translator fake and not a loopback httptest engine (the usual convention for the HTTP
+// engines): the things under test cannot come from an HTTP engine. TranslateResult.Notice is
+// set only by the System (Apple) engine's bridge when it falls back from the fast mode, and the
+// started event's estimate and suggestion come from engine.AppleProgressHint, which keys on the
+// engine name "apple". A loopback server speaks the OpenAI/Gemini/... wire formats and has no
+// way to produce either, so the engine.Translator interface is the real boundary here; what is
+// real is everything on the service side of it. The darwin bridge calls themselves are covered
+// by the pure, injectable seam tests in internal/engine/apple_speed_test.go.
 
 func noticeEngine(name string, noticeFor func(text string) string) *fakeEngine {
 	return &fakeEngine{name: name, run: func(_ context.Context, req model.TranslateRequest) (*model.TranslateResult, error) {
