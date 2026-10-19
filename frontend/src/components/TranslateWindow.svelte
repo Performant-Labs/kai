@@ -84,6 +84,7 @@
     EventDoubleCopyPermissionMissing,
     EventAccessibilityMissing,
     EventHistoryUse,
+    EventHistoryShortcutChanged,
   } from '../utils/events';
   import type { TranslateProgressPayload, HistoryUsePayload } from '../utils/events';
   import { WindowSettings, WindowHistory, WindowTranslate } from '../constants/window';
@@ -179,6 +180,7 @@
     type BoundBack,
   } from '../utils/backTranslation.ts';
   import { clearContextShortcut } from '../stores/clearContextShortcut';
+  import { historyShortcut } from '../stores/historyShortcut';
   import {
     emptyChat,
     clearChat,
@@ -559,14 +561,16 @@
     return true;
   }
 
-  // Cmd+Y opens the history screen (issue #60): the Mac convention for history. Mac-only
-  // (metaKey, never ctrlKey — Ctrl+Y stays the window's redo), no Alt/Shift, and unlike
-  // undo/redo it is in scope everywhere in this window, the source textarea included: WebKit
-  // binds nothing to Cmd+Y there, and "browse past translations" is a window action, not a
-  // text action. The history window works on its own while a translation here keeps running.
+  // The History shortcut (issue #60), configurable in Settings > Shortcuts like the
+  // clear-context key (#48) and defaulting to Cmd+Y (the Mac convention for history). The same
+  // matcher reads any combo; an empty shortcut matches nothing. Reserved keys were already
+  // refused at save time (validateHistoryShortcut), and undo/redo are matched only after this,
+  // so a configured combo never collides with them. In scope everywhere in this window, the
+  // source textarea included: "browse past translations" is a window action, not a text action.
+  const historyKey = $derived($historyShortcut);
+
   function handleHistoryShortcut(e: KeyboardEvent): boolean {
-    if (typeof e.key !== 'string' || e.key.toLowerCase() !== 'y') return false;
-    if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+    if (!isClearShortcut(e, historyKey)) return false;
     e.preventDefault();
     void ShowHistory();
     return true;
@@ -868,6 +872,10 @@
     const offClearShortcut = onEvent(EventClearContextShortcutChanged, (v) => {
       if (typeof v === 'string') clearContextShortcut.set(v);
     });
+    // The settings page saved a new History shortcut (issue #60): use it from now on.
+    const offHistoryShortcut = onEvent(EventHistoryShortcutChanged, (v) => {
+      if (typeof v === 'string') historyShortcut.set(v);
+    });
     // "Use" on a history entry (issue #60): the history screen (or the Settings history tab)
     // broadcast an entry; put it back into the panes. Translates nothing — see
     // applyHistoryUse.
@@ -915,6 +923,7 @@
       offEngines();
       offClearShortcut();
       offHistoryUse();
+      offHistoryShortcut();
       // Nothing waiting may fire on a window that is gone (issue #57).
       autoRun.cancel();
       commitAuto.cancel();
@@ -1666,7 +1675,9 @@
           data-testid="history-button"
           onclick={() => void ShowHistory()}
           aria-label={t('translate.history')}
-          title={t('translate.historyHint')}
+          title={historyKey
+            ? t('translate.historyHintKey', { shortcut: historyKey })
+            : t('translate.historyHintNone')}
         >
           <svg
             width="16"
