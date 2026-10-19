@@ -8,6 +8,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 ## [Unreleased]
 
 ### Bug Fixes
+- The title bar of the Settings and translate windows now follows the theme; it used to stay white while the content was dark in the dark theme, because the window's macOS appearance was set only at launch (#8).
+- The About panel (the menu bar's About Kai item) now opens in front of kai's windows, including a pinned always-on-top translate window (#8).
 - Kai no longer writes the text you select or copy into its log on the hotkey paths (the Alt+A auto-clipboard and copy-key branches); those lines now carry only the length, like the double Cmd+C path already did, so a log pasted into an issue cannot leak private text (#11).
 
 ### Known Issues
