@@ -55,6 +55,7 @@ var (
 
 	KaiWindowSetWebviewBackground func(window uintptr, r int32, g int32, b int32) int32
 	KaiWindowSetAppearance        func(window uintptr, dark int32) int32
+	KaiShowAboutPanel             func() int32
 	KaiLaunchObserve              func() int32
 	KaiLaunchKind                 func() int32
 )
