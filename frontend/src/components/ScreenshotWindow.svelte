@@ -40,7 +40,22 @@
   import { Learn as LearnLangVariant } from '@bindings/cnb.cool/dtapp/kai/internal/service/langprefwrapper.ts';
   import { learnFromSelection } from '../utils/langLearn.ts';
   import { isTargetDisabled } from '../utils/targetCapability.ts';
+  import { isSettingsShortcut } from '../utils/settingsShortcut.ts';
+  import { ShowSettings } from '@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts';
   import { persisted, pinKey } from '../stores/persisted';
+
+  // Cmd+, opens Settings (issue #8 collector): the standard macOS shortcut for an app's
+  // settings, answered by every Kai window — this one included, so the shortcut does not feel
+  // broken here. Mac-only (metaKey, never ctrlKey, no Alt/Shift — settingsShortcut.ts), IME
+  // composition keeps its keys, and it routes through the same ShowSettings binding as the
+  // translate window's gear: the Go side lowers a pinned translate window on that path (#69)
+  // and shows Settings with showAndFocus; this window stays open.
+  function onKeydown(e: KeyboardEvent) {
+    if (e.isComposing) return;
+    if (!isSettingsShortcut(e)) return;
+    e.preventDefault();
+    void ShowSettings();
+  }
 
   // Pin state persists to localStorage, a memory independent of the translate window's (pinKey('translate')).
   const pinnedStore = persisted<boolean>(pinKey('screenshot'), false);
@@ -405,6 +420,8 @@
     };
   });
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="u-surface relative flex h-full flex-col overflow-hidden">
   {#if result}
