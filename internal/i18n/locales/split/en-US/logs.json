@@ -67,7 +67,6 @@
   "log.screenrecording_query": "[dynamic-bridge] Screen recording authorization query",
   "log.screenrecording_request": "[dynamic-bridge] Screen recording authorization request: pop system auth dialog",
   "log.field_source": "source",
-  "log.field_content": "content",
   "log.field_type": "type",
   "log.field_reason": "reason",
   "log.field_active": "active",
