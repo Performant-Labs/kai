@@ -1026,8 +1026,14 @@ func buildTrayMenu(app *application.App, hm *hotkey.Manager, configSvc *service.
 			}
 		})
 	}
-	// Settings, open the settings window
-	trayMenu.Add(i18n.T("menu.settings")).OnClick(func(ctx *application.Context) {
+	// Settings, open the settings window. The item shows its shortcut, ⌘, — the standard macOS
+	// key equivalent for an app's settings (issue #8 collector) — through SetAccelerator, so
+	// AppKit renders it as the native right-aligned key-equivalent glyph instead of baking text
+	// into the translated label (no locale string carries it; the glyph is language-neutral and
+	// survives the language rebuild below, which rebuilds the whole menu through this function).
+	// Display-only in a status-item menu: the shortcut itself is wired window-side
+	// (Cmd+, handlers in the translate/screenshot/settings windows).
+	trayMenu.Add(i18n.T("menu.settings")).SetAccelerator("Cmd+,").OnClick(func(ctx *application.Context) {
 		// Same path as the gear (kai:window:show "settings" -> windowSvc.ShowSettings): lowers a
 		// pinned translate window (#69) and shows Settings with showAndFocus, which a window
 		// hidden since startup needs to appear on the first click.

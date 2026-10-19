@@ -10,6 +10,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
 - The translate window no longer stays on top of every app by default: a new Settings > General switch, "Keep the translate window on top of other apps" (off by default), is the default a new translate window starts from, while the 🧷 pin button in the window stays the per-window toggle and an explicit pin choice is always respected (#69).
 - Every window's title bar now ends with the running version, e.g. "Translate — Kai 0.5.0" (a development build says so), so the build is visible without opening Settings (#69).
+- Cmd+, now opens Settings from the translate, screenshot and settings windows — the standard macOS shortcut — and the tray menu's Settings item shows it (#8).
 
 ## [0.5.0] - 2026-10-19
 <!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->
