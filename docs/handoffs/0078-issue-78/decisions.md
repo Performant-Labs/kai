@@ -191,3 +191,17 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
 - Disclosed boundary nuance: CHANGELOG.md is not in F's generated edit-allowlist (#95 covers
   scripts/docs paths; CHANGELOG missed), so the AC7-mandated skip line was added with sed via
   bash — disclosed in handoff-F.md; content is exactly the brief's line. Flagged for S.
+
+## T-green rework 1 environment findings (O, 2026-10-20)
+- Frontend RED without env: the suite needs NODE_OPTIONS=--no-experimental-webstorage on this
+  Mac (Node 26's experimental Web Storage breaks jsdom localStorage; 284 failures without it).
+  CI sets exactly this (push.yml:32-33). My earlier "pristine baseline green" verification was
+  WRONG — it read the exit of a grep in a pipe, not pnpm's. Fix: the env var is provided by the
+  invoking shell for every plugin suite run (CI parity), NOT by editing test.unit.command (the
+  operator's rule stands; the command is untouched).
+- plugin-suite/plugin-typecheck RED exit 254: these defaults (npm run test:opencode /
+  typecheck:opencode) fire only because the diff dirties .aftersight (#282) and assume a root
+  package.json, which kai does not have (any kai story touching .aftersight would hit this).
+  Fix: test.pluginSuite = null and test.pluginTypecheck = null in the WORKTREE config — the
+  sanctioned "a suite configured null never runs" shape; lands in the PR diff for review.
+  test.unit.command is byte-identical to the operator's version.

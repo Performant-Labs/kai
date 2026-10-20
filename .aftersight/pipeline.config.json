@@ -10,7 +10,9 @@
         "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... ./pkg/... -count=1 && pnpm --dir frontend test && bash scripts/release.test.sh && bash scripts/release-ask-ai.test.sh"
       ],
       "timeoutMs": 900000
-    }
+    },
+    "pluginSuite": null,
+    "pluginTypecheck": null
   },
   "paths": {
     "test": [
