@@ -236,3 +236,13 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   and S.
 - AC5 evidence recorded (handoff-F addendum): 8/9 pre-existing harnesses green; the ninth
   (changelog-check) fails one case IDENTICALLY ON MASTER (pre-existing live-PR drift, not ours).
+
+## Diff gate (2026-10-20) — round 1 BLOCK (stale handoff row), round 2 PASS
+- Post-rebase re-run (fresh round 1, operator-instructed): BLOCK on a single finding — the F
+  handoff's inventory still described the frontend/package.json line as branch content while
+  the rebased diff no longer carries it (it lives on master via #99/fe7ca50). Documentation
+  defect, not code: handoff row corrected to post-rebase reality; no code changed.
+- Round 2 (with the response file): **PASS**, no BLOCK findings. 6 WARN + 3 NIT remain as the
+  post-merge hardening list (handler counter shared across blocker kinds; --dry-run --smoke
+  silently ignored; one unescaped ERE in release-ask-ai.sh; verify-dir cleanup on stop paths;
+  help-slice fragility; positional-parameter reuse). Artifact: dual-review-diff.md.
