@@ -46,6 +46,8 @@
           "*": "deny",
           "**/*_test.go": "allow",
           "**/testdata/**": "allow",
+          "scripts/*.test.sh": "allow",
+          ".worktrees/*/scripts/*.test.sh": "allow",
           "docs/handoffs/**": "allow",
           ".worktrees/*/docs/handoffs/**": "allow"
         },
@@ -70,10 +72,18 @@
           "frontend/src/**": "allow",
           ".worktrees/*/frontend/src/**": "allow",
           "**/*.swift": "allow",
+          "scripts/*.sh": "allow",
+          ".worktrees/*/scripts/*.sh": "allow",
+          "docs/releasing.md": "allow",
+          ".worktrees/*/docs/releasing.md": "allow",
+          "docs/release-checklist.md": "allow",
+          ".worktrees/*/docs/release-checklist.md": "allow",
           "docs/handoffs/**": "allow",
           ".worktrees/*/docs/handoffs/**": "allow",
           "**/*_test.go": "deny",
-          "**/testdata/**": "deny"
+          "**/testdata/**": "deny",
+          "scripts/*.test.sh": "deny",
+          ".worktrees/*/scripts/*.test.sh": "deny"
         },
         "bash": "allow",
         "task": "deny"
