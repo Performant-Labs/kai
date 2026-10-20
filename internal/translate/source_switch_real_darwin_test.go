@@ -56,13 +56,24 @@ func TestRealDetectorSwitchesMexicanSpanishSelections(t *testing.T) {
 		"short question":     "¿Ya comiste?",
 		"nineteen":           "Sí, claro, ahorita.",
 		"eleven (#8)":        "Buenos días",
-		"nine (#8)":          "Nos vemos",
 		"all caps":           "AVISO IMPORTANTE: LA OFICINA ESTARÁ CERRADA EL LUNES",
 	} {
 		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: text, From: model.EN, To: model.FR})
 		if !got.Switched || got.From != model.ESMX || got.To != model.EN {
 			t.Errorf("%s: got %+v, want es-MX -> en", name, got)
 		}
+	}
+}
+
+// Issue #92: "Nos vemos" (9 code points) is Spanish to NaturalLanguage but only at 0.565 confidence,
+// measured 2026-10-19 on macOS, under switchMinConfidence (0.8). A local detection under the bar
+// is not a confident one, so the 12-code-point floor refuses it. This pins that measured
+// behavior, so a change to the floor or the bar for such captures is a decision, not an accident.
+func TestRealDetectorDoesNotSwitchAnUnsureTwoWordCapture(t *testing.T) {
+	svc := realSwitchService(t)
+	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "Nos vemos", From: model.EN, To: model.FR})
+	if got.Switched || got.Reason != model.SwitchReasonTooShort {
+		t.Errorf("Nos vemos: got %+v, want no switch with reason %q", got, model.SwitchReasonTooShort)
 	}
 }
 
