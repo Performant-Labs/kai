@@ -684,9 +684,24 @@ exit_nonzero "R10p2: uncurated Known Issues stop for the owner"
 has         "R10p2: the stop names the Known Issues gap"                        'Known Issues'
 has         "A10: the stop prints the changelog-skip line to add"               'changelog-skip'
 count_is    "R10p2: a stop-for-owner never consults the AI"                     "$SD/askai.log" 0
-printf '<!-- known-issues: none 2026-10-19 -->\n' >>"$R/CHANGELOG.md"
+# PR100-R2 companion: a none-marker only counts INSIDE [Unreleased] (the doc contract the stop
+# message states). This resume therefore places the fresh marker there — the old form appended
+# it at EOF, under the released [0.4.0] section, which only ever unblocked the phase because
+# ph_changelog grepped the whole file.
+cat >"$R/CHANGELOG.md" <<MD
+# Changelog
+
+## [Unreleased]
+<!-- changelog-skip: release tooling, no user-facing change: #74 -->
+<!-- known-issues: none $(date +%Y-%m-%d) -->
+- A fake enhancement entry so coverage is green (#101).
+
+## [0.4.0] - 2026-01-01
+- Old release.
+MD
+$RG -C "$R" commit -qam known-issues-none || true
 rrun v0.5.1
-exit_is     "R10p2: the none-marker unblocks the phase"                         0
+exit_is     "R10p2: a none-marker inside [Unreleased] unblocks the phase"       0
 exists      "R10p2: the run then reaches the draft"                             "$SD/ghstate/release-v0.5.1.json"
 
 # Uncovered PRs from changelog-check.sh --strict also stop [S].
@@ -852,6 +867,51 @@ rrun v0.5.1 --publish
 exit_nonzero "PR100-F2: a forced mid-verify kill exits non-zero"
 vleft       "PR100-F2: trap-based cleanup still runs on a forced mid-verify exit"
 tmpleft     "PR100-F2: nothing at all survives a forced mid-verify exit"
+
+# ================================================================ PR #100 re-review: 2 new ACTIVE findings
+# (R1) ph_tag resume gap on an unpushed tag: the annotated tag already exists LOCALLY at the
+# merge commit, the remote never got it (the push after `git tag -a` was interrupted), and
+# state is gone. Re-running must push the EXISTING local tag and mark tag done — a second
+# `git tag -a` fails the way real git does ("tag 'vX.Y.Z' already exists", the fake execs the
+# real git) and must never be attempted (R5: a tag is never moved or deleted). Today the
+# phase stops on that failed re-tag instead (release.sh:570-580 checks only the REMOTE tag).
+mkscn tagpush
+rrun v0.5.1
+exit_is     "PR100-R1: tagpush setup: default posture completes first"           0
+$RG -C "$R" push -q origin --delete v0.5.1   # harness-side: the remote lost the tag; the LOCAL one stays
+rm -f "$(state)"                             # state absent: the resume re-derives (R6)
+rrun v0.5.1 --publish
+exit_is     "PR100-R1: an unpushed local tag at the merge commit is pushed, not re-created" 0
+match_is    "PR100-R1: the EXISTING local tag is pushed exactly once"           "$SD/git.log" '^push( -q)? origin v0\.5\.1$' 2
+match_is    "PR100-R1: no second 'git tag -a' is attempted on resume"           "$SD/git.log" '^tag -a v0\.5\.1' 1
+jq_is       "PR100-R1: tag marked done by the push"                             "$(state)" '.phases.tag.done' 'true'
+jq_is       "PR100-R1: the resumed run runs to completion"                       "$(state)" '.phases.closeout.done' 'true'
+
+# (R2) ph_changelog gate bypass via a stale marker: the none-marker check greps the WHOLE
+# file (release.sh:399), so an old `known-issues: none` marker sitting under a RELEASED
+# version section satisfies the gate while [Unreleased] has no Known Issues bullets and no
+# fresh marker. The gate must still stop for the owner: only a marker inside [Unreleased]
+# counts (the repaired chgstop resume above pins that positive half).
+mkscn stalemarker
+cat >"$R/CHANGELOG.md" <<'MD'
+# Changelog
+
+## [Unreleased]
+<!-- changelog-skip: release tooling, no user-facing change: #74 -->
+- A fake enhancement entry so coverage is green (#101).
+
+## [0.4.0] - 2026-01-01
+- Old release.
+
+<!-- known-issues: none 2026-09-01 -->
+MD
+$RG -C "$R" commit -qam stale-known-issues-marker || true
+rrun v0.5.1
+exit_nonzero "PR100-R2: a stale none-marker under a RELEASED section does not bypass the gate"
+has         "PR100-R2: the stop still names the uncurated Known Issues"         'no curated Known Issues'
+count_is    "PR100-R2: the stop-for-owner never consults the AI"                "$SD/askai.log" 0
+jq_is       "PR100-R2: changelog is NOT marked done by a stale marker"          "$(state)" '.phases.changelog.done' 'false'
+count_is    "PR100-R2: nothing past the gate runs (no bump)"                    "$SD/bump.log" 0
 
 # ================================================================ AC7: docs and CHANGELOG
 fhas "AC7: docs/releasing.md points at scripts/release.sh as the operator"      "$here/../docs/releasing.md" 'scripts/release\.sh'

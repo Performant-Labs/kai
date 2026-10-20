@@ -327,3 +327,41 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   ph_branch's deleted-branch corner was missing (the fix); ph_review (:515) and ph_merge
   (:540) already handled MERGED; both #74 paths now mirror each other.
 - handoff-T-rework.md (RED evidence) and handoff-F-rework.md (fixes + sweep table) written.
+
+## Phase T-rework2 RED (T, 2026-10-20) — pinning PR #100's re-review findings (round 2)
+- **Decided:** the round-2 RED contract stays an extension of `scripts/release.test.sh` only
+  (release-ask-ai.test.sh untouched). Case `tagpush` (finding R1, release.sh:570-580): after a
+  completed default-posture run, the harness deletes ONLY the remote tag (`$RG push --delete`,
+  outside the fake's argv log) and `state.json`; the `--publish` resume must push the EXISTING
+  local annotated tag once, never attempt a second `git tag -a`, mark tag done, and complete.
+  Case `stalemarker` (finding R2, release.sh:399): a `known-issues: none` marker under the
+  released [0.4.0] section must NOT satisfy the [Unreleased] gate — stop-for-owner, changelog
+  not done, nothing past the gate runs.
+- **Decided (test repair, disclosed):** `chgstop`'s positive resume appended its none-marker
+  at EOF — under [0.4.0], i.e. outside [Unreleased] — and only worked because of the whole-file
+  grep R2 removes. Repaired to place the fresh marker (dated `$(date +%Y-%m-%d)`, cannot rot)
+  INSIDE [Unreleased]; green before AND after the fix, so RED-neutral now and contract-correct
+  afterwards.
+- **Assumed:** the fake `git` execing real git makes the second `git tag -a` fail exactly like
+  production ("fatal: tag 'v0.5.1' already exists", exit 128 — verified directly), so no new
+  fake knob is needed for R1; the setup-side remote-tag deletion uses `$RG` directly and so is
+  invisible to the R5(5) no-tag-deleted sweep (which scans only the fake's git.log).
+- **Hedged:** the two findings arrived with the dispatch (not yet journaled separately); this
+  entry plus handoff-T-rework2.md are the record. Expected fix shapes named for F (local-tag
+  probe before `git tag -a`; scope the none-marker grep to the `:397` [Unreleased] slice) are
+  contracts, not implementation mandates.
+- **Evidence:** baseline re-verified 188 ok / 0 FAIL; after edits `bash
+  scripts/release.test.sh` → exit 1, 190 ok / 9 FAIL (5 tagpush + 4 stalemarker, verbatim in
+  handoff-T-rework2.md); ask-ai PASS 24/24; `git status` = scripts/release.test.sh only
+  (+62/−2).
+
+## Rework round 2 (2026-10-20) — two more PR findings fixed
+- PR-Agent re-review at 7dd871a (score 86): prior two findings RESOLVED; two new ACTIVE ones:
+  R1 unpushed-tag resume gap (local tag at merge commit + missing remote ⇒ re-create fails
+  instead of pushing the existing tag) and R2 changelog known-issues marker scanned the whole
+  file (a stale marker under a released section bypassed the stop-for-owner gate).
+- Fixed test-first: T pinned tagpush + stalemarker RED (handoff-T-rework2.md); F fixed both
+  (+15/-1: ph_tag pushes an existing local tag at the merge commit, wrong-commit stays a hard
+  stop; ph_changelog scopes the marker grep to [Unreleased] like changelog-check.sh)
+  (handoff-F-rework2.md). Suite green: release.test.sh PASS 199 ok (was 188), ask-ai PASS,
+  go ok, fe ok.

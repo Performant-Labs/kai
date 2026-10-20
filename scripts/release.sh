@@ -396,7 +396,9 @@ $(gh issue list --repo "$repo" --label known-issue --state open --json number,ti
   local unreleased bullet none
   unreleased="$(awk '/^## \[Unreleased\]/{u=1;next} u && /^## \[/{u=0} u{print}' "$root/CHANGELOG.md")"
   if printf '%s\n' "$unreleased" | awk '/^### Known Issues/{k=1;next} /^### /{k=0} k && /^[[:space:]]*- /{f=1} END{exit f?0:1}'; then bullet=1; else bullet=0; fi
-  if grep -q 'known-issues: none' "$root/CHANGELOG.md"; then none=1; else none=0; fi
+  # The none-marker counts only inside [Unreleased] (PR #100 R2): a stale marker under a
+  # released version section says nothing about THIS release and must not satisfy the gate.
+  if printf '%s\n' "$unreleased" | grep -q 'known-issues: none'; then none=1; else none=0; fi
   if [[ $bullet -eq 0 && $none -eq 0 ]]; then
     do_stop changelog "the [Unreleased] section has no curated Known Issues: add a '### Known Issues' subsection with one line per real, still-open issue (candidates below), or, when there are none, add the marker: <!-- known-issues: none $(date +%Y-%m-%d) -->. Candidates: $cands Next release, also add: <!-- changelog-skip: release tooling, no user-facing change: #<this release PR> -->." "$log"
   fi
@@ -572,6 +574,18 @@ ph_tag() {
   if [[ -n "$rtag" ]]; then
     [[ "$rtag" == "$msha" ]] || do_stop tag "hard stop: $tag already exists at ${rtag:0:7}, not the merge commit ${msha:0:7} — a tag is never moved; resolve it by hand"
     say "  .. $tag already at the merge commit"
+    mark_done tag
+    return 0
+  fi
+  # The remote lacks the tag, but an earlier run may have left it LOCALLY at the merge
+  # commit (its push after `git tag -a` was interrupted). Push that existing tag — never
+  # re-create it (`git tag -a` fails "already exists") and never move one at a wrong
+  # commit (R5; PR #100 R1).
+  local ltag; ltag="$(git rev-parse -q --verify "$tag^{}" 2>/dev/null || true)"
+  if [[ -n "$ltag" ]]; then
+    [[ "$ltag" == "$msha" ]] || do_stop tag "hard stop: local $tag already exists at ${ltag:0:7}, not the merge commit ${msha:0:7} — a tag is never moved; resolve it by hand"
+    git push -q origin "$tag" || do_stop tag "git push of $tag failed"
+    say "  ok  $tag already created locally at ${msha:0:7}; pushed it"
     mark_done tag
     return 0
   fi
