@@ -9,6 +9,12 @@
 # --state exactly like the CLI; pr view reports a MERGED PR's mergeCommit, and that commit
 # is landed in ORIGIN only (fake gh pr merge / seed_merged_pr below), so the local clone
 # cannot resolve it until a git fetch installs it, exactly like a GitHub-side merge.
+# PR #100 round 6: the fake release-check-version.sh is REALISTIC — it execs the REAL
+# script against the fake tree, and the fake release-bump.sh edits both version surfaces
+# the real one edits (finding e989fe9ce3ec ACTIVE, release.sh:411-418). The always-exit-0
+# check fake made ph_restructure's postcondition probe vacuous: restructure_apply never
+# ran in tests, no test CHANGELOG was ever restructured, and the stateloss spurious stop
+# in ph_changelog was invisible.
 #   bash scripts/release.test.sh
 set -uo pipefail
 
@@ -169,7 +175,15 @@ fi
 if [[ "$n" -le "${FAKE_BUMP_FAILS:-0}" ]]; then
   echo "FAIL: bump exploded (fake, invocation $n)" >&2; exit 1
 fi
+# PR100-R6 realism: the real bump edits BOTH version surfaces — every build/config.yml
+# `version:` line AND build/darwin/Info.plist's CFBundleShortVersionString +
+# CFBundleVersion (release-bump.sh's own four lines). The realistic
+# release-check-version.sh fake verifies exactly those, so the fake bump must set them
+# or the restructure postcondition could never hold after a bump.
 [[ -f build/config.yml ]] && sed -i.bak -E "s/version: \"[^\"]*\"/version: \"$1\"/" build/config.yml && rm -f build/config.yml.bak
+if [[ -f build/darwin/Info.plist ]]; then
+  v="$1" perl -0pi -e 's{(<key>CFBundleShortVersionString</key>\s*<string>)[^<]*(</string>)}{${1}$ENV{v}${2}}; s{(<key>CFBundleVersion</key>\s*<string>)[^<]*(</string>)}{${1}$ENV{v}${2}}' build/darwin/Info.plist
+fi
 echo "version set to $1"
 exit 0
 EOF
@@ -221,7 +235,7 @@ case "${FAKE_AI:-}" in
 esac
 EOF
 
-for s in release-notes.sh release-check-version.sh release-tree-check.sh release-verify.sh \
+for s in release-notes.sh release-tree-check.sh release-verify.sh \
          release-package.sh release-gates.sh sign-check.sh release-cert.sh; do
   cat >"$FB/$s" <<EOF
 #!/usr/bin/env bash
@@ -230,6 +244,20 @@ echo "ok (fake $s)"
 exit 0
 EOF
 done
+
+# PR #100 round 6: release-check-version.sh gets NO generic always-0 fake — it execs the
+# REAL script against the fake tree (finding e989fe9ce3ec ACTIVE, release.sh:411-418).
+# The real one verifies every build/config.yml `version:` line, both build/darwin/Info.plist
+# CFBundle keys and the CHANGELOG's `## [X.Y.Z]` section, so ph_restructure's postcondition
+# probe can genuinely FAIL (pre-restructure) and genuinely HOLD (post-restructure): the
+# restructure postcondition path — restructure_apply and its re-check — is exercised for
+# real. The old fake exited 0 unconditionally, the probe held before any work, no test
+# CHANGELOG was ever restructured, and the stateloss spurious stop stayed hidden.
+cat >"$FB/release-check-version.sh" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"\$FAKE_STATE_DIR/release-check-version.sh.log"
+exec "$here/release-check-version.sh" "\$@"
+EOF
 
 # release-verify.sh gets one steering knob beyond the generic fake (PR #100 F2): the
 # verify-term marker kills the parent release.sh mid-phase-13, while its temp workdir is
@@ -1248,6 +1276,67 @@ peel_is          "PR100-R5b: the tag marks the MERGE commit the workflow created
 jq_is            "PR100-R5b: state records that merge commit as mergeSha"             "$(state)" '.mergeSha' "$(sed -n 4p "$prf")"
 fetched_before_tag "PR100-R5b: the fetch precedes the annotation in the live flow"
 exists           "PR100-R5b: the run still reaches the draft"                         "$SD/ghstate/release-v0.5.1.json"
+
+# ================================================================ PR #100 round 6: 1 ACTIVE finding
+# (R6) "Resume after state loss" (finding e989fe9ce3ec ACTIVE, release.sh:411-418):
+# with state.json absent AFTER a completed release, ph_changelog is not phase_done and
+# re-runs its gate against the ALREADY-RESTRUCTURED CHANGELOG — restructure_apply moved
+# [Unreleased]'s content under `## [X.Y.Z] - date`, leaving [Unreleased] empty, so the
+# Known Issues gate finds no bullet and no none-marker inside it and SPURIOUSLY STOPS.
+# That breaks the state-is-a-cache / postcondition-first resume promise (release.sh's
+# own header: "absent state re-derives ... re-running a finished phase is a no-op"; R6).
+# The re-run must instead recognize the changelog/restructure postconditions from repo
+# state (the `## [X.Y.Z]` section, the bumped version files, the merged PR, the tag):
+# no spurious stop, no re-run of the gate, a no-op/continuation through the finished
+# phases. The scenario completes a real release first — the realistic
+# release-check-version.sh fake makes run 1 genuinely restructure — asserts every
+# postcondition premise, then deletes state.json and re-runs.
+mkscn stateloss
+rrun v0.5.1
+exit_is     "PR100-R6: setup: the release completes (default posture)"               0
+# Premises, asserted not assumed — if one breaks it is the harness that is wrong.
+fhas        "PR100-R6: premise: the CHANGELOG was restructured for the release"      "$R/CHANGELOG.md" '^## \[0\.5\.1\] - '
+match_is    "PR100-R6: premise: exactly one released section"                       "$R/CHANGELOG.md" '^## \[0\.5\.1\]' 1
+unrel="$(awk '/^## \[Unreleased\]/{u=1;next} u && /^## \[/{u=0} u{print}' "$R/CHANGELOG.md")"
+if printf '%s\n' "$unrel" | grep -qE '^[[:space:]]*- |Known Issues|known-issues'; then
+  echo "FAIL PR100-R6: premise: [Unreleased] still carries content (harness broke)"; fail=1
+else
+  echo "ok   PR100-R6: premise: [Unreleased] is empty above the released section"
+fi
+fhas        "PR100-R6: premise: config.yml says the release version"                "$R/build/config.yml" 'version: "0\.5\.1"'
+pn="$(grep -oE '<string>0\.5\.1</string>' "$R/build/darwin/Info.plist" 2>/dev/null | wc -l | tr -d ' ')"
+if [[ "$pn" == "2" ]]; then
+  echo "ok   PR100-R6: premise: both plist keys say the release version"
+else
+  echo "FAIL PR100-R6: premise: plist has $pn 0.5.1 strings, wanted 2 (harness broke)"; fail=1
+fi
+if [[ -n "$($RG -C "$R" ls-remote origin refs/tags/v0.5.1 2>/dev/null)" ]]; then
+  echo "ok   PR100-R6: premise: the tag is on origin"
+else
+  echo "FAIL PR100-R6: premise: the tag is missing on origin (harness broke)"; fail=1
+fi
+prm="$(sed -n 1p "$(ls "$SD"/ghstate/pr-* | sed -n 1p)")"
+if [[ "$prm" == "MERGED" ]]; then
+  echo "ok   PR100-R6: premise: the release PR is MERGED"
+else
+  echo "FAIL PR100-R6: premise: PR state is '$prm' (harness broke)"; fail=1
+fi
+count_is    "PR100-R6: premise: the changelog gate ran exactly once in run 1"       "$SD/changelog.log" 1
+# The defect: state.json ABSENT after the completed release.
+rm -f "$(state)"
+rrun v0.5.1 --publish
+exit_is     "PR100-R6: a stateloss re-run is a no-op continuation, not a stop"      0
+hasnt       "PR100-R6: no spurious Known-Issues stop"                               'no curated Known Issues'
+hasnt       "PR100-R6: no stop at the changelog phase at all"                       'phase .changelog.'
+count_is    "PR100-R6: the changelog gate is NOT re-run (postcondition recognized)" "$SD/changelog.log" 1
+val_is      "PR100-R6: bump is not re-run (the group-skip re-derives it)"           "$SD/bump.count" 1
+match_is    "PR100-R6: restructure is not re-applied (one released section stands)"  "$R/CHANGELOG.md" '^## \[0\.5\.1\]' 1
+match_is    "PR100-R6: no second release PR"                                        "$SD/gh.log" 'pr create' 1
+match_is    "PR100-R6: no second annotated tag"                                     "$SD/git.log" '^tag -a v0\.5\.1' 1
+match_is    "PR100-R6: no second draft/release create"                              "$SD/gh.log" 'release create' 1
+match_is    "PR100-R6: no second publish"                                           "$SD/gh.log" 'release edit' 1
+jq_is       "PR100-R6: changelog re-derived done from repo state"                   "$(state)" '.phases.changelog.done' 'true'
+jq_is       "PR100-R6: the rebuilt state reaches closeout"                          "$(state)" '.phases.closeout.done' 'true'
 
 # ================================================================ AC7: docs and CHANGELOG
 fhas "AC7: docs/releasing.md points at scripts/release.sh as the operator"      "$here/../docs/releasing.md" 'scripts/release\.sh'

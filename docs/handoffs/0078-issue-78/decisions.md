@@ -468,3 +468,39 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
 - F fixed (handoff-F-rework5): find_pr --state all; guarded post-merge re-query (the set -u
   unbound crash at :563 is gone); ph_tag verifies local presence via cat-file -e and fetches
   when absent before annotating. Suite green: both harnesses PASS, go ok, fe ok.
+
+## Rework round 6 (2026-10-20) — realistic check fake; stateloss pinned RED
+- **Decided:** the fake `release-check-version.sh` execs the REAL script against the fake
+  tree (and the fake `release-bump.sh` edits all four version lines like the real one), so
+  ph_restructure's postcondition probe can fail and hold for real. PR-Agent finding
+  e989fe9ce3ec ACTIVE (release.sh:411-418): with state.json absent after a completed
+  release, ph_changelog re-runs its gate on the already-restructured (empty-[Unreleased])
+  CHANGELOG and spuriously stops — the always-0 fake had kept every test CHANGELOG
+  un-restructured and the defect invisible.
+- **Decided:** new case `stateloss` pins the contract RED — re-run must recognize the
+  changelog/restructure postconditions from repo state (no stop, no gate re-run, no-op
+  continuation to closeout). Two scenarios flipped RED with the realism (`nostate`, AC2/R6;
+  `tagpush`, PR100-R1) — same defect unmasked, no assertion weakened anywhere.
+- **Assumed:** the re-run contract "no re-run of the gate" is pinned by the wrapped
+  changelog-check.sh invocation count (stays 1); if F instead makes the gate itself
+  restructure-aware the count row will need a deliberate re-ruling.
+- **Hedged:** sibling-audit residues documented, NOT pinned: (A) fake gh `issue list` is
+  state-blind — a real post-closeout stateloss re-run would open a duplicate checklist issue
+  (cosmetic, not a stop); (B) mid-release state loss dead-ends in ph_branch's "release in
+  progress" stop despite derivable done-state. Both flagged for a future round.
+- **Evidence:** `bash scripts/release.test.sh` → FAILED: 278 ok / 14 FAIL (7 stateloss
+  defect rows + 7 flip rows); baseline before the rework 270/270 PASS; verbatim spurious
+  stop reproduced outside the suite ("STOP: v0.5.1, phase \"changelog\": the [Unreleased]
+  section has no curated Known Issues …", exit 1). Production diff empty.
+
+## Rework round 6 (2026-10-20) — state-loss resume fixed; fakes fully realistic
+- PR-Agent at 15f1f2c (score 70; nine prior findings RESOLVED): 1 new ACTIVE — after a
+  completed release with state.json deleted, ph_changelog re-ran the gate against an
+  already-restructured CHANGELOG and spuriously stopped (state-is-a-cache promise broken);
+  masked by the always-0 fake check-version script.
+- T (handoff-T-rework6): fake check-version/bump now exec the REAL scripts against the fake
+  tree (restructure_apply genuinely exercised); new case stateloss pins the state-loss resume.
+- F (handoff-F-rework6): ph_changelog derives done-ness from repo state via the same probe
+  ph_restructure uses (release-check-version.sh: CHANGELOG section + 4 version lines) — no
+  gate re-run after state loss; genuine pre-release trees unchanged. Suite green: both
+  harnesses PASS, go ok, fe ok.

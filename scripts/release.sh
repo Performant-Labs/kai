@@ -393,6 +393,19 @@ ph_preflight() {
 ph_changelog() {
   printf '\n== phase 2: changelog (coverage + Known Issues)\n'
   if phase_done changelog; then say "  .. changelog already done"; return 0; fi
+  # Postcondition probe (state-is-a-cache, R6; PR #100 R6): with state absent after a
+  # completed release, restructure_apply has already moved [Unreleased]'s curated content
+  # under `## [X.Y.Z] - date`, so the Known Issues gate below would see an EMPTY
+  # [Unreleased] and spuriously stop. release-check-version.sh verifies this release's
+  # whole changelog postcondition (the `## [X.Y.Z]` section plus the bumped version
+  # files — the same probe ph_restructure delegates to); when it holds, the changelog
+  # work for THIS version is done and the gate is skipped. A genuinely uncurated
+  # [Unreleased] (no released section, unbumped files) still fails the probe and stops.
+  if run_tool release-check-version.sh "$ver" . >/dev/null 2>&1; then
+    say "  .. CHANGELOG already carries a [$ver] section and the version files say $ver (postcondition holds)"
+    mark_done changelog
+    return 0
+  fi
   local log="$statedir/logs/changelog.log"
   mkdir -p "$statedir/logs"
   # Known-issue candidates first: the owner needs them to curate (docs/releasing.md "Known issues").
