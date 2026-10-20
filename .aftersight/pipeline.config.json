@@ -15,14 +15,18 @@
   "paths": {
     "test": [
       "**/*_test.go",
-      "**/testdata/**"
+      "**/testdata/**",
+      "scripts/*.test.sh"
     ],
     "production": [
       "internal/**",
       "pkg/**",
       "main.go",
       "frontend/src/**",
-      "**/*.swift"
+      "**/*.swift",
+      "scripts/*.sh",
+      "docs/releasing.md",
+      "docs/release-checklist.md"
     ]
   },
   "toolchain": [
