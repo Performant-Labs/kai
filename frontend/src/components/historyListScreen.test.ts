@@ -145,6 +145,10 @@ const key = (k: string, opts: KeyboardEventInit = {}) => {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  // Pin the clock to local midday (issue #96): the day headings depend on the local calendar day,
+  // so between 01:00 and 02:00 local time the "26 hours ago" fixture fell two days back, under a date heading,
+  // and the "Yesterday" heading was missing (CI failed at 01:07 UTC).
+  vi.setSystemTime(new Date(2026, 9, 14, 12, 0, 0));
   NOW = Date.now();
   localStorage.clear();
   h.handlers.clear();
