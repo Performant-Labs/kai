@@ -1,0 +1,19 @@
+{
+  "model": "glm-5.3",
+  "mode": "brief",
+  "round": "1",
+  "transport": "chat",
+  "elapsed_seconds": 22,
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 2730,
+    "completion_tokens": 1615,
+    "total_tokens": 4345,
+    "prompt_tokens_details": {
+      "cached_tokens": 704
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 606
+    }
+  }
+}
