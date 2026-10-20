@@ -246,3 +246,10 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   post-merge hardening list (handler counter shared across blocker kinds; --dry-run --smoke
   silently ignored; one unescaped ERE in release-ask-ai.sh; verify-dir cleanup on stop paths;
   help-slice fragility; positional-parameter reuse). Artifact: dual-review-diff.md.
+
+## Phase S — spec audit (2026-10-20)
+- Verdict **PASS** (handoff-S.md): AC1-AC7 all PASS against evidence S produced itself
+  (harnesses re-run green; full suite re-run green; all 10 pre-existing harnesses run with
+  master parity). A-dup W-1..W-3 de-scopings ruled authorized by the amendment chain.
+  Not-verifiable-here items = the post-merge rehearsal list (live dry-run, opencode-run
+  availability on the release Mac, real-gh shapes, GNU timeout presence).
