@@ -9,6 +9,9 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
 <!-- changelog-skip: release tooling, no user-facing change: #78 -->
+<!-- changelog-skip: development pipeline tooling, no user-facing change: #87 #88 #94 #95 -->
+<!-- changelog-skip: tests and CI only, no user-facing change: #92 #93 #96 #97 #98 #99 #101 #102 -->
+<!-- changelog-skip: release tooling, no user-facing change: #103 #104 -->
 - The translate window no longer stays on top of every app by default: a new Settings > General switch, "Keep the translate window on top of other apps" (off by default), is the default a new translate window starts from, while the 🧷 pin button in the window stays the per-window toggle and an explicit pin choice is always respected (#69).
 - The History shortcut (Cmd+Y by default) can now be changed in Settings > Shortcuts, like the clear-context key; leave it empty for no shortcut (#79).
 - Capturing a word or two with the translate hotkey now also switches the language drop-downs: a short capture the language detector is sure of ("Buenos días") switches the source like a long one, instead of being refused as too short (#8).
