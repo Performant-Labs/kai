@@ -594,3 +594,10 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   diff, staged explicitly, amended, re-verified in worktree AND git show HEAD. Nothing any
   suite reads changed after the full-suite green run; both release suites re-run post-amend
   (388 + 36 ok, PASS, exit 0).
+
+## Round 7 scope call (O, 2026-10-20)
+- F's sweep fixed two genuine mktemp-without-trap sites in scripts/merge-go-i18n.sh and
+  scripts/merge-frontend-i18n.sh — real, but NOT release-workflow files; reverted from this
+  branch for scope purity (the diff-gate B-2 / PR #99 precedent: fixes outside the story land
+  in their own change). Recorded here as a FOLLOW-UP for the owner: both scripts' mktemps
+  need EXIT traps over a deliberate global (the patch is in git history, commit baa9817).
