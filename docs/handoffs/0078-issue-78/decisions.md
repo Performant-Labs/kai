@@ -279,3 +279,16 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   dispatched to write it: **PASS** — independent full-suite rerun exit 0 (same numbers as the
   plugin, F and S), zero test edits since RED (single-commit provenance, blob hashes identical
   at commit/HEAD/worktree), Assumed-list conformity complete.
+
+## PR #100 review loop (2026-10-20) — PR-Agent 87, 2 ACTIVE findings, fixing in-PR
+- PR-Agent (score 87, review complete at head 5a6f19e): F1 resume-state gap — state absent +
+  release PR MERGED + its branch already deleted: ph_branch marks only `branch` done, so
+  ph_bump re-runs and leaves uncommitted version edits (the leftover-branch path correctly
+  marks bump/restructure/release-pr; this corner must mirror it). A real AC2 defect no gate
+  caught (the #74 harness case covers merged-tip-still-on-remote, not deleted).
+  F2 temp-dir leak — ph_verify cleans only on success, and the inline install-release --dest
+  mktemp leaks unconditionally; fix the class (trap-based cleanup of every mktemp dir).
+- Decided: fix both in-PR, test-first (T pins the corner + the cleanup; F implements), re-run
+  the suite, re-run the diff gate as a fresh round 1 on the changed diff (same flow the
+  operator prescribed after the #99 rebase), re-state merge verification, push. S's audit
+  documents its head (5a6f19e); this delta is journaled here and strengthens AC2/AC6.
