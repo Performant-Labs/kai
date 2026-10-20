@@ -10,7 +10,7 @@
     "build": "vite build --mode production",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest --run",
+    "test": "NODE_OPTIONS=--no-experimental-webstorage vitest --run",
     "tsc": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,svelte,vue,html,json,css}\"",
     "format:check": "prettier --check \"src/**/*.{ts,svelte,vue,html,json,css}\""
