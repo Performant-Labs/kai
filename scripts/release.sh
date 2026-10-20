@@ -198,17 +198,30 @@ merge_sha_of() { # <pr> — the merge commit if gh reports one, else the PR head
     | jq -r '.mergeCommit.oid // .headRefOid // empty' 2>/dev/null || true
 }
 ci_green_on() { # <sha> — 0 green; 1 not (prints why). Same predicate as release-gates.sh.
-  local sha="$1" out tsv bad
-  out="$(gh api "repos/$repo/commits/$sha/check-runs" 2>/dev/null)" || { echo "could not read the CI check-runs for $sha"; return 1; }
-  if printf '%s' "$out" | grep -q '^ *{'; then
-    tsv="$(printf '%s' "$out" | jq -r '.check_runs[]? | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null || true)"
-  else
-    tsv="$out"   # the harness's canned TSV shape (handoff-T-red Assumed 10)
-  fi
-  [[ -n "$tsv" ]] || { echo "no CI check-runs found for $sha"; return 1; }
-  bad="$(printf '%s' "$tsv" | awk -F'\t' '$2 != "completed" || $3 !~ /^(success|skipped|neutral)$/ { print $1 " (" $2 " " $3 ")" }')"
-  [[ -z "$bad" ]] || { printf '%s\n' "$bad"; return 1; }
-  return 0
+  # Checks that have not appeared yet or are still running are waited for (KAI_CI_WAIT seconds,
+  # default 600, polled every KAI_CI_POLL); a COMPLETED failure never waits. A re-run supersedes
+  # the earlier run of the same check name (only the latest run per name counts).
+  local sha="$1" waited=0 wait_max="${KAI_CI_WAIT:-600}" poll="${KAI_CI_POLL:-15}" out tsv bad pending
+  while :; do
+    out="$(gh api "repos/$repo/commits/$sha/check-runs" 2>/dev/null)" || { echo "could not read the CI check-runs for $sha"; return 1; }
+    if printf '%s' "$out" | grep -q '^ *{'; then
+      tsv="$(printf '%s' "$out" | jq -r '[.check_runs[]?] | group_by(.name) | map(max_by(.id // 0)) | .[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null || true)"
+    else
+      tsv="$(printf '%s' "$out" | awk -F'\t' 'NF { last[$1] = $0; if (!($1 in seen)) { seen[$1] = 1; order[++n] = $1 } } END { for (i = 1; i <= n; i++) print last[order[i]] }')"   # the harness's canned TSV shape; last line per name wins
+    fi
+    if [[ -z "$tsv" ]]; then
+      pending="no CI check-runs found for $sha"
+    else
+      pending="$(printf '%s' "$tsv" | awk -F'\t' '$2 != "completed" { print $1 " (" $2 ")" }')"
+      if [[ -z "$pending" ]]; then
+        bad="$(printf '%s' "$tsv" | awk -F'\t' '$3 !~ /^(success|skipped|neutral)$/ { print $1 " (" $2 " " $3 ")" }')"
+        [[ -z "$bad" ]] || { printf '%s\n' "$bad"; return 1; }
+        return 0
+      fi
+    fi
+    (( waited < wait_max )) || { printf '%s\n' "$pending"; return 1; }
+    sleep "$poll"; waited=$(( waited + poll ))
+  done
 }
 agent_gate() { # <pr> <headSha> — 0 pass; 1 fail (prints why). Rule R1.
   local pr="$1" head="$2" json bodies blk state score complete rhead unresolved
@@ -554,7 +567,7 @@ release_pr_apply() {
   local bf rc
   bf="$(mktemp "${TMPDIR:-/tmp}/release-pr.XXXXXX")"
   printf 'Release %s: version bump and changelog restructure.\nManaged by scripts/release.sh (checklist issue #%s).\n' "$tag" "${ISSUE:-}" >"$bf"
-  gh pr create --repo "$repo" --base master --head "release/$tag" --title "Release $tag" --body-file "$bf" >/dev/null
+  gh pr create --repo "$repo" --base master --head "release/$tag" --title "Release $tag: version bump and changelog restructure" --body-file "$bf" >/dev/null
   rc=$?
   rm -f "$bf"
   return "$rc"

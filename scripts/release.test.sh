@@ -392,6 +392,14 @@ case "$a" in
       green)   printf 'ci / go / build-lint-test\tcompleted\tsuccess\nci / frontend / typecheck\tcompleted\tskipped\n' ;;
       failed)  printf 'ci / go / build-lint-test\tcompleted\tfailure\n' ;;
       none)    : ;;
+      # a stale failed run followed by a passing re-run of the same check (latest run wins)
+      rerunok)  printf 'pr-title\tcompleted\tfailure\nci / go / build-lint-test\tcompleted\tsuccess\npr-title\tcompleted\tsuccess\n' ;;
+      rerunbad) printf 'pr-title\tcompleted\tsuccess\npr-title\tcompleted\tfailure\n' ;;
+      # nothing registered on the first read, then everything green (checks appear late)
+      late)     c="$G/ci-late"; n="$(cat "$c" 2>/dev/null || echo 0)"; echo $((n+1)) >"$c"
+                [[ "$n" -ge 1 ]] && printf 'ci / go / build-lint-test\tcompleted\tsuccess\n' ;;
+      # a check that never finishes
+      running) printf 'ci / go / build-lint-test\tin_progress\t\n' ;;
     esac
     exit 0 ;;
   *"pr checks"*)
@@ -647,7 +655,7 @@ MD
 
 rrun() { # release.sh args...; steering in r_env; stdin is closed (AC1: no input)
   out="$(cd "$R" && env PATH="$FB:$PATH" FAKE_STATE_DIR="$SD" FAKE_FIXTURES="$FX" \
-    KAI_RELEASE_REPO=Performant-Labs/kai ${r_env[@]+"${r_env[@]}"} "$release" "$@" </dev/null 2>&1)"
+    KAI_RELEASE_REPO=Performant-Labs/kai KAI_CI_WAIT=0 KAI_CI_POLL=1 ${r_env[@]+"${r_env[@]}"} "$release" "$@" </dev/null 2>&1)"
   code=$?
 }
 
@@ -1234,6 +1242,27 @@ rrun v0.5.1
 exit_nonzero "AC6/R5-3: red CI on the release commit is a hard stop"
 count_is    "AC6/R5-3: hard stops never consult the AI"                         "$SD/askai.log" 0
 count_is    "AC6/R5-3: nothing is built after red CI"                           "$SD/local.log" 0
+
+# (3b) A re-run supersedes the stale failed run of the same check; a later failure still stops;
+# late-registering and never-finishing checks are waited for, then stop with the pending name.
+mkscn hscirerun
+r_env=(FAKE_CI=rerunok)
+rrun v0.5.1
+hasnt       "R10p7: a passing re-run supersedes a stale failed run of the same check" 'CI is not green'
+mkscn hscirerunbad
+r_env=(FAKE_CI=rerunbad)
+rrun v0.5.1
+exit_nonzero "R10p7: the latest run failing is still a hard stop"
+has         "R10p7: the stop names the failed check"                                   'CI is not green.*pr-title'
+mkscn hscilate
+r_env=(FAKE_CI=late KAI_CI_WAIT=5 KAI_CI_POLL=1)
+rrun v0.5.1
+hasnt       "R10p7: checks that register late are waited for, not a hard stop"          'CI is not green'
+mkscn hsciwait
+r_env=(FAKE_CI=running)
+rrun v0.5.1
+exit_nonzero "R10p7: a check that never finishes stops after the wait"
+has         "R10p7: the stop names the running check"                                  'CI is not green.*in_progress'
 
 # (4) PR-Agent: score 88 (below the 90 boundary) and score 95 with one OPEN finding (R1).
 mkscn hsagent88
