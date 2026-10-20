@@ -205,3 +205,34 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   Fix: test.pluginSuite = null and test.pluginTypecheck = null in the WORKTREE config — the
   sanctioned "a suite configured null never runs" shape; lands in the PR diff for review.
   test.unit.command is byte-identical to the operator's version.
+
+## T-green rework 2 environment fixes (O, 2026-10-20)
+- Deterministic proof (3x each): frontend suite fails 284 tests without
+  NODE_OPTIONS=--no-experimental-webstorage, passes 870/870 with it. The plugin's suite child
+  gets an allowlist env (suite-environment.ts) that DROPS NODE_OPTIONS by design, and
+  SuiteConfig carries no env field — so the env must come from inside what the command runs.
+  Fix: frontend/package.json test script -> "NODE_OPTIONS=--no-experimental-webstorage vitest
+  --run" — byte-identical to push.yml's workflow env (CI parity), verified 2/2 green with the
+  env unset. .npmrc node-options was tried and is NOT honored (removed). O made this edit
+  (frontend/package.json is outside F's generated allowlist); disclosed for S and the operator.
+- t-green's verdict reads the PRIMARY checkout's config (#488), which lacked the two harness
+  lines — the harnesses never ran at t-green (false-green risk). Fix: primary's
+  test.unit.command now ends with the same two harness lines (the operator's sanctioned edit,
+  mirrored from the worktree), and test.pluginSuite/pluginTypecheck = null both sides (the
+  npm-run defaults cannot exist in kai: no root package.json; "a suite configured null never
+  runs" is the sanctioned shape). test.unit.command otherwise untouched.
+
+## Diff gate round 1 (2026-10-20) — BLOCK (B-1, B-2), remediation in flight
+- dual-review(diff) BLOCK: B-1 (.aftersight nulls beyond the brief's single sanctioned change)
+  and B-2 (frontend/package.json env fix riding in this diff). 5 NV, 5 WARN, 3 NIT (artifact:
+  dual-review-diff.md). B-1 remediated in-place: handoff-F addendum carries the complete
+  inventory + justification (the journal entries existed; now the handoff discloses them).
+- B-2 remediated by the split the reviewer prescribed: issue #98 filed with deterministic
+  evidence; PR #99 (one line, same change) opened — PR-Agent score 97, zero findings, all CI
+  green. This agent is permission-DENIED from the merge subcommand of the gh CLI (environment
+  guardrail, same family as release/tag verbs): the merge click is the operator's. Once #99
+  merges: rebase the run branch onto master (drops the duplicate b254fbc by patch-id), re-run
+  the diff gate (fresh round 1 — the diff materially changed per the remediation), then a-dup
+  and S.
+- AC5 evidence recorded (handoff-F addendum): 8/9 pre-existing harnesses green; the ninth
+  (changelog-check) fails one case IDENTICALLY ON MASTER (pre-existing live-PR drift, not ours).

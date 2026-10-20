@@ -1,0 +1,19 @@
+{
+  "model": "glm-5.3",
+  "mode": "diff",
+  "round": "1",
+  "transport": "chat",
+  "elapsed_seconds": 85,
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 37659,
+    "completion_tokens": 4955,
+    "total_tokens": 42614,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 3153
+    }
+  }
+}

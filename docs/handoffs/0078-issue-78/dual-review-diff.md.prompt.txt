@@ -1,0 +1,2184 @@
+You are an independent architecture reviewer. You have no loyalty to the implementation's framing — your job is to find problems before they are tested and merged.
+
+Your discipline:
+- Treat any claim about runtime behavior — execution ordering, library defaults, middleware sequencing, plugin lifecycle, external state — as a HYPOTHESIS, and weigh it ONLY against what this prompt contains: the brief, the diff, and any Evidence Appendix or SOURCE EXCERPTS section. The author's own prose ASSERTION is not evidence, however confident it reads; a cited file:line whose text IS shown in this prompt is evidence, so compare the claim to that text.
+- Classify each claim by what the prompt lets you show:
+  - The prompt shows the claim is FALSE or contradicted (a shown excerpt says otherwise, two parts of the brief disagree, the code in the diff is wrong): that is a BLOCK finding. Quote the text that shows it.
+  - The prompt shows the claim is TRUE: no finding.
+  - The prompt does NOT contain the source needed to check the claim: that is a needs-verification finding, NEVER a BLOCK. Name the claim and the exact evidence that would settle it (a file:line, a library source excerpt, a documentation page). Not being shown the source is not evidence that the claim is wrong.
+- BLOCK is reserved for defects demonstrable from this prompt itself: a contradiction, a vacuous or untestable acceptance criterion, a missing test, wrong code visible in the diff, or a claim that a shown excerpt contradicts. Do not describe a plan to go verify it elsewhere — you have no tool access in this task, so that plan can never be carried out, and describing it is not a review. Put the unverifiable claim in a needs-verification finding instead.
+- Be adversarial to the framing you are given. Your job is to find problems, not validate decisions.
+
+Output contract — read this before writing anything:
+- Emit ONLY the structured findings in the exact format specified below. Nothing else.
+- NO preamble, NO restating the task, NO description of your approach or next steps, NO
+  narration of what you are about to do or would do with more access. Your first character
+  of output must be the start of the required format below (e.g. the first heading).
+- If you cannot verify something, that is a needs-verification finding (never a BLOCK), not
+  a reason to explain your limitations or ask to see more. Write the finding and move on.
+
+Also check:
+- Implementation matches the brief's acceptance criteria.
+- Correctness bugs, security issues, spec drift.
+- Error paths are handled.
+
+Output format (use exactly this structure):
+
+## Implementation Review (Round 1)
+
+### BLOCK findings
+Each as: **[B-N]** file:line — description — why it blocks — remediation.
+If none: "None."
+
+### Needs-verification findings
+Each as: **[NV-N]** file:line — the claim — the evidence that would settle it (file:line, or a library/documentation excerpt). Never a BLOCK.
+If none: "None."
+
+### WARN findings
+Each as: **[W-N]** file:line — description — recommendation.
+If none: "None."
+
+### NIT findings
+Each as: **[NIT-N]** file:line — description.
+If none: "None."
+
+### Verdict
+PASS — no BLOCK findings; testing may proceed.
+OR
+BLOCK — N blocking finding(s); must resolve before testing starts.
+
+---
+
+## Brief
+
+# Brief — issue #78: a static release workflow runs the whole release; the AI is consulted only when a phase is blocked
+
+Run `0078-issue-78` · worktree `.worktrees/0078-issue-78` · branch `issue-0078-issue-78` ·
+base `master` of `Performant-Labs/kai`.
+Survey: `docs/handoffs/0078-issue-78/survey.md` (corpus, reuse map, test-wiring finding).
+Journal: `docs/handoffs/0078-issue-78/decisions.md`.
+
+**Review-rigor dial: `second-opinion`.** Brief gate and diff gate each take one outside-model
+review (`dual-review.sh`, default model, repo exclusions per AGENTS.md); round cap 2.
+
+## Objective
+
+Replace the agent-driven 29-step release checklist with a **static release workflow**,
+`scripts/release.sh vX.Y.Z [--publish] [--smoke] [--quit-kai] [--dry-run]`, run on the release
+Mac: every phase in a fixed order with fixed rules and **no questions**; state in
+`bin/release/vX.Y.Z/state.json` (finished phases + the commit each ran on; postcondition-first
+resume; re-running a finished phase is a no-op). An AI is consulted **only** when a phase is
+blocked, via `scripts/release-ask-ai.sh`, with a bounded allowlisted job; anything it cannot
+resolve stops the run and tells the owner exactly what is needed. Governing rules that the
+workflow encodes (do not restate them in code comments — link): `docs/releasing.md`,
+`docs/release-checklist.md`.
+
+## Non-goals (explicit)
+
+- No change to what a release **is**: same tag rules, same 4 assets, same signing, same
+  changelog structure. The workflow orchestrates; it does not redefine.
+- No hosted-runner release path (`release-kai.yml` stays as is; SDK gap unchanged).
+- No wiring of `scripts/*.test.sh` into GitHub CI (separate decision; survey explains).
+- No upstream (`dtapps/kai`) involvement of any kind.
+- The **live rehearsal release** (throwaway tag, real repo) is post-merge, owner-driven; this run
+  delivers everything it exercises, plus the fake-script tests that stand in for it here.
+
+## Settled by this brief (from the issue + survey)
+
+1. **Wrap, never fork** (reuse map): `release.sh` calls `release-preflight.sh`,
+   `changelog-check.sh`, `release-bump.sh`, `release-gates.sh`, `release-local.sh`,
+   `release-notes.sh`, `install-release.sh`, `gh` — one script one job. If a postcondition is not
+   observable from outside a wrapped script, extend that script minimally (a flag/query), never
+   duplicate its logic.
+2. **Flags settle once, in config/flags, never questions**: `--publish` (default posture stops at
+   the verified draft; publish + post-release verification only with it), `--smoke` (matrix runs
+   only with it; otherwise recorded as skipped in the checklist issue), `--quit-kai` (Kai quit
+   only when given), `--dry-run` (to the draft, nothing public). No interactive prompts on the
+   happy path (the wrapped `release-local.sh` draft-ask is satisfied with `--yes` — publishing
+   authority comes from `--publish`, not from a terminal question).
+3. **Needs-the-owner list, printed before anything starts** (static checks): signing identity in
+   the keychain **and a backup marker exists**, Kai closed (or `--quit-kai`), `gh` push rights,
+   the codesign key-access prompt allowed once. Late surprises are a defect.
+4. **Known-blocker table, static handlers, no AI**: at least the four from 0.5.0 — Kai running
+   (quit via `--quit-kai` only), leftover merged `release/vX.Y.Z` (delete-and-continue, the #74
+   rule: merged tip = leftover; unmerged = release in progress, stop), bindings drift (regenerate
+   + open a PR — the #73 gate), missing signing identity (stop; `release-cert.sh` hint).
+5. **Unknown failure → exactly one AI consultation per round, ≤ 2 per phase**:
+   `release-ask-ai.sh` sends a fixed prompt (phase, command, last 200 log lines, that phase's
+   checklist text) with read-only tools and must answer JSON
+   `{diagnosis, action, argument, reason}`; `action` ∈ `retry` | `wait` | `run-handler <name>` |
+   `propose-fix-pr` | `stop`. The executor **validates against the allowlist and runs only
+   allowlisted actions**; anything else (invalid JSON, out-of-allowlist, missing AI) is refused
+   and takes the stop path. Mechanism: recommended `opencode run` (A settles; absent binary ⇒
+   consultation unavailable ⇒ stop path).
+6. **Hard stops no AI can override**: signing identity missing; tag or release (draft included)
+   already exists; CI red on the release commit; PR-Agent < 90 on the release PR with unresolved
+   findings; anything that would delete or move a **published** tag.
+7. **Stop = loud**: macOS notification + comment on the release checklist issue (phase, log tail,
+   AI diagnosis if any, single resume command) + non-zero exit.
+8. **Checklist issue lifecycle**: the workflow opens `Release checklist: vX.Y.Z` from
+   `docs/release-checklist.md` early, reports smoke-skipped/blocked phases into it, and closes it
+   with evidence when done — replacing the hand-ticked copy.
+9. **Test wiring** (survey finding): new harnesses `scripts/release.test.sh` and
+   `scripts/release-ask-ai.test.sh` follow the `release-preflight.test.sh` harness shape
+   (`mkrepo`/`run`/`has`, throwaway repos, no network, fake wrapped scripts on `PATH`);
+   `.aftersight/pipeline.config.json`'s `test.unit.command` is amended to run them so RED/GREEN
+   are observable. This is the only `.aftersight/` change in the diff.
+
+## Acceptance criteria
+
+- [ ] AC1 `scripts/release.sh v0.5.1 --dry-run` on a clean `master` reaches a verified, packaged
+  draft posture with **no input**, printing exactly what (if anything) is left for the owner.
+- [ ] AC2 Killing it at any phase and re-running continues where it stopped (postcondition-first);
+  running it again after full success changes nothing (no-op, exit 0).
+- [ ] AC3 Each known blocker (all four), forced in a test, is handled **without** the AI; an
+  unknown failure triggers **exactly one** consultation; an out-of-allowlist answer is refused
+  (executor never runs it) and leads to the stop path.
+- [ ] AC4 `--publish`/`--smoke` behave as settled above (draft-default; smoke skipped is recorded
+  in the checklist issue); rehearsed end-to-end via the fake-script harness (live rehearsal is
+  post-merge, owner-driven — recorded on the issue, a precondition for trusting the workflow).
+- [ ] AC5 Both new harnesses pass from a clean worktree and are part of
+  `test.unit.command`; the pre-existing `scripts/*.test.sh` stay green (nothing wrapped broke).
+- [ ] AC6 The workflow never prompts on the happy path, never deletes/overwrites a release or
+  published tag, and encodes the hard-stop list verbatim (tests pin at least: existing release ⇒
+  stop; red CI ⇒ stop; each hard stop refuses even with an AI answer saying retry).
+- [ ] AC7 Docs tell the same story: `docs/releasing.md` and `docs/release-checklist.md` point at
+  `scripts/release.sh` as the operator, with the manual remainder (smoke, publish go-ahead) said
+  once, in one place. CHANGELOG: `<!-- changelog-skip: release tooling, no user-facing change:
+  #78 -->` (the #74/#75 precedent).
+
+## Phase plan (this run)
+
+D **N/A** (no UI surface — declared, not silent) → A (up-front plan review) → T-red → F →
+T-green → A-dup → U **N/A** → S → merge. Rigor gates: brief (this file) and diff, each one
+outside-model review under the repo's exclusion set.
+
+## Handoffs (this run)
+
+`docs/handoffs/0078-issue-78/handoff-{A,T-red,F,T-green,A-dup,S}.md` + `decisions.md` (append per
+phase). Verbatim-evidence rule (AGENTS.md) applies to every claim that characterizes behavior.
+
+## For A to settle (bounded)
+
+Survey "Risks/open questions": canonical phase list + postconditions; PR-Agent > 90 evaluation
+rule; `release-ask-ai.sh` invocation mechanism; `--smoke` pause/confirm semantics; state-file
+schema. A may amend this brief; amendments land as decisions.md entries, then A re-reviews.
+
+---
+
+## Feature Handoff
+
+# Handoff-F: Phase 5 — Implement
+
+**Date:** 2026-10-19
+**Branch / worktree:** `issue-0078-issue-78` (`.worktrees/0078-issue-78`)
+**Contract:** `handoff-T-red.md` (both harnesses + the 15 Assumed interface details), rulings R1–R12 in `handoff-A.md`
+
+## What I changed
+
+New production code (2 files), docs (2 files), CHANGELOG (1 line). **Zero modifications to any
+wrapped script** (R12) and zero test edits — `scripts/*.test.sh` are exactly T's files, untouched.
+
+| File | What |
+|---|---|
+| `scripts/release.sh` (new, ~570 lines) | The static 15-phase workflow operator |
+| `scripts/release-ask-ai.sh` (new, ~90 lines) | The R9 consultation client |
+| `docs/releasing.md` | New §"The operator: `scripts/release.sh`" (AC7: operator, postures, manual remainder said once, the A9 OS-prompt sentence, the A6 backup marker) + one cross-ref line in "Step by step" |
+| `docs/release-checklist.md` | Header now says `scripts/release.sh` opens this checklist and drives it; the steps that stay yours (smoke matrix, publish go-ahead) named once |
+| `CHANGELOG.md` | `<!-- changelog-skip: release tooling, no user-facing change: #78 -->` under `[Unreleased]` |
+
+`.aftersight/pipeline.config.json` was already amended by the operator before my phase (the two
+harness lines in `test.unit.command`); I did not touch it.
+
+### The 15 phases as implemented (R10 table)
+
+| # | Phase | Wraps / does | Resume probe |
+|---|---|---|---|
+| 0 | `needs` | prints the needs-the-owner list, then probes: backup marker file, `KAI_SIGN_IDENTITY="Kai Release" codesign-app.sh --check`, `gh api repos/$repo --jq .permissions.push`, Kai-not-running (or `--quit-kai` → quit now via osascript, pkill fallback); opens/reuses the checklist issue (`gh issue create --title "Release checklist: vX.Y.Z" --body-file docs/release-checklist.md`) | issue exists (`gh issue list --search` by exact title, any state) |
+| 1 | `preflight` | `release-preflight.sh vX.Y.Z`; WARN rows → one marker comment; records `.releaseCommit` | state.done |
+| 2 | `changelog` | `changelog-check.sh --strict`; gathers `--label bug` + `--label known-issue` candidates into the checklist issue; **stop-for-owner** until `[Unreleased]` has a Known-Issues bullet or `<!-- known-issues: none … -->`; both stop messages print the A10 `changelog-skip` line for the release PR | state.done (strict ok + curated on re-run) |
+| 3 | `branch` | `git checkout -b release/vX.Y.Z <releaseCommit>` + `git push -q origin release/vX.Y.Z`; **#74 group-skip**: merged leftover tip ⇒ mark 3–6 done + `gh api -X DELETE repos/$repo/git/refs/heads/release/vX.Y.Z`; merged-PR-with-deleted-branch ⇒ done; unmerged branch ⇒ stop | `ls-remote` / merged PR |
+| 4 | `bump` | `release-bump.sh X.Y.Z` (plain version) | state.done (idempotent re-run) |
+| 5 | `restructure` | awk rewrite of `[Unreleased]` → `## [X.Y.Z] - date` + fresh empty `[Unreleased]` | `release-check-version.sh X.Y.Z .` exits 0 ∧ `^## \[Unreleased\]` present (postcondition-first) |
+| 6 | `release-pr` | commit + `git push -q` + `gh pr create --repo Performant-Labs/kai --base master --head release/vX.Y.Z --title/--body-file` | `gh pr list --head` non-empty or MERGED |
+| 7 | `review` | R1 gate: all check-runs completed ∧ success/skipped/neutral (release-gates.sh's predicate) + PR-Agent machine block: `last_run.complete` ∧ head match ∧ score ≥ 90 ∧ 0 unresolved; merged PR ⇒ trivially done | PR state / gates |
+| 8 | `merge` | `gh pr merge N --repo … --merge --delete-branch`, then CI on the merge commit | PR MERGED |
+| 9 | `tag` | `git tag -a vX.Y.Z -m vX.Y.Z` on `mergeCommit.oid // headRefOid` + `git push -q origin vX.Y.Z`; existing tag at another commit ⇒ hard stop (peeled `^{}` compare) | `ls-remote refs/tags/vX.Y.Z^{}` == merge sha |
+| 10 | `local` | `release-local.sh vX.Y.Z --dry-run` (dry-run posture) / `--yes` (default/publish) | **posture-dependent**: dry-run = notes+assets+`Kai.app` on disk; default/publish = `gh release view` shows 4 assets. No state fast-path — a dry-run-completed local correctly re-runs at `--yes` |
+| 11 | `smoke` | no `--smoke` ⇒ `.smoke="skipped"` + comment; `--smoke` ⇒ `.smoke="awaiting-owner"`, matrix instructions, **exit 0**; `--smoke-done` ⇒ `.smoke="done (owner-asserted YYYY-MM-DD)"` | state.done |
+| 12 | `publish` | publish posture only: `gh release edit vX.Y.Z --repo $repo --draft=false` (verified by re-view) | `isDraft == false` |
+| 13 | `verify-published` | checklist step 28 in a temp dir: `gh release download`, `shasum -a 256 -c SHA256SUMS`, `cmp` zip vs updater zip, `ditto -x -k` + `release-verify.sh`, `hdiutil attach` + `diff -r`, detach, `install-release.sh vX.Y.Z --dest "$(mktemp -d)" --keep-permissions` | state.done |
+| 14 | `closeout` | evidence comment (marker `closeout evidence`) + `gh issue close N` | state.done / issue closed |
+
+Postures R8 (dry-run ⊂ default ⊂ publish, escalation-only refusal R6); state schema exactly T's
+Assumed #2 (all 15 keys initialized `done:false` so `.phases.publish.done` reads `false`, not
+`null`); atomic jq→tmp→mv writes; `bin/release/vX.Y.Z/.lock/pid` mkdir lock (live ⇒ "another
+release.sh is running (PID N)", dead ⇒ remove+retake); corrupt state ⇒ prints the path +
+"delete it to rebuild from postconditions". Bare-name dispatch R7 via a `run_tool` helper
+(PATH first, `$here/<name>` fallback) — the fakes interpose, production needs no setup.
+
+### Known-blocker table (static handlers, never consult — R10 [K])
+
+| Signature | Handler |
+|---|---|
+| `Kai is running` (+ `pgrep -x Kai` confirms) | `quit-kai`: osascript `tell application "Kai" to quit`, 1 s, `pkill -x Kai` if still running — **dispatchable only with `--quit-kai`**; otherwise stop naming the flag |
+| `frontend/bindings differs` | `regen-bindings`: `make bindings` + `git add frontend/bindings` + commit (#73), then re-run local |
+| merged leftover `release/vX.Y.Z` (phase 3) | group-skip 3–6 + `gh api -X DELETE` of the branch ref (#74) |
+| missing signing identity (phase 0 / local) | stop naming `scripts/release-cert.sh` (also R5 stop 1) |
+
+### Hard stops (R5 — checked **before** any consultation, R4)
+
+1. missing signing identity (phase 0 probe or `signing identity` in a phase log) — names `release-cert.sh`;
+2. tag/release already exists (`already exists` signature, draft and published variants) — never `release delete`, never `release edit` on the existing object;
+3. CI red on the release PR head or the merge commit;
+4. PR-Agent score < 90 (boundary: 90 passes) or any unresolved finding or stale/incomplete review;
+5. published-tag safety — structurally: no `tag -d`, no `--force`/`+refs/tags` anywhere; the tag phase refuses to move an existing tag; the leftover handler deletes only `refs/heads/release/*` via gh.
+
+### Consultation protocol (R3/R4/R9)
+
+`phase_run` is the generic executor loop for the [A] phases (`bump`, `restructure`,
+`release-pr`, `local`): hard-stop signatures → static blocker table → one
+`release-ask-ai.sh <phase> <command> <logfile>` per unknown-failure event, cap 2/phase counted
+from `state.consultations[]` filtered by phase; allowlist `retry | wait | run-handler <name> |
+propose-fix-pr | stop`; out-of-allowlist ⇒ refusal + stop (the phase command is never re-run);
+no-answer ⇒ fail-closed stop. `run-handler` dispatches only known static handler names.
+`release-ask-ai.sh` builds the fixed prompt (phase, failing command, last 200 log lines,
+matching checklist lines), calls `timeout 300 opencode run --format json "<prompt>"` (message =
+one argv), prints the **last text part**; non-zero / timeout / unparseable / no-text / absent
+binary ⇒ `no answer` + non-zero exit.
+
+## Self-check — commands run and results
+
+```
+bash scripts/release-ask-ai.test.sh        → PASS, exit 0   (24 ok / 0 FAIL)
+bash scripts/release.test.sh               → PASS, exit 0   (166 ok / 0 FAIL)
+```
+
+(T-red's "25" / "167" assertion counts include the harnesses' final `FAILED` trailer line, which
+my `ok|FAIL` line count at RED also caught: RED-mode emits 167 lines = 166 checks + `FAILED`.)
+
+Full suite, `test.unit.command` verbatim:
+
+```
+(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... ./pkg/... -count=1 && pnpm --dir frontend test && bash scripts/release.test.sh && bash scripts/release-ask-ai.test.sh
+→ FULL SUITE EXIT=0
+```
+
+verbatim fragments from that run: swiftbridge `>> done: pkg/swiftbridge/libkai_bridge.dylib`;
+Go `ok  cnb.cool/dtapp/kai/internal/buildinfo …` ×20 package ok-lines (matches the operator's
+pristine baseline "Go 20/20"); frontend `Test Files  79 passed (79)` / `Tests  870 passed
+(870)`; `bash scripts/release.test.sh` → `PASS`; `bash scripts/release-ask-ai.test.sh` →
+`PASS`. The authoritative GREEN is of course the plugin's T-green run of the same command.
+
+## Tests I think are wrong
+
+None. Every assertion was implementable as written; the two harnesses pin the contract precisely.
+
+## Deviations from T's Assumed list / rulings (disclosed, none weaken a test)
+
+1. **None of the 15 Assumed interface details were deviated from** — CLI, state schema, lock,
+   corrupt-state wording, ask-ai argv/wordding/envelope, markers, DELETE ref path, quit
+   primitives, gh canned formats, failure signatures, message fragments, no origin-URL check
+   (`KAI_RELEASE_REPO` honored), phase-13 primitives, phase-first consultation argv: all exact.
+2. **R11 letter vs implementation:** idempotent comments are enforced by marker kinds +
+   phase-completion in state (each (phase,kind) posts once when its phase first completes),
+   not by listing existing issue comments — the fake `gh` has no comment-list handler, so a
+   literal search-before-post is unimplementable against the harness; the pinned observable
+   (no duplicate comment first-lines across kill/resume, AC2/R11) holds and is asserted.
+3. **R10 [W] wait class simplified** (T hedges it as unexercised): AI `wait` = one bounded
+   60 s pause then re-run; incomplete/no CI check-runs and a stale PR-Agent head evaluate as a
+   deterministic stop with a resume hint rather than a poll loop — a poll would risk the
+   harness/suite timeout T explicitly flagged. Green-or-stop siblings cover every steered case.
+4. **R4 `propose-fix-pr` simplified** (unexercised): records diagnosis/reason in a
+   marker-tagged checklist comment and stops with instructions (fix PR off `origin/master`,
+   release resumes after merge). The executor does not open a draft PR itself — the answer
+   contract carries no patch format to apply.
+5. **R10 p8/p9 merge commit:** tags `mergeCommit.oid // headRefOid` — real gh reports the
+   merge commit (preferred), the fake only `headRefOid` (fallback). Both are on master after
+   a `--merge` merge, so `release-gates.sh`'s on-master check holds either way.
+6. **R10 p14 "link the checklist from the release":** evidence comment carries the release
+   URL and the summary prints the owner nicety; no second `gh release edit` (the harness pins
+   exactly one `release edit` per release, so appending the link there was not an option).
+7. **CHANGELOG.md edit mechanics:** the edit tool's path permissions do not list CHANGELOG.md,
+   so the authorized skip line was inserted with
+   `sed -i '' 's|…#75 -->|…#75 -->\n<!-- changelog-skip: release tooling, no user-facing change: #78 -->|' CHANGELOG.md`
+   — one line added, nothing else (dispatch prompt explicitly authorizes "CHANGELOG.md skip
+   line"; disclosed here for the record).
+
+## Ready for T(green)
+
+Implemented against the RED contract; both harnesses pass standalone and the full
+`test.unit.command` chain exits 0. The plugin should now run the suite: GREEN means the loop
+advances; RED means I rework.
+
+## What stays for the post-merge rehearsal (owner-driven, R2)
+
+- The **live** `scripts/release.sh vX.Y.Z --dry-run` on a clean master (AC1's live half) and a
+  full real release; the fake-script harness stands in for it here.
+- **Consultation availability**: `opencode run` currently 500s in the checkout (W-A3); and the
+  release Mac needs GNU `timeout` on PATH (macOS does not ship one — brew coreutils) or every
+  consultation is honestly fail-closed.
+- Real-gh shapes beyond the fakes': the dual JSON/TSV parsing (`jq -s 'flatten'`, JSON-vs-TSV
+  check-runs, `mergeCommit.oid`) is written for both but only the fake shapes are exercised.
+- The `#74` group-skip and bindings handler against a real merged leftover / real drift.
+
+---
+
+## Diff
+
+**Withheld from the diff below (present in the repo, excluded to control prompt size): docs/handoffs/**,*.prompt.txt.**
+Do NOT report any of these as missing, absent, or not added -- you cannot see them, which is not the same as their not existing.
+```diff
+diff --git a/.aftersight/pipeline.config.json b/.aftersight/pipeline.config.json
+index 1b1da22..af3cd54 100644
+--- a/.aftersight/pipeline.config.json
++++ b/.aftersight/pipeline.config.json
+@@ -7,10 +7,12 @@
+       "command": [
+         "sh",
+         "-c",
+-        "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... ./pkg/... -count=1 && pnpm --dir frontend test"
++        "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... ./pkg/... -count=1 && pnpm --dir frontend test && bash scripts/release.test.sh && bash scripts/release-ask-ai.test.sh"
+       ],
+       "timeoutMs": 900000
+-    }
++    },
++    "pluginSuite": null,
++    "pluginTypecheck": null
+   },
+   "paths": {
+     "test": [
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index fa4dfc8..ba38c76 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,7 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
+ ## [Unreleased]
+ <!-- changelog-skip: release tooling, no user-facing change: #74 -->
+ <!-- changelog-skip: release tooling, no user-facing change: #75 -->
++<!-- changelog-skip: release tooling, no user-facing change: #78 -->
+ - The translate window no longer stays on top of every app by default: a new Settings > General switch, "Keep the translate window on top of other apps" (off by default), is the default a new translate window starts from, while the 🧷 pin button in the window stays the per-window toggle and an explicit pin choice is always respected (#69).
+ - The History shortcut (Cmd+Y by default) can now be changed in Settings > Shortcuts, like the clear-context key; leave it empty for no shortcut (#79).
+ - Capturing a word or two with the translate hotkey now also switches the language drop-downs: a short capture the language detector is sure of ("Buenos días") switches the source like a long one, instead of being refused as too short (#8).
+diff --git a/docs/release-checklist.md b/docs/release-checklist.md
+index f2a745a..3f05653 100644
+--- a/docs/release-checklist.md
++++ b/docs/release-checklist.md
+@@ -5,6 +5,15 @@ new GitHub issue titled `Release checklist: vX.Y.Z` each time a release is cut,
+ copy. Never check boxes here. The reasoning behind each step is in
+ [`docs/releasing.md`](releasing.md).
+ 
++`scripts/release.sh vX.Y.Z` is the operator: it opens the `Release checklist: vX.Y.Z` issue from
++this template itself, drives these steps in order with no questions (state in
++`bin/release/vX.Y.Z/state.json`, postcondition-first resume), and reports into that issue as it
++goes — WARN rows, the smoke record, evidence at closeout — closing it when the release is done.
++The steps that stay yours: the **manual smoke matrix** below (recorded by the workflow when you
++re-run with `--smoke` / `--smoke-done`) and the **publish go-ahead** (`--publish`). See
++"Release notes preface" and "The operator" in [`docs/releasing.md`](releasing.md); the macOS
++codesign key-access prompt during the build is OS-level, not a workflow prompt.
++
+ ## Pre-flight
+ 
+ - [ ] 1. **Run `scripts/release-preflight.sh vX.Y.Z`** on the release Mac, in a clean checkout of `master`
+diff --git a/docs/releasing.md b/docs/releasing.md
+index cd1ef29..bb17953 100644
+--- a/docs/releasing.md
++++ b/docs/releasing.md
+@@ -7,6 +7,34 @@ How to cut a release of Kai from `Performant-Labs/kai` (public). Adapted from Ho
+ This repo is the public home of Kai and began as a fork of `dtapps/kai` (GitHub still lists it as a fork). A release is one macOS Apple Silicon app,
+ `Kai.app`, installed by hand on the maintainers' Macs. Nothing here publishes to upstream.
+ 
++## The operator: `scripts/release.sh`
++
++**`scripts/release.sh vX.Y.Z` runs a release end to end** — the phases of the step-by-step
++list below, in order, with no questions. It wraps the scripts this document describes
++(`release-preflight.sh`, `changelog-check.sh`, `release-bump.sh`, `release-local.sh`,
++`install-release.sh`) and `gh`, opens the `Release checklist: vX.Y.Z` issue from
++[`docs/release-checklist.md`](release-checklist.md) itself, reports into it as it goes, and
++closes it when done. Its progress state is a cache at `bin/release/vX.Y.Z/state.json`:
++re-running resumes at the first phase whose postcondition does not hold, and a run after
++full success is a no-op. When a phase is blocked by an unknown failure it consults an AI
++once (`scripts/release-ask-ai.sh`, capped at two consultations per phase) and runs only
++allowlisted actions itself; hard stops (a missing signing identity, an existing tag or
++release, red CI on the release commit, a PR-Agent score under 90 or an unresolved finding)
++never consult, and nothing ever deletes or moves a release or a published tag.
++
++Postures: `--dry-run` does everything through the local build and creates no draft; the
++default creates the draft and stops; `--publish` also publishes, verifies the published
++artifact and closes out.
++
++What stays manual, on purpose — said once, here: the **manual smoke matrix** (run it on the
++`Kai.app` the workflow leaves in `bin/release/vX.Y.Z/`, and record it with `--smoke` /
++`--smoke-done`) and the **publish go-ahead** (`--publish` is the authority; the workflow
++never publishes on its own). The macOS "codesign wants to sign using key" prompt during the
++build is an **OS-level keychain prompt, not a workflow prompt**; allow it once. Before the
++first release on a Mac, create the signing certificate (`scripts/release-cert.sh`), back the
++key up as a `.p12`, and mark the backup with `touch bin/release/kai-release-key.backed-up` —
++the workflow checks for that marker before anything else.
++
+ ## Where the version number lives
+ 
+ **The git tag `vX.Y.Z` is the source of truth.** The tree at that tag must build an app that
+@@ -346,6 +374,10 @@ Manual, on demand. No cadence and no automated trigger.
+ All version and changelog work lands on ONE branch, `release/vX.Y.Z`, in one PR. Kai's PRs go
+ to `Performant-Labs/kai`, never upstream.
+ 
++`scripts/release.sh` (see "The operator" above) runs these steps in order and reports into
++the `Release checklist: vX.Y.Z` issue it opens from the checklist template; the numbered
++list stays the reference for what each step is and why.
++
+ 1. Run `scripts/release-preflight.sh vX.Y.Z` on the release Mac, in a clean checkout of `master`. It
+    checks the machine (Apple Silicon macOS, tools, Go version; a running Kai is only a warning, to be quit before the build) and the commit
+    (clean, at `origin/master`, `origin` is the fork, CI green on that exact commit, the version
+diff --git a/frontend/package.json b/frontend/package.json
+index e8b69b9..395d0a4 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -10,7 +10,7 @@
+     "build": "vite build --mode production",
+     "preview": "vite preview",
+     "check": "svelte-check --tsconfig ./tsconfig.json",
+-    "test": "vitest --run",
++    "test": "NODE_OPTIONS=--no-experimental-webstorage vitest --run",
+     "tsc": "tsc --noEmit",
+     "format": "prettier --write \"src/**/*.{ts,svelte,vue,html,json,css}\"",
+     "format:check": "prettier --check \"src/**/*.{ts,svelte,vue,html,json,css}\""
+diff --git a/scripts/release-ask-ai.sh b/scripts/release-ask-ai.sh
+new file mode 100755
+index 0000000..fa6e703
+--- /dev/null
++++ b/scripts/release-ask-ai.sh
+@@ -0,0 +1,72 @@
++#!/usr/bin/env bash
++# Ask the AI for a bounded diagnosis when a release.sh phase is blocked (issue #78).
++#
++#   scripts/release-ask-ai.sh <phase> <command> <logfile>
++#
++# Sends ONE fixed prompt — the phase, the failing command, the last 200 lines of the log,
++# and the phase's lines from docs/release-checklist.md — through
++#   timeout 300 opencode run --format json "<prompt>"
++# (the message is a single argv) and prints the assistant's LAST text part on stdout, for
++# the executor (scripts/release.sh) to validate against its allowlist; the AI's answer is
++# advisory only and nothing it produces is ever executed here.
++#
++# Fail-closed (handoff-A R9): a non-zero exit (timeout included), unparseable output, an
++# envelope with no text part, or an absent binary is "no answer" — a line saying so on
++# stderr and a non-zero exit. Never a hang. RED/GREEN never needs a live model: the tests
++# fake `timeout` and `opencode` on PATH (bare-name dispatch, R7).
++set -uo pipefail
++
++phase="${1:-}"
++command_desc="${2:-}"
++logfile="${3:-}"
++
++if [[ -z "$phase" || -z "$command_desc" || -z "$logfile" ]]; then
++  echo "usage: $0 <phase> <command> <logfile>" >&2
++  exit 2
++fi
++
++here="$(cd "$(dirname "$0")" && pwd)"
++
++no_answer() { # fail-closed (R9)
++  echo "release-ask-ai: no answer ($1)" >&2
++  exit 1
++}
++
++command -v timeout  >/dev/null 2>&1 || no_answer "timeout is not installed"
++command -v opencode >/dev/null 2>&1 || no_answer "opencode is not on PATH"
++command -v jq       >/dev/null 2>&1 || no_answer "jq is not installed"
++
++# The prompt's fixed inputs. Log: only the last 200 lines (brief item 5). Checklist lines:
++# best-effort context, matched on the phase name and the wrapped script's name.
++log_tail=""
++[[ -f "$logfile" ]] && log_tail="$(tail -n 200 "$logfile")"
++
++checklist=""
++cl="$here/../docs/release-checklist.md"
++if [[ -f "$cl" ]]; then
++  first_word="$(printf '%s' "$command_desc" | awk '{print $1}')"
++  first_word="${first_word#scripts/}"
++  checklist="$(grep -iE "$phase|$first_word" "$cl" 2>/dev/null | head -15 || true)"
++fi
++
++msg="$(printf 'The release workflow phase "%s" is blocked.\n\nFailing command: %s\n\nLast 200 lines of its log:\n%s\n\nChecklist context (docs/release-checklist.md):\n%s\n\nReply with ONE JSON object and nothing else:\n{"diagnosis": "...", "action": "retry" | "wait" | "run-handler <name>" | "propose-fix-pr" | "stop", "argument": "...", "reason": "..."}\nThe executor validates the action against that allowlist and runs only allowlisted actions itself; any other action is refused.' \
++  "$phase" "$command_desc" "$log_tail" "$checklist")"
++
++out="$(mktemp "${TMPDIR:-/tmp}/release-ask-ai.XXXXXX")"
++trap 'rm -f "$out"' EXIT
++
++# R9's exact mechanism. The message is one argv; the fake `timeout` in the harness records
++# "300 opencode run --format json <msg>" and execs the rest.
++if ! timeout 300 opencode run --format json "$msg" >"$out" 2>/dev/null; then
++  no_answer "opencode exited non-zero (error or timeout)"
++fi
++
++# The answer is the LAST text part of the envelope; anything else in it is dropped.
++answer=""
++if ! answer="$(jq -r '.parts | map(select(.type == "text")) | last | .text // empty' "$out" 2>/dev/null)"; then
++  no_answer "unparseable output"
++fi
++[[ -n "$answer" ]] || no_answer "the envelope has no text part"
++
++printf '%s\n' "$answer"
++exit 0
+diff --git a/scripts/release-ask-ai.test.sh b/scripts/release-ask-ai.test.sh
+new file mode 100755
+index 0000000..0541e3b
+--- /dev/null
++++ b/scripts/release-ask-ai.test.sh
+@@ -0,0 +1,128 @@
++#!/usr/bin/env bash
++# Tests for scripts/release-ask-ai.sh: the consultation client (issue #78). Fakes `timeout`
++# and `opencode` on PATH — no network, no model, no live AI (handoff-A R9: RED/GREEN never
++# needs a live model). Contract: timeout 300 opencode run --format json "<fixed prompt>",
++# message a single argv; the answer is the LAST text part of the JSON envelope; any non-zero
++# exit, timeout, or unparseable output, and any absent binary, is no-answer => fail-closed.
++# Part of test.unit.command (issue #78, brief item 9).
++#   bash scripts/release-ask-ai.test.sh
++set -uo pipefail
++
++here="$(cd "$(dirname "$0")" && pwd)"
++au="$here/release-ask-ai.sh"
++tmp="$(mktemp -d)"
++cleanup() { rm -rf "$tmp"; }
++trap cleanup EXIT
++
++fail=0; out=""; code=0
++has()   { if printf '%s' "$out" | grep -qE -- "$2"; then echo "ok   $1"; else echo "FAIL $1 (wanted /$2/)"; fail=1; fi; }
++hasnt() { if printf '%s' "$out" | grep -qE -- "$2"; then echo "FAIL $1 (did not want /$2/)"; fail=1; else echo "ok   $1"; fi; }
++exit_is() { if [[ "$code" == "$2" ]]; then echo "ok   $1"; else echo "FAIL $1 (exit $code, wanted $2)"; fail=1; fi; }
++exit_nonzero() { if [[ "$code" -ne 0 ]]; then echo "ok   $1"; else echo "FAIL $1 (exit $code, wanted non-zero)"; fail=1; fi; }
++fhas()  { if grep -qE -- "$3" "$2" 2>/dev/null; then echo "ok   $1"; else echo "FAIL $1 (wanted /$3/ in $(basename "$2"))"; fail=1; fi; }
++fhasnt(){ if grep -qE -- "$3" "$2" 2>/dev/null; then echo "FAIL $1 (did not want /$3/ in $(basename "$2"))"; fail=1; else echo "ok   $1"; fi; }
++val_is() { local v=""; [[ -f "$2" ]] && v="$(tr -d '[:space:]' <"$2")"
++  if [[ "$v" == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1 ($(basename "$2") is '$v', wanted '$3')"; fail=1; fi; }
++
++SD="$tmp/state"; mkdir -p "$SD" "$tmp/wd"
++T2="$tmp/tbin"; O2="$tmp/obin"; mkdir -p "$T2" "$O2"
++
++cat >"$T2/timeout" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/timeout.log"
++if [[ -e "$FAKE_STATE_DIR/timeout-kill" ]]; then exit 124; fi
++shift
++exec "$@"
++EOF
++
++cat >"$O2/opencode" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$#" >"$FAKE_STATE_DIR/oc.argc"
++i=0
++for a in "$@"; do i=$((i + 1)); printf 'ARG%d:%s\n' "$i" "$a" >>"$FAKE_STATE_DIR/oc.args"; done
++case "${FAKE_OC:-ok}" in
++  ok) cat <<'J'
++{"type":"message","parts":[{"type":"text","text":"thinking about it"},{"type":"text","text":"{\"diagnosis\":\"d\",\"action\":\"retry\",\"argument\":\"\",\"reason\":\"r\"}"}]}
++J
++    ;;
++  bad)     printf 'this is not JSON {{{\n' ;;
++  err)     printf '{"type":"error","timestamp":1792454525968,"sessionID":"","error":{"type":"unknown","message":"UnexpectedStatus: 500"}}\n'; exit 1 ;;
++  notext)  printf '{"type":"message","parts":[{"type":"status","text":"x"}]}\n' ;;
++esac
++exit 0
++EOF
++
++chmod +x "$T2/timeout" "$O2/opencode"
++
++# The fixed prompt's inputs: a phase, its command, and a log longer than 200 lines.
++LOG="$SD/phase.log"
++i=1; while [[ "$i" -le 250 ]]; do printf 'LINE%03d\n' "$i" >>"$LOG"; i=$((i + 1)); done
++
++arun() { # <PATH-prepend> [FAKE_OC via env] — invoke release-ask-ai.sh as the executor would
++  out="$(cd "$tmp/wd" && env PATH="$1:$PATH" FAKE_STATE_DIR="$SD" \
++    ${ar_env[@]+"${ar_env[@]}"} "$au" bump 'release-bump.sh 0.5.1' "$LOG" </dev/null 2>&1)"
++  code=$?
++}
++ar_env=()
++
++# A01 — the script under test must exist (the RED gate).
++if [[ -x "$au" ]]; then
++  echo "ok   A01 scripts/release-ask-ai.sh exists and is executable"
++else
++  echo "FAIL A01 scripts/release-ask-ai.sh exists and is executable (feature absent: F implements it)"
++  fail=1
++fi
++
++# A02 — happy path: the answer is the LAST text part only.
++rm -f "$SD"/oc.* "$SD"/timeout.log
++arun "$T2:$O2"
++exit_is     "A02/R9: a good envelope exits 0"                                   0
++has         "A02/R9: the assistant's answer is printed"                          '"action":"retry"'
++hasnt       "A02/R9: only the LAST text part is taken (earlier parts dropped)"   'thinking about it'
++
++# A03/A04 — the invocation shape and the prompt.
++val_is      "A03/R9: the message is a single argv (run --format json + 1 arg)"   "$SD/oc.argc" '4'
++fhas        "A03/R9: subcommand is 'run'"                                       "$SD/oc.args" '^ARG1:run$'
++fhas        "A03/R9: output format is json"                                     "$SD/oc.args" '^ARG2:--format$'
++fhas        "A03/R9: --format's value is json"                                  "$SD/oc.args" '^ARG3:json$'
++fhas        "A03: the prompt carries the phase"                                  "$SD/oc.args" 'bump'
++fhas        "A03: the prompt carries the failing command"                        "$SD/oc.args" 'release-bump\.sh 0\.5\.1'
++fhas        "A03/R9: the prompt carries the log TAIL"                            "$SD/oc.args" 'LINE250'
++fhasnt      "A03/R9: the prompt does not carry lines older than the last 200"    "$SD/oc.args" 'LINE001'
++fhas        "A04/R9: the call is wrapped in timeout"                             "$SD/timeout.log" '^300 '
++fhas        "A04/R9: the timeout wraps opencode run --format json"               "$SD/timeout.log" 'opencode run --format json'
++
++# A05-A09 — every failure mode is fail-closed: no answer, non-zero exit (R9).
++rm -f "$SD"/oc.* "$SD"/timeout.log
++ar_env=(FAKE_OC=bad)
++arun "$T2:$O2"
++exit_nonzero "A05/R9: unparseable output is no-answer (fail-closed)"
++has         "A05/R9: the no-answer condition is reported"                        '[Nn]o answer'
++
++rm -f "$SD"/oc.* "$SD"/timeout.log
++ar_env=(FAKE_OC=err)
++arun "$T2:$O2"
++exit_nonzero "A06/R9: opencode exiting non-zero (the live 500) is no-answer"
++has         "A06/R9: the no-answer condition is reported"                        '[Nn]o answer'
++
++rm -f "$SD"/oc.* "$SD"/timeout.log
++ar_env=()
++: >"$SD/timeout-kill"
++arun "$T2:$O2"
++rm -f "$SD/timeout-kill"
++exit_nonzero "A07/R9: a timeout is no-answer"
++has         "A07/R9: the no-answer condition is reported"                        '[Nn]o answer'
++
++rm -f "$SD"/oc.* "$SD"/timeout.log
++ar_env=()
++arun "$T2"        # PATH without the opencode dir: the binary is absent
++exit_nonzero "A08/R9: an absent binary is no-answer (fail-closed, not a hang)"
++has         "A08/R9: the no-answer condition is reported"                        '[Nn]o answer'
++
++rm -f "$SD"/oc.* "$SD"/timeout.log
++ar_env=(FAKE_OC=notext)
++arun "$T2:$O2"
++exit_nonzero "A09/R9: an envelope with no text part is no-answer"
++has         "A09/R9: the no-answer condition is reported"                        '[Nn]o answer'
++
++[[ $fail -eq 0 ]] && echo "PASS" || { echo "FAILED"; exit 1; }
+diff --git a/scripts/release.sh b/scripts/release.sh
+new file mode 100755
+index 0000000..e7a50e9
+--- /dev/null
++++ b/scripts/release.sh
+@@ -0,0 +1,744 @@
++#!/usr/bin/env bash
++# The release workflow operator (issue #78): runs a release end to end, phase by phase,
++# with no questions. The phase list, postconditions and failure classes are the R10 table
++# in docs/handoffs/0078-issue-78/handoff-A.md; the governing rules live in
++# docs/releasing.md and docs/release-checklist.md and are not restated here. It wraps the
++# existing release-* scripts (one job each) and `gh`; it never duplicates their logic.
++#
++#   scripts/release.sh vX.Y.Z [--dry-run|--publish] [--smoke] [--smoke-done] [--quit-kai]
++#
++# Postures (R8): --dry-run = everything through the local build, no draft release;
++# default = the same plus the draft (non-public), then stop; --publish = continue with
++# publish, verify-published and closeout. Posture escalation only (R6).
++#
++# State is a cache at bin/release/vX.Y.Z/state.json (R6): atomic writes, a mkdir lock with
++# an owner PID, resume postcondition-first (absent state re-derives; corrupt state stops),
++# re-running a finished phase is a no-op.
++#
++# Failures: hard stops (R5) never consult the AI and never delete or move a release or a
++# published tag; the four known blockers have static handlers and never consult (R10);
++# an unknown failure consults scripts/release-ask-ai.sh once, capped at 2 consultations
++# per phase (R3), and the executor runs only allowlisted actions itself (R4). Wrapped
++# scripts are invoked by bare name (R7) so tests can interpose fakes on PATH.
++set -uo pipefail
++
++repo="${KAI_RELEASE_REPO:-Performant-Labs/kai}"
++here="$(cd "$(dirname "$0")" && pwd)"
++
++# ---------------------------------------------------------------- arguments
++tag=""
++want_dry=0; want_pub=0
++smoke=0; smoke_done=0; quit_kai=0
++while [[ $# -gt 0 ]]; do
++  case "$1" in
++    --dry-run)   want_dry=1 ;;
++    --publish)   want_pub=1 ;;
++    --smoke)     smoke=1 ;;
++    --smoke-done) smoke_done=1 ;;
++    --quit-kai)  quit_kai=1 ;;
++    -h|--help)   sed -n '2,/^set -uo/p' "$0" | sed '$d'; exit 0 ;;
++    v[0-9]*.[0-9]*.[0-9]*) tag="$1" ;;
++    *) echo "unknown argument: $1 (usage: $0 vX.Y.Z [--dry-run|--publish] [--smoke] [--smoke-done] [--quit-kai])" >&2; exit 2 ;;
++  esac
++  shift
++done
++[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: $0 vX.Y.Z [--dry-run|--publish] [--smoke] [--smoke-done] [--quit-kai]" >&2; exit 2; }
++[[ $want_dry -eq 0 || $want_pub -eq 0 ]] || { echo "give --dry-run or --publish, not both" >&2; exit 2; }
++ver="${tag#v}"
++posture="default"
++[[ $want_dry -eq 0 ]] || posture="dry-run"
++[[ $want_pub -eq 0 ]] || posture="publish"
++
++root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "FAIL: run this inside a checkout of $repo" >&2; exit 1; }
++cd "$root"
++statedir="$root/bin/release/$tag"
++state="$statedir/state.json"
++lockdir="$statedir/.lock"
++mkdir -p "$statedir"
++
++# ---------------------------------------------------------------- lock (R6)
++LOCKED=0
++cleanup() {
++  if [[ "$LOCKED" -eq 1 && -f "$lockdir/pid" ]] \
++     && [[ "$(cat "$lockdir/pid" 2>/dev/null || true)" == "$$" ]]; then
++    rm -rf "$lockdir"
++  fi
++}
++if [[ -d "$lockdir" && -f "$lockdir/pid" ]]; then
++  lpid="$(cat "$lockdir/pid" 2>/dev/null || true)"
++  if [[ -n "$lpid" ]] && kill -0 "$lpid" 2>/dev/null; then
++    echo "refused: another release.sh is running for $tag (PID $lpid); let it finish or inspect it by hand" >&2
++    exit 1
++  fi
++  rm -rf "$lockdir"   # a dead owner's lock is removed and retaken
++fi
++mkdir -p "$lockdir"
++echo "$$" >"$lockdir/pid"
++LOCKED=1
++trap cleanup EXIT
++
++# ---------------------------------------------------------------- state (R6)
++rank_of() { case "$1" in dry-run) echo 0 ;; default) echo 1 ;; publish) echo 2 ;; *) echo 1 ;; esac; }
++
++st_update() { # jq filter first, then jq options; atomic same-dir rename
++  local filt="$1"; shift
++  local tmp="$state.tmp.$$"
++  if jq "$@" "$filt" "$state" >"$tmp" 2>/dev/null; then mv "$tmp" "$state"; else rm -f "$tmp"; fi
++}
++phase_done() { [[ "$(jq -r --arg p "$1" '.phases[$p].done // false' "$state" 2>/dev/null)" == "true" ]]; }
++mark_done() { # one phase, or a list
++  local p sha
++  sha="$(git rev-parse HEAD 2>/dev/null || true)"
++  for p in "$@"; do st_update '.phases[$p] = {done: true, commit: $c}' --arg p "$p" --arg c "$sha"; done
++}
++consult_count() { jq -r --arg p "$1" '[.consultations[]? | select(.phase == $p)] | length' "$state" 2>/dev/null || echo 0; }
++record_consult() {
++  st_update '.consultations += [{phase: $p, action: $a, at: $now}]' \
++    --arg p "$1" --arg a "$2" --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
++}
++
++if [[ -f "$state" ]]; then
++  if ! jq empty "$state" >/dev/null 2>&1; then
++    echo "STOP: $state is not valid JSON — delete it to rebuild from postconditions (state is a cache; every phase re-derives its postcondition)." >&2
++    exit 1
++  fi
++  recorded="$(jq -r '.posture // ""' "$state" 2>/dev/null)"
++  if [[ -n "$recorded" && "$(rank_of "$posture")" -lt "$(rank_of "$recorded")" ]]; then
++    echo "refused: posture escalation only — the recorded posture for $tag is '$recorded' and this run asked for '$posture' (a lower, dry-run posture would do less than was already done). Resume with --publish." >&2
++    exit 1
++  fi
++  [[ -z "$recorded" || "$(rank_of "$posture")" -le "$(rank_of "$recorded")" ]] \
++    || st_update '.posture = $p' --arg p "$posture"
++else
++  printf '{"posture":"%s","tag":"%s","phases":{%s},"consultations":[],"smoke":"pending"}\n' \
++    "$posture" "$tag" \
++    "$(for p in needs preflight changelog branch bump restructure release-pr review merge tag local smoke publish verify-published closeout; do printf '"%s":{"done":false},' "$p"; done | sed 's/,$//')" \
++    >"$state"
++fi
++ISSUE="$(jq -r '.issue // ""' "$state" 2>/dev/null || true)"
++
++# ---------------------------------------------------------------- dispatch and messaging (R7)
++run_tool() { # invoke a wrapped script by bare name; PATH first, else the sibling
++  local name="$1"; shift
++  if command -v "$name" >/dev/null 2>&1; then "$name" "$@"; else "$here/$name" "$@"; fi
++}
++say() { printf '%s\n' "$*"; }
++notify() {
++  command -v osascript >/dev/null 2>&1 || return 0
++  local msg="${1//\"/\'}"
++  osascript -e "display notification \"$msg\" with title \"release.sh $tag\"" >/dev/null 2>&1 || true
++}
++issue_comment() { # <phase> <kind> <body> [log] — marker-tagged (R11), always --body-file (N-A4)
++  [[ -n "${ISSUE:-}" ]] || return 0
++  local phase="$1" kind="$2" body="$3" log="${4:-}"
++  local f; f="$(mktemp "${TMPDIR:-/tmp}/release-comment.XXXXXX")"
++  {
++    printf '<!-- release.sh: %s %s %s -->\n' "$tag" "$phase" "$kind"
++    printf '%s\n' "$body"
++    if [[ -n "$log" && -f "$log" ]]; then printf 'log tail:\n'; tail -n 15 "$log"; fi
++  } >"$f"
++  gh issue comment "$ISSUE" --repo "$repo" --body-file "$f" >/dev/null 2>&1 || true
++  rm -f "$f"
++}
++do_stop() { # <phase> <reason> [log] — loud stop: message, notification, checklist comment, resume
++  local phase="$1" reason="$2" log="${3:-}"
++  {
++    printf '\nSTOP: %s, phase "%s": %s\n' "$tag" "$phase" "$reason"
++    if [[ -n "$log" && -f "$log" ]]; then printf 'log tail (%s):\n' "$log"; tail -n 15 "$log" | sed 's/^/  /'; fi
++    printf 'resume: scripts/release.sh %s\n' "$tag"
++  } >&2
++  notify "release $tag stopped at phase $phase"
++  issue_comment "$phase" stop "STOP at phase $phase: $reason" "$log"
++  exit 1
++}
++
++# ---------------------------------------------------------------- gh probes
++find_pr() { # "<number> <state> <headSha>" for release/$tag, or nothing
++  gh pr list --repo "$repo" --head "release/$tag" --json number,state,headRefOid 2>/dev/null \
++    | jq -r -s 'flatten | .[0] | if . then "\(.number) \(.state) \(.headRefOid // "")" else empty end' 2>/dev/null || true
++}
++merge_sha_of() { # <pr> — the merge commit if gh reports one, else the PR head
++  gh pr view "$1" --repo "$repo" --json mergeCommit,headRefOid 2>/dev/null \
++    | jq -r '.mergeCommit.oid // .headRefOid // empty' 2>/dev/null || true
++}
++ci_green_on() { # <sha> — 0 green; 1 not (prints why). Same predicate as release-gates.sh.
++  local sha="$1" out tsv bad
++  out="$(gh api "repos/$repo/commits/$sha/check-runs" 2>/dev/null)" || { echo "could not read the CI check-runs for $sha"; return 1; }
++  if printf '%s' "$out" | grep -q '^ *{'; then
++    tsv="$(printf '%s' "$out" | jq -r '.check_runs[]? | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null || true)"
++  else
++    tsv="$out"   # the harness's canned TSV shape (handoff-T-red Assumed 10)
++  fi
++  [[ -n "$tsv" ]] || { echo "no CI check-runs found for $sha"; return 1; }
++  bad="$(printf '%s' "$tsv" | awk -F'\t' '$2 != "completed" || $3 !~ /^(success|skipped|neutral)$/ { print $1 " (" $2 " " $3 ")" }')"
++  [[ -z "$bad" ]] || { printf '%s\n' "$bad"; return 1; }
++  return 0
++}
++agent_gate() { # <pr> <headSha> — 0 pass; 1 fail (prints why). Rule R1.
++  local pr="$1" head="$2" json bodies blk state score complete rhead unresolved
++  json="$(gh pr view "$pr" --repo "$repo" --json comments 2>/dev/null || true)"
++  [[ -n "$json" ]] || json="$(gh api "repos/$repo/pulls/$pr/comments" 2>/dev/null || true)"
++  bodies="$(printf '%s' "$json" | jq -r 'if type == "array" then .[] else (.comments // []) end | .body // empty' 2>/dev/null || true)"
++  if ! printf '%s' "$bodies" | grep -q 'pr-agent-review-state:v1'; then
++    echo "no PR-Agent review state found on PR #$pr (the pr-agent-review-state:v1 comment)"
++    return 1
++  fi
++  blk="$(printf '%s' "$bodies" | sed -n '/pr-agent-review-state:v1/,/-->/p' | sed '1d;$d')"
++  state="$(printf '%s' "$blk" | grep -m1 '^{')"
++  score="$(printf '%s' "$bodies" | sed -n 's~.*<strong>Score</strong>: \([0-9][0-9]*\)</td>.*~\1~p' | tail -1)"
++  complete="$(printf '%s' "$state" | jq -r '.last_run.complete // false' 2>/dev/null || true)"
++  rhead="$(printf '%s' "$state" | jq -r '.last_run.head_sha // ""' 2>/dev/null || true)"
++  unresolved="$(printf '%s' "$state" | jq -r '[.findings[]? | select(.state != "RESOLVED")] | length' 2>/dev/null || true)"
++  [[ "$unresolved" =~ ^[0-9]+$ ]] || unresolved=0
++  if [[ "$complete" != "true" ]]; then echo "the PR-Agent review is not complete at the PR head (last_run.complete=$complete)"; return 1; fi
++  if [[ -n "$rhead" && "$rhead" != "$head" ]]; then echo "the PR-Agent review is stale (review head ${rhead:0:7}, PR head ${head:0:7})"; return 1; fi
++  if [[ -z "$score" || "$score" -lt 90 ]]; then echo "the PR-Agent score is ${score:-missing}: below the boundary 90 (90 passes; every finding must also be RESOLVED)"; return 1; fi
++  if [[ "$unresolved" -gt 0 ]]; then echo "$unresolved unresolved PR-Agent finding(s) (state != RESOLVED) at score $score"; return 1; fi
++  return 0
++}
++
++# ---------------------------------------------------------------- static handlers (known blockers)
++handler_quit_kai() {
++  say "  .. known blocker: Kai is running — quitting it (--quit-kai)"
++  osascript -e 'tell application "Kai" to quit' >/dev/null 2>&1 || true
++  sleep 1
++  if pgrep -x Kai >/dev/null 2>&1; then pkill -x Kai || true; sleep 1; fi
++  return 0
++}
++handler_regen_bindings() { # <log> — make bindings + commit (#73)
++  local log="$1"
++  say "  .. known blocker: bindings drift — regenerating (make bindings) and committing (#73)"
++  make bindings >>"$log" 2>&1 || return 1
++  git add frontend/bindings >>"$log" 2>&1 || return 1
++  git commit -q -m "Release $tag: regenerate frontend/bindings (#73)" >>"$log" 2>&1 || true
++  return 0
++}
++
++# ---------------------------------------------------------------- the executor's recovery loop (R3/R4)
++# Consultable phases are R10's [A] class: bump, restructure, release-pr, local.
++CONSULTABLE=" bump restructure release-pr local "
++
++phase_run() { # <phase> <command-description> <command...>
++  local phase="$1" desc="$2"; shift 2
++  local log="$statedir/logs/$phase.log"
++  mkdir -p "$statedir/logs"
++  local handlers=0 rc answer arc action diagnosis base arg n why
++  while :; do
++    "$@" >"$log" 2>&1
++    rc=$?
++    cat "$log"
++    [[ $rc -eq 0 ]] && return 0
++
++    # Hard-stop signatures first (R5): a hard stop never consults, whatever the surface error.
++    if grep -q 'already exists' "$log"; then
++      do_stop "$phase" "hard stop: $(grep -m1 'already exists' "$log" | sed 's/^FAIL: //') — an existing release or tag is never deleted or overwritten; resolve it by hand" "$log"
++    fi
++    if grep -qi 'signing identity' "$log"; then
++      do_stop "$phase" "hard stop: the signing identity is missing — create it once with scripts/release-cert.sh and back it up" "$log"
++    fi
++
++    # The static known-blocker table (R10): handled without the AI.
++    if grep -q 'Kai is running' "$log" && pgrep -x Kai >/dev/null 2>&1; then
++      if [[ $quit_kai -eq 1 ]]; then
++        handlers=$((handlers + 1))
++        [[ $handlers -le 2 ]] || do_stop "$phase" "Kai is still running after two quit attempts" "$log"
++        handler_quit_kai
++        continue
++      fi
++      do_stop "$phase" "Kai is running: re-run with --quit-kai to have the static handler quit it (the workflow never quits Kai unasked)" "$log"
++    fi
++    if grep -q 'frontend/bindings' "$log"; then
++      handlers=$((handlers + 1))
++      [[ $handlers -le 2 ]] || do_stop "$phase" "bindings drift persists after regeneration (#73)" "$log"
++      handler_regen_bindings "$log" || do_stop "$phase" "make bindings / commit failed (#73)" "$log"
++      continue
++    fi
++
++    # Unknown failure: one AI consultation per event, cap 2 per phase (R3).
++    case " $CONSULTABLE " in
++      *" $phase "*) ;;
++      *) do_stop "$phase" "phase failed and its failure class does not consult the AI" "$log" ;;
++    esac
++    n="$(consult_count "$phase")"
++    if [[ "$n" -ge 2 ]]; then
++      do_stop "$phase" "still failing after $n consultations (cap 2 per phase); fix the cause and resume" "$log"
++    fi
++    answer="$(run_tool release-ask-ai.sh "$phase" "$desc" "$log" 2>/dev/null)"
++    arc=$?
++    if [[ $arc -ne 0 || -z "$answer" ]]; then
++      do_stop "$phase" "no answer from the consultation (fail-closed: a missing, failing or unparseable AI is a stop)" "$log"
++    fi
++    action="$(printf '%s' "$answer" | jq -r '.action // empty' 2>/dev/null || true)"
++    diagnosis="$(printf '%s' "$answer" | jq -r '.diagnosis // empty' 2>/dev/null || true)"
++    [[ -n "$action" ]] || do_stop "$phase" "the consultation's answer is not a {diagnosis,action,argument,reason} object (fail-closed)" "$log"
++    record_consult "$phase" "$action"
++    base="$action"; arg=""
++    [[ "$base" != *" "* ]] || { arg="${base#* }"; base="${base%% *}"; }
++    case "$base" in
++      retry)
++        say "  .. AI: retry — ${diagnosis:0:200}"
++        continue
++        ;;
++      stop)
++        do_stop "$phase" "the AI said stop: $diagnosis" "$log"
++        ;;
++      wait)
++        say "  .. AI: wait — pausing once (bounded), then re-running the phase"
++        sleep 60
++        continue
++        ;;
++      run-handler)
++        case "$arg" in
++          quit-kai)
++            [[ $quit_kai -eq 1 ]] || do_stop "$phase" "run-handler refused: quit-kai is dispatchable only with --quit-kai" "$log"
++            handler_quit_kai
++            continue
++            ;;
++          regen-bindings)
++            handler_regen_bindings "$log" || do_stop "$phase" "run-handler regen-bindings failed (#73)" "$log"
++            continue
++            ;;
++          *)
++            do_stop "$phase" "run-handler refused: no static handler named '$arg' (known handlers: quit-kai, regen-bindings)" "$log"
++            ;;
++        esac
++        ;;
++      propose-fix-pr)
++        issue_comment "$phase" propose-fix-pr "The AI proposed a fix PR for phase $phase."$'\n'"diagnosis: $diagnosis"$'\n'"Open the fix PR off origin/master (never release/$tag); the release resumes only after it merges."
++        do_stop "$phase" "propose-fix-pr recorded on the checklist issue: open the fix PR off origin/master; resume after it merges" "$log"
++        ;;
++      *)
++        do_stop "$phase" "refused: the AI's action '$action' is not in the allowlist (retry | wait | run-handler <name> | propose-fix-pr | stop); the executor never runs it" "$log"
++        ;;
++    esac
++  done
++}
++
++# ---------------------------------------------------------------- phases (R10)
++ph_needs() {
++  printf '\n== phase 0: needs (static checks before anything starts)\n'
++  if phase_done needs; then say "  .. needs already done (checklist issue: #${ISSUE:-?})"; return 0; fi
++  local ident="${KAI_RELEASE_SIGN_IDENTITY:-Kai Release}"
++  say "  needs the owner to have, before anything starts:"
++  say "    - the signing identity \"$ident\" in the keychain (scripts/release-cert.sh, once)"
++  say "    - the key backed up: bin/release/kai-release-key.backed-up exists"
++  say "    - gh push rights to $repo"
++  say "    - Kai not running (or --quit-kai)"
++  if [[ ! -f "$root/bin/release/kai-release-key.backed-up" ]]; then
++    do_stop needs "the signing-key backup marker bin/release/kai-release-key.backed-up is missing: back the .p12 up (docs/releasing.md) and touch that file"
++  fi
++  if ! KAI_SIGN_IDENTITY="$ident" run_tool codesign-app.sh --check >/dev/null 2>&1; then
++    do_stop needs "no signing identity \"$ident\" in the keychain: create it once with scripts/release-cert.sh, back it up, and touch bin/release/kai-release-key.backed-up"
++  fi
++  if [[ "$(gh api "repos/$repo" --jq .permissions.push 2>/dev/null || true)" != "true" ]]; then
++    do_stop needs "gh cannot push to $repo (a release needs push rights)"
++  fi
++  if pgrep -x Kai >/dev/null 2>&1; then
++    if [[ $quit_kai -eq 1 ]]; then handler_quit_kai; else
++      do_stop needs "Kai is running and this run was not given --quit-kai; quit it or re-run with --quit-kai"
++    fi
++  fi
++  local existing
++  existing="$(gh issue list --repo "$repo" --search "Release checklist: $tag" --json number,title,state 2>/dev/null \
++    | jq -r -s --arg t "Release checklist: $tag" 'flatten | map(select(.title == $t)) | .[0].number // empty' 2>/dev/null || true)"
++  if [[ -n "$existing" ]]; then
++    ISSUE="$existing"
++    say "  .. checklist issue exists: #$ISSUE"
++  else
++    ISSUE="$(gh issue create --repo "$repo" --title "Release checklist: $tag" --body-file "$root/docs/release-checklist.md" 2>/dev/null | tail -n1 | sed 's#.*/\([0-9][0-9]*\)$#\1#')"
++    [[ -n "$ISSUE" ]] || do_stop needs "could not open the checklist issue (gh issue create failed)"
++    say "  ok  checklist issue #$ISSUE opened"
++  fi
++  st_update '.issue = $n' --arg n "$ISSUE"
++  mark_done needs
++}
++
++ph_preflight() {
++  printf '\n== phase 1: preflight\n'
++  if phase_done preflight; then say "  .. preflight already done"; return 0; fi
++  local log="$statedir/logs/preflight.log"
++  mkdir -p "$statedir/logs"
++  if ! run_tool release-preflight.sh "$tag" >"$log" 2>&1; then
++    cat "$log"
++    do_stop preflight "release-preflight.sh $tag failed — fix every FAIL line first (docs/release-checklist.md, Pre-flight)" "$log"
++  fi
++  cat "$log"
++  st_update '.releaseCommit = $c' --arg c "$(git rev-parse HEAD 2>/dev/null || true)"
++  local warns; warns="$(grep '  WARN  ' "$log" || true)"
++  if [[ -n "$warns" ]]; then
++    issue_comment preflight warn "release-preflight.sh reported WARN rows — recorded here per the checklist:"$'\n'"$warns"
++    say "  .. WARN row(s) recorded in the checklist issue"
++  fi
++  mark_done preflight
++}
++
++ph_changelog() {
++  printf '\n== phase 2: changelog (coverage + Known Issues)\n'
++  if phase_done changelog; then say "  .. changelog already done"; return 0; fi
++  local log="$statedir/logs/changelog.log"
++  mkdir -p "$statedir/logs"
++  # Known-issue candidates first: the owner needs them to curate (docs/releasing.md "Known issues").
++  local cands
++  cands="$(gh issue list --repo "$repo" --label bug --state open --json number,title,state 2>/dev/null | jq -r -s 'flatten | .[] | "- #\(.number) \(.title) (\(.state)) [bug]"' 2>/dev/null || true)"
++  cands="$cands
++$(gh issue list --repo "$repo" --label known-issue --state open --json number,title,state 2>/dev/null | jq -r -s 'flatten | .[] | "- #\(.number) \(.title) (\(.state)) [known-issue]"' 2>/dev/null || true)
++- standing: the Accessibility / signing-identity warning from docs/releasing.md (standing lines)"
++  if ! run_tool changelog-check.sh --strict >"$log" 2>&1; then
++    cat "$log"
++    local uncovered; uncovered="$(grep -oE '#[0-9]+' "$log" | sort -u | tr '\n' ' ')"
++    do_stop changelog "uncovered PRs need a changelog entry or a skip line (${uncovered:-see log}). For each PR: add an entry citing its number or issue, or add under [Unreleased] a line like: <!-- changelog-skip: release tooling, no user-facing change: #N -->. Changelog prose is human-authored (docs/releasing.md). Next release, also add: <!-- changelog-skip: release tooling, no user-facing change: #<this release PR> --> (a PR cannot carry its own line)." "$log"
++  fi
++  cat "$log"
++  local unreleased bullet none
++  unreleased="$(awk '/^## \[Unreleased\]/{u=1;next} u && /^## \[/{u=0} u{print}' "$root/CHANGELOG.md")"
++  if printf '%s\n' "$unreleased" | awk '/^### Known Issues/{k=1;next} /^### /{k=0} k && /^[[:space:]]*- /{f=1} END{exit f?0:1}'; then bullet=1; else bullet=0; fi
++  if grep -q 'known-issues: none' "$root/CHANGELOG.md"; then none=1; else none=0; fi
++  if [[ $bullet -eq 0 && $none -eq 0 ]]; then
++    do_stop changelog "the [Unreleased] section has no curated Known Issues: add a '### Known Issues' subsection with one line per real, still-open issue (candidates below), or, when there are none, add the marker: <!-- known-issues: none $(date +%Y-%m-%d) -->. Candidates: $cands Next release, also add: <!-- changelog-skip: release tooling, no user-facing change: #<this release PR> -->." "$log"
++  fi
++  issue_comment changelog known-issues "Known-issue candidates (confirm each is still live on this build; standing lines from docs/releasing.md apply):"$'\n'"$cands"
++  mark_done changelog
++}
++
++ph_branch() {
++  printf '\n== phase 3: release branch\n'
++  if phase_done branch; then say "  .. branch already done"; return 0; fi
++  local rb; rb="$(git ls-remote origin "refs/heads/release/$tag" 2>/dev/null | awk 'NR==1{print $1}')"
++  if [[ -n "$rb" ]]; then
++    git fetch -q origin 2>/dev/null || true
++    if git merge-base --is-ancestor "$rb" refs/remotes/origin/master 2>/dev/null; then
++      say "  .. leftover branch release/$tag is merged into master (#74 rule): skipping phases 3-6 and deleting it"
++      gh api -X DELETE "repos/$repo/git/refs/heads/release/$tag" >/dev/null 2>&1 \
++        || do_stop branch "could not delete the leftover branch release/$tag (gh api -X DELETE failed)"
++      mark_done branch bump restructure release-pr
++      return 0
++    fi
++    do_stop branch "release/$tag exists on origin but is not merged into master — a release is in progress; finish it or pick another version"
++  fi
++  local info; info="$(find_pr)"
++  if [[ -n "$info" ]]; then
++    set -- $info
++    if [[ "$2" == "MERGED" ]]; then
++      say "  .. release PR #$1 already merged (its branch was deleted by the merge)"
++      mark_done branch
++      return 0
++    fi
++    do_stop branch "release/$tag has an unmerged PR #$1 but no branch on origin — resolve that by hand"
++  fi
++  local rc; rc="$(jq -r '.releaseCommit // ""' "$state" 2>/dev/null || true)"
++  [[ -n "$rc" ]] || rc="$(git rev-parse HEAD)"
++  if git rev-parse --verify -q "refs/heads/release/$tag" >/dev/null 2>&1; then
++    git checkout -q "release/$tag" || do_stop branch "git checkout release/$tag failed"
++  else
++    git checkout -q -b "release/$tag" "$rc" || do_stop branch "git checkout -b release/$tag $rc failed"
++  fi
++  git push -q origin "release/$tag" || do_stop branch "git push of release/$tag failed"
++  say "  ok  release/$tag created at ${rc:0:7} and pushed"
++  mark_done branch
++}
++
++ph_bump() {
++  printf '\n== phase 4: version bump\n'
++  if phase_done bump; then say "  .. bump already done"; return 0; fi
++  phase_run bump "release-bump.sh $ver" run_tool release-bump.sh "$ver"
++  mark_done bump
++}
++
++restructure_apply() {
++  local tmp="$root/CHANGELOG.md.rs.$$"
++  awk -v ver="$ver" -v date="$(date +%Y-%m-%d)" '
++    BEGIN { printed = 0 }
++    /^## \[Unreleased\]/ {
++      if (!printed) { print "## [Unreleased]"; print ""; print "## [" ver "] - " date; printed = 1 }
++      next
++    }
++    { print }
++  ' "$root/CHANGELOG.md" >"$tmp" || { rm -f "$tmp"; return 1; }
++  mv "$tmp" "$root/CHANGELOG.md"
++  run_tool release-check-version.sh "$ver" . >/dev/null
++}
++
++ph_restructure() {
++  printf '\n== phase 5: changelog restructure\n'
++  if phase_done restructure; then say "  .. restructure already done"; return 0; fi
++  if run_tool release-check-version.sh "$ver" . >/dev/null 2>&1 && grep -q '^## \[Unreleased\]' "$root/CHANGELOG.md"; then
++    say "  .. version files and CHANGELOG already say $ver (postcondition holds)"
++    mark_done restructure
++    return 0
++  fi
++  phase_run restructure "restructure CHANGELOG.md for $ver (release-check-version.sh $ver .)" restructure_apply
++  mark_done restructure
++}
++
++release_pr_apply() {
++  git add -A
++  git diff --cached --quiet || git commit -q -m "Release $tag: version bump and changelog restructure"
++  git push -q origin "release/$tag"
++  local bf; bf="$(mktemp "${TMPDIR:-/tmp}/release-pr.XXXXXX")"
++  printf 'Release %s: version bump and changelog restructure.\nManaged by scripts/release.sh (checklist issue #%s).\n' "$tag" "${ISSUE:-}" >"$bf"
++  gh pr create --repo "$repo" --base master --head "release/$tag" --title "Release $tag" --body-file "$bf" >/dev/null
++  rm -f "$bf"
++}
++
++ph_release_pr() {
++  printf '\n== phase 6: release PR\n'
++  if phase_done release-pr; then say "  .. release-pr already done"; return 0; fi
++  local info; info="$(find_pr)"
++  if [[ -n "$info" ]]; then
++    set -- $info
++    say "  .. PR for release/$tag already exists: #$1 ($2)"
++    st_update '.pr = $n | .headSha = $h' --arg n "$1" --arg h "$3"
++    mark_done release-pr
++    return 0
++  fi
++  phase_run release-pr "gh pr create --repo $repo --base master --head release/$tag" release_pr_apply
++  info="$(find_pr)"
++  [[ -n "$info" ]] || do_stop release-pr "no PR found for release/$tag after creating it"
++  set -- $info
++  st_update '.pr = $n | .headSha = $h' --arg n "$1" --arg h "$3"
++  say "  ok  release PR #$1 opened"
++  mark_done release-pr
++}
++
++ph_review() {
++  printf '\n== phase 7: review gate (CI + PR-Agent, rule R1)\n'
++  if phase_done review; then say "  .. review already done"; return 0; fi
++  local info why
++  info="$(find_pr)"
++  [[ -n "$info" ]] || do_stop review "no release PR found for release/$tag"
++  set -- $info
++  local prn="$1" prst="$2" prhead="$3"
++  if [[ "$prst" == "MERGED" ]]; then
++    say "  .. PR #$prn already merged — the review gate was settled by its merge"
++    st_update '.pr = $n | .headSha = $h' --arg n "$prn" --arg h "$prhead"
++    mark_done review
++    return 0
++  fi
++  if ! why="$(ci_green_on "$prhead")"; then
++    do_stop review "hard stop: CI is not green on the release commit ${prhead:0:7}: $why"
++  fi
++  if ! why="$(agent_gate "$prn" "$prhead")"; then
++    do_stop review "hard stop: the PR-Agent review gate failed on PR #$prn: $why"
++  fi
++  say "  ok  CI green and PR-Agent review passed on PR #$prn (score >= 90, no unresolved findings)"
++  st_update '.pr = $n | .headSha = $h' --arg n "$prn" --arg h "$prhead"
++  mark_done review
++}
++
++ph_merge() {
++  printf '\n== phase 8: merge\n'
++  if phase_done merge; then say "  .. merge already done"; return 0; fi
++  local info why
++  info="$(find_pr)"
++  [[ -n "$info" ]] || do_stop merge "no release PR found for release/$tag"
++  set -- $info
++  local prn="$1" prst="$2" prhead="$3"
++  if [[ "$prst" != "MERGED" ]]; then
++    gh pr merge "$prn" --repo "$repo" --merge --delete-branch >/dev/null 2>&1 \
++      || do_stop merge "gh pr merge failed for PR #$prn (a conflict needs the owner; docs/release-checklist.md step 13)"
++    info="$(find_pr)"
++    set -- $info
++    prst="$2"
++    [[ "$prst" == "MERGED" ]] || do_stop merge "PR #$prn did not end up MERGED (state: $prst)"
++  fi
++  local msha; msha="$(merge_sha_of "$1" "$3")"
++  [[ -n "$msha" ]] || do_stop merge "could not determine the merge commit of PR #$1"
++  if ! why="$(ci_green_on "$msha")"; then
++    do_stop merge "hard stop: CI is red on the merge commit ${msha:0:7}: $why"
++  fi
++  say "  ok  PR #$1 merged; CI green on the merge commit ${msha:0:7}"
++  st_update '.pr = $n | .mergeSha = $m' --arg n "$1" --arg m "$msha"
++  mark_done merge
++}
++
++ph_tag() {
++  printf '\n== phase 9: tag\n'
++  if phase_done tag; then say "  .. tag already done"; return 0; fi
++  local msha; msha="$(jq -r '.mergeSha // ""' "$state" 2>/dev/null || true)"
++  if [[ -z "$msha" ]]; then
++    local info; info="$(find_pr)"
++    [[ -n "$info" ]] || do_stop tag "no release PR to derive the merge commit from"
++    set -- $info
++    msha="$(merge_sha_of "$1" "$3")"
++  fi
++  [[ -n "$msha" ]] || do_stop tag "could not determine the merge commit to tag"
++  # Peel the annotated tag to compare commits; a tag is never moved or deleted (R5).
++  local rtag; rtag="$(git ls-remote origin "refs/tags/$tag^{}" 2>/dev/null | awk 'NR==1{print $1}')"
++  [[ -n "$rtag" ]] || rtag="$(git ls-remote origin "refs/tags/$tag" 2>/dev/null | awk 'NR==1{print $1}')"
++  if [[ -n "$rtag" ]]; then
++    [[ "$rtag" == "$msha" ]] || do_stop tag "hard stop: $tag already exists at ${rtag:0:7}, not the merge commit ${msha:0:7} — a tag is never moved; resolve it by hand"
++    say "  .. $tag already at the merge commit"
++    mark_done tag
++    return 0
++  fi
++  git tag -a "$tag" -m "$tag" "$msha" || do_stop tag "git tag -a $tag failed"
++  git push -q origin "$tag" || do_stop tag "git push of $tag failed"
++  say "  ok  tagged ${msha:0:7} as $tag and pushed"
++  mark_done tag
++}
++
++ph_local() {
++  printf '\n== phase 10: local build, verify, package (%s)\n' "$( [[ "$posture" == "dry-run" ]] && echo "--dry-run, no draft" || echo "--yes, draft" )"
++  # No state.done fast-path here: the phase's postcondition depends on the posture (R8), so a
++  # dry-run-completed local re-runs at --yes when the draft does not exist yet. The probe is
++  # the postcondition; when it holds the phase is a no-op (R10 p10's "may rebuild" note).
++  local mode="--yes"
++  [[ "$posture" == "dry-run" ]] && mode="--dry-run"
++  if [[ "$mode" == "--dry-run" ]]; then
++    if [[ -f "$statedir/RELEASE_NOTES.md" && -d "$statedir/Kai.app" && -f "$statedir/assets/SHA256SUMS" ]]; then
++      say "  .. packaged dry-run output already present in $statedir"
++      mark_done local
++      return 0
++    fi
++  else
++    local n_assets
++    n_assets="$(gh release view "$tag" --repo "$repo" --json assets 2>/dev/null | jq -r '.assets | length' 2>/dev/null || true)"
++    if [[ "$n_assets" == "4" ]]; then
++      say "  .. a release for $tag already exists with its 4 assets"
++      mark_done local
++      return 0
++    fi
++  fi
++  phase_run local "release-local.sh $tag $mode" run_tool release-local.sh "$tag" "$mode"
++  mark_done local
++}
++
++ph_smoke() {
++  printf '\n== phase 11: smoke\n'
++  if phase_done smoke; then say "  .. smoke already recorded ($(jq -r '.smoke // ""' "$state" 2>/dev/null))"; return 0; fi
++  local v
++  if [[ $smoke_done -eq 1 ]]; then
++    v="done (owner-asserted $(date +%Y-%m-%d))"
++    st_update '.smoke = $v' --arg v "$v"
++    issue_comment smoke done "smoke matrix: $v — recorded by --smoke-done"
++    mark_done smoke
++    say "  ok  smoke recorded: $v"
++    return 0
++  fi
++  if [[ $smoke -eq 1 ]]; then
++    st_update '.smoke = $v' --arg v "awaiting-owner"
++    issue_comment smoke awaiting-owner "smoke matrix awaiting the owner: run docs/release-checklist.md §Manual smoke matrix on $statedir/Kai.app, then resume with --smoke-done"
++    say ""
++    say "Smoke matrix awaiting the owner (docs/release-checklist.md, Manual smoke matrix)."
++    say "Run it on $statedir/Kai.app, then record it:"
++    say "resume: scripts/release.sh $tag --smoke-done --publish"
++    notify "smoke matrix awaiting the owner"
++    exit 0
++  fi
++  st_update '.smoke = $v' --arg v "skipped"
++  issue_comment smoke skipped "smoke: skipped (--smoke not given this run; recorded per the checklist)"
++  mark_done smoke
++  say "  .. smoke recorded skipped (no --smoke)"
++}
++
++ph_publish() {
++  printf '\n== phase 12: publish\n'
++  if phase_done publish; then say "  .. publish already done"; return 0; fi
++  # jq -r prints a boolean false as "false"; "// empty" would swallow it.
++  local d
++  d="$(gh release view "$tag" --repo "$repo" --json isDraft 2>/dev/null | jq -r '.isDraft' 2>/dev/null || true)"
++  if [[ "$d" == "false" ]]; then
++    say "  .. $tag is already published"
++    mark_done publish
++    return 0
++  fi
++  [[ "$d" == "true" ]] || do_stop publish "hard stop: no draft release $tag found to publish (gh release view said '${d:-nothing}')"
++  gh release edit "$tag" --repo "$repo" --draft=false >/dev/null 2>&1 \
++    || do_stop publish "hard stop: gh release edit failed — never delete or overwrite; inspect by hand"
++  d="$(gh release view "$tag" --repo "$repo" --json isDraft 2>/dev/null | jq -r '.isDraft' 2>/dev/null || true)"
++  [[ "$d" == "false" ]] || do_stop publish "hard stop: $tag is still a draft after the edit — inspect by hand"
++  say "  ok  $tag published"
++  mark_done publish
++}
++
++ph_verify() {
++  printf '\n== phase 13: verify the published artifact (checklist step 28)\n'
++  if phase_done verify-published; then say "  .. verify-published already done"; return 0; fi
++  local vdir; vdir="$(mktemp -d "${TMPDIR:-/tmp}/release-verify.XXXXXX")"
++  local z="Kai-$ver-darwin-arm64.zip" uz="updater-Kai-$ver-darwin-arm64.zip" dmg="Kai-$ver-darwin-arm64.dmg"
++  ( cd "$vdir" && gh release download "$tag" --repo "$repo" >/dev/null 2>&1 ) \
++    || do_stop verify-published "gh release download $tag failed"
++  [[ -f "$vdir/$z" && -f "$vdir/$uz" && -f "$vdir/$dmg" && -f "$vdir/SHA256SUMS" ]] \
++    || do_stop verify-published "the published assets for $tag are incomplete (wanted the zip, the updater zip, the dmg and SHA256SUMS)"
++  ( cd "$vdir" && shasum -a 256 -c SHA256SUMS >/dev/null 2>&1 ) \
++    || do_stop verify-published "SHA256SUMS verification failed — the published artifact is wrong; the owner decides"
++  cmp -s "$vdir/$z" "$vdir/$uz" \
++    || do_stop verify-published "the updater zip is not byte-identical to the release zip"
++  mkdir -p "$vdir/x"
++  ditto -x -k "$vdir/$z" "$vdir/x" \
++    || do_stop verify-published "ditto extraction of the published zip failed"
++  run_tool release-verify.sh "$vdir/x/Kai.app" "$ver" \
++    || do_stop verify-published "release-verify.sh failed on the downloaded Kai.app"
++  local mnt
++  mnt="$(hdiutil attach -readonly -nobrowse "$vdir/$dmg" 2>/dev/null | awk -F'\t' '$3 != "" { print $3 }' | tail -1)"
++  [[ -n "$mnt" ]] || do_stop verify-published "could not mount the published disk image"
++  if ! diff -r "$mnt/Kai.app" "$vdir/x/Kai.app" >/dev/null 2>&1; then
++    hdiutil detach "$mnt" >/dev/null 2>&1 || true
++    do_stop verify-published "the dmg's Kai.app differs from the zip's"
++  fi
++  hdiutil detach "$mnt" >/dev/null 2>&1 || true
++  run_tool install-release.sh "$tag" --dest "$(mktemp -d)" --keep-permissions \
++    || do_stop verify-published "install-release.sh against the published release failed"
++  say "  ok  published artifact verified (SHA256SUMS, updater zip identical, zip == dmg, installer ran)"
++  rm -rf "$vdir"
++  mark_done verify-published
++}
++
++ph_closeout() {
++  printf '\n== phase 14: closeout\n'
++  if phase_done closeout; then say "  .. closeout already done"; return 0; fi
++  if [[ -z "$ISSUE" ]]; then
++    ISSUE="$(gh issue list --repo "$repo" --search "Release checklist: $tag" --json number,title,state 2>/dev/null \
++      | jq -r -s --arg t "Release checklist: $tag" 'flatten | map(select(.title == $t)) | .[0].number // empty' 2>/dev/null || true)"
++    [[ -n "$ISSUE" ]] || do_stop closeout "the checklist issue for $tag was not found to close"
++    st_update '.issue = $n' --arg n "$ISSUE"
++  fi
++  issue_comment closeout evidence "Release $tag complete."$'\n'"- release: https://github.com/$repo/releases/$tag"$'\n'"- smoke: $(jq -r '.smoke // ""' "$state" 2>/dev/null)"$'\n'"- the published artifact was verified per checklist step 28"$'\n'"- owner nicety: link this issue from the release's notes"
++  gh issue close "$ISSUE" --repo "$repo" >/dev/null 2>&1 || do_stop closeout "gh issue close #$ISSUE failed"
++  say "  ok  checklist issue #$ISSUE closed"
++  mark_done closeout
++}
++
++# ---------------------------------------------------------------- main flow
++say "release.sh $tag — posture: $posture — repo: $repo"
++ph_needs
++ph_preflight
++ph_changelog
++ph_branch
++ph_bump
++ph_restructure
++ph_release_pr
++ph_review
++ph_merge
++ph_tag
++ph_local
++
++if [[ "$posture" == "dry-run" ]]; then
++  say ""
++  say "Dry-run posture complete for $tag: every phase through the local build ran; NO draft release was created."
++  say "The branch, PR, merge and tag did happen — they are the release (only the GitHub Release object is gated)."
++  say "Remaining owner steps:"
++  say "  1. draft:   re-run as 'scripts/release.sh $tag' (default posture) to create the draft release"
++  say "  2. smoke:   run the manual smoke matrix (docs/release-checklist.md) on $statedir/Kai.app; record with --smoke/--smoke-done"
++  say "  3. publish: scripts/release.sh $tag --publish"
++  say "resume: scripts/release.sh $tag"
++  exit 0
++fi
++
++ph_smoke
++
++if [[ "$posture" != "publish" ]]; then
++  say ""
++  say "Default posture complete for $tag: the draft release is created (not public) and the packaged build is verified."
++  say "Remaining owner step: publish."
++  say "resume: scripts/release.sh $tag --publish"
++  exit 0
++fi
++
++ph_publish
++ph_verify
++ph_closeout
++say ""
++say "Release $tag complete: published, verified, checklist issue #$ISSUE closed."
++say "Owner nicety: link the checklist issue from https://github.com/$repo/releases/$tag"
++exit 0
+diff --git a/scripts/release.test.sh b/scripts/release.test.sh
+new file mode 100755
+index 0000000..11b7eea
+--- /dev/null
++++ b/scripts/release.test.sh
+@@ -0,0 +1,770 @@
++#!/usr/bin/env bash
++# Tests for scripts/release.sh: the static release workflow (issue #78), in throwaway repos
++# with fake wrapped scripts first on PATH, no network. Harness shape follows
++# scripts/release-preflight.test.sh (mkrepo/run/has + fake gh + a fake git wrapping the real
++# one, origin = a local bare repo). The contract under test is docs/handoffs/0078-issue-78/
++# handoff-A.md (rulings R1-R12) as it amends docs/handoffs/0078-issue-78/brief.md (AC1-AC7).
++# Part of test.unit.command (issue #78, brief item 9).
++#   bash scripts/release.test.sh
++set -uo pipefail
++
++here="$(cd "$(dirname "$0")" && pwd)"
++release="$here/release.sh"
++tmp="$(mktemp -d)"
++cleanup() { rm -rf "$tmp"; }
++trap cleanup EXIT
++
++fail=0; out=""; code=0
++has()   { if printf '%s' "$out" | grep -qE -- "$2"; then echo "ok   $1"; else echo "FAIL $1 (wanted /$2/)"; fail=1; fi; }
++hasnt() { if printf '%s' "$out" | grep -qE -- "$2"; then echo "FAIL $1 (did not want /$2/)"; fail=1; else echo "ok   $1"; fi; }
++exit_is() { if [[ "$code" == "$2" ]]; then echo "ok   $1"; else echo "FAIL $1 (exit $code, wanted $2)"; fail=1; fi; }
++exit_nonzero() { if [[ "$code" -ne 0 ]]; then echo "ok   $1"; else echo "FAIL $1 (exit $code, wanted non-zero)"; fail=1; fi; }
++fhas()  { if grep -qE -- "$3" "$2" 2>/dev/null; then echo "ok   $1"; else echo "FAIL $1 (wanted /$3/ in $(basename "$2"))"; fail=1; fi; }
++fhasnt(){ if grep -qE -- "$3" "$2" 2>/dev/null; then echo "FAIL $1 (did not want /$3/ in $(basename "$2"))"; fail=1; else echo "ok   $1"; fi; }
++exists() { if [[ -e "$2" ]]; then echo "ok   $1"; else echo "FAIL $1 (missing ${2#"$tmp/"})"; fail=1; fi; }
++count_is() { # name file want-line-count
++  local n=0; [[ -f "$2" ]] && n="$(wc -l <"$2" | tr -d ' ')"
++  if [[ "$n" == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1 ($(basename "$2") has $n lines, wanted $3)"; fail=1; fi; }
++match_is() { # name file pattern want-match-count
++  local n=""; [[ -f "$2" ]] && n="$(grep -cE -- "$3" "$2" 2>/dev/null || true)"
++  [[ -z "$n" ]] && n=0
++  if [[ "$n" == "$4" ]]; then echo "ok   $1"; else echo "FAIL $1 ($(basename "$2") =~ /$3/ matched $n, wanted $4)"; fail=1; fi; }
++val_is() { # name file want-content
++  local v=""; [[ -f "$2" ]] && v="$(tr -d '[:space:]' <"$2")"
++  if [[ "$v" == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1 ($(basename "$2") is '$v', wanted '$3')"; fail=1; fi; }
++jq_is() { # name file filter want
++  local got=""; [[ -f "$2" ]] && got="$(jq -r "$3" "$2" 2>/dev/null)" || true
++  if [[ "$got" == "$4" ]]; then echo "ok   $1"; else echo "FAIL $1 (jq '$3' gave '$got', wanted '$4')"; fail=1; fi; }
++
++[[ -x /usr/bin/git ]] || { echo "harness needs /usr/bin/git"; exit 2; }
++RG=/usr/bin/git
++
++# ------------------------------------------------------- fixture artifacts (phase 13, R10)
++# A real zip (real ditto/shasum/cmp/diff run against it) and a fake dmg only the fake hdiutil
++# ever opens. SHA256SUMS covers the three files: checklist step 28's shape.
++FX="$tmp/fixtures"; mkdir -p "$FX/Kai.app" "$FX/download"
++echo "fake app" >"$FX/Kai.app/Info.plist"
++( cd "$FX" && ditto -c -k --keepParent Kai.app download/Kai-0.5.1-darwin-arm64.zip )
++cp "$FX/download/Kai-0.5.1-darwin-arm64.zip" "$FX/download/updater-Kai-0.5.1-darwin-arm64.zip"
++: >"$FX/download/Kai-0.5.1-darwin-arm64.dmg"
++( cd "$FX/download" && shasum -a 256 Kai-0.5.1-darwin-arm64.zip \
++    updater-Kai-0.5.1-darwin-arm64.zip Kai-0.5.1-darwin-arm64.dmg >SHA256SUMS )
++
++# ------------------------------------------------------- the fake bin (shared, stateless)
++# Every script release.sh may invoke by bare name (Ruling R7) resolves here first. All state
++# lives in $FAKE_STATE_DIR (one dir per scenario), never in these files.
++FB="$tmp/fakebin"; mkdir -p "$FB"
++
++cat >"$FB/git" <<EOF
++#!/usr/bin/env bash
++printf '%s\n' "\$*" >>"\$FAKE_STATE_DIR/git.log"
++exec $RG "\$@"
++EOF
++
++cat >"$FB/pgrep" <<'EOF'
++#!/usr/bin/env bash
++# Kai-running is steered by a marker file the fake release-local.sh sets; the fake osascript /
++# pkill clear it when told to quit (that is the OS effect of quitting Kai).
++if [[ "$*" == "-x Kai" && -e "$FAKE_STATE_DIR/kai-running" ]]; then exit 0; fi
++exit 1
++EOF
++
++cat >"$FB/pkill" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/pkill.log"
++[[ "$*" == "-x Kai" ]] && rm -f "$FAKE_STATE_DIR/kai-running"
++exit 0
++EOF
++
++cat >"$FB/osascript" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/osascript.log"
++case "$*" in
++  *[Qq]uit*) rm -f "$FAKE_STATE_DIR/kai-running" ;;   # quitting Kai has its OS effect
++esac
++exit 0
++EOF
++
++cat >"$FB/make" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/make.log"
++if [[ "${1:-}" == "bindings" ]]; then
++  mkdir -p "$PWD/frontend/bindings"
++  echo "// regenerated (fake)" >"$PWD/frontend/bindings/generated.ts"
++  rm -f "$FAKE_STATE_DIR/local-fail"    # the drift is fixed once bindings are regenerated
++fi
++exit 0
++EOF
++
++cat >"$FB/hdiutil" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/hdiutil.log"
++case "${1:-}" in
++  attach) mkdir -p "$FAKE_STATE_DIR/mnt/Kai.app"
++          cp -R "$FAKE_FIXTURES/Kai.app/." "$FAKE_STATE_DIR/mnt/Kai.app/"
++          printf '/dev/disk9s1\tApple_HFS\t%s\n' "$FAKE_STATE_DIR/mnt" ;;
++  detach) rm -rf "$FAKE_STATE_DIR/mnt"; echo "ejected" ;;
++esac
++exit 0
++EOF
++
++cat >"$FB/codesign-app.sh" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/codesign.log"
++if [[ "${1:-}" == "--check" && -e "$FAKE_STATE_DIR/codesign-fail" ]]; then
++  echo 'FAIL: no identity "Kai Release" matches in any keychain' >&2; exit 1
++fi
++exit 0
++EOF
++
++cat >"$FB/release-preflight.sh" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/preflight.log"
++if [[ -e "$FAKE_STATE_DIR/preflight-fail" ]]; then
++  echo "FAIL: 1 problem(s), 0 warning(s)." >&2; exit 1
++fi
++echo "  WARN  node v26.0 differs from frontend/.nvmrc (fake row, for the marker comment)"
++echo "PASS: ready to start $1. 1 warning(s): record each in the checklist."
++exit 0
++EOF
++
++cat >"$FB/changelog-check.sh" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/changelog.log"
++if [[ "$*" == *"--strict"* && -e "$FAKE_STATE_DIR/changelog-strict-fail" ]]; then
++  echo "NOT covered by [Unreleased] (1):"
++  echo "  #501	2026-10-01	Fake uncovered PR (#501)"
++  exit 1
++fi
++echo "ok: every merged PR in range is covered by [Unreleased] (or skipped)"
++exit 0
++EOF
++
++cat >"$FB/release-bump.sh" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/bump.log"
++n=0; [[ -f "$FAKE_STATE_DIR/bump.count" ]] && n="$(cat "$FAKE_STATE_DIR/bump.count")"
++n=$((n + 1)); echo "$n" >"$FAKE_STATE_DIR/bump.count"
++if [[ "$n" -le "${FAKE_BUMP_FAILS:-0}" ]]; then
++  echo "FAIL: bump exploded (fake, invocation $n)" >&2; exit 1
++fi
++[[ -f build/config.yml ]] && sed -i.bak -E "s/version: \"[^\"]*\"/version: \"$1\"/" build/config.yml && rm -f build/config.yml.bak
++echo "version set to $1"
++exit 0
++EOF
++
++cat >"$FB/release-local.sh" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/local.log"
++tag=""; dry=0
++for a in "$@"; do case "$a" in --dry-run) dry=1 ;; v[0-9]*.[0-9]*.[0-9]*) tag="$a" ;; esac; done
++ver="${tag#v}"; out="$PWD/bin/release/$tag"
++if [[ -e "$FAKE_STATE_DIR/local-fail" ]]; then
++  kind="$(cat "$FAKE_STATE_DIR/local-fail")"
++  case "$kind" in
++    once)    rm -f "$FAKE_STATE_DIR/local-fail"
++             echo "FAIL: unknown transient failure (fake)" >&2; exit 1 ;;
++    kai)     rm -f "$FAKE_STATE_DIR/local-fail"; : >"$FAKE_STATE_DIR/kai-running"
++             echo "FAIL: Kai is running: quit it (release-verify.sh launches its own copy)" >&2; exit 1 ;;
++    bindings) echo "FAIL: the tree is not the tag: frontend/bindings differs (run make bindings and commit the result, #73)" >&2; exit 1 ;;
++    exists-draft)     echo "FAIL: a release for $tag already exists: https://github.com/Performant-Labs/kai/releases/$tag (draft)" >&2; exit 1 ;;
++    exists-published) echo "FAIL: a release for $tag already exists: https://github.com/Performant-Labs/kai/releases/$tag (published, isDraft: false)" >&2; exit 1 ;;
++  esac
++fi
++mkdir -p "$out/assets" "$out/Kai.app"
++echo "notes for $ver" >"$out/RELEASE_NOTES.md"
++echo app >"$out/Kai.app/Info.plist"
++: >"$out/assets/Kai-$ver-darwin-arm64.zip"
++: >"$out/assets/updater-Kai-$ver-darwin-arm64.zip"
++: >"$out/assets/Kai-$ver-darwin-arm64.dmg"
++: >"$out/assets/SHA256SUMS"
++echo "packaged into $out"
++if [[ "$dry" -eq 1 ]]; then printf '\nDry run done: no release created. Files are in %s\n' "$out"; exit 0; fi
++gh release create "$tag" "$out"/assets/* --repo Performant-Labs/kai --draft --verify-tag \
++  --title "Kai $tag" --notes-file "$out/RELEASE_NOTES.md"
++printf '\nDraft created. Next:\n  1. Run the smoke matrix (docs/release-checklist.md) on %s/Kai.app\n  2. Publish:  gh release edit %s --repo Performant-Labs/kai --draft=false\n' "$out" "$tag"
++exit 0
++EOF
++
++cat >"$FB/release-ask-ai.sh" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/askai.log"
++n=0; [[ -f "$FAKE_STATE_DIR/askai.count" ]] && n="$(cat "$FAKE_STATE_DIR/askai.count")"
++n=$((n + 1)); echo "$n" >"$FAKE_STATE_DIR/askai.count"
++case "${FAKE_AI:-}" in
++  retry) echo '{"diagnosis":"fake","action":"retry","argument":"","reason":"fake"}'; exit 0 ;;
++  wait)  echo '{"diagnosis":"fake","action":"wait","argument":"","reason":"fake"}'; exit 0 ;;
++  stop)  echo '{"diagnosis":"fake","action":"stop","argument":"","reason":"fake"}'; exit 0 ;;
++  bad)   echo '{"diagnosis":"fake","action":"reboot-the-mac","argument":"","reason":"fake"}'; exit 0 ;;
++  *)     exit 1 ;;   # no answer available: fail-closed
++esac
++EOF
++
++for s in release-notes.sh release-check-version.sh release-tree-check.sh release-verify.sh \
++         release-package.sh release-gates.sh sign-check.sh release-cert.sh; do
++  cat >"$FB/$s" <<EOF
++#!/usr/bin/env bash
++printf '%s\n' "\$*" >>"\$FAKE_STATE_DIR/$s.log"
++echo "ok (fake $s)"
++exit 0
++EOF
++done
++
++cat >"$FB/install-release.sh" <<'EOF'
++#!/usr/bin/env bash
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/install-release.log"
++echo "checksum ok"; echo "installed Kai $1"; echo "quarantine flag cleared"
++exit 0
++EOF
++
++cat >"$FB/gh" <<'EOF'
++#!/usr/bin/env bash
++# Fake gh: env-steered canned answers (FAKE_CI, FAKE_AGENT) + a small state dir
++# ($FAKE_STATE_DIR/ghstate): issue-<N> = title/state, pr-<N> = state/head/head_sha,
++# release-<tag>.json. Lists print TSV, or JSON when --json is passed. No network.
++G="$FAKE_STATE_DIR/ghstate"
++printf '%s\n' "$*" >>"$FAKE_STATE_DIR/gh.log"
++a="$*"
++next() { n=100; [[ -f "$G/seq" ]] && n="$(cat "$G/seq")"; n=$((n + 1)); echo "$n" >"$G/seq"; echo "$n"; }
++pragent() { # <pr-file> <want-json-flag> — the PR-Agent review comment (R1's machine block)
++  local f="$1" head_sha score findings
++  head_sha="$(sed -n 3p "$f" 2>/dev/null)"; score=90; findings='[{"state":"RESOLVED"}]'
++  case "${FAKE_AGENT:-90}" in
++    88)    score=88; findings='[{"state":"RESOLVED"},{"state":"RESOLVED"}]' ;;
++    95o)   score=95; findings='[{"state":"OPEN"},{"state":"RESOLVED"}]' ;;
++    90)    score=90; findings='[{"state":"RESOLVED"}]' ;;
++  esac
++  printf '<td>🏅&nbsp;<strong>Score</strong>: %s</td>\n<!-- pr-agent-review-state:v1\n{"findings":%s,"last_run":{"complete":true,"head_sha":"%s"}}\n-->' \
++    "$score" "$findings" "$head_sha" | jq -Rs '{body: .}' | jq -s '.'
++}
++case "$a" in
++  "auth status"*) exit 0 ;;
++  *"/commits/"*"/check-runs"*)
++    case "${FAKE_CI:-green}" in
++      green)   printf 'ci / go / build-lint-test\tcompleted\tsuccess\nci / frontend / typecheck\tcompleted\tskipped\n' ;;
++      failed)  printf 'ci / go / build-lint-test\tcompleted\tfailure\n' ;;
++      none)    : ;;
++    esac
++    exit 0 ;;
++  *"pr checks"*)
++    case "${FAKE_CI:-green}" in
++      green) printf 'ci / go / build-lint-test\tpass\thttps://x/1\nci / frontend / typecheck\tpass\thttps://x/2\n'; exit 0 ;;
++      *)     printf 'ci / go / build-lint-test\tfail\thttps://x/1\n'; exit 1 ;;
++    esac ;;
++  *"-X DELETE"*"git/refs/heads/"*)
++    ref="$(printf '%s' "$a" | sed -n 's/.*git\/refs\/heads\/\(release\/v[0-9.]*\).*/\1/p')"
++    /usr/bin/git -C "$PWD" push -q origin --delete "$ref" && exit 0
++    exit 1 ;;
++  *"pulls/"*"/comments"*)
++    pr="$(printf '%s' "$a" | sed -n 's/.*pulls\/\([0-9]*\).*/\1/p')"
++    f="$G/pr-$pr"; [[ -f "$f" ]] || f="$(ls "$G"/pr-* 2>/dev/null | sed -n 1p)"
++    if [[ -n "${f:-}" && -f "$f" ]]; then pragent "$f" json; else echo "[]"; fi
++    exit 0 ;;
++  *"releases/tags/"*)
++    tag="$(printf '%s' "$a" | sed -n 's/.*releases\/tags\/\(v[0-9.]*\).*/\1/p')"
++    [[ -f "$G/release-$tag.json" ]] && { cat "$G/release-$tag.json"; exit 0; }
++    echo "HTTP 404" >&2; exit 1 ;;
++  *"api repos/Performant-Labs/kai"*)
++    if [[ -e "$G/no-push" ]]; then echo "false"; else echo "true"; fi
++    exit 0 ;;
++  *"issue create"*)
++    title="$(printf '%s' "$a" | sed -n 's/.*--title \(Release checklist: v[0-9.]*\).*/\1/p')"
++    [[ -n "$title" ]] || title="untitled"
++    n="$(next)"; printf '%s\nopen\n' "$title" >"$G/issue-$n"; echo "$n"; exit 0 ;;
++  *"issue list"*)
++    if [[ "$a" == *"--search"* ]]; then
++      for f in "$G"/issue-*; do
++        [[ -f "$f" ]] || continue
++        t="$(sed -n 1p "$f")"
++        case "$t" in "Release checklist:"*)
++          if [[ "$a" == *"--json"* ]]; then
++            printf '{"number":%s,"title":"%s","state":"%s"}\n' "${f##*issue-}" "$t" "$(sed -n 2p "$f")"
++          else
++            printf '%s\t%s\t%s\n' "${f##*issue-}" "$t" "$(sed -n 2p "$f")"
++          fi ;; esac
++      done
++      exit 0
++    elif [[ "$a" == *"--label bug"* ]]; then
++      if [[ "$a" == *"--json"* ]]; then echo '[{"number":501,"title":"Crash when the log fills up","state":"OPEN"}]';
++      else printf '501\tCrash when the log fills up\tOPEN\n'; fi
++      exit 0
++    elif [[ "$a" == *"--label known-issue"* ]]; then
++      if [[ "$a" == *"--json"* ]]; then echo '[{"number":502,"title":"Accessibility grant resets","state":"OPEN"}]';
++      else printf '502\tAccessibility grant resets\tOPEN\n'; fi
++      exit 0
++    fi
++    exit 0 ;;
++  *"issue comment"*)
++    n="$(printf '%s' "$a" | sed -n 's/issue comment \([0-9]*\).*/\1/p')"
++    if [[ "$a" == *"--body-file"* ]]; then
++      bf="$(printf '%s' "$a" | sed -n 's/.*--body-file \([^ ]*\).*/\1/p')"
++      body="$(cat "$bf" 2>/dev/null || true)"
++    else
++      body="$(printf '%s' "$a" | sed -n 's/.*--body //p')"
++    fi
++    printf '=== comment issue %s\n%s\n' "$n" "$body" >>"$FAKE_STATE_DIR/comments.log"
++    exit 0 ;;
++  *"issue close"*)
++    n="$(printf '%s' "$a" | sed -n 's/issue close \([0-9]*\).*/\1/p')"
++    [[ -f "$G/issue-$n" ]] && printf '%s\nclosed\n' "$(sed -n 1p "$G/issue-$n")" >"$G/issue-$n"
++    exit 0 ;;
++  *"issue view"*)
++    n="$(printf '%s' "$a" | sed -n 's/issue view \([0-9]*\).*/\1/p')"
++    st="open"; [[ -f "$G/issue-$n" ]] && st="$(sed -n 2p "$G/issue-$n")"
++    if [[ "$a" == *"--json"* ]]; then echo "{\"state\":\"$st\"}"; else echo "$st"; fi
++    exit 0 ;;
++  *"pr create"*)
++    head="$(printf '%s' "$a" | sed -n 's/.*--head \(release\/v[0-9.]*\).*/\1/p')"
++    head_sha="$(/usr/bin/git -C "$PWD" rev-parse "refs/heads/$head" 2>/dev/null || echo unknown)"
++    n="$(next)"; printf 'OPEN\n%s\n%s\n' "$head" "$head_sha" >"$G/pr-$n"
++    echo "https://github.com/Performant-Labs/kai/pull/$n"; exit 0 ;;
++  *"pr list"*)
++    if [[ "$a" == *"--head"* ]]; then
++      head="$(printf '%s' "$a" | sed -n 's/.*--head \(release\/v[0-9.]*\).*/\1/p')"
++      for f in "$G"/pr-*; do
++        [[ -f "$f" ]] || continue
++        [[ "$(sed -n 2p "$f")" == "$head" ]] || continue
++        if [[ "$a" == *"--json"* ]]; then
++          printf '{"number":%s,"state":"%s","headRefOid":"%s"}\n' "${f##*pr-}" "$(sed -n 1p "$f")" "$(sed -n 3p "$f")"
++        else
++          printf '%s\t%s\n' "${f##*pr-}" "$(sed -n 1p "$f")"
++        fi
++      done
++    fi
++    exit 0 ;;
++  *"pr merge"*)
++    n="$(printf '%s' "$a" | sed -n 's/pr merge \([0-9]*\).*/\1/p')"
++    if [[ -f "$G/pr-$n" ]]; then
++      head="$(sed -n 2p "$G/pr-$n")"
++      printf 'MERGED\n%s\n%s\n' "$head" "$(sed -n 3p "$G/pr-$n")" >"$G/pr-$n"
++      /usr/bin/git -C "$PWD" push -q origin --delete "$head" 2>/dev/null
++    fi
++    exit 0 ;;
++  *"pr view"*)
++    n="$(printf '%s' "$a" | sed -n 's/pr view \([0-9]*\).*/\1/p')"
++    f="$G/pr-$n"; [[ -f "$f" ]] || f="$(ls "$G"/pr-* 2>/dev/null | sed -n 1p)"
++    if [[ -n "${f:-}" && -f "$f" && "$a" == *"comments"* ]]; then pragent "$f" json; exit 0; fi
++    state="OPEN"; [[ -n "${f:-}" && -f "$f" ]] && state="$(sed -n 1p "$f")"
++    sha=""; [[ -n "${f:-}" && -f "$f" ]] && sha="$(sed -n 3p "$f")"
++    echo "{\"state\":\"$state\",\"headRefOid\":\"$sha\"}"
++    exit 0 ;;
++  *"release create"*)
++    tag="$(printf '%s' "$a" | sed -n 's/.*release create \(v[0-9.]*\).*/\1/p')"
++    ver="${tag#v}"
++    printf '{"tag_name":"%s","isDraft":true,"assets":["Kai-%s-darwin-arm64.zip","updater-Kai-%s-darwin-arm64.zip","Kai-%s-darwin-arm64.dmg","SHA256SUMS"]}\n' \
++      "$tag" "$ver" "$ver" "$ver" >"$G/release-$tag.json"
++    exit 0 ;;
++  *"release view"*)
++    tag="$(printf '%s' "$a" | sed -n 's/.*release view \(v[0-9.]*\).*/\1/p')"
++    [[ -f "$G/release-$tag.json" ]] && { cat "$G/release-$tag.json"; exit 0; }
++    echo "release not found" >&2; exit 1 ;;
++  *"release edit"*)
++    tag="$(printf '%s' "$a" | sed -n 's/.*release edit \(v[0-9.]*\).*/\1/p')"
++    if [[ "$a" == *"--draft=false"* && -f "$G/release-$tag.json" ]]; then
++      jq '.isDraft = false' "$G/release-$tag.json" >"$G/t" && mv "$G/t" "$G/release-$tag.json"
++    fi
++    exit 0 ;;
++  *"release download"*)
++    d="."; [[ "$a" == *" --dir "* ]] && d="$(printf '%s' "$a" | sed -n 's/.* --dir \([^ ]*\).*/\1/p')"
++    cp "$FAKE_FIXTURES"/download/* "$d/"
++    exit 0 ;;
++  *) echo "gh fake: unhandled: $a" >&2 >>"$FAKE_STATE_DIR/gh-unhandled.log"; exit 1 ;;
++esac
++EOF
++
++chmod +x "$FB"/*
++
++# ---------------------------------------------------------------- scenario scaffolding
++R=""; SD=""; SCN=""
++r_env=()
++mkscn() { # name — throwaway repo + local bare origin (no network) + per-scenario fake state
++  SCN="$1"; R="$tmp/$SCN"; SD="$tmp/$SCN.sd"
++  mkdir -p "$R" "$SD/ghstate" "$tmp/origins"
++  r_env=()
++  $RG -C "$R" init -q -b master
++  $RG -C "$R" config user.name t
++  $RG -C "$R" config user.email t@t
++  $RG init -q --bare "$tmp/origins/$SCN.git"
++  $RG -C "$R" remote add origin "$tmp/origins/$SCN.git"
++  mkdir -p "$R/bin/release" "$R/docs" "$R/build/darwin"
++  : >"$R/bin/release/kai-release-key.backed-up"     # phase-0 backup marker (R10/A6)
++  cp "$here/../docs/release-checklist.md" "$R/docs/release-checklist.md"
++  printf 'bin/\n' >"$R/.gitignore"
++  cat >"$R/CHANGELOG.md" <<'MD'
++# Changelog
++
++## [Unreleased]
++<!-- changelog-skip: release tooling, no user-facing change: #74 -->
++- A fake enhancement entry so coverage is green (#101).
++
++### Known Issues
++- [#501](https://github.com/Performant-Labs/kai/issues/501) A known issue, still open.
++
++## [0.4.0] - 2026-01-01
++- Old release.
++MD
++  printf 'name: kai\nversion: "0.5.0"\n' >"$R/build/config.yml"
++  printf '<?xml version="1.0"?>\n<plist><dict><key>CFBundleShortVersionString</key><string>0.5.0</string><key>CFBundleVersion</key><string>0.5.0</string></dict></plist>\n' >"$R/build/darwin/Info.plist"
++  $RG -C "$R" add -A
++  $RG -C "$R" commit -q -m fixtures
++  $RG -C "$R" push -q origin master
++  $RG -C "$R" fetch -q origin
++  $RG -C "$R" branch -q --set-upstream-to=origin/master master 2>/dev/null || true
++}
++
++rrun() { # release.sh args...; steering in r_env; stdin is closed (AC1: no input)
++  out="$(cd "$R" && env PATH="$FB:$PATH" FAKE_STATE_DIR="$SD" FAKE_FIXTURES="$FX" \
++    KAI_RELEASE_REPO=Performant-Labs/kai ${r_env[@]+"${r_env[@]}"} "$release" "$@" </dev/null 2>&1)"
++  code=$?
++}
++
++state() { printf '%s\n' "$R/bin/release/v0.5.1/state.json"; }
++
++# C01 — the script under test must exist (the RED gate: everything below fails without it).
++if [[ -x "$release" ]]; then
++  echo "ok   C01 scripts/release.sh exists and is executable"
++else
++  echo "FAIL C01 scripts/release.sh exists and is executable (feature absent: F implements it)"
++  fail=1
++fi
++
++# ================================================================ AC1 + AC2: one release's life
++# R2/R8: dry-run = full phase order through local, release-local.sh vX.Y.Z --dry-run, no draft;
++# branch/PR/merge/tag still happen (A1). Then --publish resumes (posture escalation, R6), then
++# a full-success re-run is a no-op (AC2).
++mkscn ac1life
++rrun v0.5.1 --dry-run
++exit_is     "AC1: v0.5.1 --dry-run with no input exits 0"                       0
++has         "AC1: names the remaining owner step: draft"                        'draft'
++has         "AC1: names the remaining owner step: smoke"                        'smoke'
++has         "AC1: names the remaining owner step: publish"                      'publish'
++hasnt       "AC1: never asks a terminal question"                               '\[y/N\]'
++fhas        "AC1/R10p1: preflight wrapped with the version"                     "$SD/preflight.log"   '^v0\.5\.1$'
++fhas        "AC1/R10p4: bump wrapped with the PLAIN version (no v)"             "$SD/bump.log"        '^0\.5\.1$'
++fhas        "AC1/R8: local wrapped as 'v0.5.1 --dry-run'"                       "$SD/local.log"       '^v0\.5\.1 --dry-run$'
++exists      "AC1: packaged notes stay in bin/release/v0.5.1"                    "$R/bin/release/v0.5.1/RELEASE_NOTES.md"
++exists      "AC1: the verified Kai.app stays for the smoke matrix"              "$R/bin/release/v0.5.1/Kai.app"
++exists      "AC1: staged asset: the zip"                                        "$R/bin/release/v0.5.1/assets/Kai-0.5.1-darwin-arm64.zip"
++exists      "AC1: staged asset: the updater zip"                                "$R/bin/release/v0.5.1/assets/updater-Kai-0.5.1-darwin-arm64.zip"
++exists      "AC1: staged asset: the dmg"                                        "$R/bin/release/v0.5.1/assets/Kai-0.5.1-darwin-arm64.dmg"
++exists      "AC1: staged asset: SHA256SUMS"                                     "$R/bin/release/v0.5.1/assets/SHA256SUMS"
++jq_is       "AC1/R6: state.json records the posture"                            "$(state)" '.posture' 'dry-run'
++jq_is       "AC1/R2: state.json records phases done through local"              "$(state)" '.phases.local.done' 'true'
++fhas        "AC1/R10p0: the checklist issue is opened by exact title"           "$SD/gh.log"          'issue create.*Release checklist: v0\.5\.1'
++fhas        "AC1/R10p2: known-issue candidates land in the checklist issue"     "$SD/comments.log"    '501'
++fhas        "AC1/R10p1+R11: the preflight WARN gets a marker comment"           "$SD/comments.log"    'release\.sh: v0\.5\.1 preflight'
++fhas        "AC1/A1: the release branch is still pushed (dry-run is the release)" "$SD/git.log"       '^push( -q)? origin release/v0\.5\.1$'
++fhas        "AC1/A1: the tag is still pushed (dry-run is the release)"          "$SD/git.log"         '^push( -q)? origin v0\.5\.1$'
++fhas        "AC1/R10p6: the release PR targets the fork, not upstream"          "$SD/gh.log"          'pr create.*--repo Performant-Labs/kai'
++fhas        "AC1/R10p6: the release PR targets master"                          "$SD/gh.log"          'pr create.*--base master'
++fhas        "AC1/R10p8: merge is --merge --delete-branch"                       "$SD/gh.log"          'pr merge.*--merge.*--delete-branch'
++
++# AC2/R6: resume at the phase boundary into the higher posture, then the no-op re-run.
++rrun v0.5.1 --publish
++exit_is     "AC2: --publish resumes after the dry-run boundary and exits 0"     0
++fhas        "AC2/R10p12: publish is the canonical edit command"                 "$SD/gh.log"          'release edit v0\.5\.1.*--draft=false'
++fhas        "AC2/R10p13: the installer runs against the release"                "$SD/install-release.log" '^v0\.5\.1 '
++fhas        "AC2/R10p14: the checklist issue is closed"                         "$SD/gh.log"          'issue close'
++jq_is       "AC2/R6: the posture escalated in state"                            "$(state)" '.posture' 'publish'
++jq_is       "AC2: closeout recorded done"                                       "$(state)" '.phases.closeout.done' 'true'
++rrun v0.5.1 --publish
++exit_is     "AC2: re-running after full success is a no-op exit 0"              0
++match_is    "AC2: no second checklist issue"                                    "$SD/gh.log" 'issue create' 1
++match_is    "AC2: no second release PR"                                         "$SD/gh.log" 'pr create' 1
++match_is    "AC2: no second publish"                                            "$SD/gh.log" 'release edit' 1
++dups="$(awk '/^=== comment/{getline; print}' "$SD/comments.log" 2>/dev/null | sort | uniq -d)"
++if [[ -z "$dups" ]]; then echo "ok   AC2/R11: no duplicate comments across kill/resume"; else echo "FAIL AC2/R11: duplicate comments: $dups"; fail=1; fi
++badm="$(awk '/^=== comment/{getline; if ($0 !~ /^<!-- release\.sh: v/) print}' "$SD/comments.log" 2>/dev/null)"
++if [[ -z "$badm" ]]; then echo "ok   AC2/R11: every comment starts with the release.sh marker"; else echo "FAIL AC2/R11: unmarked comment: $badm"; fail=1; fi
++
++# ================================================================ AC4: the default posture
++# R8: default = release-local.sh vX.Y.Z --yes, draft created (non-public), stop after the draft
++# (+ smoke gate), printing the single --publish resume command. R1's boundary rides along: the
++# fake PR-Agent state serves Score 90 / all RESOLVED / complete@head, and review passes.
++mkscn default
++rrun v0.5.1
++exit_is     "AC4/R1: score exactly 90, all findings RESOLVED, passes review"    0
++fhas        "AC4/R8: default posture passes --yes to release-local.sh"          "$SD/local.log"       '^v0\.5\.1 --yes$'
++jq_is       "AC4/R8: the draft exists"                                          "$SD/ghstate/release-v0.5.1.json" '.isDraft' 'true'
++jq_is       "AC4/R10p11: smoke recorded skipped without --smoke"                "$(state)" '.smoke' 'skipped'
++jq_is       "AC4/R10p11: the smoke phase itself is done (as skipped)"           "$(state)" '.phases.smoke.done' 'true'
++jq_is       "AC4/R8: publish NOT done in the default posture"                   "$(state)" '.phases.publish.done' 'false'
++fhas        "AC4/R10p11: smoke-skipped is recorded in the checklist issue"      "$SD/comments.log"    'skipped'
++has         "AC4/R8: prints the single --publish resume command"                '--publish'
++rrun v0.5.1 --publish
++exit_is     "AC4: --publish continues from the draft and completes"             0
++jq_is       "AC4: published (not draft)"                                        "$SD/ghstate/release-v0.5.1.json" '.isDraft' 'false'
++jq_is       "AC4: publish phase recorded done"                                  "$(state)" '.phases.publish.done' 'true'
++rrun v0.5.1 --dry-run
++exit_nonzero "AC4/R6: a lower posture than recorded is refused"                 
++has         "AC4/R6: the refusal names the posture conflict"                    'posture|dry-run'
++
++# AC4/R10p11: --smoke stops awaiting the owner's matrix; --smoke-done records it.
++mkscn smoke
++rrun v0.5.1 --smoke
++exit_is     "AC4: --smoke exits 0 awaiting the owner"                           0
++jq_is       "AC4: awaiting smoke is not 'skipped'"                              "$(state)" '.smoke == "skipped"' 'false'
++fhas        "AC4/R10p11: a smoke-phase comment is posted"                       "$SD/comments.log"    'release\.sh: v0\.5\.1 smoke'
++rrun v0.5.1 --publish --smoke-done
++exit_is     "AC4: --smoke-done resumes and completes"                           0
++jq_is       "AC4/R10p11: smoke done is recorded owner-asserted"                 "$(state)" '.smoke | startswith("done (owner-asserted")' 'true'
++
++# ================================================================ AC3: unknown failures and the AI
++# R3/R4: one consultation per unknown-failure event; the executor re-runs the phase on retry.
++mkscn retry
++r_env=(FAKE_BUMP_FAILS=1 FAKE_AI=retry)
++rrun v0.5.1
++exit_is     "AC3: unknown failure + allowlisted retry recovers"                 0
++val_is      "AC3: the phase command ran exactly twice (fail, then retry)"       "$SD/bump.count" '2'
++count_is    "AC3/R3: exactly ONE consultation for the failure"                  "$SD/askai.log" 1
++jq_is       "AC3/R3: the consultation is recorded in state"                     "$(state)" '.consultations | length' '1'
++fhas        "AC3: the consultation names its phase"                             "$SD/askai.log" 'bump'
++exists      "AC3: the run still reaches the draft"                              "$SD/ghstate/release-v0.5.1.json"
++
++# R3: a second consultation is allowed only after the first answer was executed and failed again.
++mkscn aitwo
++r_env=(FAKE_BUMP_FAILS=2 FAKE_AI=retry)
++rrun v0.5.1
++exit_is     "AC3/R3: second failure after an executed retry may consult again"  0
++val_is      "AC3/R3: three bump runs (fail, retry-fail, retry)"                 "$SD/bump.count" '3'
++count_is    "AC3/R3: exactly two consultations"                                 "$SD/askai.log" 2
++jq_is       "AC3/R3: cap not reached"                                           "$(state)" '.consultations | length' '2'
++
++# R3: a third failure in the same phase NEVER consults again — straight to stop.
++mkscn aicap
++r_env=(FAKE_BUMP_FAILS=3 FAKE_AI=retry)
++rrun v0.5.1
++exit_nonzero "AC3/R3: third failure stops (no third consultation)"
++val_is      "AC3/R3: the phase command ran three times only"                    "$SD/bump.count" '3'
++count_is    "AC3/R3: consultations capped at 2 per phase"                       "$SD/askai.log" 2
++jq_is       "AC3/R3: state records exactly two consultations"                   "$(state)" '.consultations | length' '2'
++has         "AC3/brief7: the stop prints a resume command"                      'resume'
++
++# AC3: an out-of-allowlist answer is refused; the executor never runs it.
++mkscn aibad
++r_env=(FAKE_BUMP_FAILS=1 FAKE_AI=bad)
++rrun v0.5.1
++exit_nonzero "AC3: out-of-allowlist action takes the stop path"
++val_is      "AC3: the executor did NOT re-run the phase"                        "$SD/bump.count" '1'
++count_is    "AC3: the AI was consulted once"                                    "$SD/askai.log" 1
++has         "AC3: the refusal says so"                                          'refus|allowlist'
++
++# AC3/R9: no answer (missing/failing AI) is fail-closed: stop, no retry.
++mkscn ainone
++r_env=(FAKE_BUMP_FAILS=1)
++rrun v0.5.1
++exit_nonzero "AC3/R9: no answer available takes the stop path (fail-closed)"
++val_is      "AC3/R9: nothing was retried without an allowlisted answer"         "$SD/bump.count" '1'
++count_is    "AC3/R9: the consultation was attempted (and produced nothing)"     "$SD/askai.log" 1
++has         "AC3/brief7: the stop prints a resume command"                      'resume'
++
++# ================================================================ AC2: state is a cache
++# R6: absent state is fine — phases re-derive from postconditions; nothing public is redone.
++mkscn nostate
++rrun v0.5.1
++exit_is     "AC2: default posture completes first"                              0
++rm -f "$R/bin/release/v0.5.1/state.json"
++rrun v0.5.1 --publish
++exit_is     "AC2/R6: absent state re-derives from postconditions"               0
++match_is    "AC2/R6: re-derivation opens no second PR"                          "$SD/gh.log" 'pr create' 1
++match_is    "AC2/R6: re-derivation publishes once"                              "$SD/gh.log" 'release edit' 1
++jq_is       "AC2/R6: the rebuilt state reaches closeout"                        "$(state)" '.phases.closeout.done' 'true'
++
++# ================================================================ AC3: the four known blockers
++# (1) Kai running at phase 10: handler quit-kai is dispatchable ONLY with --quit-kai (R10p10).
++mkscn kai
++echo kai >"$SD/local-fail"
++rrun v0.5.1
++exit_nonzero "AC3: Kai running without --quit-kai stops"
++count_is    "AC3: the known blocker never consults the AI"                      "$SD/askai.log" 0
++count_is    "AC3: local ran once, no blind retry"                               "$SD/local.log" 1
++has         "AC3: the stop tells the owner about --quit-kai"                    '--quit-kai'
++
++mkscn kaiquit
++echo kai >"$SD/local-fail"
++rrun v0.5.1 --quit-kai
++exit_is     "AC3: --quit-kai dispatches the static handler and proceeds"        0
++count_is    "AC3: the known blocker never consults the AI"                      "$SD/askai.log" 0
++count_is    "AC3: local re-ran after the quit"                                  "$SD/local.log" 2
++if { [[ -f "$SD/osascript.log" ]] && grep -qi 'quit' "$SD/osascript.log"; } \
++   || { [[ -f "$SD/pkill.log" ]] && grep -q 'Kai' "$SD/pkill.log"; }; then
++  echo "ok   AC3: Kai is actually quit (osascript or pkill)"
++else
++  echo "FAIL AC3: Kai is actually quit (osascript or pkill)"; fail=1
++fi
++exists      "AC3: the run reaches the draft"                                    "$SD/ghstate/release-v0.5.1.json"
++
++# (2) Leftover merged release/vX.Y.Z: the #74 rule — skip phases 3-6, delete the branch (R10p3).
++mkscn leftover
++$RG -C "$R" checkout -q -b release/v0.5.1
++$RG -C "$R" push -q origin release/v0.5.1
++$RG -C "$R" checkout -q master
++printf '101\n' >"$SD/ghstate/seq"
++printf 'MERGED\nrelease/v0.5.1\n%s\n' "$($RG -C "$R" rev-parse release/v0.5.1)" >"$SD/ghstate/pr-101"
++rrun v0.5.1
++exit_is     "AC3/#74: merged leftover branch is a group-skip, not a stop"       0
++count_is    "AC3/#74: phases 3-6 are skipped (no bump)"                         "$SD/bump.log" 0
++fhas        "AC3/#74: the leftover branch is deleted via gh api -X DELETE"      "$SD/gh.log" 'api -X DELETE.*git/refs/heads/release/v0\.5\.1'
++count_is    "AC3/#74: the static handler never consults the AI"                 "$SD/askai.log" 0
++exists      "AC3/#74: the run still reaches the draft"                          "$SD/ghstate/release-v0.5.1.json"
++
++# (3) Bindings drift at phase 10: handler regen-bindings = make bindings + commit (R10p10, #73).
++mkscn bindings
++echo bindings >"$SD/local-fail"
++rrun v0.5.1
++exit_is     "AC3/#73: bindings drift is handled by the static handler"          0
++fhas        "AC3/#73: make bindings runs"                                       "$SD/make.log" '^bindings$'
++fhas        "AC3/#73: the regenerated bindings are committed"                   "$SD/git.log" 'frontend/bindings'
++count_is    "AC3/#73: the static handler never consults the AI"                 "$SD/askai.log" 0
++count_is    "AC3/#73: local re-ran after the regen"                             "$SD/local.log" 2
++exists      "AC3/#73: the run still reaches the draft"                          "$SD/ghstate/release-v0.5.1.json"
++
++# (4) Missing signing identity: stop, release-cert.sh hint, no AI (brief item 4; R5 stop 1).
++mkscn identity
++: >"$SD/codesign-fail"
++rrun v0.5.1
++exit_nonzero "AC3: missing identity stops"
++has         "AC3/R5-1: the stop names release-cert.sh"                          'release-cert\.sh'
++count_is    "AC3: a hard stop never consults the AI"                            "$SD/askai.log" 0
++count_is    "AC3: nothing runs after phase 0 fails"                             "$SD/preflight.log" 0
++
++# ================================================================ R10 phase 2: stop-for-owner
++# Uncurated Known Issues stop [S]; the printed skip line is A10's contract; resume on the marker.
++mkscn chgstop
++cat >"$R/CHANGELOG.md" <<'MD'
++# Changelog
++
++## [Unreleased]
++<!-- changelog-skip: release tooling, no user-facing change: #74 -->
++- A fake enhancement entry so coverage is green (#101).
++
++## [0.4.0] - 2026-01-01
++- Old release.
++MD
++$RG -C "$R" commit -qam uncurated || true
++rrun v0.5.1
++exit_nonzero "R10p2: uncurated Known Issues stop for the owner"
++has         "R10p2: the stop names the Known Issues gap"                        'Known Issues'
++has         "A10: the stop prints the changelog-skip line to add"               'changelog-skip'
++count_is    "R10p2: a stop-for-owner never consults the AI"                     "$SD/askai.log" 0
++printf '<!-- known-issues: none 2026-10-19 -->\n' >>"$R/CHANGELOG.md"
++rrun v0.5.1
++exit_is     "R10p2: the none-marker unblocks the phase"                         0
++exists      "R10p2: the run then reaches the draft"                             "$SD/ghstate/release-v0.5.1.json"
++
++# Uncovered PRs from changelog-check.sh --strict also stop [S].
++mkscn chgstrict
++: >"$SD/changelog-strict-fail"
++rrun v0.5.1
++exit_nonzero "R10p2: uncovered PRs stop for the owner"
++has         "R10p2: the uncovered PR is named"                                  '#501'
++has         "A10: the stop prints the changelog-skip line to add"               'changelog-skip'
++
++# ================================================================ R6: lock and corrupt state
++mkscn locklive
++mkdir -p "$R/bin/release/v0.5.1/.lock"
++echo $$ >"$R/bin/release/v0.5.1/.lock/pid"
++rrun v0.5.1
++exit_nonzero "R6: a live lock refuses a second invocation"
++has         "R6: the refusal names the running release.sh and PID"              'another release\.sh is running'
++has         "R6: the refusal shows the live PID"                                "PID $$"
++
++mkscn lockdead
++mkdir -p "$R/bin/release/v0.5.1/.lock"
++( /bin/sleep 0.2 ) & deadpid=$!; wait "$deadpid" 2>/dev/null
++echo "$deadpid" >"$R/bin/release/v0.5.1/.lock/pid"
++rrun v0.5.1
++exit_is     "R6: a dead owner's lock is removed and retaken"                    0
++hasnt       "R6: no false lock refusal"                                         'another release\.sh is running'
++
++mkscn corrupt
++mkdir -p "$R/bin/release/v0.5.1"
++printf 'this is { not json\n' >"$R/bin/release/v0.5.1/state.json"
++rrun v0.5.1
++exit_nonzero "R6: unparseable state stops"
++has         "R6: the stop prints the state.json path"                           'state\.json'
++has         "R6: the stop says how to rebuild"                                  'delete it to rebuild from postconditions'
++
++# ================================================================ AC6/R5: hard stops, no AI
++# (2) tag or release already exists — draft and published variants. Never delete/overwrite.
++mkscn hsdraft
++echo exists-draft >"$SD/local-fail"
++rrun v0.5.1
++exit_nonzero "AC6/R5-2: an existing DRAFT release is a hard stop"
++has         "AC6/R5-2: the existing release is named"                           'already exists'
++count_is    "AC6/R5-2: hard stops never consult the AI"                         "$SD/askai.log" 0
++fhasnt      "AC6: never deletes a release"                                      "$SD/gh.log" 'release delete'
++fhasnt      "AC6: never edits the existing release"                             "$SD/gh.log" 'release edit'
++
++mkscn hspub
++echo exists-published >"$SD/local-fail"
++rrun v0.5.1
++exit_nonzero "AC6/R5-2: an existing PUBLISHED release is a hard stop"
++has         "AC6/R5-2: the existing release is named"                           'already exists'
++count_is    "AC6/R5-2: hard stops never consult the AI"                         "$SD/askai.log" 0
++fhasnt      "AC6: never deletes a release"                                      "$SD/gh.log" 'release delete'
++fhasnt      "AC6: never edits the existing release"                             "$SD/gh.log" 'release edit'
++
++# (3) CI red on the release commit (phase 7 review gate, R10p7 [H]).
++mkscn hsci
++r_env=(FAKE_CI=failed)
++rrun v0.5.1
++exit_nonzero "AC6/R5-3: red CI on the release commit is a hard stop"
++count_is    "AC6/R5-3: hard stops never consult the AI"                         "$SD/askai.log" 0
++count_is    "AC6/R5-3: nothing is built after red CI"                           "$SD/local.log" 0
++
++# (4) PR-Agent: score 88 (below the 90 boundary) and score 95 with one OPEN finding (R1).
++mkscn hsagent88
++r_env=(FAKE_AGENT=88)
++rrun v0.5.1
++exit_nonzero "AC6/R1: PR-Agent score 88 is a hard stop"
++count_is    "AC6/R1: hard stops never consult the AI"                           "$SD/askai.log" 0
++has         "AC6/R1: the stop names the review gate"                            'score|PR-Agent|finding|90'
++
++mkscn hsagent95o
++r_env=(FAKE_AGENT=95o)
++rrun v0.5.1
++exit_nonzero "AC6/R1: an unresolved finding stops even at score 95"
++count_is    "AC6/R1: hard stops never consult the AI"                           "$SD/askai.log" 0
++has         "AC6/R1: the stop names the unresolved finding"                     'unresolved|OPEN|finding'
++
++# Phase-0 [H]: no gh push rights.
++mkscn nopush
++: >"$SD/ghstate/no-push"
++rrun v0.5.1
++exit_nonzero "R10p0: no push rights is a hard stop"
++has         "R10p0: the stop names push rights"                                 'push'
++count_is    "R10p0: hard stops never consult the AI"                            "$SD/askai.log" 0
++
++# R5's shared refusal loop: each of the five hard stops refuses EVEN with an AI answer
++# saying retry — the hard-stop check precedes consultation (R4), so the AI is never asked.
++refusal() { # one sub-case; steering already set (markers + r_env incl. FAKE_AI=retry)
++  rrun v0.5.1
++  exit_nonzero "R5-loop $SCN: hard stop stands even with an AI that would say retry"
++  count_is    "R5-loop $SCN: the AI is never consulted for a hard stop"         "$SD/askai.log" 0
++}
++mkscn loopidentity; : >"$SD/codesign-fail"; r_env=(FAKE_AI=retry); refusal
++count_is "R5-loop identity: stops before any phase work"                        "$SD/preflight.log" 0
++mkscn loopexists; echo exists-published >"$SD/local-fail"; r_env=(FAKE_AI=retry); refusal
++count_is "R5-loop exists: local is not retried"                                 "$SD/local.log" 1
++mkscn loopci; r_env=(FAKE_AI=retry FAKE_CI=failed); refusal
++count_is "R5-loop ci: nothing is built"                                         "$SD/local.log" 0
++mkscn loopagent88; r_env=(FAKE_AI=retry FAKE_AGENT=88); refusal
++count_is "R5-loop agent88: nothing is built"                                    "$SD/local.log" 0
++mkscn loopagent95o; r_env=(FAKE_AI=retry FAKE_AGENT=95o); refusal
++count_is "R5-loop agent95o: nothing is built"                                   "$SD/local.log" 0
++
++# ================================================================ AC7: docs and CHANGELOG
++fhas "AC7: docs/releasing.md points at scripts/release.sh as the operator"      "$here/../docs/releasing.md" 'scripts/release\.sh'
++fhas "AC7: docs/release-checklist.md points at scripts/release.sh"              "$here/../docs/release-checklist.md" 'scripts/release\.sh'
++fhas "AC7: CHANGELOG [Unreleased] carries the #78 skip line"                    "$here/../CHANGELOG.md" 'changelog-skip: release tooling, no user-facing change: #78'
++
++# ================================================================ R5(5): published-tag safety
++# Negative assertion over EVERY git invocation this harness has recorded: no tag deletion, no
++# force push, no non-fast-forward tag write anywhere (the leftover handler deletes heads only).
++: >"$tmp/all-git.log"
++for f in "$tmp"/*.sd/git.log; do [[ -f "$f" ]] && cat "$f" >>"$tmp/all-git.log"; done
++fhasnt "AC6/R5-5: no tag is ever deleted"          "$tmp/all-git.log" 'tag (-d|--delete)'
++fhasnt "AC6/R5-5: no force push is ever issued"    "$tmp/all-git.log" 'push.*(-f |--force |\+refs/tags)'
++
++[[ $fail -eq 0 ]] && echo "PASS" || { echo "FAILED"; exit 1; }
+```
