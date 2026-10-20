@@ -13,6 +13,8 @@ The steps that stay yours: the **manual smoke matrix** below (recorded by the wo
 re-run with `--smoke` / `--smoke-done`) and the **publish go-ahead** (`--publish`). See
 "Release notes preface" and "The operator" in [`docs/releasing.md`](releasing.md); the macOS
 codesign key-access prompt during the build is OS-level, not a workflow prompt.
+`scripts/release.sh vX.Y.Z --dry-run` is safe to run at any time: it runs the read-only checks (needs,
+preflight, changelog), prints what the real run would do, and changes nothing.
 
 ## Pre-flight
 
