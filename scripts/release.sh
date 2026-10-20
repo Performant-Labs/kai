@@ -7,13 +7,15 @@
 #
 #   scripts/release.sh vX.Y.Z [--dry-run|--publish] [--smoke] [--smoke-done] [--quit-kai]
 #
-# Postures (R8): --dry-run = everything through the local build, no draft release;
-# default = the same plus the draft (non-public), then stop; --publish = continue with
-# publish, verify-published and closeout. Posture escalation only (R6). The smoke flags
-# are owner gates of the default posture (the matrix runs on the packaged build after the
-# draft exists): --dry-run combined with --smoke or --smoke-done is refused up front, and
-# --smoke --smoke-done together takes --smoke-done (the stronger owner assertion).
-# --quit-kai is a capability, not a posture: it acts under every posture, --dry-run too.
+# Postures (R8): --dry-run is DRY (issue #103): it runs the read-only phases (needs,
+# preflight, changelog) for real, prints one [plan] line per mutating phase, and performs
+# NOTHING: no commit, push, tag, branch, PR, merge, release, checklist issue or comment,
+# no build, no state marked done. default = branch, PR, merge, tag, the local build and
+# the draft (non-public), then stop; --publish = continue with publish, verify-published
+# and closeout. Posture escalation only (R6). The smoke flags are owner gates of the
+# default posture (the matrix runs on the packaged build after the draft exists), and
+# --quit-kai quits an app: --dry-run combined with --smoke, --smoke-done or --quit-kai is
+# refused up front. --smoke --smoke-done together takes --smoke-done (the stronger assertion).
 #
 # State is a cache at bin/release/vX.Y.Z/state.json (R6): atomic writes, a mkdir lock with
 # an owner PID, resume postcondition-first (absent state re-derives; corrupt state stops),
@@ -48,17 +50,21 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: $0 vX.Y.Z [--dry-run|--publish] [--smoke] [--smoke-done] [--quit-kai]" >&2; exit 2; }
 [[ $want_dry -eq 0 || $want_pub -eq 0 ]] || { echo "give --dry-run or --publish, not both" >&2; exit 2; }
-# Round 7 A (drystop): the smoke flags are owner gates AFTER the dry-run boundary — this
-# script exits the dry-run posture when the local build (phase 10) holds and never reaches
-# ph_smoke (phase 11), so --smoke/--smoke-done under --dry-run would be silently ignored
-# (the run would complete, recording nothing). Every flag combination must act or refuse:
-# refuse here, before any phase, the lock or any state write.
+# The mutating flags are refused under --dry-run BEFORE any phase, the lock or any state
+# write (issue #103; the smoke gates were refused since round 7): --smoke and --smoke-done
+# belong to the default posture (the matrix runs on the packaged build after the draft
+# exists, which a dry run never reaches) and --quit-kai quits an app. Every flag combination
+# must act or refuse, never be silently ignored.
 if [[ $want_dry -eq 1 && $smoke -eq 1 ]]; then
   echo "--dry-run cannot be combined with --smoke: the smoke matrix belongs to the default posture (run it on the packaged build after the draft release is created; recording with --smoke/--smoke-done happens there too)" >&2
   exit 2
 fi
 if [[ $want_dry -eq 1 && $smoke_done -eq 1 ]]; then
   echo "--dry-run cannot be combined with --smoke-done: recording the smoke matrix happens after the draft release exists, and a dry run never creates one — re-run in the default posture and record it there" >&2
+  exit 2
+fi
+if [[ $want_dry -eq 1 && $quit_kai -eq 1 ]]; then
+  echo "--dry-run cannot be combined with --quit-kai: quitting an app is a mutation and a dry run performs none. Quit Kai yourself and re-run, or drop --dry-run to let the real run quit it." >&2
   exit 2
 fi
 ver="${tag#v}"
@@ -109,6 +115,7 @@ st_update() { # jq filter first, then jq options; atomic same-dir rename
 phase_done() { [[ "$(jq -r --arg p "$1" '.phases[$p].done // false' "$state" 2>/dev/null)" == "true" ]]; }
 mark_done() { # one phase, or a list
   local p sha
+  [[ $want_dry -eq 0 ]] || return 0   # issue #103: a dry run records no phase done
   sha="$(git rev-parse HEAD 2>/dev/null || true)"
   for p in "$@"; do st_update '.phases[$p] = {done: true, commit: $c}' --arg p "$p" --arg c "$sha"; done
 }
@@ -150,8 +157,12 @@ notify() {
   osascript -e "display notification \"$msg\" with title \"release.sh $tag\"" >/dev/null 2>&1 || true
 }
 issue_comment() { # <phase> <kind> <body> [log] — marker-tagged (R11), always --body-file (N-A4)
-  [[ -n "${ISSUE:-}" ]] || return 0
   local phase="$1" kind="$2" body="$3" log="${4:-}"
+  if [[ $want_dry -eq 1 ]]; then   # issue #103: a dry run never posts to GitHub
+    say "  [dry-run] skipped: gh issue comment ($phase $kind)"
+    return 0
+  fi
+  [[ -n "${ISSUE:-}" ]] || return 0
   local f; f="$(mktemp "${TMPDIR:-/tmp}/release-comment.XXXXXX")"
   {
     printf '<!-- release.sh: %s %s %s -->\n' "$tag" "$phase" "$kind"
@@ -224,6 +235,7 @@ agent_gate() { # <pr> <headSha> — 0 pass; 1 fail (prints why). Rule R1.
 
 # ---------------------------------------------------------------- static handlers (known blockers)
 handler_quit_kai() {
+  [[ $want_dry -eq 0 ]] || return 1   # issue #103: unreachable (refused up front); never quit an app in a dry run
   say "  .. known blocker: Kai is running — quitting it (--quit-kai)"
   osascript -e 'tell application "Kai" to quit' >/dev/null 2>&1 || true
   sleep 1
@@ -236,6 +248,9 @@ handler_regen_bindings() { # <phase> <log> — make bindings + commit (#73). PRE
   # move the tree past the published tag, so the handler refuses instead: a hard stop for
   # the owner, no mutation of the tagged tree, no commit to release/*, no consultation.
   local phase="$1" log="$2"
+  if [[ $want_dry -eq 1 ]]; then   # issue #103: make bindings + git commit is a mutation
+    do_stop "$phase" "bindings drift: a real run would regenerate frontend/bindings (make bindings) and commit it (#73); --dry-run changes nothing — fix it first or drop --dry-run" "$log"
+  fi
   if phase_done tag || phase_done merge; then
     do_stop "$phase" "bindings drift, but $tag is already tagged/merged: the git tag $tag is the source of truth (docs/releasing.md) — regenerating frontend/bindings and committing it now would build from a tree that is not the tagged commit; an owner decision is required (fix forward and cut the next tag); the workflow never mutates the tagged tree (#73 refuses post-tag)" "$log"
   fi
@@ -384,12 +399,14 @@ ph_needs() {
   if [[ -n "$existing" ]]; then
     ISSUE="$existing"
     say "  .. checklist issue exists: #$ISSUE"
+  elif [[ $want_dry -eq 1 ]]; then   # issue #103: a dry run opens nothing on GitHub
+    say "  [dry-run] skipped: gh issue create \"Release checklist: $tag\" (a real run opens it here)"
   else
     ISSUE="$(gh issue create --repo "$repo" --title "Release checklist: $tag" --body-file "$root/docs/release-checklist.md" 2>/dev/null | tail -n1 | sed 's#.*/\([0-9][0-9]*\)$#\1#')"
     [[ -n "$ISSUE" ]] || do_stop needs "could not open the checklist issue (gh issue create failed)"
     say "  ok  checklist issue #$ISSUE opened"
   fi
-  st_update '.issue = $n' --arg n "$ISSUE"
+  [[ -z "$ISSUE" ]] || st_update '.issue = $n' --arg n "$ISSUE"
   mark_done needs
 }
 
@@ -668,28 +685,17 @@ ph_tag() {
 }
 
 ph_local() {
-  printf '\n== phase 10: local build, verify, package (%s)\n' "$( [[ "$posture" == "dry-run" ]] && echo "--dry-run, no draft" || echo "--yes, draft" )"
-  # No state.done fast-path here: the phase's postcondition depends on the posture (R8), so a
-  # dry-run-completed local re-runs at --yes when the draft does not exist yet. The probe is
-  # the postcondition; when it holds the phase is a no-op (R10 p10's "may rebuild" note).
-  local mode="--yes"
-  [[ "$posture" == "dry-run" ]] && mode="--dry-run"
-  if [[ "$mode" == "--dry-run" ]]; then
-    if [[ -f "$statedir/RELEASE_NOTES.md" && -d "$statedir/Kai.app" && -f "$statedir/assets/SHA256SUMS" ]]; then
-      say "  .. packaged dry-run output already present in $statedir"
-      mark_done local
-      return 0
-    fi
-  else
-    local n_assets
-    n_assets="$(gh release view "$tag" --repo "$repo" --json assets 2>/dev/null | jq -r '.assets | length' 2>/dev/null || true)"
-    if [[ "$n_assets" == "4" ]]; then
-      say "  .. a release for $tag already exists with its 4 assets"
-      mark_done local
-      return 0
-    fi
+  printf '\n== phase 10: local build, verify, package (--yes, draft)\n'
+  # No state.done fast-path here: the probe is the postcondition; when it holds the phase is
+  # a no-op (R10 p10's "may rebuild" note). A dry run (#103) never reaches this phase.
+  local n_assets
+  n_assets="$(gh release view "$tag" --repo "$repo" --json assets 2>/dev/null | jq -r '.assets | length' 2>/dev/null || true)"
+  if [[ "$n_assets" == "4" ]]; then
+    say "  .. a release for $tag already exists with its 4 assets"
+    mark_done local
+    return 0
   fi
-  phase_run local "release-local.sh $tag $mode" run_tool release-local.sh "$tag" "$mode"
+  phase_run local "release-local.sh $tag --yes" run_tool release-local.sh "$tag" "--yes"
   mark_done local
 }
 
@@ -803,11 +809,37 @@ ph_closeout() {
   mark_done closeout
 }
 
+# ---------------------------------------------------------------- the dry-run plan (issue #103)
+# What a real run would do after the read-only phases. Printed, never performed.
+dry_run_plan() {
+  printf '\n== plan: what a real run of %s would do next (this dry run performed none of it)\n' "$tag"
+  say "  [plan] branch: would create release/$tag from origin/master and push it"
+  say "  [plan] bump: would run release-bump.sh $ver and commit the version files"
+  say "  [plan] restructure: would move [Unreleased] under ## [$ver] in CHANGELOG.md and commit"
+  say "  [plan] release-pr: would open the release PR for release/$tag against master (gh pr create)"
+  say "  [plan] review: would wait for CI and a PR-Agent score of 90 or more with every finding resolved"
+  say "  [plan] merge: would run gh pr merge --merge --delete-branch, then wait for CI on the merge commit"
+  say "  [plan] tag: would fetch the merge commit, create the annotated tag $tag and push it (a tag is never moved or deleted)"
+  say "  [plan] local: would run release-local.sh $tag --yes: build, verify, package and create the DRAFT release"
+  say "  [plan] smoke: would record the manual smoke matrix (--smoke / --smoke-done) or record it skipped"
+  say "  [plan] publish: would run gh release edit $tag --draft=false (only with --publish)"
+  say "  [plan] verify-published: would download the published assets, check SHA256SUMS and run install-release.sh (only with --publish)"
+  say "  [plan] closeout: would comment the evidence on the checklist issue and close it (only with --publish)"
+  say ""
+  say "Dry run complete for $tag: needs, preflight and changelog passed. Nothing was created, changed, pushed, merged, tagged, built or published."
+  say "To do it for real: scripts/release.sh $tag (through the draft), then scripts/release.sh $tag --publish."
+}
+
 # ---------------------------------------------------------------- main flow
 say "release.sh $tag — posture: $posture — repo: $repo"
 ph_needs
 ph_preflight
 ph_changelog
+if [[ "$posture" == "dry-run" ]]; then   # DRYSTOP: nothing below this line runs in a dry run (issue #103)
+  dry_run_plan
+  exit 0
+fi
+
 ph_branch
 ph_bump
 ph_restructure
@@ -816,18 +848,6 @@ ph_review
 ph_merge
 ph_tag
 ph_local
-
-if [[ "$posture" == "dry-run" ]]; then
-  say ""
-  say "Dry-run posture complete for $tag: every phase through the local build ran; NO draft release was created."
-  say "The branch, PR, merge and tag did happen — they are the release (only the GitHub Release object is gated)."
-  say "Remaining owner steps:"
-  say "  1. draft:   re-run as 'scripts/release.sh $tag' (default posture) to create the draft release"
-  say "  2. smoke:   run the manual smoke matrix (docs/release-checklist.md) on $statedir/Kai.app; record with --smoke/--smoke-done"
-  say "  3. publish: scripts/release.sh $tag --publish"
-  say "resume: scripts/release.sh $tag"
-  exit 0
-fi
 
 ph_smoke
 

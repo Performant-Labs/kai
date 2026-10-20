@@ -713,39 +713,37 @@ else
 fi
 
 # ================================================================ AC1 + AC2: one release's life
-# R2/R8: dry-run = full phase order through local, release-local.sh vX.Y.Z --dry-run, no draft;
-# branch/PR/merge/tag still happen (A1). Then --publish resumes (posture escalation, R6), then
-# a full-success re-run is a no-op (AC2).
+# R2/R8 (issue #103): the DEFAULT posture performs the whole release through the draft:
+# release-local.sh vX.Y.Z --yes. --dry-run no longer performs any of it (see "#103" below).
+# Then --publish resumes (posture escalation, R6), then a full-success re-run is a no-op (AC2).
 mkscn ac1life
-rrun v0.5.1 --dry-run
-exit_is     "AC1: v0.5.1 --dry-run with no input exits 0"                       0
-has         "AC1: names the remaining owner step: draft"                        'draft'
-has         "AC1: names the remaining owner step: smoke"                        'smoke'
+rrun v0.5.1
+exit_is     "AC1: v0.5.1 with no input exits 0"                                 0
 has         "AC1: names the remaining owner step: publish"                      'publish'
 hasnt       "AC1: never asks a terminal question"                               '\[y/N\]'
 fhas        "AC1/R10p1: preflight wrapped with the version"                     "$SD/preflight.log"   '^v0\.5\.1$'
 fhas        "AC1/R10p4: bump wrapped with the PLAIN version (no v)"             "$SD/bump.log"        '^0\.5\.1$'
-fhas        "AC1/R8: local wrapped as 'v0.5.1 --dry-run'"                       "$SD/local.log"       '^v0\.5\.1 --dry-run$'
+fhas        "AC1/R8: local wrapped as 'v0.5.1 --yes' (the draft)"               "$SD/local.log"       '^v0\.5\.1 --yes$'
 exists      "AC1: packaged notes stay in bin/release/v0.5.1"                    "$R/bin/release/v0.5.1/RELEASE_NOTES.md"
 exists      "AC1: the verified Kai.app stays for the smoke matrix"              "$R/bin/release/v0.5.1/Kai.app"
 exists      "AC1: staged asset: the zip"                                        "$R/bin/release/v0.5.1/assets/Kai-0.5.1-darwin-arm64.zip"
 exists      "AC1: staged asset: the updater zip"                                "$R/bin/release/v0.5.1/assets/updater-Kai-0.5.1-darwin-arm64.zip"
 exists      "AC1: staged asset: the dmg"                                        "$R/bin/release/v0.5.1/assets/Kai-0.5.1-darwin-arm64.dmg"
 exists      "AC1: staged asset: SHA256SUMS"                                     "$R/bin/release/v0.5.1/assets/SHA256SUMS"
-jq_is       "AC1/R6: state.json records the posture"                            "$(state)" '.posture' 'dry-run'
+jq_is       "AC1/R6: state.json records the posture"                            "$(state)" '.posture' 'default'
 jq_is       "AC1/R2: state.json records phases done through local"              "$(state)" '.phases.local.done' 'true'
 fhas        "AC1/R10p0: the checklist issue is opened by exact title"           "$SD/gh.log"          'issue create.*Release checklist: v0\.5\.1'
 fhas        "AC1/R10p2: known-issue candidates land in the checklist issue"     "$SD/comments.log"    '501'
 fhas        "AC1/R10p1+R11: the preflight WARN gets a marker comment"           "$SD/comments.log"    'release\.sh: v0\.5\.1 preflight'
-fhas        "AC1/A1: the release branch is still pushed (dry-run is the release)" "$SD/git.log"       '^push( -q)? origin release/v0\.5\.1$'
-fhas        "AC1/A1: the tag is still pushed (dry-run is the release)"          "$SD/git.log"         '^push( -q)? origin v0\.5\.1$'
+fhas        "AC1/A1: the release branch is pushed" "$SD/git.log"       '^push( -q)? origin release/v0\.5\.1$'
+fhas        "AC1/A1: the tag is pushed"                                       "$SD/git.log"         '^push( -q)? origin v0\.5\.1$'
 fhas        "AC1/R10p6: the release PR targets the fork, not upstream"          "$SD/gh.log"          'pr create.*--repo Performant-Labs/kai'
 fhas        "AC1/R10p6: the release PR targets master"                          "$SD/gh.log"          'pr create.*--base master'
 fhas        "AC1/R10p8: merge is --merge --delete-branch"                       "$SD/gh.log"          'pr merge.*--merge.*--delete-branch'
 
-# AC2/R6: resume at the phase boundary into the higher posture, then the no-op re-run.
+# AC2/R6: resume at the draft boundary into the higher posture, then the no-op re-run.
 rrun v0.5.1 --publish
-exit_is     "AC2: --publish resumes after the dry-run boundary and exits 0"     0
+exit_is     "AC2: --publish resumes after the draft and exits 0"     0
 fhas        "AC2/R10p12: publish is the canonical edit command"                 "$SD/gh.log"          'release edit v0\.5\.1.*--draft=false'
 fhas        "AC2/R10p13: the installer runs against the release"                "$SD/install-release.log" '^v0\.5\.1 '
 fhas        "AC2/R10p14: the checklist issue is closed"                         "$SD/gh.log"          'issue close'
@@ -829,15 +827,105 @@ exit_nonzero "R7/drystop: --dry-run --publish is refused (existing gate, pinned)
 has         "R7/drystop: the dry/publish refusal names the conflict"     'not both'
 count_is    "R7/drystop: no gh call happens"                             "$SD/gh.log" 0
 
-# --quit-kai is a capability flag, not a posture: under --dry-run it must still dispatch
-# the quit when Kai is running at phase 0 — acting, never ignored.
+# Issue #103: quitting an app is a mutation, so --quit-kai under --dry-run is refused up front
+# like the other mutating flags; --quit-kai alone (default/publish) still acts.
 mkscn dryquit
 : >"$SD/kai-running"
 rrun v0.5.1 --dry-run --quit-kai
-exit_is     "R7/drystop: --quit-kai still acts under --dry-run"          0
-fhas        "R7/drystop: the quit was dispatched (osascript)"            "$SD/osascript.log" '[Qq]uit'
-jq_is       "R7/drystop: the dry-run posture completes"                  "$(state)" '.posture' 'dry-run'
-jq_is       "R7/drystop: the dry-run run reached the local phase"        "$(state)" '.phases.local.done' 'true'
+exit_nonzero "#103: --dry-run --quit-kai is refused up front"
+has         "#103: the refusal names --dry-run"                          '--dry-run'
+has         "#103: the refusal names --quit-kai"                         '--quit-kai'
+count_is    "#103: no gh call happens (refusal precedes phases)"         "$SD/gh.log" 0
+count_is    "#103: no wrapped tool runs (preflight)"                     "$SD/preflight.log" 0
+fhasnt      "#103: Kai was not quit"                                     "$SD/osascript.log" '[Qq]uit'
+
+mkscn quitkai_default
+: >"$SD/kai-running"
+rrun v0.5.1 --quit-kai
+exit_is     "#103: --quit-kai alone (default posture) still acts"        0
+fhas        "#103: the quit was dispatched (osascript)"                  "$SD/osascript.log" '[Qq]uit'
+
+# ================================================================ #103: --dry-run is DRY
+# --dry-run runs the read-only phases (needs, preflight, changelog) for real, prints one plan
+# line per mutating phase, and performs nothing: no commit, push, tag, branch, PR, merge,
+# release, issue create/comment/close, no release-local.sh, no state marked done.
+same_is() { # name a b
+  if [[ "$2" == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1 ('$2' != '$3')"; fail=1; fi; }
+out_count_is() { # name pattern want
+  local n; n="$(printf '%s\n' "$out" | grep -cE -- "$2" || true)"
+  if [[ "$n" == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1 (output matched /$2/ $n times, wanted $3)"; fail=1; fi; }
+MUT_GIT='^(push|commit|tag|merge|reset|add|stash|cherry-pick|rebase|worktree|am|apply|clean)( |$)|^checkout -b|^switch -c|^branch( -[a-zA-Z]+)? [^-]'
+MUT_GH='pr (create|merge|close|edit|ready|comment)|release (create|edit|delete|upload)|issue (create|comment|close|edit|reopen)|(-X|--method)[ =]+(POST|PUT|PATCH|DELETE)|--input'
+
+mkscn dryrun
+head0="$($RG -C "$R" rev-parse HEAD)"
+refs0="$($RG -C "$R" for-each-ref | shasum | cut -d' ' -f1)"
+orefs0="$($RG --git-dir="$FAKE_ORIGIN" for-each-ref | shasum | cut -d' ' -f1)"
+rrun v0.5.1 --dry-run
+exit_is     "#103: --dry-run on a healthy repo exits 0"                        0
+has         "#103: the needs phase ran for real"                                'phase 0: needs'
+has         "#103: the preflight phase ran for real"                            'phase 1: preflight'
+has         "#103: the changelog phase ran for real"                            'phase 2: changelog'
+fhas        "#103: release-preflight.sh really ran (read-only phase)"           "$SD/preflight.log"   '^v0\.5\.1$'
+fhas        "#103: changelog-check.sh really ran (read-only phase)"             "$SD/changelog.log"   'strict'
+out_count_is "#103: exactly one plan line per mutating phase (12)"              '^  \[plan\] ' 12
+for ph in branch bump restructure release-pr review merge tag local smoke publish verify-published closeout; do
+  has       "#103: the plan names the $ph phase"                                "^  \[plan\] $ph: would "
+done
+has         "#103: says nothing was changed"                                    '[Nn]othing was (created|changed|pushed)'
+has         "#103: says how to do it for real"                                  'scripts/release\.sh v0\.5\.1'
+fhasnt      "#103: no mutating git command ran"                                 "$SD/git.log"         "$MUT_GIT"
+fhasnt      "#103: no mutating gh command ran"                                  "$SD/gh.log"          "$MUT_GH"
+count_is    "#103: no checklist comment was posted"                             "$SD/comments.log" 0
+count_is    "#103: release-bump.sh did not run"                                 "$SD/bump.log" 0
+count_is    "#103: release-local.sh did not run"                                "$SD/local.log" 0
+count_is    "#103: the AI helper was not consulted"                             "$SD/askai.log" 0
+same_is     "#103: HEAD is unchanged"                                           "$head0" "$($RG -C "$R" rev-parse HEAD)"
+same_is     "#103: local refs are unchanged"                                    "$refs0" "$($RG -C "$R" for-each-ref | shasum | cut -d' ' -f1)"
+same_is     "#103: the remote's refs are unchanged"                             "$orefs0" "$($RG --git-dir="$FAKE_ORIGIN" for-each-ref | shasum | cut -d' ' -f1)"
+same_is     "#103: the working tree is clean"                                   "" "$($RG -C "$R" status --porcelain)"
+jq_is       "#103: the posture is recorded"                                     "$(state)" '.posture' 'dry-run'
+jq_is       "#103: NO phase is recorded done after a dry run"                   "$(state)" '[.phases[] | select(.done)] | length' '0'
+has         "#103: the skipped checklist-issue creation is reported"            'dry-run\] skipped: gh issue create'
+
+# A real run after a dry run starts every phase fresh and performs them (escalation works).
+rrun v0.5.1
+exit_is     "#103: a default run after a dry run succeeds"                      0
+fhas        "#103: the release branch is pushed by the real run"                "$SD/git.log"         '^push( -q)? origin release/v0\.5\.1$'
+fhas        "#103: the tag is pushed by the real run"                           "$SD/git.log"         '^push( -q)? origin v0\.5\.1$'
+match_is    "#103: exactly one release PR is created, by the real run"          "$SD/gh.log" 'pr create' 1
+fhas        "#103: the draft is built by the real run"                          "$SD/local.log"       '^v0\.5\.1 --yes$'
+jq_is       "#103: the posture escalated to default"                            "$(state)" '.posture' 'default'
+
+# A read-only phase that fails stops the dry run WITHOUT posting to the checklist issue.
+mkscn dryfail
+: >"$SD/preflight-fail"
+rrun v0.5.1 --dry-run
+exit_nonzero "#103: a failing preflight stops a dry run"
+has         "#103: the stop names the phase"                                    'STOP.*preflight'
+fhasnt      "#103: the stop did not touch the checklist issue"                  "$SD/gh.log"          "$MUT_GH"
+count_is    "#103: no stop comment was posted"                                  "$SD/comments.log" 0
+jq_is       "#103: nothing recorded done"                                       "$(state)" '[.phases[] | select(.done)] | length' '0'
+
+# Kai running under a dry run is a stop (it cannot be quit), never a quit.
+mkscn drykai
+: >"$SD/kai-running"
+rrun v0.5.1 --dry-run
+exit_nonzero "#103: Kai running stops a dry run"
+has         "#103: the stop says Kai is running"                                'Kai is running'
+fhasnt      "#103: Kai was not quit"                                            "$SD/osascript.log"   '[Qq]uit'
+
+# Mutation self-test (issue #103): with the DRYSTOP block neutered, a "dry run" mutates, and the
+# assertions above must be able to SEE it. Otherwise they would pass vacuously.
+mkscn drymut
+awk '/DRYSTOP/ { print "if false; then"; next } { print }' "$release" >"$tmp/release.mutant.sh"
+chmod +x "$tmp/release.mutant.sh"
+release_real="$release"; release="$tmp/release.mutant.sh"
+rrun v0.5.1 --dry-run
+release="$release_real"
+fhas        "#103/mutation: with the stop removed the mutating git commands appear"   "$SD/git.log"  "$MUT_GIT"
+fhas        "#103/mutation: with the stop removed the mutating gh commands appear"    "$SD/gh.log"   "$MUT_GH"
+jq_is       "#103/defence: mark_done has its own dry-run guard (state stays clean even then)" "$(state)" '[.phases[] | select(.done)] | length' '0'
 
 # ================================================================ AC3: unknown failures and the AI
 # R3/R4: one consultation per unknown-failure event; the executor re-runs the phase on retry.

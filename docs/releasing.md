@@ -24,15 +24,21 @@ stops (a missing signing identity, an existing tag or release, red CI on the rel
 commit, a PR-Agent score under 90 or an unresolved finding) never consult either, and
 nothing ever deletes or moves a release or a published tag.
 
-Postures: `--dry-run` does everything through the local build and creates no draft; the
-default creates the draft and stops; `--publish` also publishes, verifies the published
-artifact and closes out. Every flag combination either acts or is refused before anything
-runs: `--dry-run` refuses to combine with `--publish` and with `--smoke`/`--smoke-done`
-(the smoke matrix is run and recorded in the default posture, on the packaged build after
-the draft release exists — a dry run never gets there, so the flags would be ignored);
-`--smoke --smoke-done` together takes `--smoke-done`, the stronger owner assertion; and
-`--quit-kai` is a capability, not a posture — it acts under every posture, `--dry-run`
-included.
+Postures: **`--dry-run` is dry.** It runs the read-only phases (needs, preflight, the
+changelog gate) for real, against the real `gh` and `git`, then prints one `[plan]` line for
+every phase it would run next and stops. It creates, commits, pushes, tags, merges, builds and
+publishes nothing, opens and comments on no issue, quits no app, and records no phase as
+done, so a later real run starts those phases fresh. It exits 0 when the read-only phases
+pass. The default posture does the real work through the draft and stops; `--publish` also
+publishes, verifies the published artifact and closes out. Every flag combination either acts
+or is refused before anything runs: `--dry-run` refuses to combine with `--publish`, with
+`--smoke`/`--smoke-done` (the smoke matrix is run and recorded in the default posture, on the
+packaged build after the draft release exists, which a dry run never reaches) and with
+`--quit-kai` (quitting an app is a mutation); `--smoke --smoke-done` together takes
+`--smoke-done`, the stronger owner assertion; and `--quit-kai` alone acts under the default
+and `--publish` postures. To rehearse the whole path end to end, point a real run at a
+scratch repository with `KAI_RELEASE_REPO=<owner>/<scratch-repo>`; the version-numbered
+branch, PR and tag then land there, never in the real repository.
 
 What stays manual, on purpose — said once, here: the **manual smoke matrix** (run it on the
 `Kai.app` the workflow leaves in `bin/release/vX.Y.Z/`, and record it with `--smoke` /
