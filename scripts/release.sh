@@ -158,7 +158,11 @@ do_stop() { # <phase> <reason> [log] — loud stop: message, notification, check
 
 # ---------------------------------------------------------------- gh probes
 find_pr() { # "<number> <state> <headSha>" for release/$tag, or nothing
-  gh pr list --repo "$repo" --head "release/$tag" --json number,state,headRefOid 2>/dev/null \
+  # --state all: gh pr list defaults to OPEN only, and every resume path here —
+  # ph_branch's group-skip, ph_review's settled gate, ph_merge's adoption and
+  # post-merge re-query, ph_tag's derivation — must also SEE an already-MERGED
+  # release PR (PR #100 R5a).
+  gh pr list --repo "$repo" --head "release/$tag" --state all --json number,state,headRefOid 2>/dev/null \
     | jq -r -s 'flatten | .[0] | if . then "\(.number) \(.state) \(.headRefOid // "")" else empty end' 2>/dev/null || true
 }
 merge_sha_of() { # <pr> — the merge commit if gh reports one, else the PR head
@@ -559,6 +563,9 @@ ph_merge() {
     gh pr merge "$prn" --repo "$repo" --merge --delete-branch >/dev/null 2>&1 \
       || do_stop merge "gh pr merge failed for PR #$prn (a conflict needs the owner; docs/release-checklist.md step 13)"
     info="$(find_pr)"
+    # The re-query can come back empty (gh hiccup); `set -- $info` on nothing would
+    # crash on the unbound $2 under set -u instead of stopping cleanly (PR #100 R5a).
+    [[ -n "$info" ]] || do_stop merge "gh no longer reports a PR for release/$tag after merging PR #$prn"
     set -- $info
     prst="$2"
     [[ "$prst" == "MERGED" ]] || do_stop merge "PR #$prn did not end up MERGED (state: $prst)"
@@ -584,6 +591,18 @@ ph_tag() {
     msha="$(merge_sha_of "$1" "$3")"
   fi
   [[ -n "$msha" ]] || do_stop tag "could not determine the merge commit to tag"
+  # The merge commit gh reports is a REMOTE object (GitHub merges server-side); this
+  # clone may not have it until a fetch installs it, and `git tag -a $tag $msha` on an
+  # unfetched sha fails (PR #100 R5b). Ensure the object is locally present before any
+  # tag operation: fetch when cat-file cannot find it — cat-file, NOT rev-parse
+  # --verify, which happily resolves a well-formed full sha whose object is absent —
+  # then stop if even the fetched clone lacks it. The tag lands on exactly the sha gh
+  # reported; it is never moved to a locally-convenient stand-in.
+  if ! git cat-file -e "$msha" 2>/dev/null; then
+    git fetch -q origin || do_stop tag "git fetch failed (the merge commit ${msha:0:7} is not in this clone)"
+    git cat-file -e "$msha" 2>/dev/null \
+      || do_stop tag "the merge commit ${msha:0:7} is not in this clone even after fetch — fetch it by hand and resume"
+  fi
   # Peel the annotated tag to compare commits; a tag is never moved or deleted (R5).
   local rtag; rtag="$(git ls-remote origin "refs/tags/$tag^{}" 2>/dev/null | awk 'NR==1{print $1}')"
   [[ -n "$rtag" ]] || rtag="$(git ls-remote origin "refs/tags/$tag" 2>/dev/null | awk 'NR==1{print $1}')"

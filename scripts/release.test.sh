@@ -5,6 +5,10 @@
 # one, origin = a local bare repo). The contract under test is docs/handoffs/0078-issue-78/
 # handoff-A.md (rulings R1-R12) as it amends docs/handoffs/0078-issue-78/brief.md (AC1-AC7).
 # Part of test.unit.command (issue #78, brief item 9).
+# PR #100 round 5: the fake gh is STATE-REALISTIC — pr list defaults to OPEN and honors
+# --state exactly like the CLI; pr view reports a MERGED PR's mergeCommit, and that commit
+# is landed in ORIGIN only (fake gh pr merge / seed_merged_pr below), so the local clone
+# cannot resolve it until a git fetch installs it, exactly like a GitHub-side merge.
 #   bash scripts/release.test.sh
 set -uo pipefail
 
@@ -362,9 +366,23 @@ case "$a" in
   *"pr list"*)
     if [[ "$a" == *"--head"* ]]; then
       head="$(printf '%s' "$a" | sed -n 's/.*--head \(release\/v[0-9.]*\).*/\1/p')"
+      # PR #100 R5a realism: the real CLI lists only OPEN PRs by default; --state
+      # all|merged|open|closed selects exactly (a state-blind list hid find_pr's defect).
+      aa="${a//--state=/--state }"
+      st="open"
+      case "$aa" in
+        *"--state all"*)    st="all" ;;
+        *"--state merged"*) st="merged" ;;
+        *"--state open"*)   st="open" ;;
+        *"--state closed"*) st="closed" ;;
+      esac
       for f in "$G"/pr-*; do
         [[ -f "$f" ]] || continue
         [[ "$(sed -n 2p "$f")" == "$head" ]] || continue
+        case "$st:$(sed -n 1p "$f")" in
+          all:*|open:OPEN|merged:MERGED|closed:CLOSED|closed:MERGED) ;;
+          *) continue ;;
+        esac
         if [[ "$a" == *"--json"* ]]; then
           printf '{"number":%s,"state":"%s","headRefOid":"%s"}\n' "${f##*pr-}" "$(sed -n 1p "$f")" "$(sed -n 3p "$f")"
         else
@@ -376,8 +394,23 @@ case "$a" in
   *"pr merge"*)
     n="$(printf '%s' "$a" | sed -n 's/pr merge \([0-9]*\).*/\1/p')"
     if [[ -f "$G/pr-$n" ]]; then
-      head="$(sed -n 2p "$G/pr-$n")"
-      printf 'MERGED\n%s\n%s\n' "$head" "$(sed -n 3p "$G/pr-$n")" >"$G/pr-$n"
+      head="$(sed -n 2p "$G/pr-$n")"; hsha="$(sed -n 3p "$G/pr-$n")"
+      # PR #100 R5b realism: GitHub merges server-side — the merge commit lands on the
+      # BASE branch of ORIGIN only; the caller's clone does not have it until it fetches.
+      # pr-<N> line 4 carries its oid (what pr view reports as mergeCommit.oid).
+      org="$(/usr/bin/git -C "$PWD" remote get-url origin 2>/dev/null || true)"
+      base=""; msha=""
+      [[ -n "$org" && -d "$org" ]] && base="$(/usr/bin/git --git-dir="$org" rev-parse refs/heads/master 2>/dev/null || true)"
+      if [[ -n "$base" && -n "$hsha" && "$hsha" != "unknown" ]]; then
+        /usr/bin/git -C "$PWD" push -q "$org" "$hsha":refs/heads/__gh-merge 2>/dev/null || true
+        /usr/bin/git --git-dir="$org" update-ref -d refs/heads/__gh-merge 2>/dev/null || true
+        msha="$(GIT_AUTHOR_NAME=github GIT_AUTHOR_EMAIL=noreply@github.com \
+                GIT_COMMITTER_NAME=github GIT_COMMITTER_EMAIL=noreply@github.com \
+                /usr/bin/git --git-dir="$org" commit-tree "$base^{tree}" -p "$base" -p "$hsha" \
+                -m "Merge pull request #$n from Performant-Labs/${head//\//-}" 2>/dev/null || true)"
+        [[ -n "$msha" ]] && /usr/bin/git --git-dir="$org" update-ref refs/heads/master "$msha"
+      fi
+      printf 'MERGED\n%s\n%s\n%s\n' "$head" "$hsha" "$msha" >"$G/pr-$n"
       /usr/bin/git -C "$PWD" push -q origin --delete "$head" 2>/dev/null
     fi
     exit 0 ;;
@@ -387,7 +420,27 @@ case "$a" in
     if [[ -n "${f:-}" && -f "$f" && "$a" == *"comments"* ]]; then pragent "$f" json; exit 0; fi
     state="OPEN"; [[ -n "${f:-}" && -f "$f" ]] && state="$(sed -n 1p "$f")"
     sha=""; [[ -n "${f:-}" && -f "$f" ]] && sha="$(sed -n 3p "$f")"
-    echo "{\"state\":\"$state\",\"headRefOid\":\"$sha\"}"
+    msha=""; [[ -n "${f:-}" && -f "$f" ]] && msha="$(sed -n 4p "$f")"
+    # PR #100 R5 realism: real gh returns exactly the requested fields; a MERGED PR
+    # carries its mergeCommit (an oid the local clone lacks until fetch — R5b), an
+    # unmerged one reports null.
+    fields="$(printf '%s' "$a" | sed -n 's/.*--json \([^ ]*\).*/\1/p' | tr ',' ' ')"
+    [[ -n "$fields" ]] || fields="state headRefOid"
+    j=""
+    for fld in $fields; do
+      case "$fld" in
+        state)      j="${j:+$j,}\"state\":\"$state\"" ;;
+        headRefOid) j="${j:+$j,}\"headRefOid\":\"$sha\"" ;;
+        mergeCommit)
+          if [[ "$state" == "MERGED" && -n "$msha" ]]; then
+            j="${j:+$j,}\"mergeCommit\":{\"oid\":\"$msha\"}"
+          else
+            j="${j:+$j,}\"mergeCommit\":null"
+          fi ;;
+        *)          j="${j:+$j,}\"$fld\":null" ;;
+      esac
+    done
+    echo "{$j}"
     exit 0 ;;
   *"release create"*)
     tag="$(printf '%s' "$a" | sed -n 's/.*release create \(v[0-9.]*\).*/\1/p')"
@@ -460,6 +513,57 @@ rrun() { # release.sh args...; steering in r_env; stdin is closed (AC1: no input
 }
 
 state() { printf '%s\n' "$R/bin/release/v0.5.1/state.json"; }
+
+# PR #100 R5 realism seeds. seed_merged_pr leaves a release PR the way GitHub leaves it
+# after `gh pr merge --merge --delete-branch`: the PR is MERGED, refs/heads/release/v0.5.1
+# is gone from origin, and the MERGE COMMIT exists only in origin (on master) — the local
+# clone cannot resolve it until a git fetch installs it. The pr file's line 4 carries its
+# oid (pr view's mergeCommit.oid); $SD/merge.sha is the harness-side copy for assertions.
+seed_merged_pr() { # <pr-number>
+  local n="$1" org base head msha
+  org="$tmp/origins/$SCN.git"
+  head="$($RG -C "$R" rev-parse release/v0.5.1 2>/dev/null || $RG -C "$R" rev-parse HEAD)"
+  base="$($RG --git-dir="$org" rev-parse refs/heads/master)"
+  $RG -C "$R" push -q "$org" "$head":refs/heads/__seed 2>/dev/null || true   # parent objects must exist in origin
+  $RG --git-dir="$org" update-ref -d refs/heads/__seed 2>/dev/null || true
+  msha="$(GIT_AUTHOR_NAME=github GIT_AUTHOR_EMAIL=noreply@github.com \
+          GIT_COMMITTER_NAME=github GIT_COMMITTER_EMAIL=noreply@github.com \
+          $RG --git-dir="$org" commit-tree "$base^{tree}" -p "$base" -p "$head" \
+          -m "Merge pull request #$n from Performant-Labs/release-v0.5.1" 2>/dev/null || true)"
+  [[ -n "$msha" ]] || { echo "FAIL seed_merged_pr ($SCN): no merge commit created"; fail=1; return 1; }
+  $RG --git-dir="$org" update-ref refs/heads/master "$msha"
+  printf 'MERGED\nrelease/v0.5.1\n%s\n%s\n' "$head" "$msha" >"$SD/ghstate/pr-$n"
+  printf '%s\n' "$msha" >"$SD/merge.sha"
+}
+
+# seed_state writes the state.json an earlier run interrupted after <last-done-phase>
+# would leave: every phase through <last> done, the rest not, the checklist issue and the
+# PR already in ghstate. mergeSha appears from `merge` on, exactly like ph_merge's own
+# postcondition write (release.sh st_update '.mergeSha = $m').
+seed_state() { # <last-done-phase>
+  local last="$1" p passed=0 first=1
+  mkdir -p "$(dirname "$(state)")"
+  {
+    printf '{"posture":"publish","tag":"v0.5.1","issue":102,"pr":101'
+    printf ',"headSha":"%s"' "$(sed -n 3p "$SD/ghstate/pr-101")"
+    case " merge tag local smoke publish verify-published closeout " in
+      *" $last "*) printf ',"mergeSha":"%s"' "$(sed -n 4p "$SD/ghstate/pr-101")" ;;
+    esac
+    printf ',"phases":{'
+    for p in needs preflight changelog branch bump restructure release-pr review merge \
+             tag local smoke publish verify-published closeout; do
+      [[ $first -eq 1 ]] || printf ','
+      first=0
+      if [[ $passed -eq 0 ]]; then
+        printf '"%s":{"done":true,"commit":"%s"}' "$p" "$($RG -C "$R" rev-parse HEAD)"
+      else
+        printf '"%s":{"done":false}' "$p"
+      fi
+      [[ "$p" == "$last" ]] && passed=1
+    done
+    printf '},"consultations":[],"smoke":"pending"}\n'
+  } >"$(state)"
+}
 
 # C01 — the script under test must exist (the RED gate: everything below fails without it).
 if [[ -x "$release" ]]; then
@@ -641,7 +745,7 @@ $RG -C "$R" checkout -q -b release/v0.5.1
 $RG -C "$R" push -q origin release/v0.5.1
 $RG -C "$R" checkout -q master
 printf '101\n' >"$SD/ghstate/seq"
-printf 'MERGED\nrelease/v0.5.1\n%s\n' "$($RG -C "$R" rev-parse release/v0.5.1)" >"$SD/ghstate/pr-101"
+seed_merged_pr 101   # R5 realism: a MERGED PR carries a merge commit (on origin/master only)
 rrun v0.5.1
 exit_is     "AC3/#74: merged leftover branch is a group-skip, not a stop"       0
 count_is    "AC3/#74: phases 3-6 are skipped (no bump)"                         "$SD/bump.log" 0
@@ -657,7 +761,7 @@ exists      "AC3/#74: the run still reaches the draft"                          
 mkscn mergedpr
 $RG -C "$R" checkout -q -b release/v0.5.1
 printf '101\n' >"$SD/ghstate/seq"
-printf 'MERGED\nrelease/v0.5.1\n%s\n' "$($RG -C "$R" rev-parse release/v0.5.1)" >"$SD/ghstate/pr-101"
+seed_merged_pr 101   # R5 realism: a MERGED PR carries a merge commit (on origin/master only)
 rm -f "$(state)"   # state.json absent: the resume must re-derive from postconditions (R6)
 rrun v0.5.1
 exit_is     "PR100-F1: MERGED PR + deleted branch + absent state completes"      0
@@ -1048,6 +1152,102 @@ has         "PR100-R4b: the failure surfaces as the consultation stop"          
 jq_is       "PR100-R4b: release-pr is NOT marked done on a masked push failure"          "$(state)" '.phases["release-pr"].done' 'false'
 match_is    "PR100-R4b: no draft is created through a masked failure"                    "$SD/gh.log" 'release create' 0
 fhas        "PR100-R4b: the stop is visible on the checklist issue"                      "$SD/comments.log" 'STOP at phase release-pr'
+
+# ================================================================ PR #100 round 5: 2 ACTIVE findings
+# (R5a) find_pr is state-blind (release.sh:160-163): real `gh pr list --head X` with no
+# --state lists only OPEN PRs, so every path that must SEE the merged release PR —
+# ph_branch's group-skip, ph_review's settled gate, ph_merge's re-query and resume,
+# ph_tag's derivation — finds nothing against the real CLI. The fake gh now defaults pr
+# list to open and honors --state all|merged|open|closed exactly; MERGED PRs are seeded
+# (and merged by the fake gh pr merge) in GitHub's real shape: the merge commit exists
+# ONLY in origin until a local git fetch installs it.
+# (R5b) merge_sha_of/ph_tag (release.sh:566-608): the mergeCommit gh reports lives on the
+# remote; `git tag -a $tag $msha` fails locally ("Failed to resolve ... as a valid ref")
+# unless the run fetches first. The tag phase must ensure the merge commit is locally
+# present before creating the annotated ref. (The ph_branch half of this pin is the
+# existing `mergedpr` scenario above, which this round's realism turns RED.)
+peel_is() { # name want-sha — the local annotated tag peels to want
+  local got; got="$($RG -C "$R" rev-parse -q --verify 'v0.5.1^{}' 2>/dev/null || true)"
+  if [[ "$got" == "$2" ]]; then echo "ok   $1"; else echo "FAIL $1 (v0.5.1^{} is '${got:0:7}', wanted '${2:0:7}')"; fail=1; fi }
+unresolved_is() { # name sha — premise: the object is NOT in the local clone (cat-file,
+  # not rev-parse: rev-parse resolves any well-formed full sha, present or not)
+  if $RG -C "$R" cat-file -e "$2" 2>/dev/null; then
+    echo "FAIL $1 (${2:0:7} is already local — the harness premise broke)"; fail=1
+  else
+    echo "ok   $1"
+  fi }
+fetched_before_tag() { # name — a fetch (or pull) is recorded before the first annotated tag
+  local f t
+  f="$(grep -nE '^(fetch|pull)' "$SD/git.log" 2>/dev/null | head -1 | cut -d: -f1)"
+  t="$(grep -nE '^tag -a ' "$SD/git.log" 2>/dev/null | head -1 | cut -d: -f1)"
+  if [[ -n "$f" && -n "$t" && "$f" -lt "$t" ]]; then echo "ok   $1"
+  else echo "FAIL $1 (fetch/pull at line ${f:-none}, tag -a at line ${t:-none} of git.log)"; fail=1; fi }
+
+# (R5a-review) resume with the PR MERGED and its branch deleted: state stops just before
+# the review gate. The gate must settle via the MERGED PR (find_pr asking the right
+# state), never re-merge, and record the merge commit gh reports.
+mkscn mergedvisreview
+$RG -C "$R" checkout -q -b release/v0.5.1
+printf '102\n' >"$SD/ghstate/seq"
+printf 'Release checklist: v0.5.1\nopen\n' >"$SD/ghstate/issue-102"
+seed_merged_pr 101
+seed_state release-pr
+rrun v0.5.1 --publish
+exit_is          "PR100-R5a: ph_review resume settles on the MERGED PR"              0
+has              "PR100-R5a: the gate is settled by the recorded merge"              'already merged'
+match_is         "PR100-R5a: a merged PR is never merged again"                      "$SD/gh.log" 'pr merge' 0
+jq_is            "PR100-R5a: review marked done by the settle"                       "$(state)" '.phases.review.done' 'true'
+jq_is            "PR100-R5a: merge marked done from the merged PR"                   "$(state)" '.phases.merge.done' 'true'
+jq_is            "PR100-R5a: mergeSha is the merge commit, not the PR head"          "$(state)" '.mergeSha' "$(cat "$SD/merge.sha")"
+
+# (R5a-merge) the same resume one phase later: state stops just before merge. ph_merge
+# must ADOPT the MERGED PR (no second merge) and derive the merge commit gh reports.
+mkscn mergedvismerge
+$RG -C "$R" checkout -q -b release/v0.5.1
+printf '102\n' >"$SD/ghstate/seq"
+printf 'Release checklist: v0.5.1\nopen\n' >"$SD/ghstate/issue-102"
+seed_merged_pr 101
+seed_state review
+rrun v0.5.1 --publish
+exit_is          "PR100-R5a: ph_merge resume adopts the MERGED PR"                   0
+match_is         "PR100-R5a: no second merge of an already-merged PR"                "$SD/gh.log" 'pr merge' 0
+jq_is            "PR100-R5a: merge marked done by adoption"                          "$(state)" '.phases.merge.done' 'true'
+jq_is            "PR100-R5a: mergeSha is the merge commit"                           "$(state)" '.mergeSha' "$(cat "$SD/merge.sha")"
+peel_is          "PR100-R5b: the tag lands on that merge commit"                     "$(cat "$SD/merge.sha")"
+fetched_before_tag "PR100-R5b: the merge commit is fetched before tagging"
+
+# (R5b-resume) ph_merge already recorded mergeSha (its own postcondition) and the run
+# died before ph_tag; the merge commit exists only in origin. Tagging must ensure local
+# presence (fetch) before creating the annotated ref.
+mkscn tagresume
+$RG -C "$R" checkout -q -b release/v0.5.1
+printf '102\n' >"$SD/ghstate/seq"
+printf 'Release checklist: v0.5.1\nopen\n' >"$SD/ghstate/issue-102"
+seed_merged_pr 101
+seed_state merge
+unresolved_is    "PR100-R5b: premise: the merge commit is NOT local before the run"   "$(cat "$SD/merge.sha")"
+rrun v0.5.1 --publish
+exit_is          "PR100-R5b: ph_tag fetches the merge commit and completes"           0
+peel_is          "PR100-R5b: the annotated tag is created at the merge commit"        "$(cat "$SD/merge.sha")"
+jq_is            "PR100-R5b: tag marked done"                                         "$(state)" '.phases.tag.done' 'true'
+fetched_before_tag "PR100-R5b: the fetch precedes git tag -a in git.log"
+
+# (R5b-live) the full workflow: the merge happens mid-run (the fake gh pr merge lands it
+# in origin only); by the time ph_tag runs the merge commit must be local (fetched) and
+# the tag must land on IT — the merge commit — not on the PR head the old fake reported.
+mkscn mergefetch
+rrun v0.5.1
+exit_is          "PR100-R5b: the workflow fetches its own merge commit and completes" 0
+prf="$(ls "$SD"/ghstate/pr-* | sed -n 1p)"
+if [[ "$(sed -n 3p "$prf")" != "$(sed -n 4p "$prf")" ]]; then
+  echo "ok   PR100-R5b: premise: the fake merge produced a distinct merge commit"
+else
+  echo "FAIL PR100-R5b: premise: merge commit == PR head (harness broke)"; fail=1
+fi
+peel_is          "PR100-R5b: the tag marks the MERGE commit the workflow created"     "$(sed -n 4p "$prf")"
+jq_is            "PR100-R5b: state records that merge commit as mergeSha"             "$(state)" '.mergeSha' "$(sed -n 4p "$prf")"
+fetched_before_tag "PR100-R5b: the fetch precedes the annotation in the live flow"
+exists           "PR100-R5b: the run still reaches the draft"                         "$SD/ghstate/release-v0.5.1.json"
 
 # ================================================================ AC7: docs and CHANGELOG
 fhas "AC7: docs/releasing.md points at scripts/release.sh as the operator"      "$here/../docs/releasing.md" 'scripts/release\.sh'

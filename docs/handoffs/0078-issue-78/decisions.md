@@ -454,3 +454,17 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   phase-aware (tag-or-merge done => do_stop naming tag-truth, zero consultations; pre-merge
   #73 behavior kept); exit-status sweep across every cleanup-tailed helper (sites listed in
   the handoff). Suite green: release.test.sh PASS, ask-ai PASS, go ok, fe ok.
+
+## Rework round 5 (2026-10-20) — fakes made realistic; real-semantics defects fixed
+- PR-Agent at 14ae66a (score 68; seven prior findings RESOLVED): 2 new ACTIVE, both
+  masked-by-permissive-fakes: (1) find_pr's default-state pr list cannot see MERGED PRs on
+  real GitHub (ph_merge would stop right after its own merge; merged-resume paths blind);
+  (2) the gh-reported merge commit is remote-only until fetched — ph_tag would fail on a real
+  run.
+- T's realism overhaul (handoff-T-rework5): fake gh honors real state semantics; the merged
+  PR's merge commit is a REAL object created only in the origin bare repo; pr view returns
+  real shapes (mergeCommit for MERGED). 92 assertions across 23 scenarios flipped RED — no
+  assertion weakened. 4 new scenarios pin the fixed behavior.
+- F fixed (handoff-F-rework5): find_pr --state all; guarded post-merge re-query (the set -u
+  unbound crash at :563 is gone); ph_tag verifies local presence via cat-file -e and fetches
+  when absent before annotating. Suite green: both harnesses PASS, go ok, fe ok.
