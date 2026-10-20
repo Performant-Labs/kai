@@ -253,3 +253,29 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   master parity). A-dup W-1..W-3 de-scopings ruled authorized by the amendment chain.
   Not-verifiable-here items = the post-merge rehearsal list (live dry-run, opencode-run
   availability on the release Mac, real-gh shapes, GNU timeout presence).
+
+## Phase T-green handoff (T, 2026-10-20)
+- **Decided:** verdict **PASS** (handoff-T-green.md). Independently re-ran the verbatim
+  `test.unit.command` → exit 0 (swiftbridge dylib+.a; Go 20/20 ok-lines; frontend 79/870;
+  release.test.sh 166 ok/0 FAIL; release-ask-ai.test.sh 24 ok/0 FAIL; 210 ok lines total,
+  0 FAIL); both harnesses also green standalone. Matches the plugin's recorded GREEN and
+  F's/S's numbers — no discrepancies.
+- **Assumed:** none new. All 15 T-red Assumed interface details verified honored (source
+  anchors in the handoff table); F's disclosed deviations are ruling-letter only
+  (R11/W-3, [W]/W-2, propose-fix-pr/W-1), none touches the harness contract.
+- **Hedged:** zero-test-edits proof rests on blob hashes, not per-phase commits — the branch
+  squashed RED+F into one feature commit (b44533c, RED day). Only that commit ever touched
+  either harness; blobs identical at b44533c/HEAD/worktree
+  (11b7eea3…, 0541e3b0…); gate-stage diff.patch sections sha256-match HEAD diff. Advisory:
+  future runs commit RED separately.
+- **Evidence:** handoff-T-green.md (suite log excerpts, git blob table, Assumed conformity
+  table, AC1–AC7 status, known-issues record: diff-gate 6 WARN+3 NIT hardening list, A-dup
+  W-1..W-3/N-1..N-4, changelog-check master-identical pre-existing failure, post-merge
+  rehearsal list).
+
+## Phase T-green handoff (2026-10-20, late-arriving required artifact)
+- spec-audit's stage recording refused on a missing input: handoff-T-green.md (the advance had
+  confirmed GREEN by the suite verdict alone; the artifact is a required stage input). T
+  dispatched to write it: **PASS** — independent full-suite rerun exit 0 (same numbers as the
+  plugin, F and S), zero test edits since RED (single-commit provenance, blob hashes identical
+  at commit/HEAD/worktree), Assumed-list conformity complete.
