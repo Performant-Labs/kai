@@ -292,3 +292,38 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   the suite, re-run the diff gate as a fresh round 1 on the changed diff (same flow the
   operator prescribed after the #99 rebase), re-state merge verification, push. S's audit
   documents its head (5a6f19e); this delta is journaled here and strengthens AC2/AC6.
+
+## Phase T-rework RED (T, 2026-10-20) — pinning PR #100's two ACTIVE findings
+- **Decided:** the RED contract for the rework is an extension of `scripts/release.test.sh`
+  only (release-ask-ai.test.sh untouched, hash-identical): scenario `mergedpr` (F1 — state
+  absent + PR MERGED + remote branch deleted + local release/vX.Y.Z checked out: group-skip
+  bump/restructure/release-pr like the #74 leftover path, bump.log must stay empty, tree must
+  stay clean) and scenarios `verifyok`/`verifystop`/`verifyterm` (F2 — no `release-verify.*`
+  workdir and no install-release `--dest` dir survives success, a do_stop, or a SIGTERM kill
+  mid-verify; the kill case forces trap-based cleanup). Two fake-bin extensions in the
+  existing marker convention: `install-fail` (install fake) and `verify-term`
+  (release-verify.sh override that kills $PPID mid-phase-13).
+- **Assumed:** macOS mktemp's no-template form ignores $TMPDIR (verified empirically, twice),
+  so the `--dest` leak is pinned by the absolute path recorded in the fake's argv log, not by
+  TMPDIR steering; TMPDIR steering works for the workdir because release.sh expands the
+  template itself.
+- **Hedged:** the three verify exits stand for the task's "success, hard stop,
+  unknown-failure" — ph_verify has no phase_run/consultation path (not in CONSULTABLE), so
+  do_stop is its only failure exit and the SIGTERM kill is the forced exit.
+- **Evidence:** `bash scripts/release.test.sh` → exit 1, 180 ok / 8 FAIL (baseline 166 ok / 0
+  FAIL re-verified first; all 14 new keep-pins ok; zero pre-existing verdicts changed);
+  `bash scripts/release-ask-ai.test.sh` → PASS 24/0. Verbatim FAIL tails + case→finding map
+  in `handoff-T-rework.md`. Hashes: release.test.sh 63a20352… → ee2f4433…; production code
+  untouched.
+
+## Rework round (2026-10-20, post-restart) — PR findings fixed, suite green
+- Operator session restart killed the F-rework mid-flight; F's code fixes were complete on
+  disk, T's 8 pins already green. Verified: release.test.sh PASS 188 ok / 0 FAIL (was 166 +
+  8 new); ask-ai PASS 24/24; full suite exit 0 (go, fe, both harnesses).
+- Class sweep (operator step 5), per-site: release.sh:665/:689 VERIFY_TMP trap-cleaned (EXIT +
+  TERM, 143); release.sh:138/:481 single-use temp files, no intervening exit path (no errexit;
+  callers capture rc); release-ask-ai.sh:55 own EXIT trap; release-local.sh:100 own trap;
+  line 164 there is an operator instruction string, not executed. MERGED-resume class: only
+  ph_branch's deleted-branch corner was missing (the fix); ph_review (:515) and ph_merge
+  (:540) already handled MERGED; both #74 paths now mirror each other.
+- handoff-T-rework.md (RED evidence) and handoff-F-rework.md (fixes + sweep table) written.

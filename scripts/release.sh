@@ -58,7 +58,11 @@ mkdir -p "$statedir"
 
 # ---------------------------------------------------------------- lock (R6)
 LOCKED=0
+VERIFY_TMP=""   # phase 13's throwaway dirs (PR #100 F2): trap-cleaned on every exit
 cleanup() {
+  local d
+  for d in $VERIFY_TMP; do [[ -n "$d" ]] && rm -rf "$d"; done
+  VERIFY_TMP=""
   if [[ "$LOCKED" -eq 1 && -f "$lockdir/pid" ]] \
      && [[ "$(cat "$lockdir/pid" 2>/dev/null || true)" == "$$" ]]; then
     rm -rf "$lockdir"
@@ -419,8 +423,8 @@ ph_branch() {
   if [[ -n "$info" ]]; then
     set -- $info
     if [[ "$2" == "MERGED" ]]; then
-      say "  .. release PR #$1 already merged (its branch was deleted by the merge)"
-      mark_done branch
+      say "  .. release PR #$1 already merged (its branch was deleted by the merge): skipping phases 3-6 like the leftover-branch rule (#74)"
+      mark_done branch bump restructure release-pr
       return 0
     fi
     do_stop branch "release/$tag has an unmerged PR #$1 but no branch on origin — resolve that by hand"
@@ -654,7 +658,12 @@ ph_publish() {
 ph_verify() {
   printf '\n== phase 13: verify the published artifact (checklist step 28)\n'
   if phase_done verify-published; then say "  .. verify-published already done"; return 0; fi
+  # PR #100 F2: both throwaway dirs below are cleaned on EVERY exit — success, a stop,
+  # an unknown failure (the EXIT trap runs cleanup), and a signal mid-verify, where no
+  # end-of-function rm could ever run: the TERM trap cleans and exits 143 (128+15).
+  trap 'cleanup; exit 143' TERM
   local vdir; vdir="$(mktemp -d "${TMPDIR:-/tmp}/release-verify.XXXXXX")"
+  VERIFY_TMP="$vdir"
   local z="Kai-$ver-darwin-arm64.zip" uz="updater-Kai-$ver-darwin-arm64.zip" dmg="Kai-$ver-darwin-arm64.dmg"
   ( cd "$vdir" && gh release download "$tag" --repo "$repo" >/dev/null 2>&1 ) \
     || do_stop verify-published "gh release download $tag failed"
@@ -677,10 +686,14 @@ ph_verify() {
     do_stop verify-published "the dmg's Kai.app differs from the zip's"
   fi
   hdiutil detach "$mnt" >/dev/null 2>&1 || true
-  run_tool install-release.sh "$tag" --dest "$(mktemp -d)" --keep-permissions \
+  local idest; idest="$(mktemp -d)"
+  VERIFY_TMP="$vdir $idest"
+  run_tool install-release.sh "$tag" --dest "$idest" --keep-permissions \
     || do_stop verify-published "install-release.sh against the published release failed"
   say "  ok  published artifact verified (SHA256SUMS, updater zip identical, zip == dmg, installer ran)"
-  rm -rf "$vdir"
+  rm -rf "$vdir" "$idest"
+  VERIFY_TMP=""
+  trap - TERM
   mark_done verify-published
 }
 

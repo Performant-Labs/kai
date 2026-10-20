@@ -210,9 +210,26 @@ exit 0
 EOF
 done
 
+# release-verify.sh gets one steering knob beyond the generic fake (PR #100 F2): the
+# verify-term marker kills the parent release.sh mid-phase-13, while its temp workdir is
+# live, to prove the workdir cleanup is trap-based (an end-of-function rm cannot run then).
+cat >"$FB/release-verify.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$FAKE_STATE_DIR/release-verify.sh.log"
+if [[ -e "$FAKE_STATE_DIR/verify-term" ]]; then
+  kill -TERM "$PPID" 2>/dev/null || true
+  sleep 1
+fi
+echo "ok (fake release-verify.sh)"
+exit 0
+EOF
+
 cat >"$FB/install-release.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_STATE_DIR/install-release.log"
+if [[ -e "$FAKE_STATE_DIR/install-fail" ]]; then
+  echo "FAIL: install-release exploded (fake)" >&2; exit 1
+fi
 echo "checksum ok"; echo "installed Kai $1"; echo "quarantine flag cleared"
 exit 0
 EOF
@@ -608,6 +625,26 @@ fhas        "AC3/#74: the leftover branch is deleted via gh api -X DELETE"      
 count_is    "AC3/#74: the static handler never consults the AI"                 "$SD/askai.log" 0
 exists      "AC3/#74: the run still reaches the draft"                          "$SD/ghstate/release-v0.5.1.json"
 
+# (2b) PR #100 F1: the same merge seen from the resume side — state.json ABSENT, the release
+# PR MERGED, its remote branch already deleted (gh pr merge --delete-branch), and the local
+# release/vX.Y.Z still checked out. ph_branch must group-skip phases 3-6 exactly like the
+# leftover-branch path above (#74): re-running release-bump.sh would leave uncommitted
+# version edits on the tree (no release_pr_apply runs afterwards to commit them).
+mkscn mergedpr
+$RG -C "$R" checkout -q -b release/v0.5.1
+printf '101\n' >"$SD/ghstate/seq"
+printf 'MERGED\nrelease/v0.5.1\n%s\n' "$($RG -C "$R" rev-parse release/v0.5.1)" >"$SD/ghstate/pr-101"
+rm -f "$(state)"   # state.json absent: the resume must re-derive from postconditions (R6)
+rrun v0.5.1
+exit_is     "PR100-F1: MERGED PR + deleted branch + absent state completes"      0
+count_is    "PR100-F1: bump is NOT re-run (group-skip mirrors #74)"              "$SD/bump.log" 0
+jq_is       "PR100-F1: bump marked done by the group-skip"                       "$(state)" '.phases.bump.done' 'true'
+jq_is       "PR100-F1: restructure marked done by the group-skip"                "$(state)" '.phases.restructure.done' 'true'
+jq_is       "PR100-F1: release-pr marked done by the group-skip"                 "$(state)" '.phases["release-pr"].done' 'true'
+dirty="$($RG -C "$R" status --porcelain 2>/dev/null)"
+if [[ -z "$dirty" ]]; then echo "ok   PR100-F1: the tree stays clean (no uncommitted version edits)"; else echo "FAIL PR100-F1: uncommitted version edits: $dirty"; fail=1; fi
+exists      "PR100-F1: the run still reaches the draft"                          "$SD/ghstate/release-v0.5.1.json"
+
 # (3) Bindings drift at phase 10: handler regen-bindings = make bindings + commit (R10p10, #73).
 mkscn bindings
 echo bindings >"$SD/local-fail"
@@ -753,6 +790,68 @@ mkscn loopagent88; r_env=(FAKE_AI=retry FAKE_AGENT=88); refusal
 count_is "R5-loop agent88: nothing is built"                                    "$SD/local.log" 0
 mkscn loopagent95o; r_env=(FAKE_AI=retry FAKE_AGENT=95o); refusal
 count_is "R5-loop agent95o: nothing is built"                                   "$SD/local.log" 0
+
+# ================================================================ PR #100 F2: phase-13 temp hygiene
+# ph_verify's release-verify.* workdir and the install-release --dest dir must not survive
+# ANY exit: success, a hard stop, or a forced mid-verify kill. TMPDIR is steered per
+# scenario (release.sh expands it into the workdir template itself), and the --dest dir is
+# checked by the absolute path the fake install-release.sh recorded — macOS mktemp's
+# no-template form ignores $TMPDIR, so it cannot be steered, only observed.
+vleft() { # name — no release-verify.* workdir survives under the steered TMPDIR
+  if [[ -z "$(ls -d "$SD/tmp"/release-verify.* 2>/dev/null)" ]]; then
+    echo "ok   $1"
+  else
+    echo "FAIL $1 ($(ls -d "$SD/tmp"/release-verify.* 2>/dev/null | tr '\n' ' '))"; fail=1
+  fi }
+destleft() { # name — the install-release --dest dir from the recorded argv is gone
+  local d; d="$(sed -n 's/.* --dest \([^ ]*\).*/\1/p' "$SD/install-release.log" 2>/dev/null | tail -1)"
+  if [[ -n "$d" && ! -e "$d" ]]; then echo "ok   $1"; else echo "FAIL $1 (--dest ${d:-unset} still exists)"; fail=1; fi }
+tmpleft() { # name — nothing at all survives under the steered TMPDIR
+  local n=0; [[ -d "$SD/tmp" ]] && n="$(find "$SD/tmp" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "$n" -eq 0 ]]; then echo "ok   $1"; else
+    echo "FAIL $1 (leftovers: $(find "$SD/tmp" -mindepth 1 2>/dev/null | sed "s#$SD/tmp/##" | tr '\n' ' '))"; fail=1
+  fi }
+
+# Success path: even a clean verify leaves nothing behind (today only the workdir is
+# cleaned; the inline --dest mktemp leaks unconditionally — release.sh:680).
+mkscn verifyok
+rrun v0.5.1
+exit_is     "PR100-F2: verifyok setup: default posture completes first"          0
+mkdir -p "$SD/tmp"
+r_env=(TMPDIR="$SD/tmp")
+rrun v0.5.1 --publish
+exit_is     "PR100-F2: verify completes on the success path"                     0
+vleft       "PR100-F2: no release-verify.* workdir survives a successful verify"
+destleft    "PR100-F2: the install-release --dest dir does not survive success"
+tmpleft     "PR100-F2: nothing at all survives a successful verify"
+
+# Hard stop mid-verify (install-release fails after its --dest dir exists): do_stop exits
+# between the two temp dirs; both must be cleaned on the way out.
+mkscn verifystop
+rrun v0.5.1
+exit_is     "PR100-F2: verifystop setup: default posture completes first"        0
+: >"$SD/install-fail"
+mkdir -p "$SD/tmp"
+r_env=(TMPDIR="$SD/tmp")
+rrun v0.5.1 --publish
+exit_nonzero "PR100-F2: an install failure mid-verify stops the run"
+has         "PR100-F2: the stop names phase verify-published"                    'verify-published'
+vleft       "PR100-F2: no release-verify.* workdir survives a hard stop"
+destleft    "PR100-F2: the install-release --dest dir does not survive a hard stop"
+tmpleft     "PR100-F2: nothing at all survives a hard stop"
+
+# Forced mid-verify exit (SIGTERM while the workdir is live): the cleanup must be
+# trap-based — an rm at the end of the happy path cannot run after a kill; a trap can.
+mkscn verifyterm
+rrun v0.5.1
+exit_is     "PR100-F2: verifyterm setup: default posture completes first"        0
+: >"$SD/verify-term"
+mkdir -p "$SD/tmp"
+r_env=(TMPDIR="$SD/tmp")
+rrun v0.5.1 --publish
+exit_nonzero "PR100-F2: a forced mid-verify kill exits non-zero"
+vleft       "PR100-F2: trap-based cleanup still runs on a forced mid-verify exit"
+tmpleft     "PR100-F2: nothing at all survives a forced mid-verify exit"
 
 # ================================================================ AC7: docs and CHANGELOG
 fhas "AC7: docs/releasing.md points at scripts/release.sh as the operator"      "$here/../docs/releasing.md" 'scripts/release\.sh'
