@@ -49,7 +49,8 @@ function braceBlock(text: string, from: number): string {
 /** The text of a named function in the script (`function name(` or `const name = (…) =>`). */
 function fnBody(name: string): string {
   let start = code.search(new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`));
-  if (start < 0) start = code.search(new RegExp(`const\\s+${name}\\s*=\\s*(?:async\\s*)?\\([^)]*\\)[^=]*=>`));
+  if (start < 0)
+    start = code.search(new RegExp(`const\\s+${name}\\s*=\\s*(?:async\\s*)?\\([^)]*\\)[^=]*=>`));
   expect(start, `${name} not found`).toBeGreaterThan(-1);
   const arrow = code.indexOf('=>', start);
   const paren = code.indexOf(')', start);
@@ -95,7 +96,8 @@ function blockDepth(html: string): number {
 }
 
 /** The source textareas (bound to sourceEl). */
-const sourceTextareas = () => openTags(markup, 'textarea').filter((t) => t.tag.includes('bind:this={sourceEl}'));
+const sourceTextareas = () =>
+  openTags(markup, 'textarea').filter((t) => t.tag.includes('bind:this={sourceEl}'));
 
 /** The result branch of the paneState chain: `{:else if pane === 'result' …}` up to the next branch. */
 function resultBranch(): { html: string; at: number } {
@@ -125,7 +127,9 @@ describe('no per-word display (criterion 1, Decision C)', () => {
   });
 
   it('no non-test source file under frontend/src mentions SpanText, comments included', () => {
-    const hits = sourceFiles(resolve(__dirname, '..')).filter((f) => /spantext/i.test(readFileSync(f, 'utf8')));
+    const hits = sourceFiles(resolve(__dirname, '..')).filter((f) =>
+      /spantext/i.test(readFileSync(f, 'utf8')),
+    );
     expect(hits.map((f) => f.slice(f.indexOf('frontend/src')))).toEqual([]);
   });
 });
@@ -168,10 +172,23 @@ describe('the source pane is always one textarea (criterion 2, Decision A)', () 
 });
 
 describe('the result is always one real, editable textarea (criterion 3, Decision B)', () => {
-  it('the result branch holds exactly one textarea and no onclick', () => {
+  it('the result branch holds exactly one textarea, and its only onclick is the back-translation copy', () => {
     const { html } = resultBranch();
     expect(openTags(html, 'textarea')).toHaveLength(1);
-    expect(html).not.toMatch(/\sonclick=/);
+    // Issue #144's rule was "no onclick anywhere in the result branch": the result text is
+    // never a click target (that is what killed click-to-edit). Issue #8's collector item
+    // later gave the back-translation strip its own copy button — inside this branch, the one
+    // sanctioned onclick. Everything outside that block stays onclick-free, and the block
+    // itself carries exactly one, on the copy button.
+    const start = html.indexOf('data-testid="back-translation"');
+    expect(start, 'back-translation block not found').toBeGreaterThan(-1);
+    const end = html.indexOf('{:else if backBusy}', start);
+    expect(end, 'back-translation block not closed by the busy branch').toBeGreaterThan(-1);
+    const outside = html.slice(0, start) + html.slice(end);
+    expect(outside).not.toMatch(/\sonclick=/);
+    const inside = html.slice(start, end);
+    expect(inside.match(/\sonclick=/g) ?? []).toHaveLength(1);
+    expect(inside).toMatch(/<button[\s\S]*?onclick=\{\(\) => copy\(backShown\.text\)\}/);
   });
 
   it('the result textarea is inside no {#if} of its own within the branch', () => {
@@ -244,7 +261,8 @@ describe('undo/redo keep the element and place the caret (criterion 6, Decision 
   });
 
   it('showRestored places the caret from caretAfterRestore(shown, restored), collapsed', () => {
-    const imp = code.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/utils\/sourceHistory\.ts'/)?.[1] ?? '';
+    const imp =
+      code.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/utils\/sourceHistory\.ts'/)?.[1] ?? '';
     const m = imp.match(/\bcaretAfterRestore\b(?:\s+as\s+(\w+))?/);
     expect(m, 'caretAfterRestore is not imported from ../utils/sourceHistory.ts').not.toBeNull();
     const fn = m![1] ?? 'caretAfterRestore';

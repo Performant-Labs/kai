@@ -109,6 +109,7 @@ export type Dict = {
     failedTooLong: string;
     failedUnsupported: string;
     copy: string;
+    copyBack: string;
     result: string;
     noResult: string;
     activeEngines: string;
@@ -189,6 +190,8 @@ export type Dict = {
     analyticsHint: string;
     autoSwitchSource: string;
     autoSwitchSourceHint: string;
+    translateWindowOnTop: string;
+    translateWindowOnTopHint: string;
     about: string;
     aboutVersion: string;
     aboutCopy: string;
@@ -452,6 +455,7 @@ export type Dict = {
     generalSaveLangFailed: string;
     generalSaveAnalyticsFailed: string;
     generalSaveAutoSwitchFailed: string;
+    generalSaveTranslateWindowOnTopFailed: string;
     generalCopyVersionFailed: string;
     shortcutSaveDoubleCopyFailed: string;
     generalSaveFontSizeFailed: string;

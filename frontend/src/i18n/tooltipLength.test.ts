@@ -16,6 +16,7 @@ describe('expanded tooltip copy (issue #173 item 6)', () => {
   const sites: Array<[string, string]> = [
     ['common.copy', en.common.copy],
     ['translate.copy', en.translate.copy],
+    ['translate.copyBack', en.translate.copyBack],
     ['translate.undo', en.translate.undo],
     ['translate.redo', en.translate.redo],
     ['translate.swap', en.translate.swap],

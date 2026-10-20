@@ -74,9 +74,14 @@ describe('the back-translation is wired into the translate window (issue #56)', 
     );
   });
 
-  it('Copy still copies only the translation, never the back-translation', () => {
+  it('the pane Copy copies only the translation; the back-translation block has its own copy for its text', () => {
+    // The pane-header button (design §6): the displayed translation, manual edits included.
     expect(markup).toMatch(/onclick=\{\(\) => copy\(activeDisplay\)\}/);
+    // The back-translation's own control (issue #8 collector item), inside its block and only
+    // for its text — never the translation above and never the source.
+    const backBlock = markup.slice(markup.indexOf('data-testid="back-translation"'));
+    expect(backBlock).toMatch(/onclick=\{\(\) => copy\(backShown\.text\)\}/);
     const copyUses = markup.match(/copy\([^)]*\)/g) ?? [];
-    for (const use of copyUses) expect(use).not.toMatch(/back/i);
+    for (const use of copyUses) expect(use).not.toMatch(/source/i);
   });
 });
