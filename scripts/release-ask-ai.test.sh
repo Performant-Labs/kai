@@ -35,6 +35,21 @@ shift
 exec "$@"
 EOF
 
+# Round 7 C1: fail-by-default RECORDING stubs for the tools this harness never steers
+# (release-ask-ai.sh calls none of them; any reach means an escape — 127 + a trip record).
+cat >"$T2/curl" <<'EOF'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >>"$FAKE_STATE_DIR/unexpected.log"
+printf 'UNEXPECTED REAL curl: %s\n' "$*" >&2
+exit 127
+EOF
+cat >"$T2/codesign" <<'EOF'
+#!/usr/bin/env bash
+printf 'codesign %s\n' "$*" >>"$FAKE_STATE_DIR/unexpected.log"
+printf 'UNEXPECTED REAL codesign: %s\n' "$*" >&2
+exit 127
+EOF
+
 cat >"$O2/opencode" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$#" >"$FAKE_STATE_DIR/oc.argc"
@@ -52,7 +67,24 @@ esac
 exit 0
 EOF
 
-chmod +x "$T2/timeout" "$O2/opencode"
+chmod +x "$T2/timeout" "$O2/opencode" "$T2/curl" "$T2/codesign"
+
+# Round 7 C3: the HERMETIC bin for A08 (the absent-binary case). A08's old PATH was
+# "$T2:$PATH" on the theory that opencode is absent from the rest of PATH — false on any
+# machine that runs this pipeline (opencode IS the pipeline; e.g. /opt/homebrew/bin/
+# opencode): `command -v opencode` found the REAL binary, the fake timeout's `exec "$@"`
+# then ran a REAL `opencode run --format json <prompt>` (network, a live session) from
+# inside the test. The escape is closed by making absence real: PATH is EXACTLY this dir —
+# the fake timeout plus the coreutils release-ask-ai.sh needs, resolved from THIS shell —
+# so no inherited binary (opencode included) is reachable at all.
+H2="$tmp/hermetic"; mkdir -p "$H2"
+# bash itself must be reachable for the script's `#!/usr/bin/env bash` shebang under a
+# PATH of exactly this dir — link the running shell's bash ($BASH).
+ln -s "$BASH" "$H2/bash"
+for t in jq awk tail head grep mktemp sed dirname cat; do
+  lt="$(command -v "$t")" && ln -s "$lt" "$H2/$t"
+done
+ln -s "$T2/timeout" "$H2/timeout"
 
 # The fixed prompt's inputs: a phase, its command, and a log longer than 200 lines.
 LOG="$SD/phase.log"
@@ -60,6 +92,11 @@ i=1; while [[ "$i" -le 250 ]]; do printf 'LINE%03d\n' "$i" >>"$LOG"; i=$((i + 1)
 
 arun() { # <PATH-prepend> [FAKE_OC via env] — invoke release-ask-ai.sh as the executor would
   out="$(cd "$tmp/wd" && env PATH="$1:$PATH" FAKE_STATE_DIR="$SD" \
+    ${ar_env[@]+"${ar_env[@]}"} "$au" bump 'release-bump.sh 0.5.1' "$LOG" </dev/null 2>&1)"
+  code=$?
+}
+arun_h() { # <hermetic-dir> — same, but PATH is EXACTLY the given dir (nothing inherited)
+  out="$(cd "$tmp/wd" && env PATH="$1" FAKE_STATE_DIR="$SD" \
     ${ar_env[@]+"${ar_env[@]}"} "$au" bump 'release-bump.sh 0.5.1' "$LOG" </dev/null 2>&1)"
   code=$?
 }
@@ -115,14 +152,77 @@ has         "A07/R9: the no-answer condition is reported"                       
 
 rm -f "$SD"/oc.* "$SD"/timeout.log
 ar_env=()
-arun "$T2"        # PATH without the opencode dir: the binary is absent
+arun_h "$H2"     # round 7 C3: HERMETIC PATH — opencode is genuinely absent (see H2 above)
 exit_nonzero "A08/R9: an absent binary is no-answer (fail-closed, not a hang)"
 has         "A08/R9: the no-answer condition is reported"                        '[Nn]o answer'
+fhasnt      "A08/C3: no timeout/opencode dispatch happens at all"                "$SD"/timeout.log '^300 '
+if [[ ! -s "$SD"/unexpected.log ]]; then
+  echo "ok   A08/C3: no real binary was reachable (hermetic PATH)"
+else
+  echo "FAIL A08/C3: a stub tripped under the hermetic PATH: $(cat "$SD/unexpected.log")"; fail=1
+fi
 
 rm -f "$SD"/oc.* "$SD"/timeout.log
 ar_env=(FAKE_OC=notext)
 arun "$T2:$O2"
 exit_nonzero "A09/R9: an envelope with no text part is no-answer"
 has         "A09/R9: the no-answer condition is reported"                        '[Nn]o answer'
+
+# ================================================================ round 7 B2 (escapere): fixed-string grep
+# release-ask-ai.sh builds its checklist context with `grep -iE "$phase|$first_word"`
+# where $first_word is the FIRST WORD OF THE COMMAND DESCRIPTION — interpolated into an
+# ERE. A description whose first word carries regex metacharacters mis-matches
+# (`[xyz]` reads as a character class: any line containing x, y or z) or silently dies
+# (`a(b` is an unbalanced paren: grep exits 2, `|| true` swallows it, the context is
+# EMPTY). The command description must be treated as a FIXED STRING: a line is selected
+# only when it literally contains it (or matches the phase name, which stays as-is).
+# Seam: $here comes from $0, so a SYMLINKED copy of the real script reads a fixture
+# checklist next to it (the code under test stays the real, unmodified script).
+XBIN="$tmp/xbin"; mkdir -p "$XBIN" "$tmp/docs"
+ln -s "$au" "$XBIN/release-ask-ai.sh"
+cat >"$tmp/docs/release-checklist.md" <<'MD'
+13. bump: run release-bump.sh to set the version in the tree
+14. literal bracket token [xyz] appears in this line
+15. plain line that merely exhibits the letter
+16. literal paren token a(b appears in this line
+MD
+xrun() { # <command-description> — run the symlinked REAL script against the fixture
+  rm -f "$SD"/oc.*
+  out="$(cd "$tmp/wd" && env PATH="$T2:$O2:$PATH" FAKE_STATE_DIR="$SD" \
+    "$XBIN/release-ask-ai.sh" bump "$1" "$LOG" </dev/null 2>&1)"
+  code=$?
+}
+xrun '[xyz] v0.5.1'
+exit_is     "R7/escapere: a metachar description still yields an answer"         0
+fhas        "R7/escapere: the literal [xyz] checklist line is included"          "$SD"/oc.args 'literal bracket token \[xyz\]'
+fhas        "R7/escapere: the phase line is still matched (phase part intact)"   "$SD"/oc.args '13\. bump: run release-bump'
+fhasnt      "R7/escapere: a line matching only via the character class is OUT"   "$SD"/oc.args 'merely exhibits'
+xrun 'a(b v0.5.1'
+exit_is     "R7/escapere: a paren description still yields an answer"            0
+fhas        "R7/escapere: the literal a(b checklist line is included"            "$SD"/oc.args 'literal paren token a\(b'
+fhas        "R7/escapere: the phase line is still matched (no silent empty)"     "$SD"/oc.args '13\. bump: run release-bump'
+
+# ================================================================ round 7 C2: the stubs actually trip
+# Steer nothing, invoke each fail-by-default stub directly, assert the 127 +
+# "UNEXPECTED REAL <tool>" propagates and the trip is recorded — then reset, so the
+# deliberate trips leave no trace for later checks.
+o="$(FAKE_STATE_DIR="$SD" "$T2/curl" -fsSL https://example.invalid 2>&1)"; c=$?
+if [[ "$c" -eq 127 ]] && printf '%s' "$o" | grep -q 'UNEXPECTED REAL curl'; then
+  echo "ok   R7/stubtrip: the curl stub refuses unsteered (127 + UNEXPECTED REAL)"
+else
+  echo "FAIL R7/stubtrip: the curl stub did not refuse (exit $c: $o)"; fail=1
+fi
+o="$(FAKE_STATE_DIR="$SD" "$T2/codesign" --verify Kai.app 2>&1)"; c=$?
+if [[ "$c" -eq 127 ]] && printf '%s' "$o" | grep -q 'UNEXPECTED REAL codesign'; then
+  echo "ok   R7/stubtrip: the codesign stub refuses unsteered (127 + UNEXPECTED REAL)"
+else
+  echo "FAIL R7/stubtrip: the codesign stub did not refuse (exit $c: $o)"; fail=1
+fi
+if [[ -s "$SD"/unexpected.log ]]; then
+  echo "ok   R7/stubtrip: the deliberate trips were recorded"
+else
+  echo "FAIL R7/stubtrip: the trips left no record in unexpected.log"; fail=1
+fi
+rm -f "$SD"/unexpected.log   # reset
 
 [[ $fail -eq 0 ]] && echo "PASS" || { echo "FAILED"; exit 1; }

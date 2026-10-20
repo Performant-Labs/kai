@@ -9,7 +9,11 @@
 #
 # Postures (R8): --dry-run = everything through the local build, no draft release;
 # default = the same plus the draft (non-public), then stop; --publish = continue with
-# publish, verify-published and closeout. Posture escalation only (R6).
+# publish, verify-published and closeout. Posture escalation only (R6). The smoke flags
+# are owner gates of the default posture (the matrix runs on the packaged build after the
+# draft exists): --dry-run combined with --smoke or --smoke-done is refused up front, and
+# --smoke --smoke-done together takes --smoke-done (the stronger owner assertion).
+# --quit-kai is a capability, not a posture: it acts under every posture, --dry-run too.
 #
 # State is a cache at bin/release/vX.Y.Z/state.json (R6): atomic writes, a mkdir lock with
 # an owner PID, resume postcondition-first (absent state re-derives; corrupt state stops),
@@ -44,6 +48,19 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: $0 vX.Y.Z [--dry-run|--publish] [--smoke] [--smoke-done] [--quit-kai]" >&2; exit 2; }
 [[ $want_dry -eq 0 || $want_pub -eq 0 ]] || { echo "give --dry-run or --publish, not both" >&2; exit 2; }
+# Round 7 A (drystop): the smoke flags are owner gates AFTER the dry-run boundary — this
+# script exits the dry-run posture when the local build (phase 10) holds and never reaches
+# ph_smoke (phase 11), so --smoke/--smoke-done under --dry-run would be silently ignored
+# (the run would complete, recording nothing). Every flag combination must act or refuse:
+# refuse here, before any phase, the lock or any state write.
+if [[ $want_dry -eq 1 && $smoke -eq 1 ]]; then
+  echo "--dry-run cannot be combined with --smoke: the smoke matrix belongs to the default posture (run it on the packaged build after the draft release is created; recording with --smoke/--smoke-done happens there too)" >&2
+  exit 2
+fi
+if [[ $want_dry -eq 1 && $smoke_done -eq 1 ]]; then
+  echo "--dry-run cannot be combined with --smoke-done: recording the smoke matrix happens after the draft release exists, and a dry run never creates one — re-run in the default posture and record it there" >&2
+  exit 2
+fi
 ver="${tag#v}"
 posture="default"
 [[ $want_dry -eq 0 ]] || posture="dry-run"
@@ -240,7 +257,12 @@ phase_run() { # <phase> <command-description> <command...>
   local phase="$1" desc="$2"; shift 2
   local log="$statedir/logs/$phase.log"
   mkdir -p "$statedir/logs"
-  local handlers=0 rc answer arc action diagnosis base arg n why
+  # Round 7 B1 (handlercounts): the blocker-handler retry cap is PER HANDLER. One shared
+  # counter made quit-kai x2 consume the whole budget, so the first bindings event then
+  # tripped "drift persists after regeneration" though the regen handler had never run;
+  # quit-kai and regen-bindings each get their two dispatches in one phase run. The AI
+  # cap below stays 2 PER PHASE (consult_count; aicap pins it) — separate bookkeeping.
+  local quit_tries=0 regen_tries=0 rc answer arc action diagnosis base arg n why
   while :; do
     "$@" >"$log" 2>&1
     rc=$?
@@ -258,16 +280,16 @@ phase_run() { # <phase> <command-description> <command...>
     # The static known-blocker table (R10): handled without the AI.
     if grep -q 'Kai is running' "$log" && pgrep -x Kai >/dev/null 2>&1; then
       if [[ $quit_kai -eq 1 ]]; then
-        handlers=$((handlers + 1))
-        [[ $handlers -le 2 ]] || do_stop "$phase" "Kai is still running after two quit attempts" "$log"
+        quit_tries=$((quit_tries + 1))
+        [[ $quit_tries -le 2 ]] || do_stop "$phase" "Kai is still running after two quit attempts" "$log"
         handler_quit_kai
         continue
       fi
       do_stop "$phase" "Kai is running: re-run with --quit-kai to have the static handler quit it (the workflow never quits Kai unasked)" "$log"
     fi
     if grep -q 'frontend/bindings' "$log"; then
-      handlers=$((handlers + 1))
-      [[ $handlers -le 2 ]] || do_stop "$phase" "bindings drift persists after regeneration (#73)" "$log"
+      regen_tries=$((regen_tries + 1))
+      [[ $regen_tries -le 2 ]] || do_stop "$phase" "bindings drift persists after regeneration (#73)" "$log"
       handler_regen_bindings "$phase" "$log" || do_stop "$phase" "make bindings / commit failed (#73)" "$log"
       continue
     fi
@@ -487,7 +509,9 @@ restructure_apply() {
     }
     { print }
   ' "$root/CHANGELOG.md" >"$tmp" || { rm -f "$tmp"; return 1; }
-  mv "$tmp" "$root/CHANGELOG.md"
+  # Round 7 D1: propagate an mv failure too (the trailing postcondition re-check would
+  # catch it, but the CHANGELOG.md.rs.$$ tmp would leak in $root on the way).
+  mv "$tmp" "$root/CHANGELOG.md" || { rm -f "$tmp"; return 1; }
   run_tool release-check-version.sh "$ver" . >/dev/null
 }
 

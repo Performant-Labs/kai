@@ -504,3 +504,93 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   ph_restructure uses (release-check-version.sh: CHANGELOG section + 4 version lines) — no
   gate re-run after state loss; genuine pre-release trees unchanged. Suite green: both
   harnesses PASS, go ok, fe ok.
+
+## Owner directive (2026-10-20 09:05 MDT) — iterate to PERFECT
+- Keep iterating PR #100 until perfect, not mergeable. One round, test-first: (1) fix the
+  --dry-run --smoke silent deferral (refuse, pin, document); (2) fix every carried
+  non-blocking item (per-handler retry counters; unescaped ERE in ask-ai; verify-dir trap on
+  every stop path; anything journaled as deferred); (3) harness hygiene: recording stubs for
+  opencode/gh/git-remote/hdiutil/codesign/osascript first on PATH that FAIL the test if
+  reached, + a stub self-test (a real opencode process was observed during a test run);
+  (4) full defect-class sweep incl. bash 3.2 compatibility (no mapfile/assoc arrays/lowercase
+  expansion/empty-array expansion under set -u); (5) docs re-read against final behavior.
+- Loop until: score > 90, ZERO active findings, no known deviation left. No merge, no waive,
+  no rigor change, no outside edits. The operator merges.
+
+## Rework round 7, T (2026-10-20) — the PERFECT-round pins (handoff-T-rework7.md)
+- Decided: three production REDs pinned. drystop/drystopdone — `--dry-run --smoke` and
+  `--dry-run --smoke-done` are silently ignored today (the dry-run boundary exits before
+  ph_smoke); pinned as refuse-up-front (non-zero, both flags named, rationale, no gh call /
+  no wrapped tool / no VCS op). handlercounts — phase_run's SHARED `handlers` counter makes
+  quit-kai x2 + regen-bindings x1 impossible in one phase (verbatim stop: "bindings drift
+  persists after regeneration" with regen never run); pinned per-handler counting
+  (quit-kai x2 + regen x2 all fit, exit 0) with green per-cap guards (handlercapkai,
+  handlercapregen) and the untouched aicap pin holding the AI-counter semantics. escapere —
+  release-ask-ai.sh's `grep -iE "$phase|$first_word"` interpolates the command description
+  into an ERE (`[xyz]` mis-matches, `a(` kills the context silently via `|| true`); pinned
+  fixed-string via a symlinked-copy seam reading a fixture checklist.
+- Decided (C3, the observed real opencode): the escape was ask-ai A08's
+  `PATH="$T2:$PATH"` — "absent binary" is false on any machine running the pipeline
+  (opencode IS the pipeline), so `command -v opencode` found the real binary and the fake
+  timeout's `exec "$@"` ran a real `opencode run`. Fixed hermetically: A08 now runs with
+  PATH set to EXACTLY one dir (fake timeout + $BASH + coreutil symlinks); release.test.sh
+  gets a fail-by-default opencode/curl/codesign stub set instead.
+- Decided (C1/C2): fake git hardened (local object ops pass through; network subverbs only
+  to the scenario's local bare origin via FAKE_ORIGIN, else 127 "UNEXPECTED REAL git");
+  stubtrip self-test + norealbins finale scan every scenario's unexpected.log. B3's eight
+  verifytrapall legs (download/incomplete/sums/updater/ditto/verify/mount/dmg) pin every
+  remaining ph_verify stop as trap-clean — GREEN (production held; coverage was the gap).
+- Assumed: `--dry-run --smoke-done` refuses like `--smoke` (same posture contradiction,
+  same message shape); the grid row `--smoke --smoke-done` (no dry-run) is an act with
+  precedence, documented not pinned. D1's only residual (restructure_apply's bare `mv`
+  leaking CHANGELOG.md.rs.$$ on an mv failure) is advisory — not steerable without breaking
+  the scenario repos.
+- Hedged: drystop's message-shape rows pass today via banner words (the load-bearing RED is
+  exit + the no-phase premise rows); the escapere `[xyz]`-included row passes under both
+  semantics (the fhasnt mis-match row carries the RED) — both noted in the handoff.
+- Evidence: `bash scripts/release.test.sh` 377 ok / 11 FAIL (all three production defects);
+  `bash scripts/release-ask-ai.test.sh` 33 ok / 3 FAIL; both IDENTICAL under /bin/bash
+  3.2.57; zero existing-row flips (292+96=388, 24+12=36); production diff empty; the new
+  b32 case runs the whole flow under /bin/bash green; /bin/bash -n clean on all 17
+  production scripts and a full hazard-construct grep found NONE (no arrays, no folds, no
+  mapfile/assoc/`|&`/`read -s`/`printf %q`).
+
+## Rework round 7, F (2026-10-20) — the three defects fixed, sweep clean (handoff-F-rework7.md)
+- Decided (drystop/drystopdone): extended the combination-validation block (before root/lock/
+  state) with two exit-2 refusals naming both flags and the rationale; the dry-run boundary
+  banner's advice line stays as T noted (it advertises the NEXT, default-posture run). Header
+  Postures paragraph documents the grid at the -h surface too.
+- Decided (handlercounts): split the shared counter into quit_tries/regen_tries, one per static
+  handler table; caps unchanged (2 per handler), AI-consultation bookkeeping untouched (aicap
+  green on the same code). AI-dispatched run-handler calls stay uncounted by these counters, as
+  before (the consult cap bounds them).
+- Decided (escapere): union of `grep -iE -- "$phase"` and `grep -iF -- "$first_word"` | awk
+  dedup | head -15. grep -F has no pattern-error mode, so a metachar description can neither
+  mis-select nor kill the context — the exit-2 class is eliminated for the arbitrary half, not
+  swallowed; the phase half keeps regex semantics (release.sh's own vocabulary).
+- Decided (sweep): took D1's advisory (restructure_apply mv now propagates + cleans its tmp).
+  Fixed the one real mktemp-without-trap site pair outside release.sh (merge-{go,frontend}-i18n.sh):
+  set -e aborts mid-merge on a jq failure leaked the tmp; probe-verified that the EXIT trap must
+  reference a GLOBAL (locals are unwound before the trap runs — a trap on the local rm -f "" and
+  leaked anyway), so tmp_file dropped `local` (which also un-masks mktemp's own failure under
+  set -e); abort probe shows no leak, success runs byte-identical (empty git diff on locales).
+  Scope extension beyond T's named pair disclosed in the handoff for S. All other sweep classes
+  closed with evidence (sweep table in the handoff); the gh issue list state-blindness residue
+  stays carried by the round-6 decision.
+- Decided (position on T's open question): --smoke --smoke-done (no --dry-run) KEEPS smoke-done
+  precedence — the stronger owner assertion resolves exactly the awaiting-owner state --smoke
+  would write; documented once in releasing.md + the script header; T pins it or leaves it
+  documented.
+- Docs: releasing.md operator paragraph gains the per-handler cap sentence, Postures paragraph
+  gains the one-sentence flag grid (the refusal documented once); release-checklist.md re-read
+  end to end, zero stale sentences, unchanged; AC7 pins green.
+- Evidence: RED reproduced first (377/11 and 33/3, matching T verbatim), then
+  bash+(/bin)bash release.test.sh 388 ok / 0 FAIL PASS, release-ask-ai.test.sh 36 ok / 0 FAIL
+  PASS; full test.unit.command exit 0 (swiftbridge build, go all ok, frontend 79 files / 870
+  tests, both suites PASS). No test file touched by F.
+- Incident (disclosed in the handoff): the merge-i18n edits silently reverted to original
+  bytes between the last content check and the first git add (no identified actor; no hook,
+  no watcher); caught via the commit stat (8 files, not 10), re-applied from the verified
+  diff, staged explicitly, amended, re-verified in worktree AND git show HEAD. Nothing any
+  suite reads changed after the full-suite green run; both release suites re-run post-amend
+  (388 + 36 ok, PASS, exit 0).

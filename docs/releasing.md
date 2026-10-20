@@ -18,13 +18,21 @@ closes it when done. Its progress state is a cache at `bin/release/vX.Y.Z/state.
 re-running resumes at the first phase whose postcondition does not hold, and a run after
 full success is a no-op. When a phase is blocked by an unknown failure it consults an AI
 once (`scripts/release-ask-ai.sh`, capped at two consultations per phase) and runs only
-allowlisted actions itself; hard stops (a missing signing identity, an existing tag or
-release, red CI on the release commit, a PR-Agent score under 90 or an unresolved finding)
-never consult, and nothing ever deletes or moves a release or a published tag.
+allowlisted actions itself; the known blockers (a running Kai, bindings drift) have static
+handlers that never consult, each capped at two dispatches per handler per phase; hard
+stops (a missing signing identity, an existing tag or release, red CI on the release
+commit, a PR-Agent score under 90 or an unresolved finding) never consult either, and
+nothing ever deletes or moves a release or a published tag.
 
 Postures: `--dry-run` does everything through the local build and creates no draft; the
 default creates the draft and stops; `--publish` also publishes, verifies the published
-artifact and closes out.
+artifact and closes out. Every flag combination either acts or is refused before anything
+runs: `--dry-run` refuses to combine with `--publish` and with `--smoke`/`--smoke-done`
+(the smoke matrix is run and recorded in the default posture, on the packaged build after
+the draft release exists — a dry run never gets there, so the flags would be ignored);
+`--smoke --smoke-done` together takes `--smoke-done`, the stronger owner assertion; and
+`--quit-kai` is a capability, not a posture — it acts under every posture, `--dry-run`
+included.
 
 What stays manual, on purpose — said once, here: the **manual smoke matrix** (run it on the
 `Kai.app` the workflow leaves in `bin/release/vX.Y.Z/`, and record it with `--smoke` /

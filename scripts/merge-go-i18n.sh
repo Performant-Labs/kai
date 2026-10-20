@@ -36,8 +36,10 @@ merge_locale() {
 
   echo "merging $locale ..."
 
-  local tmp_file=$(mktemp)
-
+  # tmp_file is a GLOBAL on purpose: the EXIT trap runs after this function's locals are
+  # unwound when set -e aborts mid-merge (a failing jq), so it must see the path there.
+  tmp_file=$(mktemp)
+  trap 'rm -f "$tmp_file"' EXIT   # fires even when set -e aborts mid-merge (jq failure)
   # 一次性读取所有 split 文件并用 reduce 深度合并，避免逐文件 `.[0] * .[1]`
   # 累加在某些 jq 版本下丢键（如 app.name_version）的问题。
   jq -s 'reduce .[] as $f ({}; . * $f)' "$split_dir"/*.json >"$tmp_file"

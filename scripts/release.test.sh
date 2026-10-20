@@ -15,6 +15,17 @@
 # check fake made ph_restructure's postcondition probe vacuous: restructure_apply never
 # ran in tests, no test CHANGELOG was ever restructured, and the stateloss spurious stop
 # in ph_changelog was invisible.
+# Round 7 (the PERFECT round): (A) the --dry-run + --smoke/--smoke-done posture
+# contradiction must be refused up front (drystop); (B) carried items pinned — per-handler
+# blocker retry counters (handlercounts; the shared counter was the defect), the
+# release-ask-ai.sh checklist grep must treat the command description as a FIXED string
+# (escapere, in release-ask-ai.test.sh), and EVERY ph_verify stop path trap-cleans its
+# workdir and --dest dir (verifytrapall legs); (C) harness hygiene — fail-by-default
+# recording stubs (opencode/curl/codesign exit 127 "UNEXPECTED REAL <tool>"), the fake
+# git hardened (local object ops pass, network subverbs only to the scenario's local
+# origin), a stubtrip self-test and a norealbins finale; (D) class sweeps — the flag
+# grid and per-group state-loss rows; (E) a b32 case runs the whole flow under /bin/bash
+# 3.2 (the shebang is env-bash; stock macOS resolves it to 3.2).
 #   bash scripts/release.test.sh
 set -uo pipefail
 
@@ -68,6 +79,33 @@ FB="$tmp/fakebin"; mkdir -p "$FB"
 cat >"$FB/git" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >>"\$FAKE_STATE_DIR/git.log"
+# Round 7 C1, hardened fake git: LOCAL object operations pass through to the real git;
+# any network-touching subverb (push/fetch/pull/ls-remote/clone/submodule) is refused
+# with 127 "UNEXPECTED REAL git" unless this case steers it — either the argv names the
+# scenario's local bare origin (\$FAKE_ORIGIN, set/exported by mkscn) or the resolved
+# remote IS that origin or FAKE_GIT_ALLOW_NET=1. Every trip is recorded in
+# \$FAKE_STATE_DIR/unexpected.log for the norealbins finale; the real network is never
+# reached (the refusal fires before the exec).
+net=""
+for a in "\$@"; do
+  case "\$a" in push|fetch|pull|ls-remote|clone|submodule) net="\$a"; break ;; esac
+done
+if [[ -n "\$net" ]]; then
+  ok=0
+  [[ "\${FAKE_GIT_ALLOW_NET:-}" == "1" ]] && ok=1
+  if [[ \$ok -eq 0 && -n "\${FAKE_ORIGIN:-}" ]]; then
+    [[ "\$*" == *"\$FAKE_ORIGIN"* ]] && ok=1
+    if [[ \$ok -eq 0 ]]; then
+      u="\$($RG remote get-url origin 2>/dev/null || true)"
+      [[ "\$u" == "\$FAKE_ORIGIN" ]] && ok=1
+    fi
+  fi
+  if [[ \$ok -eq 0 ]]; then
+    printf 'UNEXPECTED REAL git (network %s): %s\n' "\$net" "\$*" >&2
+    printf 'UNEXPECTED REAL git (network %s): %s\n' "\$net" "\$*" >>"\$FAKE_STATE_DIR/unexpected.log"
+    exit 127
+  fi
+fi
 # PR100-R4b: an env-steered FAILING 'git push ... release/vX.Y.Z'. The same argv serves
 # ph_branch (occurrence 1) and release_pr_apply (occurrence 2+), so the steer is by
 # occurrence: FAKE_PUSH_FAIL_AT=N fails the Nth and every later release-branch push.
@@ -81,6 +119,21 @@ if [[ -n "\${FAKE_PUSH_FAIL_AT:-}" && "\$1" == "push" && "\$*" == *"release/v"* 
 fi
 exec $RG "\$@"
 EOF
+
+# Round 7 C1: tools NO scenario ever steers get a fail-by-default RECORDING stub: argv
+# recorded to unexpected.log, "UNEXPECTED REAL <tool>" on stderr, exit 127. If release.sh
+# (or any wrapped script dispatched under this PATH) ever reaches for the real opencode,
+# curl or codesign, the phase fails loudly and the norealbins finale names the trip. The
+# steered fakes above (gh, git, hdiutil, osascript, pgrep, pkill, make, ...) never fall
+# through to a real binary either — their unhandled shapes exit 1 with "unhandled".
+for t in opencode curl codesign; do
+  cat >"$FB/$t" <<EOF
+#!/usr/bin/env bash
+printf '%s %s\n' "$t" "\$*" >>"\$FAKE_STATE_DIR/unexpected.log"
+printf 'UNEXPECTED REAL $t: %s\n' "\$*" >&2
+exit 127
+EOF
+done
 
 cat >"$FB/pgrep" <<'EOF'
 #!/usr/bin/env bash
@@ -121,8 +174,14 @@ cat >"$FB/hdiutil" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_STATE_DIR/hdiutil.log"
 case "${1:-}" in
-  attach) mkdir -p "$FAKE_STATE_DIR/mnt/Kai.app"
+  attach) # Round 7 B3 steers: mount-fail = the attach itself fails (no mount point);
+          # dmg-diff = the image mounts but its Kai.app differs from the zip's.
+          if [[ -e "$FAKE_STATE_DIR/mount-fail" ]]; then
+            echo "hdiutil: (fake) attach failed" >&2; exit 1
+          fi
+          mkdir -p "$FAKE_STATE_DIR/mnt/Kai.app"
           cp -R "$FAKE_FIXTURES/Kai.app/." "$FAKE_STATE_DIR/mnt/Kai.app/"
+          [[ -e "$FAKE_STATE_DIR/dmg-diff" ]] && echo different >"$FAKE_STATE_DIR/mnt/Kai.app/Info.plist"
           printf '/dev/disk9s1\tApple_HFS\t%s\n' "$FAKE_STATE_DIR/mnt" ;;
   detach) rm -rf "$FAKE_STATE_DIR/mnt"; echo "ejected" ;;
 esac
@@ -166,6 +225,25 @@ cat >"$FB/release-bump.sh" <<'EOF'
 printf '%s\n' "$*" >>"$FAKE_STATE_DIR/bump.log"
 n=0; [[ -f "$FAKE_STATE_DIR/bump.count" ]] && n="$(cat "$FAKE_STATE_DIR/bump.count")"
 n=$((n + 1)); echo "$n" >"$FAKE_STATE_DIR/bump.count"
+# Round 7 B1 (handlercounts): an explicit per-invocation failure sequence. bump.seq holds
+# one space-separated element per invocation; each invocation consumes the first element.
+#   kai      — set kai-running and fail with the Kai-is-running signature (the quit
+#              handler clears the marker, i.e. the OS effect of quitting Kai)
+#   bindings — fail with the frontend/bindings drift signature. `make bindings` does NOT
+#              consume the sequence (unlike the legacy bump-drift marker), so persistent
+#              drift is steered by repeating the element.
+# An `ok` element (or an exhausted sequence) falls through to the legacy behavior below.
+if [[ -f "$FAKE_STATE_DIR/bump.seq" ]]; then
+  seq_all="$(cat "$FAKE_STATE_DIR/bump.seq")"
+  el="${seq_all%% *}"; rest="${seq_all#* }"
+  [[ "$rest" == "$seq_all" ]] && rest=""
+  printf '%s\n' "$rest" >"$FAKE_STATE_DIR/bump.seq"
+  case "$el" in
+    kai)      : >"$FAKE_STATE_DIR/kai-running"
+              echo "FAIL: Kai is running: quit it (release-verify.sh launches its own copy)" >&2; exit 1 ;;
+    bindings) echo "FAIL: the tree is not the tag: frontend/bindings differs (run make bindings and commit the result, #73)" >&2; exit 1 ;;
+  esac
+fi
 # PR100-R4a premerge: while this marker stands, the bump log carries the bindings-drift
 # signature (the fake make clears it, like local-fail — one regen fixes the drift).
 if [[ -e "$FAKE_STATE_DIR/bump-drift" ]]; then
@@ -259,15 +337,19 @@ printf '%s\n' "\$*" >>"\$FAKE_STATE_DIR/release-check-version.sh.log"
 exec "$here/release-check-version.sh" "\$@"
 EOF
 
-# release-verify.sh gets one steering knob beyond the generic fake (PR #100 F2): the
-# verify-term marker kills the parent release.sh mid-phase-13, while its temp workdir is
-# live, to prove the workdir cleanup is trap-based (an end-of-function rm cannot run then).
+# release-verify.sh gets two steering knobs beyond the generic fake (PR #100 F2, R7 B3):
+# the verify-term marker kills the parent release.sh mid-phase-13, while its temp workdir
+# is live, to prove the workdir cleanup is trap-based (an end-of-function rm cannot run
+# then); the verify-fail marker makes the check itself fail (a plain stop path).
 cat >"$FB/release-verify.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$FAKE_STATE_DIR/release-verify.sh.log"
 if [[ -e "$FAKE_STATE_DIR/verify-term" ]]; then
   kill -TERM "$PPID" 2>/dev/null || true
   sleep 1
+fi
+if [[ -e "$FAKE_STATE_DIR/verify-fail" ]]; then
+  echo "FAIL: release-verify exploded (fake)" >&2; exit 1
 fi
 echo "ok (fake release-verify.sh)"
 exit 0
@@ -488,7 +570,34 @@ case "$a" in
     exit 0 ;;
   *"release download"*)
     d="."; [[ "$a" == *" --dir "* ]] && d="$(printf '%s' "$a" | sed -n 's/.* --dir \([^ ]*\).*/\1/p')"
+    # Round 7 B3 steers (verifytrapall legs): dl-fail = the download itself fails;
+    # dl-partial = only the zip arrives (incomplete assets); dl-badsums = a checksum
+    # line that cannot verify; dl-upmismatch = the updater zip differs from the release
+    # zip BUT the shipped SHA256SUMS covers the differing bytes (so shasum -c passes and
+    # cmp fails — the check order is sums, then byte-identity); dl-notzip = both zips are
+    # checksum-valid text files (ditto -x -k then fails on a non-zip).
+    if [[ -e "$FAKE_STATE_DIR/dl-fail" ]]; then
+      echo "gh: (fake) release download failed" >&2; exit 1
+    fi
+    if [[ -e "$FAKE_STATE_DIR/dl-partial" ]]; then
+      cp "$FAKE_FIXTURES/download/Kai-0.5.1-darwin-arm64.zip" "$d/"
+      exit 0
+    fi
     cp "$FAKE_FIXTURES"/download/* "$d/"
+    if [[ -e "$FAKE_STATE_DIR/dl-badsums" ]]; then
+      printf '0000000000000000000000000000000000000000000000000000000000000000  Kai-0.5.1-darwin-arm64.zip\n' >>"$d/SHA256SUMS"
+    fi
+    if [[ -e "$FAKE_STATE_DIR/dl-upmismatch" ]]; then
+      printf 'differs' >>"$d/updater-Kai-0.5.1-darwin-arm64.zip"
+      ( cd "$d" && shasum -a 256 Kai-0.5.1-darwin-arm64.zip \
+          updater-Kai-0.5.1-darwin-arm64.zip Kai-0.5.1-darwin-arm64.dmg >SHA256SUMS )
+    fi
+    if [[ -e "$FAKE_STATE_DIR/dl-notzip" ]]; then
+      printf 'this is not a zip\n' >"$d/Kai-0.5.1-darwin-arm64.zip"
+      cp "$d/Kai-0.5.1-darwin-arm64.zip" "$d/updater-Kai-0.5.1-darwin-arm64.zip"
+      ( cd "$d" && shasum -a 256 Kai-0.5.1-darwin-arm64.zip \
+          updater-Kai-0.5.1-darwin-arm64.zip Kai-0.5.1-darwin-arm64.dmg >SHA256SUMS )
+    fi
     exit 0 ;;
   *) echo "gh fake: unhandled: $a" >&2 >>"$FAKE_STATE_DIR/gh-unhandled.log"; exit 1 ;;
 esac
@@ -503,6 +612,8 @@ mkscn() { # name — throwaway repo + local bare origin (no network) + per-scena
   SCN="$1"; R="$tmp/$SCN"; SD="$tmp/$SCN.sd"
   mkdir -p "$R" "$SD/ghstate" "$tmp/origins"
   r_env=()
+  # Round 7 C1: the hardened fake git steers network subverbs to THIS local bare repo.
+  FAKE_ORIGIN="$tmp/origins/$SCN.git"; export FAKE_ORIGIN
   $RG -C "$R" init -q -b master
   $RG -C "$R" config user.name t
   $RG -C "$R" config user.email t@t
@@ -682,6 +793,52 @@ rrun v0.5.1 --publish --smoke-done
 exit_is     "AC4: --smoke-done resumes and completes"                           0
 jq_is       "AC4/R10p11: smoke done is recorded owner-asserted"                 "$(state)" '.smoke | startswith("done (owner-asserted")' 'true'
 
+# ================================================================ round 7 A: the --dry-run flag gate (drystop)
+# The smoke flags are owner gates that live AFTER the dry-run boundary (phase 11 vs the
+# boundary exit after phase 10): the dry-run posture exits before ph_smoke, so --smoke
+# and --smoke-done combined with --dry-run are posture contradictions that today are
+# SILENTLY IGNORED (the run completes the dry run, exit 0, nothing smoke-related
+# recorded — a flag combination the gate skipped). The contract: refuse UP FRONT —
+# non-zero exit, a message naming both flags and why (the smoke matrix needs the default
+# posture; smoke recording happens after the draft) — BEFORE any phase runs (no gh call,
+# no wrapped tool, no VCS op). The green companions: --dry-run alone is pinned by ac1life
+# and --smoke alone by `smoke` above (the refusal must not over-reach); --dry-run
+# --publish is the existing combination refusal (release.sh:46), pinned here so the new
+# gate matches that shape; --quit-kai is posture-independent and must still ACT (dryquit).
+mkscn drystop
+rrun v0.5.1 --dry-run --smoke
+exit_nonzero "R7/drystop: --dry-run --smoke is refused up front"
+has         "R7/drystop: the refusal names --dry-run"                    '--dry-run'
+has         "R7/drystop: the refusal names --smoke"                      '--smoke'
+has         "R7/drystop: the refusal says why (matrix/posture/draft)"    'matrix|default posture|draft'
+count_is    "R7/drystop: no gh call happens (refusal precedes phases)"   "$SD/gh.log" 0
+count_is    "R7/drystop: no wrapped tool runs (preflight)"               "$SD/preflight.log" 0
+fhasnt      "R7/drystop: no VCS op happens (no checkout/push/commit)"    "$SD/git.log" 'checkout|^push|^commit|^tag '
+
+mkscn drystopdone
+rrun v0.5.1 --dry-run --smoke-done
+exit_nonzero "R7/drystop: --dry-run --smoke-done is refused up front"
+has         "R7/drystop: the refusal names --smoke-done"                 '--smoke-done'
+has         "R7/drystop: the refusal names --dry-run"                    '--dry-run'
+count_is    "R7/drystop: no gh call happens"                             "$SD/gh.log" 0
+count_is    "R7/drystop: no wrapped tool runs (preflight)"               "$SD/preflight.log" 0
+
+mkscn drystopub
+rrun v0.5.1 --dry-run --publish
+exit_nonzero "R7/drystop: --dry-run --publish is refused (existing gate, pinned)"
+has         "R7/drystop: the dry/publish refusal names the conflict"     'not both'
+count_is    "R7/drystop: no gh call happens"                             "$SD/gh.log" 0
+
+# --quit-kai is a capability flag, not a posture: under --dry-run it must still dispatch
+# the quit when Kai is running at phase 0 — acting, never ignored.
+mkscn dryquit
+: >"$SD/kai-running"
+rrun v0.5.1 --dry-run --quit-kai
+exit_is     "R7/drystop: --quit-kai still acts under --dry-run"          0
+fhas        "R7/drystop: the quit was dispatched (osascript)"            "$SD/osascript.log" '[Qq]uit'
+jq_is       "R7/drystop: the dry-run posture completes"                  "$(state)" '.posture' 'dry-run'
+jq_is       "R7/drystop: the dry-run run reached the local phase"        "$(state)" '.phases.local.done' 'true'
+
 # ================================================================ AC3: unknown failures and the AI
 # R3/R4: one consultation per unknown-failure event; the executor re-runs the phase on retry.
 mkscn retry
@@ -842,6 +999,44 @@ count_is    "PR100-R4a: the pre-merge handler never consults the AI"            
 val_is      "PR100-R4a: bump re-ran after the regen (fail, then retry)"                  "$SD/bump.count" '2'
 jq_is       "PR100-R4a: the eventual tag then includes the regen (tag done)"             "$(state)" '.phases.tag.done' 'true'
 exists      "PR100-R4a: the run still reaches the draft"                                 "$SD/ghstate/release-v0.5.1.json"
+
+# ================================================================ round 7 B1: per-handler retry counters
+# phase_run's blocker-handler retry cap is PER HANDLER: quit-kai and regen-bindings each
+# get their two dispatches within one phase run. The old SHARED counter (one `handlers`
+# variable for both tables) made quit-kai twice + regen-bindings once impossible in one
+# phase — the third event tripped "bindings drift persists after regeneration" though the
+# regen handler had never run at all. The AI-consultation cap stays 2 PER PHASE and per
+# phase only (unchanged; pinned by aicap below). Steered at phase 4 via the bump.seq
+# per-invocation sequence: the dispatch logic under test is phase_run's, generic across
+# phases (premergedrift's precedent).
+mkscn handlercounts
+printf 'kai kai bindings bindings\n' >"$SD/bump.seq"
+rrun v0.5.1 --quit-kai
+exit_is     "R7/handlercounts: quit-kai x2 + regen-bindings x2 all fit one phase run" 0
+match_is    "R7/handlercounts: the quit handler dispatched exactly twice"  "$SD/osascript.log" '[Qq]uit' 2
+match_is    "R7/handlercounts: the regen handler dispatched exactly twice" "$SD/make.log"      '^bindings$' 2
+val_is      "R7/handlercounts: bump ran 5 times (4 blocked + 1 clean)"     "$SD/bump.count" '5'
+count_is    "R7/handlercounts: known blockers never consult the AI"        "$SD/askai.log" 0
+exists      "R7/handlercounts: the run still reaches the draft"            "$SD/ghstate/release-v0.5.1.json"
+
+# The caps themselves stand (per handler, not in total): a THIRD quit attempt stops...
+mkscn handlercapkai
+printf 'kai kai kai\n' >"$SD/bump.seq"
+rrun v0.5.1 --quit-kai
+exit_nonzero "R7/handlercounts: a third quit attempt still stops"
+has         "R7/handlercounts: the stop is the two-quits stop"             'still running after two quit attempts'
+match_is    "R7/handlercounts: exactly two quits dispatched"               "$SD/osascript.log" '[Qq]uit' 2
+count_is    "R7/handlercounts: no consultation for a known blocker"        "$SD/askai.log" 0
+
+# ...and persistent bindings drift still allows exactly two regens, then stops.
+mkscn handlercapregen
+printf 'bindings bindings bindings\n' >"$SD/bump.seq"
+rrun v0.5.1
+exit_nonzero "R7/handlercounts: persistent drift stops after its two regens"
+has         "R7/handlercounts: the stop is the drift-persists stop"        'persists after regeneration'
+match_is    "R7/handlercounts: the regen handler dispatched exactly twice" "$SD/make.log" '^bindings$' 2
+val_is      "R7/handlercounts: bump ran three times only"                  "$SD/bump.count" '3'
+count_is    "R7/handlercounts: no consultation for a known blocker"        "$SD/askai.log" 0
 
 # (4) Missing signing identity: stop, release-cert.sh hint, no AI (brief item 4; R5 stop 1).
 mkscn identity
@@ -1054,6 +1249,37 @@ rrun v0.5.1 --publish
 exit_nonzero "PR100-F2: a forced mid-verify kill exits non-zero"
 vleft       "PR100-F2: trap-based cleanup still runs on a forced mid-verify exit"
 tmpleft     "PR100-F2: nothing at all survives a forced mid-verify exit"
+
+# ================================================================ round 7 B3: EVERY ph_verify stop path
+# is trap-cleaned (the verify workdir; the installer --dest dir is created only on the
+# last two stops and is pinned by verifystop/verifyok above). verifyok/verifystop/
+# verifyterm cover success, the installer failure and the forced kill; the legs below
+# drive each REMAINING stop inside ph_verify: download fail, incomplete assets,
+# checksum fail, updater-zip mismatch, ditto fail, release-verify fail, mount fail,
+# dmg mismatch. Each leg: steer, resume --publish, assert the stop names its cause AND
+# nothing survives under the steered TMPDIR.
+vleg() { # <name> <marker> <stop-regex>
+  mkscn "$1"
+  rrun v0.5.1
+  exit_is "R7/$1: setup: default posture completes first" 0
+  : >"$SD/$2"
+  mkdir -p "$SD/tmp"
+  r_env=(TMPDIR="$SD/tmp")
+  rrun v0.5.1 --publish
+  exit_nonzero "R7/$1: the steered verify failure stops the run"
+  has     "R7/$1: the stop names phase verify-published"        'verify-published'
+  has     "R7/$1: the stop names the cause ($3)"                "$3"
+  vleft   "R7/$1: no release-verify.* workdir survives the stop"
+  tmpleft "R7/$1: nothing at all survives the stop"
+}
+vleg vtdownload   dl-fail       'release download .* failed|download'
+vleg vtassets     dl-partial    'incomplete'
+vleg vtsums       dl-badsums    'SHA256SUMS'
+vleg vtupmismatch dl-upmismatch 'byte-identical|updater'
+vleg vtditto      dl-notzip     'ditto'
+vleg vtverify     verify-fail   'release-verify\.sh failed'
+vleg vtmount      mount-fail    'mount'
+vleg vtdmg        dmg-diff      'dmg'
 
 # ================================================================ PR #100 re-review: 2 new ACTIVE findings
 # (R1) ph_tag resume gap on an unpushed tag: the annotated tag already exists LOCALLY at the
@@ -1338,6 +1564,79 @@ match_is    "PR100-R6: no second publish"                                       
 jq_is       "PR100-R6: changelog re-derived done from repo state"                   "$(state)" '.phases.changelog.done' 'true'
 jq_is       "PR100-R6: the rebuilt state reaches closeout"                          "$(state)" '.phases.closeout.done' 'true'
 
+# Round 7 D: the same absent-state walk, per phase group (the stateloss pattern
+# generalized — each group's done-ness derivation from repo state, asserted one by one;
+# the tag group's standalone absent-state case is tagpush, the branch group's standalone
+# cases are leftover/mergedpr, and the changelog/bump/restructure/pr/publish rows above
+# already carry their groups). These four rows close the set:
+has         "PR100-R6/D: branch group skips phases 3-6 via the merged PR"     'skipping phases 3-6'
+has         "PR100-R6/D: review group settles on the merge"                   'settled by its merge'
+match_is    "PR100-R6/D: merge group: the merged PR is not re-merged"        "$SD/gh.log" 'pr merge' 1
+count_is    "PR100-R6/D: local group: the build is not re-run (4 assets)"    "$SD/local.log" 1
+
+# ================================================================ round 7 C2: the stubs actually trip
+# Prove the fail-by-default stubs refuse when nothing steers them — invoke each directly
+# with no steering and assert the 127 + "UNEXPECTED REAL <tool>" propagates, the trip is
+# recorded, and the hardened git refuses a network subverb aimed at a NON-local remote
+# while local object operations still pass through. A scenario that forgot to steer would
+# fail its own rows exactly this way, and the norealbins finale below scans every
+# scenario's unexpected.log for the same trips. The probes live outside $tmp/*.sd and are
+# reset (rm -rf) so the deliberate trips never feed the finale.
+PSD="$tmp/stubtrip-probe"; rm -rf "$PSD"; mkdir -p "$PSD"
+o="$(FAKE_STATE_DIR="$PSD" "$FB/opencode" run --format json probe 2>&1)"; c=$?
+if [[ "$c" -eq 127 ]] && printf '%s' "$o" | grep -q 'UNEXPECTED REAL opencode'; then
+  echo "ok   R7/stubtrip: the opencode stub refuses unsteered (127 + UNEXPECTED REAL)"
+else
+  echo "FAIL R7/stubtrip: the opencode stub did not refuse (exit $c: $o)"; fail=1
+fi
+o="$(FAKE_STATE_DIR="$PSD" "$FB/curl" -fsSL https://example.invalid 2>&1)"; c=$?
+if [[ "$c" -eq 127 ]] && printf '%s' "$o" | grep -q 'UNEXPECTED REAL curl'; then
+  echo "ok   R7/stubtrip: the curl stub refuses unsteered (127 + UNEXPECTED REAL)"
+else
+  echo "FAIL R7/stubtrip: the curl stub did not refuse (exit $c: $o)"; fail=1
+fi
+o="$(FAKE_STATE_DIR="$PSD" "$FB/codesign" --verify Kai.app 2>&1)"; c=$?
+if [[ "$c" -eq 127 ]] && printf '%s' "$o" | grep -q 'UNEXPECTED REAL codesign'; then
+  echo "ok   R7/stubtrip: the codesign stub refuses unsteered (127 + UNEXPECTED REAL)"
+else
+  echo "FAIL R7/stubtrip: the codesign stub did not refuse (exit $c: $o)"; fail=1
+fi
+mkdir -p "$PSD/repo"
+$RG -C "$PSD/repo" init -q -b master
+$RG -C "$PSD/repo" remote add origin https://example.invalid/x.git
+o="$(cd "$PSD/repo" && env PATH="$FB:$PATH" FAKE_STATE_DIR="$PSD" git push origin master 2>&1)"; c=$?
+if [[ "$c" -eq 127 ]] && printf '%s' "$o" | grep -q 'UNEXPECTED REAL git'; then
+  echo "ok   R7/stubtrip: the git wrapper refuses a network subverb to a non-local remote"
+else
+  echo "FAIL R7/stubtrip: the git wrapper let a non-local network op through (exit $c: $o)"; fail=1
+fi
+o="$(cd "$PSD/repo" && env PATH="$FB:$PATH" FAKE_STATE_DIR="$PSD" git rev-parse --git-dir 2>&1)"; c=$?
+if [[ "$c" -eq 0 ]]; then
+  echo "ok   R7/stubtrip: local git object operations still pass through"
+else
+  echo "FAIL R7/stubtrip: local git object op refused (exit $c: $o)"; fail=1
+fi
+if [[ -s "$PSD/unexpected.log" ]]; then
+  echo "ok   R7/stubtrip: the deliberate trips were recorded for the finale scan"
+else
+  echo "FAIL R7/stubtrip: the trips left no record in unexpected.log"; fail=1
+fi
+rm -rf "$PSD"   # reset
+
+# ================================================================ round 7 E: /bin/bash 3.2 compatibility
+# release.sh's shebang is `#!/usr/bin/env bash`; on a stock macOS that resolves to
+# bash 3.2 (/bin/bash), not a brew bash 5. Run one whole scenario with the interpreter
+# pinned to /bin/bash: the full flow (every phase function, the recovery loop, the traps)
+# must complete under 3.2. (The harness files themselves are verified by running the
+# whole suite under /bin/bash — see handoff-T-rework7.md for that evidence.)
+mkscn b32
+out="$(cd "$R" && env PATH="$FB:$PATH" FAKE_STATE_DIR="$SD" FAKE_FIXTURES="$FX" \
+  /bin/bash "$release" v0.5.1 </dev/null 2>&1)"
+code=$?
+exit_is     "R7/b32: the full release flow runs under /bin/bash (3.2)"      0
+exists      "R7/b32: the run reaches the draft"                            "$SD/ghstate/release-v0.5.1.json"
+jq_is       "R7/b32: state records the completed default posture"          "$(state)" '.phases.smoke.done' 'true'
+
 # ================================================================ AC7: docs and CHANGELOG
 fhas "AC7: docs/releasing.md points at scripts/release.sh as the operator"      "$here/../docs/releasing.md" 'scripts/release\.sh'
 fhas "AC7: docs/release-checklist.md points at scripts/release.sh"              "$here/../docs/release-checklist.md" 'scripts/release\.sh'
@@ -1350,5 +1649,22 @@ fhas "AC7: CHANGELOG [Unreleased] carries the #78 skip line"                    
 for f in "$tmp"/*.sd/git.log; do [[ -f "$f" ]] && cat "$f" >>"$tmp/all-git.log"; done
 fhasnt "AC6/R5-5: no tag is ever deleted"          "$tmp/all-git.log" 'tag (-d|--delete)'
 fhasnt "AC6/R5-5: no force push is ever issued"    "$tmp/all-git.log" 'push.*(-f |--force |\+refs/tags)'
+
+# ================================================================ round 7 C1 finale: no unsteered real binary
+# Any trip of a fail-by-default stub (opencode/curl/codesign) or of the hardened git's
+# network refusal, in ANY scenario, is a failing case (stubtrip's deliberate probes are
+# reset above and live outside $tmp/*.sd, so a hit here means a real escape reached for
+# a real binary — the class that let a real `opencode run` fire from inside a test).
+nhit=0
+for f in "$tmp"/*.sd/unexpected.log; do
+  [[ -f "$f" ]] || continue
+  while IFS= read -r line; do
+    echo "FAIL R7/norealbins: unsteered real-binary reach in $(basename "${f%.sd.*}"): $line"
+    fail=1; nhit=1
+  done <"$f"
+done
+if [[ "$nhit" -eq 0 ]]; then
+  echo "ok   R7/norealbins: no unsteered real-binary reach in any scenario"
+fi
 
 [[ $fail -eq 0 ]] && echo "PASS" || { echo "FAILED"; exit 1; }

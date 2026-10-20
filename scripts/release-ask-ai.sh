@@ -46,7 +46,18 @@ cl="$here/../docs/release-checklist.md"
 if [[ -f "$cl" ]]; then
   first_word="$(printf '%s' "$command_desc" | awk '{print $1}')"
   first_word="${first_word#scripts/}"
-  checklist="$(grep -iE "$phase|$first_word" "$cl" 2>/dev/null | head -15 || true)"
+  # Round 7 B2 (escapere): the command description is matched as a FIXED string. The old
+  # single `grep -iE "$phase|$first_word"` interpolated it into an ERE, so a first word
+  # with regex metacharacters either MIS-MATCHED ("[xyz]" read as a character class,
+  # selecting any line containing x, y or z) or KILLED the context ("a(b" is an unbalanced
+  # group: grep exits 2 and the trailing `|| true` swallowed it into an EMPTY context).
+  # The phase name is ours — a plain word from release.sh's phase table — so it keeps
+  # regex matching; the description is arbitrary caller text and goes through grep -F,
+  # which has no pattern-error mode to swallow. Each grep's `|| true`: "no match" (exit 1)
+  # is a normal empty half under pipefail, never a failure of the context; a line matched
+  # by both halves is printed once (awk dedup).
+  checklist="$({ grep -iE -- "$phase" "$cl" 2>/dev/null || true; grep -iF -- "$first_word" "$cl" 2>/dev/null || true; } \
+    | awk '!seen[$0]++' | head -15)"
 fi
 
 msg="$(printf 'The release workflow phase "%s" is blocked.\n\nFailing command: %s\n\nLast 200 lines of its log:\n%s\n\nChecklist context (docs/release-checklist.md):\n%s\n\nReply with ONE JSON object and nothing else:\n{"diagnosis": "...", "action": "retry" | "wait" | "run-handler <name>" | "propose-fix-pr" | "stop", "argument": "...", "reason": "..."}\nThe executor validates the action against that allowlist and runs only allowlisted actions itself; any other action is refused.' \
