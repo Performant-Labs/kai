@@ -209,12 +209,22 @@ handler_quit_kai() {
   if pgrep -x Kai >/dev/null 2>&1; then pkill -x Kai || true; sleep 1; fi
   return 0
 }
-handler_regen_bindings() { # <log> — make bindings + commit (#73)
-  local log="$1"
+handler_regen_bindings() { # <phase> <log> — make bindings + commit (#73). PRE-merge only.
+  # PR #100 R4a: once the tag is pushed (or the PR merged) the git tag is the source of
+  # truth (docs/releasing.md) — regenerating and committing frontend/bindings then would
+  # move the tree past the published tag, so the handler refuses instead: a hard stop for
+  # the owner, no mutation of the tagged tree, no commit to release/*, no consultation.
+  local phase="$1" log="$2"
+  if phase_done tag || phase_done merge; then
+    do_stop "$phase" "bindings drift, but $tag is already tagged/merged: the git tag $tag is the source of truth (docs/releasing.md) — regenerating frontend/bindings and committing it now would build from a tree that is not the tagged commit; an owner decision is required (fix forward and cut the next tag); the workflow never mutates the tagged tree (#73 refuses post-tag)" "$log"
+  fi
   say "  .. known blocker: bindings drift — regenerating (make bindings) and committing (#73)"
   make bindings >>"$log" 2>&1 || return 1
   git add frontend/bindings >>"$log" 2>&1 || return 1
-  git commit -q -m "Release $tag: regenerate frontend/bindings (#73)" >>"$log" 2>&1 || true
+  # Commit only when the regen staged something; a real commit failure (e.g. a rejecting
+  # hook) propagates to phase_run (PR #100 R4b class) instead of being swallowed.
+  git diff --cached --quiet >>"$log" 2>&1 \
+    || git commit -q -m "Release $tag: regenerate frontend/bindings (#73)" >>"$log" 2>&1 || return 1
   return 0
 }
 
@@ -254,7 +264,7 @@ phase_run() { # <phase> <command-description> <command...>
     if grep -q 'frontend/bindings' "$log"; then
       handlers=$((handlers + 1))
       [[ $handlers -le 2 ]] || do_stop "$phase" "bindings drift persists after regeneration (#73)" "$log"
-      handler_regen_bindings "$log" || do_stop "$phase" "make bindings / commit failed (#73)" "$log"
+      handler_regen_bindings "$phase" "$log" || do_stop "$phase" "make bindings / commit failed (#73)" "$log"
       continue
     fi
 
@@ -299,7 +309,7 @@ phase_run() { # <phase> <command-description> <command...>
             continue
             ;;
           regen-bindings)
-            handler_regen_bindings "$log" || do_stop "$phase" "run-handler regen-bindings failed (#73)" "$log"
+            handler_regen_bindings "$phase" "$log" || do_stop "$phase" "run-handler regen-bindings failed (#73)" "$log"
             continue
             ;;
           *)
@@ -477,13 +487,19 @@ ph_restructure() {
 }
 
 release_pr_apply() {
-  git add -A
-  git diff --cached --quiet || git commit -q -m "Release $tag: version bump and changelog restructure"
-  git push -q origin "release/$tag"
-  local bf; bf="$(mktemp "${TMPDIR:-/tmp}/release-pr.XXXXXX")"
+  # PR #100 R4b: every operation's exit status must reach phase_run — a rejecting commit
+  # hook, a refused push, a failing gh pr create — so the R3/R4 consult-and-retry loop can
+  # run; the closing rm must never mask them. Fail fast: nothing runs after a failure.
+  git add -A || return 1
+  git diff --cached --quiet || git commit -q -m "Release $tag: version bump and changelog restructure" || return 1
+  git push -q origin "release/$tag" || return 1
+  local bf rc
+  bf="$(mktemp "${TMPDIR:-/tmp}/release-pr.XXXXXX")"
   printf 'Release %s: version bump and changelog restructure.\nManaged by scripts/release.sh (checklist issue #%s).\n' "$tag" "${ISSUE:-}" >"$bf"
   gh pr create --repo "$repo" --base master --head "release/$tag" --title "Release $tag" --body-file "$bf" >/dev/null
+  rc=$?
   rm -f "$bf"
+  return "$rc"
 }
 
 ph_release_pr() {

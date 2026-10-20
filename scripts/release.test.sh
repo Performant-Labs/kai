@@ -58,6 +58,17 @@ FB="$tmp/fakebin"; mkdir -p "$FB"
 cat >"$FB/git" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >>"\$FAKE_STATE_DIR/git.log"
+# PR100-R4b: an env-steered FAILING 'git push ... release/vX.Y.Z'. The same argv serves
+# ph_branch (occurrence 1) and release_pr_apply (occurrence 2+), so the steer is by
+# occurrence: FAKE_PUSH_FAIL_AT=N fails the Nth and every later release-branch push.
+if [[ -n "\${FAKE_PUSH_FAIL_AT:-}" && "\$1" == "push" && "\$*" == *"release/v"* ]]; then
+  n=0; [[ -f "\$FAKE_STATE_DIR/pushcount" ]] && n="\$(cat "\$FAKE_STATE_DIR/pushcount")"
+  n=\$((n + 1)); echo "\$n" >"\$FAKE_STATE_DIR/pushcount"
+  if [[ "\$n" -ge "\$FAKE_PUSH_FAIL_AT" ]]; then
+    echo "error: (fake) push of the release branch refused (occurrence \$n)" >&2
+    exit 1
+  fi
+fi
 exec $RG "\$@"
 EOF
 
@@ -91,7 +102,7 @@ printf '%s\n' "$*" >>"$FAKE_STATE_DIR/make.log"
 if [[ "${1:-}" == "bindings" ]]; then
   mkdir -p "$PWD/frontend/bindings"
   echo "// regenerated (fake)" >"$PWD/frontend/bindings/generated.ts"
-  rm -f "$FAKE_STATE_DIR/local-fail"    # the drift is fixed once bindings are regenerated
+  rm -f "$FAKE_STATE_DIR/local-fail" "$FAKE_STATE_DIR/bump-drift"   # drift is fixed once regenerated
 fi
 exit 0
 EOF
@@ -145,6 +156,12 @@ cat >"$FB/release-bump.sh" <<'EOF'
 printf '%s\n' "$*" >>"$FAKE_STATE_DIR/bump.log"
 n=0; [[ -f "$FAKE_STATE_DIR/bump.count" ]] && n="$(cat "$FAKE_STATE_DIR/bump.count")"
 n=$((n + 1)); echo "$n" >"$FAKE_STATE_DIR/bump.count"
+# PR100-R4a premerge: while this marker stands, the bump log carries the bindings-drift
+# signature (the fake make clears it, like local-fail — one regen fixes the drift).
+if [[ -e "$FAKE_STATE_DIR/bump-drift" ]]; then
+  echo "FAIL: frontend/bindings differs from the committed files (run make bindings and commit the result, #73)" >&2
+  exit 1
+fi
 if [[ "$n" -le "${FAKE_BUMP_FAILS:-0}" ]]; then
   echo "FAIL: bump exploded (fake, invocation $n)" >&2; exit 1
 fi
@@ -331,6 +348,13 @@ case "$a" in
     if [[ "$a" == *"--json"* ]]; then echo "{\"state\":\"$st\"}"; else echo "$st"; fi
     exit 0 ;;
   *"pr create"*)
+    # PR100-R4b: a counter knob, FAKE_PRCREATE_FAILS=N, mirroring FAKE_BUMP_FAILS — the
+    # first N invocations fail (transient when N=1, persistent when N is large).
+    n=0; [[ -f "$FAKE_STATE_DIR/prcreate.count" ]] && n="$(cat "$FAKE_STATE_DIR/prcreate.count")"
+    n=$((n + 1)); echo "$n" >"$FAKE_STATE_DIR/prcreate.count"
+    if [[ -n "${FAKE_PRCREATE_FAILS:-}" && "$n" -le "$FAKE_PRCREATE_FAILS" ]]; then
+      echo "gh: (fake) pr create failed (invocation $n)" >&2; exit 1
+    fi
     head="$(printf '%s' "$a" | sed -n 's/.*--head \(release\/v[0-9.]*\).*/\1/p')"
     head_sha="$(/usr/bin/git -C "$PWD" rev-parse "refs/heads/$head" 2>/dev/null || echo unknown)"
     n="$(next)"; printf 'OPEN\n%s\n%s\n' "$head" "$head_sha" >"$G/pr-$n"
@@ -645,16 +669,47 @@ dirty="$($RG -C "$R" status --porcelain 2>/dev/null)"
 if [[ -z "$dirty" ]]; then echo "ok   PR100-F1: the tree stays clean (no uncommitted version edits)"; else echo "FAIL PR100-F1: uncommitted version edits: $dirty"; fail=1; fi
 exists      "PR100-F1: the run still reaches the draft"                          "$SD/ghstate/release-v0.5.1.json"
 
-# (3) Bindings drift at phase 10: handler regen-bindings = make bindings + commit (R10p10, #73).
-mkscn bindings
+# (3) Bindings drift, by which side of the tag it fires (PR #100 round 4, R4a "Post-tag
+# source mutation", finding 3fe580bc5f88 ACTIVE, release.sh:560-621): the tag is pushed at
+# phase 9 and the drift can surface at phase 10, where handler_regen_bindings commits
+# regenerated frontend/bindings to the still-checked-out release branch — moving it past the
+# already-pushed tag. docs/releasing.md: "The git tag vX.Y.Z is the source of truth" and
+# "Anything else changed after the build means the app was not built from the tag as
+# committed", so POST-tag drift is a hard stop for the owner: no regen (it would only dirty
+# or mutate the tagged tree), no commit to release/*, no consultation (a static handler that
+# refuses). `posttagdrift` supersedes the round-1 `bindings` case, which pinned that phase-10
+# commit as correct; `premergedrift` below keeps the #73 regen+commit contract where it is
+# still valid — PRE-merge, no tag exists yet, the commit rides the release branch through the
+# phase-7 review gate (the pipeline's re-review) and the eventual tag includes it.
+mkscn posttagdrift
 echo bindings >"$SD/local-fail"
+r_env=(FAKE_AI=retry)   # an AI is available and would say retry — this class still never asks
 rrun v0.5.1
-exit_is     "AC3/#73: bindings drift is handled by the static handler"          0
-fhas        "AC3/#73: make bindings runs"                                       "$SD/make.log" '^bindings$'
-fhas        "AC3/#73: the regenerated bindings are committed"                   "$SD/git.log" 'frontend/bindings'
-count_is    "AC3/#73: the static handler never consults the AI"                 "$SD/askai.log" 0
-count_is    "AC3/#73: local re-ran after the regen"                             "$SD/local.log" 2
-exists      "AC3/#73: the run still reaches the draft"                          "$SD/ghstate/release-v0.5.1.json"
+exit_nonzero "PR100-R4a: post-tag bindings drift is a hard stop, not a regen+commit"
+jq_is      "PR100-R4a: premise: the tag phase was already done when the drift fired" "$(state)" '.phases.tag.done' 'true'
+count_is   "PR100-R4a: no regeneration is attempted post-tag"                       "$SD/make.log" 0
+fhasnt     "PR100-R4a: nothing is committed to the tagged release branch"           "$SD/git.log" 'regenerate frontend/bindings'
+count_is   "PR100-R4a: the post-tag refusal never consults the AI"                  "$SD/askai.log" 0
+count_is   "PR100-R4a: local ran once, no blind retry"                              "$SD/local.log" 1
+has        "PR100-R4a: the stop names the tag as the truth (an owner decision)"     'truth'
+has        "PR100-R4a: the stop names the bindings drift"                           'bindings'
+fhas       "PR100-R4a: the stop is visible on the checklist issue"                  "$SD/comments.log" 'STOP at phase local'
+jq_is      "PR100-R4a: local is not marked done"                                    "$(state)" '.phases.local.done' 'false'
+match_is   "PR100-R4a: nothing is drafted past a post-tag drift stop"               "$SD/gh.log" 'release create' 0
+
+# The pre-merge side: the #73 handler stays exactly as ruled where no tag exists yet
+# (steered at phase 4 — the cheapest phase whose log can carry the drift signature; the
+# dispatch under test is phase_run's, generic across phases).
+mkscn premergedrift
+: >"$SD/bump-drift"
+rrun v0.5.1
+exit_is     "PR100-R4a: pre-merge bindings drift still regenerates and proceeds"         0
+fhas        "PR100-R4a: make bindings runs pre-merge"                                    "$SD/make.log" '^bindings$'
+fhas        "PR100-R4a: the regenerated bindings are committed to the release branch"    "$SD/git.log" 'regenerate frontend/bindings'
+count_is    "PR100-R4a: the pre-merge handler never consults the AI"                     "$SD/askai.log" 0
+val_is      "PR100-R4a: bump re-ran after the regen (fail, then retry)"                  "$SD/bump.count" '2'
+jq_is       "PR100-R4a: the eventual tag then includes the regen (tag done)"             "$(state)" '.phases.tag.done' 'true'
+exists      "PR100-R4a: the run still reaches the draft"                                 "$SD/ghstate/release-v0.5.1.json"
 
 # (4) Missing signing identity: stop, release-cert.sh hint, no AI (brief item 4; R5 stop 1).
 mkscn identity
@@ -950,6 +1005,49 @@ rrun v0.5.1 --publish --smoke-done
 exit_is     "PR100-R3: --smoke-done finally resumes and completes"                0
 jq_is       "PR100-R3: the owner assertion is recorded after the refusals"        "$(state)" '.smoke | startswith("done (owner-asserted")' 'true'
 jq_is       "PR100-R3: the run reaches closeout"                                  "$(state)" '.phases.closeout.done' 'true'
+
+# ================================================================ PR #100 round 4: 2 ACTIVE findings
+# (R4b) "Masked exit status" (finding 5f2708832375 ACTIVE, release.sh:479-487):
+# release_pr_apply ends with `rm -f "$bf"`, so a failing `git push` or `gh pr create`
+# inside it is invisible to phase_run — the phase reports success, never consults, never
+# retries, and the run learns only later ("no PR found") or never. The apply's failures must
+# reach phase_run and follow the unknown-failure contract (R3/R4): exactly one consultation
+# on the first failure, retry on the AI's answer, stop at the cap of 2 — never a silent
+# success, never a mark_done release-pr on a failure. Steered for both commands the finding
+# names: gh pr create (the FAKE_PRCREATE_FAILS counter, like FAKE_BUMP_FAILS) and the
+# release-branch git push (occurrence-steered in the fake git: ph_branch's push is #1,
+# release_pr_apply's is #2+).
+# (a) transient create failure: consult exactly once, retry, recover.
+mkscn maskedexit
+r_env=(FAKE_PRCREATE_FAILS=1 FAKE_AI=retry)
+rrun v0.5.1
+exit_is     "PR100-R4b: a failed gh pr create is not masked into phase success"          0
+count_is    "PR100-R4b: the failure consulted the AI exactly once"                       "$SD/askai.log" 1
+val_is      "PR100-R4b: the apply re-ran after the consult (create attempted twice)"     "$SD/prcreate.count" '2'
+jq_is       "PR100-R4b: the consultation is recorded for phase release-pr"               "$(state)" '[.consultations[]? | select(.phase == "release-pr")] | length' '1'
+fhas        "PR100-R4b: the consultation names its phase"                                "$SD/askai.log" 'release-pr'
+jq_is       "PR100-R4b: release-pr then legitimately done"                               "$(state)" '.phases["release-pr"].done' 'true'
+exists      "PR100-R4b: the recovered run still reaches the draft"                       "$SD/ghstate/release-v0.5.1.json"
+# (b) persistent create failure: the consult-retry loop runs to the cap, then stops.
+mkscn maskedexitcap
+r_env=(FAKE_PRCREATE_FAILS=99 FAKE_AI=retry)
+rrun v0.5.1
+exit_nonzero "PR100-R4b: a persistently failing gh pr create stops (no silent success)"
+val_is      "PR100-R4b: three apply attempts through the consult loop"                   "$SD/prcreate.count" '3'
+count_is    "PR100-R4b: consultations capped at 2 per phase"                             "$SD/askai.log" 2
+has         "PR100-R4b: the stop is the consultation-cap stop, not a generic no-PR stop" 'still failing after 2 consultations'
+# (c) the finding's other command: a failing git push in release_pr_apply. Same contract,
+# proved on the push path — today the masked push failure even ends in a full "success".
+mkscn maskedexitpush
+r_env=(FAKE_PUSH_FAIL_AT=2 FAKE_AI=retry)
+rrun v0.5.1
+exit_nonzero "PR100-R4b: a failing git push in release_pr_apply is not masked into success"
+match_is    "PR100-R4b: the release-branch push is retried through the loop (1 branch + 3 apply)" "$SD/git.log" '^push( -q)? origin release/v0\.5\.1$' 4
+count_is    "PR100-R4b: the push failure consults the AI (capped at 2)"                  "$SD/askai.log" 2
+has         "PR100-R4b: the failure surfaces as the consultation stop"                   'still failing after 2 consultations'
+jq_is       "PR100-R4b: release-pr is NOT marked done on a masked push failure"          "$(state)" '.phases["release-pr"].done' 'false'
+match_is    "PR100-R4b: no draft is created through a masked failure"                    "$SD/gh.log" 'release create' 0
+fhas        "PR100-R4b: the stop is visible on the checklist issue"                      "$SD/comments.log" 'STOP at phase release-pr'
 
 # ================================================================ AC7: docs and CHANGELOG
 fhas "AC7: docs/releasing.md points at scripts/release.sh as the operator"      "$here/../docs/releasing.md" 'scripts/release\.sh'

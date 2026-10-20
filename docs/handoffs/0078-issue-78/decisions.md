@@ -411,3 +411,46 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   (do_stop naming --smoke-done) when recorded state is awaiting-owner and the flag is absent;
   no downgrade, no publish. Suite green: release.test.sh PASS (206 ok), ask-ai PASS, go ok,
   fe ok. All three rework rounds were defect-class fixes, each pinned before fixed.
+
+## Rework round 4 — T RED (2026-10-20)
+- PR-Agent at 4960559: 2 ACTIVE findings — R4a "Post-tag source mutation" (3fe580bc5f88,
+  release.sh:560-621): the bindings-drift handler commits regenerated bindings at phase 10,
+  past the tag pushed at phase 9, against docs/releasing.md's "the git tag vX.Y.Z is the
+  source of truth"; R4b "Masked exit status" (5f2708832375, release.sh:479-487):
+  release_pr_apply returns `rm -f "$bf"`'s status, so failing git push / gh pr create never
+  reach phase_run's R3/R4 consult-retry contract.
+- **Decided:** pin both RED in `scripts/release.test.sh` as `posttagdrift` + `premergedrift`
+  (R4a) and `maskedexit`/`maskedexitcap`/`maskedexitpush` (R4b). Post-tag drift = hard stop
+  (no regen, no commit to release/*, no consultation, stop names the tag-truth rule); a
+  failing create/push must consult once and retry, or stop at the cap of 2, never silently
+  succeed or mark release-pr done.
+- **Decided (supersession):** the round-1 `bindings` scenario (drift at phase 10 → regen+
+  commit → exit 0) pinned exactly the condemned shape and is REPLACED by `posttagdrift`;
+  keeping it would make the suite unsatisfiable. All other 211 existing assertions untouched
+  and green.
+- **Assumed:** the pre-merge safe side stays commit+retry+proceed (no explicit stop-for-
+  re-review): R10p10's handler contract is regen+commit+re-run without the AI, and the
+  phase-7 review gate on the PR carrying the commit IS the re-review; no tag exists yet, so
+  tag-truth is not engaged. Steered via a new `bump-drift` marker (phase 4 — cheapest phase
+  whose log can carry the drift signature; the dispatch under test is phase_run's, generic
+  across phases).
+- **Assumed:** the push steer is by occurrence (FAKE_PUSH_FAIL_AT=N in the fake git) because
+  ph_branch and release_pr_apply issue the identical push argv; occurrence #1 is ph_branch's.
+  Nothing pins whether `gh pr create` runs after a failed push (early-return and aggregate
+  fix shapes both pass).
+- **Hedged:** R4a's stop message is pinned by concept (/truth/ + /bindings/), not wording;
+  the detection mechanism (phase_done tag vs remote-tag probe) is left to F.
+- **Evidence:** baseline 218 ok / 0 FAIL / exit 0; after the 107-insertion edit
+  `bash scripts/release.test.sh` → exit 1, 223 ok / 25 FAIL, all 25 inside the new cases,
+  verbatim in handoff-T-rework4.md (with both PR finding texts and the release.sh:479-487 /
+  212-219 / 254-259 excerpts). ask-ai suite PASS; `bash -n` clean; production code untouched.
+
+## Rework round 4 (2026-10-20) — post-tag mutation + masked exits fixed
+- PR-Agent at 4960559 (score 72; all five prior findings RESOLVED): 2 new ACTIVE —
+  (1) post-tag source mutation: the bindings handler could commit to the release branch after
+  the tag was pushed, breaking tag-truth; (2) masked exit status: release_pr_apply returned
+  rm's status, hiding git/gh failures from the consultation contract.
+- Fixed test-first (handoff-T-rework4 / handoff-F-rework4): handler_regen_bindings is
+  phase-aware (tag-or-merge done => do_stop naming tag-truth, zero consultations; pre-merge
+  #73 behavior kept); exit-status sweep across every cleanup-tailed helper (sites listed in
+  the handoff). Suite green: release.test.sh PASS, ask-ai PASS, go ok, fe ok.
