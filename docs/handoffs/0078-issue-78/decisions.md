@@ -365,3 +365,14 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   stop; ph_changelog scopes the marker grep to [Unreleased] like changelog-check.sh)
   (handoff-F-rework2.md). Suite green: release.test.sh PASS 199 ok (was 188), ask-ai PASS,
   go ok, fe ok.
+
+## PR #100 ready (2026-10-20)
+- Head 7696b4a: all five CI checks green (actionlint, gitleaks, Linux suite 3m15s, pr-title,
+  PR-Agent). PR-Agent score 95, review complete at head, ALL FOUR findings RESOLVED
+  (resume-state gap; verify temp-dir leak; unpushed-tag resume; stale known-issues marker),
+  zero ACTIVE. The operator's bar (CI green, score > 90, findings resolved) is met after two
+  test-first fix rounds (199 harness ok lines, from 166 at RED authorship).
+- Run state: at merge, PR #100 recorded. The run stays open until the operator merges; then
+  the post-merge rehearsal list (live dry-run on the release Mac, opencode-run availability,
+  GNU timeout presence, real-gh shapes) is executed and recorded on issue #78 before the
+  workflow is trusted for a real release.
