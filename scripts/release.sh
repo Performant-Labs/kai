@@ -643,6 +643,11 @@ ph_smoke() {
     notify "smoke matrix awaiting the owner"
     exit 0
   fi
+  # PR #100 R3: awaiting-owner is an owner gate — a resume without --smoke-done must refuse;
+  # the record is never downgraded to skipped and the run never continues to publish.
+  if [[ "$(jq -r '.smoke // ""' "$state" 2>/dev/null)" == "awaiting-owner" ]]; then
+    do_stop smoke "the smoke matrix is still awaiting the owner (docs/release-checklist.md §Manual smoke matrix, on $statedir/Kai.app) — resume with --smoke-done to record it"
+  fi
   st_update '.smoke = $v' --arg v "skipped"
   issue_comment smoke skipped "smoke: skipped (--smoke not given this run; recorded per the checklist)"
   mark_done smoke

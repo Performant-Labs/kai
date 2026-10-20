@@ -913,6 +913,44 @@ count_is    "PR100-R2: the stop-for-owner never consults the AI"                
 jq_is       "PR100-R2: changelog is NOT marked done by a stale marker"          "$(state)" '.phases.changelog.done' 'false'
 count_is    "PR100-R2: nothing past the gate runs (no bump)"                    "$SD/bump.log" 0
 
+# ================================================================ PR #100 round 3: 1 ACTIVE finding
+# (R3) ph_smoke silent downgrade (release.sh:646-649): a --smoke run records .smoke =
+# "awaiting-owner" and exits 0 WITHOUT marking the phase done (an owner gate). A resume
+# without --smoke-done — with or without --publish — falls through the no-flag branch,
+# writes .smoke = "skipped", marks the phase done and (under --publish) publishes: the
+# manual smoke matrix is silently skipped. The resume must refuse instead, telling the
+# owner to pass --smoke-done, and record nothing (awaiting-owner stands; publish never
+# runs). The valid transitions stay pinned above and at the end of this case: absent +
+# no-flag -> skipped (scenario `default`), absent + --smoke -> awaiting-owner exit 0
+# (scenario `smoke` and the setup here), awaiting + --smoke-done -> done (here).
+mkscn smokeresume
+rrun v0.5.1 --smoke
+exit_is     "PR100-R3: setup: --smoke stops awaiting the owner"                   0
+jq_is       "PR100-R3: setup: state records awaiting-owner"                       "$(state)" '.smoke' 'awaiting-owner'
+jq_is       "PR100-R3: setup: the smoke phase is not done (owner gate)"           "$(state)" '.phases.smoke.done' 'false'
+# The defect, variant 1: re-run with NO flags — today it silently downgrades to skipped.
+rrun v0.5.1
+exit_nonzero "PR100-R3: a no-flag re-run is refused, not downgraded"
+has         "PR100-R3: the refusal tells the owner to pass --smoke-done"          '--smoke-done'
+jq_is       "PR100-R3: no-flag: awaiting-owner is not downgraded to skipped"      "$(state)" '.smoke' 'awaiting-owner'
+jq_is       "PR100-R3: no-flag: the smoke phase stays not-done"                   "$(state)" '.phases.smoke.done' 'false'
+fhasnt      "PR100-R3: no-flag: no smoke-skipped comment is posted"               "$SD/comments.log" 'smoke: skipped'
+# The defect, variant 2 (the finding's exact shape): --publish resume without --smoke-done.
+rrun v0.5.1 --publish
+exit_nonzero "PR100-R3: a --publish resume without --smoke-done is refused"
+has         "PR100-R3: that refusal also names --smoke-done"                      '--smoke-done'
+count_is    "PR100-R3: the owner-gate refusal never consults the AI"              "$SD/askai.log" 0
+jq_is       "PR100-R3: publish-resume: awaiting-owner still stands"               "$(state)" '.smoke' 'awaiting-owner'
+jq_is       "PR100-R3: publish-resume: the smoke phase stays not-done"            "$(state)" '.phases.smoke.done' 'false'
+jq_is       "PR100-R3: publish never runs without the owner's smoke record"       "$(state)" '.phases.publish.done' 'false'
+match_is    "PR100-R3: no release edit without the owner's smoke record"          "$SD/gh.log" 'release edit' 0
+jq_is       "PR100-R3: the draft stays a draft"                                   "$SD/ghstate/release-v0.5.1.json" '.isDraft' 'true'
+# The valid transition out of awaiting-owner still works after the refusals.
+rrun v0.5.1 --publish --smoke-done
+exit_is     "PR100-R3: --smoke-done finally resumes and completes"                0
+jq_is       "PR100-R3: the owner assertion is recorded after the refusals"        "$(state)" '.smoke | startswith("done (owner-asserted")' 'true'
+jq_is       "PR100-R3: the run reaches closeout"                                  "$(state)" '.phases.closeout.done' 'true'
+
 # ================================================================ AC7: docs and CHANGELOG
 fhas "AC7: docs/releasing.md points at scripts/release.sh as the operator"      "$here/../docs/releasing.md" 'scripts/release\.sh'
 fhas "AC7: docs/release-checklist.md points at scripts/release.sh"              "$here/../docs/release-checklist.md" 'scripts/release\.sh'

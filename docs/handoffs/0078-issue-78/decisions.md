@@ -376,3 +376,38 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   the post-merge rehearsal list (live dry-run on the release Mac, opencode-run availability,
   GNU timeout presence, real-gh shapes) is executed and recorded on issue #78 before the
   workflow is trusted for a real release.
+
+## Phase T-rework3 RED (T, 2026-10-20) — pinning PR #100's round-3 ACTIVE finding
+- **Decided:** the round-3 RED contract stays an extension of `scripts/release.test.sh` only.
+  Case `smokeresume` (finding "Smoke gate bypass", PR-Agent finding_id 68ce73cf4590, ACTIVE at
+  release.sh:646-649): after a `--smoke` run stops awaiting the owner (.smoke="awaiting-owner",
+  phase smoke not done), a resume WITHOUT --smoke-done — with or without --publish — must refuse
+  (exit non-zero, message naming --smoke-done, no AI consult), record nothing (.smoke stays
+  awaiting-owner, phase stays not-done, no skipped comment), and never publish (publish not
+  done, no release edit, draft stays draft). --publish --smoke-done then still completes with
+  the owner-asserted record. The valid transitions stay pinned by the untouched existing
+  scenarios: absent+no-flag -> skipped (`default`), absent+--smoke -> awaiting-owner exit 0
+  (`smoke`).
+- **Assumed:** the no-flag refusal variant is run before the --publish variant because a
+  --publish run escalates the recorded posture, which would refuse a later default-posture run
+  for an unrelated reason (posture gate, not smoke). "Refuse telling the owner to pass
+  --smoke-done (or record nothing)" is pinned as: non-zero exit + --smoke-done in the message +
+  no state write — any conforming shape (e.g. do_stop) passes.
+- **Hedged:** an --smoke re-run while already awaiting-owner (awaiting -> awaiting) is left
+  unpinned; only the silent skipped downgrade and the publish-through are the defect per the
+  dispatch. Expected fix shape named for F (guard in ph_smoke before the no-flag fall-through)
+  is a contract, not an implementation mandate.
+- **Evidence:** baseline re-verified 199 ok / 0 FAIL / exit 0 at 15b6c8f; after the 38-line
+  insertion `bash scripts/release.test.sh` → exit 1, 205 ok / 13 FAIL, all 13 inside the new
+  case, verbatim in handoff-T-rework3.md (which also carries the verbatim PR finding text and
+  the `sed -n '624,650p' scripts/release.sh` excerpt). Production code untouched; `git
+  diff --stat` = scripts/release.test.sh only.
+
+## Rework round 3 (2026-10-20) — smoke-gate bypass fixed; PR ready
+- PR-Agent at 15b6c8f (score 92, docs-only head): 1 new ACTIVE — smoke gate bypass: a
+  recorded awaiting-owner state silently downgraded to skipped on a --publish resume without
+  --smoke-done, publishing without the owner's smoke record.
+- Fixed test-first (handoff-T-rework3 / handoff-F-rework3): ph_smoke now refuses
+  (do_stop naming --smoke-done) when recorded state is awaiting-owner and the flag is absent;
+  no downgrade, no publish. Suite green: release.test.sh PASS (206 ok), ask-ai PASS, go ok,
+  fe ok. All three rework rounds were defect-class fixes, each pinned before fixed.
