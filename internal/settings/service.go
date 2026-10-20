@@ -54,6 +54,15 @@ type Settings struct {
 	// is read through readAutoSwitchSource, not mapstructure, so a garbled value cannot fail the
 	// whole settings load.
 	AutoSwitchSource bool `json:"auto_switch_source" mapstructure:"-"`
+	// TranslateWindowOnTop is the "keep the translate window on top of other apps" switch
+	// (issue #69): the DEFAULT the translate window's pin (always-on-top) state starts from
+	// when it mounts — read once by the frontend, not a live toggle. The window's own pin
+	// button stays the per-window toggle and its stored choice always wins over this default.
+	// OFF by default (the issue asks the window to stop staying on top of every app), and
+	// only an explicit true turns it on: a missing key, or a value that is not a boolean,
+	// reads as off. Read through readTranslateWindowOnTop, not mapstructure, so a garbled
+	// value cannot fail the whole settings load.
+	TranslateWindowOnTop bool `json:"translate_window_on_top" mapstructure:"-"`
 	// DoubleCopyTranslate is the "translate on double Cmd+C" switch (issue #199): pressing Cmd+C
 	// twice quickly in any app fills Kai's input with what was copied and translates it. OFF by
 	// default, because it needs the Input Monitoring permission and changes global behaviour, and
@@ -310,6 +319,25 @@ func readAutoSwitchSource(v *viper.Viper) bool {
 	return true
 }
 
+// translateWindowOnTopKey is the settings.json key of Settings.TranslateWindowOnTop.
+const translateWindowOnTopKey = "translate_window_on_top"
+
+// readTranslateWindowOnTop reads Settings.TranslateWindowOnTop from the loaded file: a boolean
+// is taken as it is (a "true"/"false" string too), and everything else, a missing key, null, a
+// number, an object, a word, is OFF, the default (issue #69: a window must not place itself
+// above other apps from a damaged file).
+func readTranslateWindowOnTop(v *viper.Viper) bool {
+	switch x := v.Get(translateWindowOnTopKey).(type) {
+	case bool:
+		return x
+	case string:
+		if b, err := strconv.ParseBool(strings.TrimSpace(x)); err == nil {
+			return b
+		}
+	}
+	return false
+}
+
 // doubleCopyTranslateKey is the settings.json key of Settings.DoubleCopyTranslate.
 const doubleCopyTranslateKey = "double_copy_translate"
 
@@ -438,6 +466,7 @@ func NewService(dataDir string) (*Service, error) {
 	}
 	s.cfg.Path = filePath
 	s.cfg.AutoSwitchSource = readAutoSwitchSource(v)
+	s.cfg.TranslateWindowOnTop = readTranslateWindowOnTop(v)
 	s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(v)
 	s.cfg.CorrectSourceText = readCorrectSourceText(v)
 	s.cfg.FastSystemTranslate = readFastSystemTranslate(v)
@@ -502,6 +531,7 @@ func (s *Service) startWatching() {
 			}
 			s.cfg.Path = s.filePath
 			s.cfg.AutoSwitchSource = readAutoSwitchSource(s.v)
+			s.cfg.TranslateWindowOnTop = readTranslateWindowOnTop(s.v)
 			s.cfg.DoubleCopyTranslate = readDoubleCopyTranslate(s.v)
 			s.cfg.CorrectSourceText = readCorrectSourceText(s.v)
 			s.cfg.FastSystemTranslate = readFastSystemTranslate(s.v)
@@ -547,6 +577,7 @@ func (s *Service) writeConfig() error {
 	w.Set("execkeys", s.cfg.ExecKeys)
 	w.Set("auto_clipboard", s.cfg.AutoClipboard)
 	w.Set(autoSwitchSourceKey, s.cfg.AutoSwitchSource)
+	w.Set(translateWindowOnTopKey, s.cfg.TranslateWindowOnTop)
 	w.Set(doubleCopyTranslateKey, s.cfg.DoubleCopyTranslate)
 	w.Set(correctSourceTextKey, s.cfg.CorrectSourceText)
 	w.Set(fastSystemTranslateKey, s.cfg.FastSystemTranslate)

@@ -6,27 +6,27 @@
   import { currentLang } from '../stores/ui';
   import { persisted, pinKey } from '../stores/persisted';
   import { rootStyleToStyle } from '../utils/style';
+  import { initialPin } from '../utils/pinDefault';
   import { onEvent, emitEvent } from '../runtime';
   import { Window, Clipboard } from '@wailsio/runtime';
 
-  // Pin state persists to localStorage and survives reopening the window.
-  // #39: pinned by default (modal semantics) — the working window stays above other apps until
-  // explicitly hidden (hotkey toggle / red X / tray) and no longer "disappears" below them when
-  // it loses focus. The 🧷 button keeps its meaning: the unpin/pin toggle.
-  const PIN_MODAL_MIGRATION_KEY = 'kai:translate:pinnedModalDefault';
-  const pinnedStore = persisted<boolean>(pinKey('translate'), true);
-  // One-time migration: existing users were silently written false under the old default (false)
-  // by subscribe, so merely flipping the constructed default does nothing for them — on seeing
-  // "stored false and no migration flag" we reset to pinned and set the flag. Users who unpin
-  // after the migration (flag already present) are always respected.
-  if (typeof localStorage !== 'undefined' && !localStorage.getItem(PIN_MODAL_MIGRATION_KEY)) {
-    if (localStorage.getItem(pinKey('translate')) === JSON.stringify(false)) {
-      pinnedStore.set(true);
-    }
-    localStorage.setItem(PIN_MODAL_MIGRATION_KEY, '1');
-  }
+  // Pin state persists to localStorage and survives reopening the window. #69: the starting
+  // state is the "keep the translate window on top of other apps" setting (off by default) —
+  // the default the window starts from, read once per mount, not a live toggle. The 🧷 button
+  // keeps its meaning: the per-window, per-session toggle, and a stored choice always wins over
+  // the default (including one made while the setting is still loading — see the mount init).
+  // The old #39 forced-re-pin migration is gone: a stored false stays false.
+  const storedPinRaw =
+    typeof localStorage !== 'undefined' ? localStorage.getItem(pinKey('translate')) : null;
+  const pinnedStore = persisted<boolean>(pinKey('translate'), false);
   let pinned = $derived($pinnedStore);
+  // Set by the first explicit 🧷 toggle. The mount init applies the setting default only
+  // while this is false: a click made while the config loads is an explicit choice, and an
+  // explicit choice always wins over the default (localStorage cannot tell that click from
+  // the initial value persisted's subscribe auto-writes, so the flag is the discriminator).
+  let pinTouched = false;
   async function togglePin() {
+    pinTouched = true;
     const next = !pinned;
     pinnedStore.set(next);
     try {
@@ -897,9 +897,23 @@
     const offHistoryUse = onEvent(EventHistoryUse, (p: HistoryUsePayload) => {
       applyHistoryUse(p);
     });
-    // Initialization and first render: restore pin state, then wait for engines/languages/defaults to load.
+    // Initialization and first render: resolve the starting pin from the setting, apply it,
+    // then wait for engines/languages/defaults to load.
     (async () => {
-      // Restore the persisted pin state.
+      // #69: the pin default is the setting, read once per mount BEFORE the state is applied:
+      // a stored 🧷 choice wins, otherwise the setting decides (off when unreadable). A click
+      // made while the config was loading is an explicit choice and is never overwritten —
+      // hence pinTouched; storedPinRaw was captured before the store existed, so it holds the
+      // user's prior choice, not the initial value the subscribe auto-writes.
+      try {
+        const cfg = await GetConfig();
+        if (!pinTouched) {
+          pinnedStore.set(initialPin(storedPinRaw, cfg?.translate_window_on_top === true));
+        }
+      } catch {
+        /* Config unreadable: keep the current state, never override a click */
+      }
+      // Apply the resolved pin state.
       try {
         await Window.SetAlwaysOnTop($pinnedStore);
       } catch (e) {

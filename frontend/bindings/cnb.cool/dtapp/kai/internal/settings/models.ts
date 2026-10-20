@@ -231,6 +231,18 @@ export interface Settings {
     "auto_switch_source": boolean;
 
     /**
+     * TranslateWindowOnTop is the "keep the translate window on top of other apps" switch
+     * (issue #69): the DEFAULT the translate window's pin (always-on-top) state starts from
+     * when it mounts — read once by the frontend, not a live toggle. The window's own pin
+     * button stays the per-window toggle and its stored choice always wins over this default.
+     * OFF by default (the issue asks the window to stop staying on top of every app), and
+     * only an explicit true turns it on: a missing key, or a value that is not a boolean,
+     * reads as off. Read through readTranslateWindowOnTop, not mapstructure, so a garbled
+     * value cannot fail the whole settings load.
+     */
+    "translate_window_on_top": boolean;
+
+    /**
      * DoubleCopyTranslate is the "translate on double Cmd+C" switch (issue #199): pressing Cmd+C
      * twice quickly in any app fills Kai's input with what was copied and translates it. OFF by
      * default, because it needs the Input Monitoring permission and changes global behaviour, and
