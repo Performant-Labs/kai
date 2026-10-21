@@ -57,14 +57,17 @@ public func kai_screenrecording_enabled(
   return writeCString(enabled ? "true" : "false", into: out, cap: out_cap)
 }
 
-// kai_screenrecording_request: makes macOS list Kai under Privacy & Security > Screen Recording,
-// then opens that pane.
+// kai_screenrecording_request: makes macOS list Kai under Privacy & Security > Screen & System
+// Audio Recording, then opens that pane.
 // CGRequestScreenCaptureAccess() alone is not reliable: it does nothing once the app has been asked
 // before, or when the app is not frontmost / not on the main thread. So this runs on the main thread
 // with Kai active, and if the preflight still says "not granted" after the request it makes one
-// real ScreenCaptureKit call (SCShareableContent: window and display metadata only, no pixels are
-// captured, so no flash and no second prompt beyond the system's own). macOS lists an app once it
-// has asked or tried to capture. The pane opens last, so Kai is already in the list.
+// real ScreenCaptureKit capture attempt: a minimal SCStream over the main display, held strongly
+// until it answers and stopped right away on the success path (no frames are kept). The expected
+// .notPermitted failure is still a win: macOS lists an app once it has asked or tried to capture,
+// and that failed start is exactly what enrolls Kai (issue #114 — the metadata-only enumeration
+// shipped in 0.6.0 never did). The pane opens last, on the attempt's answer, so Kai is already in
+// the list.
 // A 0 return means the request was started ("requested", not "granted"); the pane opens
 // asynchronously on the main thread.
 @_cdecl("kai_screenrecording_request")
@@ -85,10 +88,31 @@ public func kai_screenrecording_request() -> Int32 {
       bridgeFileLog(bridgeLogText("screen.request_done"))
     }
     if !CGPreflightScreenCaptureAccess() {
-      // One minimal capture attempt so macOS registers Kai; the pane opens when it answers (or
-      // after 3 s at the latest, so a slow answer never leaves the user with no pane).
-      SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { _, _ in
-        DispatchQueue.main.async { openPane() }
+      // One real capture attempt so macOS lists Kai: a minimal SCStream over the main display,
+      // stopped as soon as it answers. The expected .notPermitted failure is what makes macOS
+      // list Kai (issue #114: the metadata-only enumeration shipped in 0.6.0 never enrolled
+      // Kai). The pane opens when the attempt answers (or after 3 s at the latest, so a slow
+      // answer never leaves the user with no pane).
+      SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) {
+        content, _ in
+        guard let display = content?.displays.first else {
+          DispatchQueue.main.async { openPane() }
+          return
+        }
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let config = SCStreamConfiguration()
+        config.width = Int(display.frame.width)
+        config.height = Int(display.frame.height)
+        config.showsCursor = false
+        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+        // This completion holds the stream strongly, so it lives until the attempt answers; on
+        // the expected .notPermitted answer there is no running capture to stop.
+        stream.startCapture { error in
+          DispatchQueue.main.async { openPane() }
+          if error == nil {
+            stream.stopCapture { _ in }
+          }
+        }
       }
       DispatchQueue.main.asyncAfter(deadline: .now() + 3) { openPane() }
     } else {
