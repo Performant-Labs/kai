@@ -375,7 +375,19 @@ printf '%s\n' "$*" >>"$FAKE_STATE_DIR/gh.log"
 a="$*"
 next() { n=100; [[ -f "$G/seq" ]] && n="$(cat "$G/seq")"; n=$((n + 1)); echo "$n" >"$G/seq"; echo "$n"; }
 pragent() { # <pr-file> <want-json-flag> — the PR-Agent review comment (R1's machine block)
-  local f="$1" head_sha score findings
+  local f="$1" head_sha score findings body rat
+  case "${FAKE_AGENT:-90}" in
+    nostate-*) # visible review only (no machine block), with timestamps like gh pr view --json comments,commits
+      score=95; body='No major issues detected'; rat='2026-10-20T23:07:33Z'
+      case "$FAKE_AGENT" in
+        nostate-stale)    rat='2026-10-20T23:00:00Z' ;;
+        nostate-findings) body='Possible Issue: something' ;;
+        nostate-low)      score=80 ;;
+      esac
+      printf '<td>🏅&nbsp;<strong>Score</strong>: %s</td>\n<!-- pr-agent:review:full -->\n%s' "$score" "$body" \
+        | jq -Rs --arg r "$rat" '{comments:[{body: ., createdAt: $r}], commits:[{committedDate:"2026-10-20T23:06:30Z"}]}'
+      return 0 ;;
+  esac
   head_sha="$(sed -n 3p "$f" 2>/dev/null)"; score=90; findings='[{"state":"RESOLVED"}]'
   case "${FAKE_AGENT:-90}" in
     88)    score=88; findings='[{"state":"RESOLVED"},{"state":"RESOLVED"}]' ;;
@@ -1263,6 +1275,19 @@ r_env=(FAKE_CI=running)
 rrun v0.5.1
 exit_nonzero "R10p7: a check that never finishes stops after the wait"
 has         "R10p7: the stop names the running check"                                  'CI is not green.*in_progress'
+
+# (3c) No machine block (the real repo's PR-Agent posts only the visible review): fail-closed fallback.
+mkscn hsnostateok
+r_env=(FAKE_AGENT=nostate-ok)
+rrun v0.5.1
+hasnt       "R1: a fresh visible review, score>=90, no issues passes without a machine block" 'hard stop: the PR-Agent review gate failed'
+for k in stale findings low; do
+  mkscn hsnostate$k
+  r_env=(FAKE_AGENT=nostate-$k)
+  rrun v0.5.1
+  exit_nonzero "R1: no machine block + $k review is a hard stop"
+  has         "R1: no machine block + $k review: the stop names the PR-Agent gate" 'hard stop: the PR-Agent review gate failed'
+done
 
 # (4) PR-Agent: score 88 (below the 90 boundary) and score 95 with one OPEN finding (R1).
 mkscn hsagent88

@@ -225,12 +225,23 @@ ci_green_on() { # <sha> — 0 green; 1 not (prints why). Same predicate as relea
 }
 agent_gate() { # <pr> <headSha> — 0 pass; 1 fail (prints why). Rule R1.
   local pr="$1" head="$2" json bodies blk state score complete rhead unresolved
-  json="$(gh pr view "$pr" --repo "$repo" --json comments 2>/dev/null || true)"
+  json="$(gh pr view "$pr" --repo "$repo" --json comments,commits 2>/dev/null || true)"
   [[ -n "$json" ]] || json="$(gh api "repos/$repo/pulls/$pr/comments" 2>/dev/null || true)"
-  bodies="$(printf '%s' "$json" | jq -r 'if type == "array" then .[] else (.comments // []) end | .body // empty' 2>/dev/null || true)"
+  bodies="$(printf '%s' "$json" | jq -r '(if type == "array" then . else (.comments // []) end)[] | .body // empty' 2>/dev/null || true)"
   if ! printf '%s' "$bodies" | grep -q 'pr-agent-review-state:v1'; then
-    echo "no PR-Agent review state found on PR #$pr (the pr-agent-review-state:v1 comment)"
-    return 1
+    # No machine block (this repo's PR-Agent posts only the visible review). Fall back to the
+    # visible review, fail-closed: it must be posted at/after the head commit, score >= 90, and
+    # report "No major issues detected" (a listed finding cannot be shown RESOLVED from prose).
+    local rbody rat cat
+    rbody="$(printf '%s' "$json" | jq -r '[(.comments // [])[] | select((.body // "") | contains("pr-agent:review:full"))] | last | .body // empty' 2>/dev/null || true)"
+    rat="$(printf '%s' "$json" | jq -r '[(.comments // [])[] | select((.body // "") | contains("pr-agent:review:full"))] | last | .createdAt // empty' 2>/dev/null || true)"
+    cat="$(printf '%s' "$json" | jq -r '(.commits // [])[-1].committedDate // empty' 2>/dev/null || true)"
+    score="$(printf '%s' "$rbody" | sed -n 's~.*<strong>Score</strong>: \([0-9][0-9]*\)</td>.*~\1~p' | tail -1)"
+    if [[ -z "$rbody" ]]; then echo "no PR-Agent review found on PR #$pr"; return 1; fi
+    if [[ -z "$rat" || -z "$cat" || "$rat" < "$cat" ]]; then echo "the PR-Agent review (${rat:-?}) is not newer than the PR head commit (${cat:-?}): stale or unverifiable"; return 1; fi
+    if [[ -z "$score" || "$score" -lt 90 ]]; then echo "the PR-Agent score is ${score:-missing}: below the boundary 90"; return 1; fi
+    printf '%s' "$rbody" | grep -q 'No major issues detected' || { echo "the PR-Agent review lists findings and has no machine state to show them RESOLVED (score $score)"; return 1; }
+    return 0
   fi
   blk="$(printf '%s' "$bodies" | sed -n '/pr-agent-review-state:v1/,/-->/p' | sed '1d;$d')"
   state="$(printf '%s' "$blk" | grep -m1 '^{')"
