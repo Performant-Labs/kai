@@ -174,8 +174,9 @@ type hideWindow interface {
 // deliberately broadcast-free — a tray click is not a close, and text typed in the window
 // must survive it.
 //
-// emit has wails' app.Event.Emit signature (Emit(name string, data ...any)), so main.go passes
-// app.Event.Emit itself as the value. A nil win (the lookup found nothing) is a no-op — no
+// emit has wails' app.Event.Emit signature minus its bool return (Emit(name string, data
+// ...any) bool), so main.go wraps it in the emitForCloseRule adapter — Go has no implicit
+// conversion between the two shapes. A nil win (the lookup found nothing) is a no-op — no
 // window, no close, no broadcast — the LowerForSettings nil-guard shape.
 //
 // A package-level func rather than a WindowWrapper method so Wails generates no frontend

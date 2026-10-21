@@ -291,3 +291,42 @@ one-line fix for F/S). U is N/A (uiSurface false); S may proceed.
   emitEvent/onEvent plumbing; stores/translatePin.ts is the sanctioned sibling). persisted.ts
   byte-identical, aux windows untouched. 0 block, 0 warn, 1 nit (a stale doc comment —
   carried as advisory, matching T-green's). U is N/A (uiSurface false, declared); S next.
+
+## Phase S — spec audit (2026-10-21)
+
+Verdict **PASS** (handoff-S.md). Preconditions: A round-2 PASS (R2-1 binding), A-dup PASS,
+T-green PASS (zero blockers); visual/browser N/A (uiSurface false, declared). All ten ACs
+verified against the amended brief + A's rulings: AC1/AC2/AC3/AC4/Cmd+Q (#112 — close button
+hidden translate-only at `main.go:672` with aux windows untouched; the broadcast+Hide rule
+`HideTranslateWindow` in `window_wrapper.go` composed into the hook and the Cmd+W binding;
+bring-back paths green) and AC5–AC8 (#113 — `translateWindowStartsPinned` fed into
+`AlwaysOnTop`; v2 explicit-write-only pin store with mount-path no-write; the R2-1
+`effectivePin` decision at all three application points incl. the re-pin, with mounted AC7(a)/(b)
+sequences; re-pin exercised with the versioned key present, W-2 satisfied) plus AC9 (CHANGELOG
+two `[Unreleased]` lines, `(#112)`/`(#113)`, content matches) and AC10 (full suite GREEN at
+t-green; no `-skip`; F zero test edits — the post-T-green test commit `f5f75e0` is T's B-1
+remediation). Targeted re-runs green: `internal/service` ok, root pkg ok, frontend 82 files /
+890 tests (889 + the B-1 test, growth accounted). Four real-app items carried as manual
+verification for the PR description (per-platform close-button rendering, Cmd+W firing —
+Ctrl+W on Windows via CmdOrCtrl, the level actually dropping behind other apps, tray/hotkey
+bring-back). Scope clean: every production file guard-named, `translatePin.ts` the sanctioned
+sibling, tests are companions of in-scope sources; `historyUseRestore.test.ts`'s one-line
+re-point ruled in-scope (tests exactly AC8's re-pin; mandated by the AC6 re-contract; T-owned,
+disclosed, reviewed). F's disclosed nuances and the T/F bash-edit config disclosures all
+acknowledged; `svelte-check` failure reproduced by S (crashes in its own bin, pre-existing,
+not diff-caused). Advisories only: stale `window_wrapper.go:176-178` comment; the
+pipeline-config owner follow-ups (allowlist gaps + root package in the test pattern); a cheap
+future `.set`-call-site guard. Ready for O: commit, PR to master, milestone 0.6.1, closing
+#112 and #113.
+
+## Phase S (2026-10-21)
+- Verdict **PASS** (handoff-S.md): all ten ACs verified (targeted re-runs green: internal/service
+  ok, root ok, frontend 82/890); CHANGELOG accurate; scope clean; all T/F disclosures
+  acknowledged; four real-app items carried as manual verification (traffic light hidden per
+  platform; Cmd+W firing; the window going behind other apps; tray/hotkey bring-back).
+- Advisory 1 (stale doc comment window_wrapper.go:176-178, false since the emitForCloseRule
+  adapter): fixed by O as a comment-only edit, disclosed here — internal/service re-verified
+  green after the edit; no assertion reads the comment (S/A-dup both noted).
+- Advisories 2-4 recorded for the owner/PR: the pipeline-config allowlist gaps (third
+  occurrence — deserves its own maintenance item); a cheap future source-assertion guard for
+  the .set invariant; the PR-description manual list (below, in the PR body).
