@@ -42,7 +42,7 @@ fi
 
 # 3. CI green on that commit.
 if runs="$(gh api "repos/$repo/commits/$sha/check-runs" --paginate \
-    --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null)"; then
+    --jq '.check_runs[] | [.name, (if .status != "completed" and .conclusion != null and .completed_at != null then "completed" else .status end), (.conclusion // "")] | @tsv' 2>/dev/null)"; then
   [[ -z "${EXCLUDE_CHECK:-}" ]] || runs="$(printf '%s\n' "$runs" | awk -F'\t' -v x="$EXCLUDE_CHECK" '$1 != x')"
   if [[ -z "$runs" ]]; then
     fail "no CI runs found for ${sha:0:7}"

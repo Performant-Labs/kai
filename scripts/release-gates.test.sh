@@ -27,7 +27,11 @@ cat >"$tmp/bin/gh" <<'FAKE'
 # Prints canned rows: check-runs from $FAKE_RUNS, releases from $FAKE_RELEASES. Fails when FAKE_GH_FAIL is set.
 [[ -z "${FAKE_GH_FAIL:-}" ]] || exit 1
 case "$*" in
-  *check-runs*) printf '%b' "${FAKE_RUNS:-}" ;;
+  *check-runs*)
+    if [[ -n "${FAKE_RUNS_JSON:-}" ]]; then   # apply the caller's --jq to canned JSON, like real gh
+      f=""; prev=""; for x in "$@"; do [[ "$prev" == "--jq" ]] && f="$x"; prev="$x"; done
+      printf '%s' "$FAKE_RUNS_JSON" | jq -r "$f"
+    else printf '%b' "${FAKE_RUNS:-}"; fi ;;
   *releases*)   printf '%b' "${FAKE_RELEASES:-}" ;;
 esac
 FAKE
@@ -54,6 +58,11 @@ exits "a tag that does not exist fails" 1
 FAKE_RUNS="${green}slow\tin_progress\t\n" FAKE_RELEASES="" run v1.0.0
 exits "a CI check still running fails" 1
 has   "  ... naming it" 'slow (in_progress'
+
+FAKE_RUNS_JSON='{"check_runs":[{"name":"build","status":"completed","conclusion":"success","completed_at":"x"},{"name":"scan","status":"in_progress","conclusion":"success","completed_at":"x"}]}' FAKE_RELEASES="" run v1.0.0
+exits "a run reported in_progress but concluded success with completed_at passes" 0
+FAKE_RUNS_JSON='{"check_runs":[{"name":"scan","status":"in_progress","conclusion":null,"completed_at":null}]}' FAKE_RELEASES="" run v1.0.0
+exits "a run that is truly in_progress still fails" 1
 
 FAKE_RUNS="${green}broken\tcompleted\tfailure\n" FAKE_RELEASES="" run v1.0.0
 exits "a failed CI check fails" 1

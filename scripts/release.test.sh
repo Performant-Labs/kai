@@ -410,6 +410,9 @@ case "$a" in
       # nothing registered on the first read, then everything green (checks appear late)
       late)     c="$G/ci-late"; n="$(cat "$c" 2>/dev/null || echo 0)"; echo $((n+1)) >"$c"
                 [[ "$n" -ge 1 ]] && printf 'ci / go / build-lint-test\tcompleted\tsuccess\n' ;;
+      # GitHub quirk seen on the real v0.6.0 merge commit: status in_progress but conclusion + completed_at set
+      stuckok)  printf '{"check_runs":[{"id":1,"name":"ci / go / build-lint-test","status":"completed","conclusion":"success","completed_at":"x"},{"id":2,"name":"Secret scan (gitleaks)","status":"in_progress","conclusion":"success","completed_at":"x"}]}\n' ;;
+      stuckbad) printf '{"check_runs":[{"id":2,"name":"Secret scan (gitleaks)","status":"in_progress","conclusion":null,"completed_at":null}]}\n' ;;
       # a check that never finishes
       running) printf 'ci / go / build-lint-test\tin_progress\t\n' ;;
     esac
@@ -1270,6 +1273,14 @@ mkscn hscilate
 r_env=(FAKE_CI=late KAI_CI_WAIT=5 KAI_CI_POLL=1)
 rrun v0.5.1
 hasnt       "R10p7: checks that register late are waited for, not a hard stop"          'CI is not green'
+mkscn hscistuck
+r_env=(FAKE_CI=stuckok)
+rrun v0.5.1
+hasnt       "R10p7: status in_progress with a final conclusion and completed_at counts as finished" 'CI is not green'
+mkscn hscistuckbad
+r_env=(FAKE_CI=stuckbad)
+rrun v0.5.1
+exit_nonzero "R10p7: in_progress with no conclusion still stops after the wait"
 mkscn hsciwait
 r_env=(FAKE_CI=running)
 rrun v0.5.1
