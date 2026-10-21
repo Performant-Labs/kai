@@ -6,6 +6,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 `scripts/changelog-check.sh` lists merged PRs this section does not cover.
 
 ## [Unreleased]
+
+## [0.6.2] - 2026-10-21
 - The translate window cannot be closed anymore: its close button is gone, and Cmd+W (and any other close path) now hides it instead — the window keeps its text and results and comes back from the tray menu or the translate hotkey, so the app's main window can no longer be lost until Kai quits (#112).
 - The "Keep the translate window on top of other apps" setting now governs the window at every moment: the window is created at the level the setting says, and toggling the switch applies to a window that is already open (the window's own 🧷 pin choice still wins). The stored pin choice moved to a new key and starts fresh — a one-time reset, since the previously stored value was usually the auto-written initial state, not a real choice (#113).
 
