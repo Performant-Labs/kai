@@ -6,6 +6,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 `scripts/changelog-check.sh` lists merged PRs this section does not cover.
 
 ## [Unreleased]
+
+## [0.6.0] - 2026-10-20
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
 <!-- changelog-skip: release tooling, no user-facing change: #78 -->
