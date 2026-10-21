@@ -128,8 +128,8 @@ func TestPlanSourceSwitchShortCaptureWithConfidentDetectionSwitches(t *testing.T
 }
 
 // The floor still guards every answer that carries no confidence of its own (#8): an engine hint
-// (no local detector), and a local detection under the confidence bar — including the #54
-// promotion. There a length guess is the only guard, as before.
+// (no local detector), and a local detection the lower bar does not accept — under 0.5, or naming
+// a language the app does not know (#54, #91). There a length guess is the only guard, as before.
 func TestPlanSourceSwitchFloorGuardsAnswersWithoutConfidence(t *testing.T) {
 	eleven := "Hola, amigo" // 11 code points
 	if n := utf8.RuneCountInString(eleven); n != 11 {
@@ -157,11 +157,12 @@ func TestPlanSourceSwitchFloorGuardsAnswersWithoutConfidence(t *testing.T) {
 			t.Errorf("hint, %s: Reason = %q, want too_short", tc.name, got.Reason)
 		}
 	}
-	// A local detection under the confidence bar on short text: too_short, not below_confidence
-	// (the floor still names the reason there is no switch).
+	// #91: a short local detection the lower bar accepts (0.5 = switchMinConfidenceTarget, es
+	// recognized) switches like a confident one — the #54 promotion now runs before the floor and
+	// qualifies short captures — so this 11-code-point capture is no longer refused too_short.
 	svc := newSwitchService(t, &fakeDetector{lang: "es", conf: 0.5, ok: true}, langpref.New())
-	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: eleven, From: model.EN, To: model.FR}); got.Switched || got.Reason != model.SwitchReasonTooShort {
-		t.Errorf("short low-confidence local: got %+v, want too_short and no switch", got)
+	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: eleven, From: model.EN, To: model.FR}); !got.Switched || got.From != model.ESMX || got.To != model.EN {
+		t.Errorf("short lower-bar local: got %+v, want es-MX -> en (#91)", got)
 	}
 	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: twelve, From: model.EN, To: model.FR})
 	if got.Switched || got.Reason != model.SwitchReasonBelowConfidence {
@@ -535,5 +536,62 @@ func TestPlanSourceSwitchLowerBarLeavesTheOtherRulesAlone(t *testing.T) {
 	svc = newSwitchService(t, &fakeDetector{lang: "xx", conf: 0.6, ok: true}, langpref.New())
 	if got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: spanish, From: model.EN, To: model.ESMX}); got.Switched {
 		t.Errorf("an unrecognised language switched: %+v", got)
+	}
+}
+
+// Issue #91 (the #8 complaint, back for the [0.5, 0.8) band): a two-word capture like "Nos vemos"
+// is es to the local detector at 0.565 — measured 2026-10-21 on this macOS 27 build, 9 code
+// points — under the general bar (0.8) but at the #54 lower bar (0.5), and the floor refused it
+// too_short, so Alt-A left the wrong pin in place. A short capture the detector names at the
+// lower bar now switches exactly like a confident one, with variant selection (es -> es-MX) and
+// target replacement; every other cell of the decision keeps its answer, so the guard rows here
+// pin what must NOT change: the floor still guards sub-0.5 answers, hints and unrecognized
+// languages, 12 code points is not short, and a detection that covers the pin still refuses.
+func TestPlanSourceSwitchShortCaptureAtTheLowerBarSwitches(t *testing.T) {
+	short := "Nos vemos" // the #91 sample
+	if n := utf8.RuneCountInString(short); n != 9 {
+		t.Fatalf("fixture is %d code points, want 9", n)
+	}
+	twelve := "Hola, amigos" // the floor's boundary: 12 code points is not short
+	if n := utf8.RuneCountInString(twelve); n != 12 {
+		t.Fatalf("fixture is %d code points, want 12", n)
+	}
+	for _, tc := range []struct {
+		name       string
+		text       string
+		lang       model.Language // the local detector's answer; unused when ok is false
+		conf       float64
+		ok         bool
+		hint       model.Language // req.Detected, the engine hint the detector leaves behind
+		from, to   model.Language
+		wantSwitch bool
+		wantReason string
+		wantFrom   model.Language // the pair a switch must choose
+		wantTo     model.Language
+	}{
+		{"the #91 capture: 0.565, not the target", short, "es", 0.565, true, "", model.EN, model.FR, true, model.SwitchReasonSwitched, model.ESMX, model.EN},
+		{"exactly at the lower bar", short, "es", switchMinConfidenceTarget, true, "", model.EN, model.FR, true, model.SwitchReasonSwitched, model.ESMX, model.EN},
+		{"just under the lower bar", short, "es", switchMinConfidenceTarget - 0.01, true, "", model.EN, model.FR, false, model.SwitchReasonTooShort, "", ""},
+		{"12 code points is not short", twelve, "es", 0.565, true, "", model.EN, model.FR, false, model.SwitchReasonBelowConfidence, "", ""},
+		{"short in the target language (#54 for short)", short, "es", 0.6, true, "", model.EN, model.ESMX, true, model.SwitchReasonSwitched, model.ESMX, model.EN},
+		{"short, unrecognized language", short, "xx", 0.6, true, "", model.EN, model.FR, false, model.SwitchReasonTooShort, "", ""},
+		{"short on a hint: the floor is its only guard", short, "", 0, false, model.ESMX, model.EN, model.FR, false, model.SwitchReasonTooShort, "", ""},
+		// A's warn-1 row (handoff-A finding 1): the logged reason changes (too_short ->
+		// same_language) once the promotion clears the floor for short captures; the answer
+		// keeps being no switch.
+		{"short detection covers the pin", short, "es", 0.6, true, "", model.ESMX, model.EN, false, model.SwitchReasonSameLanguage, "", ""},
+	} {
+		svc := newSwitchService(t, &fakeDetector{lang: tc.lang, conf: tc.conf, ok: tc.ok}, langpref.New())
+		got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: tc.text, From: tc.from, To: tc.to, Detected: tc.hint})
+		if got.Switched != tc.wantSwitch {
+			t.Errorf("%s: Switched = %v (reason %q), want %v", tc.name, got.Switched, got.Reason, tc.wantSwitch)
+			continue
+		}
+		if got.Reason != tc.wantReason {
+			t.Errorf("%s: Reason = %q, want %q", tc.name, got.Reason, tc.wantReason)
+		}
+		if tc.wantSwitch && (got.From != tc.wantFrom || got.To != tc.wantTo) {
+			t.Errorf("%s: pair = %s -> %s, want %s -> %s", tc.name, got.From, got.To, tc.wantFrom, tc.wantTo)
+		}
 	}
 }

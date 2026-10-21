@@ -18,10 +18,12 @@ import (
 // miss. The samples are invented. The negatives pin the hard rule: text that is not in the other
 // language never switches.
 //
-// Issue #8 (the Alt-A item): the sub-floor samples ("Buenos días", "Nos vemos") are pinned by the
-// floor exemption for confident local detections; they were NOT measured (the Linux runner and Io
-// cannot load the bridge), so this suite on the Mac is their execution gate. If NaturalLanguage
-// scores one of them under 0.8, that is a finding, not a flake.
+// Issue #8 (the Alt-A item): the sub-floor samples ("Buenos días", "Nos vemos") are why the floor
+// has exemptions; neither is measurable off-Mac (the Linux runner and Io cannot load the bridge),
+// so this suite on the Mac is their execution gate. "Buenos días" switches as a confident
+// detection (no floor, #8); "Nos vemos" (not confident) switches at the #91 lower bar for short
+// captures. If NaturalLanguage scores one of them under its bar — 0.8 for the first, 0.5 for the
+// second — that is a finding, not a flake.
 
 func realSwitchService(t *testing.T) *Service {
 	t.Helper()
@@ -65,15 +67,18 @@ func TestRealDetectorSwitchesMexicanSpanishSelections(t *testing.T) {
 	}
 }
 
-// Issue #92: "Nos vemos" (9 code points) is Spanish to NaturalLanguage but only at 0.565 confidence,
-// measured 2026-10-19 on macOS, under switchMinConfidence (0.8). A local detection under the bar
-// is not a confident one, so the 12-code-point floor refuses it. This pins that measured
-// behavior, so a change to the floor or the bar for such captures is a decision, not an accident.
-func TestRealDetectorDoesNotSwitchAnUnsureTwoWordCapture(t *testing.T) {
+// Issue #91 (supersedes the #92 pin): "Nos vemos" (9 code points) is Spanish to NaturalLanguage
+// at 0.565 confidence — measured 2026-10-19 (#92) and re-measured 2026-10-21 on this macOS 27
+// build, same figure — under switchMinConfidence (0.8) but at the #54 lower bar (0.5). #92 pinned
+// that the floor refused it too_short, so a change would be a decision, not an accident; #91 is
+// that decision: a short capture the detector names at the lower bar switches like a confident
+// one (es-MX -> en here, variant selection included). If NaturalLanguage drifts — "Nos vemos"
+// scoring under 0.5 — that is a finding, not a flake: re-measure before touching the rule.
+func TestRealDetectorSwitchesATwoWordCaptureAtTheLowerBar(t *testing.T) {
 	svc := realSwitchService(t)
 	got := svc.PlanSourceSwitch(model.SourceSwitchRequest{Text: "Nos vemos", From: model.EN, To: model.FR})
-	if got.Switched || got.Reason != model.SwitchReasonTooShort {
-		t.Errorf("Nos vemos: got %+v, want no switch with reason %q", got, model.SwitchReasonTooShort)
+	if !got.Switched || got.From != model.ESMX || got.To != model.EN {
+		t.Errorf("Nos vemos: got %+v, want es-MX -> en (the #91 lower bar for a short capture)", got)
 	}
 }
 
