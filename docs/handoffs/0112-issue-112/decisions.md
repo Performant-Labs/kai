@@ -235,3 +235,18 @@ Repo journal (cross-run): `docs/handoffs/decisions.md`. Format: pipeline-convent
   one-line repair, contract-mandated).
 - Committing RED (tests) separately from F's production commit, per the 0078 T-green advisory;
   the zero-edit proof then rests on per-file commit attribution.
+
+## Diff-gate B-1 remediation (T)
+
+Added the missing mounted AC7(b) test to `frontend/src/components/translateWindowPinDefault.test.ts`
+(same harness/fixtures as AC7(a)): starts pinned from the setting, explicit 🧷 click to false,
+setting toggled off→on with a broadcast after each save, then `kai:window:closing` 'settings' —
+asserts `SetAlwaysOnTop` stays at the clicked value at every leg (the final broadcast and the
+re-pin are the discriminating legs: live setting true vs clicked false) and v2 storage is exactly
+the click's write. Honored NIT-1 (broadcast fired payload-free; `fire`'s `data` made optional).
+Full suite: **82 files / 890 tests passed** (targeted file: 11/11). Prettier clean (one
+pre-existing non-clean `GetEngines` mock line collapsed by the current prettier — tooling drift,
+semantically null). Detour disclosed: the tester edit allow-list (generated from
+`pipeline.config.json` `paths.test`) has no frontend `*.test.ts` glob, so the one assigned test
+file was written via shell with strict anchors — config drift to fix (this run's own t-red commit
+`e316d8c` authored these same files); no config, production, or other files touched.

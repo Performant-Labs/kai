@@ -14,7 +14,7 @@ const h = vi.hoisted(() => {
   const handlers = new Map<string, Array<(e: { data: unknown }) => void>>();
   return {
     handlers,
-    fire(name: string, data: unknown) {
+    fire(name: string, data?: unknown) {
       for (const cb of handlers.get(name) ?? []) cb({ data });
     },
     emit: vi.fn(),
@@ -71,9 +71,7 @@ vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/windowwrapper.ts', () => 
   ShowHistory: vi.fn(),
 }));
 vi.mock('@bindings/cnb.cool/dtapp/kai/internal/service/enginewrapper.ts', () => ({
-  GetEngines: async () => [
-    { value: 'google', name: 'Google', kind: 'translate', supported: true },
-  ],
+  GetEngines: async () => [{ value: 'google', name: 'Google', kind: 'translate', supported: true }],
   GetAllEngines: async () => [
     {
       id: 1,
@@ -237,7 +235,7 @@ describe('TranslateWindow, mounted: where the pin state starts (issue #69)', () 
     // this whole file at RED and mask these assertions; utils/events.test.ts pins the constant
     // to exactly this string.)
     h.config.translate_window_on_top = true;
-    h.fire('kai:translate-window-on-top:changed', true);
+    h.fire('kai:translate-window-on-top:changed');
     await flush();
     expect(h.setAlwaysOnTop).toHaveBeenCalledWith(true);
     // Closing Settings fires the re-pin: it must resolve through the effectivePin decision
@@ -245,5 +243,64 @@ describe('TranslateWindow, mounted: where the pin state starts (issue #69)', () 
     h.fire('kai:window:closing', 'settings');
     await flush();
     expect(h.setAlwaysOnTop.mock.calls[h.setAlwaysOnTop.mock.calls.length - 1][0]).toBe(true);
+  });
+
+  // #113 AC7(b) — the locked rule of #69, end-to-end on the real component: an explicit 🧷
+  // choice this mount wins at EVERY later application point. The direction is the one that
+  // discriminates: the window starts pinned from the setting, the click unpins it (false),
+  // and the setting then lands back ON — the OPPOSITE of the clicked value — so an
+  // implementation that applied the live setting (or the mount-time level) instead of
+  // honoring the click would visibly re-pin. The setting is toggled the way a user would,
+  // off then on, and every save broadcasts.
+  it('#113 AC7(b): the explicit 🧷 choice wins over the setting toggle and the Settings-close re-pin', async () => {
+    h.config.translate_window_on_top = true; // nothing stored → starts pinned from the setting
+    await mountWindow();
+    expect(h.setAlwaysOnTop).toHaveBeenCalledWith(true);
+
+    // The explicit choice: click 🧷 to unpin while the setting says on.
+    const pinButton = target.querySelector(
+      `[aria-label="${en.translate.unpin}"]`,
+    ) as HTMLButtonElement;
+    expect(pinButton).not.toBeNull();
+    pinButton.click();
+    await flush();
+    expect(h.setAlwaysOnTop).toHaveBeenCalledWith(false);
+    expect(localStorage.getItem('kai:translate:pinned:v2')).toBe(JSON.stringify(false));
+
+    // From here only the post-click legs matter; the mount/click calls would blur the
+    // "never re-pinned" assertions below.
+    h.setAlwaysOnTop.mockClear();
+
+    // Settings toggles the switch OFF and saves → broadcast (payload-free: the handler
+    // re-fetches the config, the event carries no payload — NIT-1).
+    h.config.translate_window_on_top = false;
+    h.fire('kai:translate-window-on-top:changed');
+    await flush();
+    expect(h.setAlwaysOnTop.mock.calls.length).toBeGreaterThan(0);
+    expect(h.setAlwaysOnTop.mock.calls[h.setAlwaysOnTop.mock.calls.length - 1][0]).toBe(false);
+    expect(h.setAlwaysOnTop).not.toHaveBeenCalledWith(true);
+
+    // Settings toggles it back ON and saves → broadcast again. The discriminating leg: the
+    // live setting (true) is the opposite of the clicked value (false); the explicit choice
+    // must still win.
+    h.setAlwaysOnTop.mockClear();
+    h.config.translate_window_on_top = true;
+    h.fire('kai:translate-window-on-top:changed');
+    await flush();
+    expect(h.setAlwaysOnTop.mock.calls.length).toBeGreaterThan(0);
+    expect(h.setAlwaysOnTop.mock.calls[h.setAlwaysOnTop.mock.calls.length - 1][0]).toBe(false);
+    expect(h.setAlwaysOnTop).not.toHaveBeenCalledWith(true);
+
+    // Closing Settings fires the re-pin: it must resolve through the effectivePin decision
+    // again — the explicit choice still wins, the live setting must not re-pin.
+    h.setAlwaysOnTop.mockClear();
+    h.fire('kai:window:closing', 'settings');
+    await flush();
+    expect(h.setAlwaysOnTop.mock.calls.length).toBeGreaterThan(0);
+    expect(h.setAlwaysOnTop.mock.calls[h.setAlwaysOnTop.mock.calls.length - 1][0]).toBe(false);
+    expect(h.setAlwaysOnTop).not.toHaveBeenCalledWith(true);
+    // And the stored explicit choice is exactly what the click left it: no application point
+    // wrote or reverted anything (apply() never persists).
+    expect(localStorage.getItem('kai:translate:pinned:v2')).toBe(JSON.stringify(false));
   });
 });

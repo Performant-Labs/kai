@@ -1,0 +1,26 @@
+## Implementation Review (Round 1)
+
+### BLOCK findings
+**[B-1] frontend/src/components/translateWindowPinDefault.test.ts (AC7 interaction (b) absent) — The brief's AC7 requires the Vitest matrix to add BOTH interactions: "(a) no explicit choice + setting toggled while open + Settings closed → level follows the new setting" and "(b) explicit 🧷 choice + setting toggled + Settings closed → the explicit choice wins". The mounted suite contains only a test for (a) ("#113 AC7(a): the on-top-changed broadcast applies the live setting…"). Interaction (b) — the end-to-end sequence of an explicit 🧷 click followed by the on-top-changed broadcast and the Settings-close re-pin on the REAL component — has no test anywhere in the diff; effectivePin.test.ts covers only the pure decision, and its own header comment concedes the sequences must be pinned "end-to-end with the real application points in components/translateWindowPinDefault.test.ts" — but only sequence (a) is there. This is a missing acceptance-criterion test (#69's "locked rule" is the whole point of (b)). — Remediation: add the mounted test: mount, click 🧷, set `translate_window_on_top = true`, fire `kai:translate-window-on-top:changed`, assert SetAlwaysOnTop stays at the clicked value, then fire `kai:window:closing` 'settings' and assert the re-pin does not revert the explicit choice.
+
+### Needs-verification findings
+**[NV-1] frontend/src/components/TranslateWindow.svelte (~line 30, `get(pinnedStore)`) — The new `resolvePinLevel` calls `get(pinnedStore)`, requiring `import { get } from 'svelte/store'` in this file. The diff does not show any import of `get` being added, and no excerpt of the file's import block is provided, so whether it compiles is unverifiable from this prompt. — Evidence: the full import list of TranslateWindow.svelte (a `grep -n "^ *import" frontend/src/components/TranslateWindow.svelte` excerpt).
+
+**[NV-2] main.go:703-714 (`emitForCloseRule`) — The old code guarded the broadcast with `if app != nil`; the new adapter calls `app.Event.Emit` unguarded. The claim is that `app` is provably non-nil at this point (it was used to create the window at line ~645). Likely true, but the declaration/assignment of the package-level `app` var is not in any excerpt. — Evidence: the declaration and assignment site of `app` in main.go before line 645.
+
+**[NV-3] frontend/src/components/settings/GeneralTab.svelte:137 (`emitEvent(EventTranslateWindowOnTopChanged)`) — The claim is that a frontend `Events.Emit` from the settings window reaches an OPEN translate window's `onEvent` listener (the "EventEnginesChanged settings→translate shape"). No Wails source or existing same-shape test excerpt is in the prompt to confirm cross-window delivery. — Evidence: a Wails v3 events documentation excerpt or the existing EventEnginesChanged listener test showing cross-window delivery.
+
+**[NV-4] main.go:720-723 (Cmd+W type assertion) — The claim is that `app.Window.NewWithOptions` returns `*application.WebviewWindow` (so the assertion succeeds) and that `RegisterKeyBinding("Cmd+W", …)` exists with that signature in Wails beta.24. Neither the Wails source nor the concrete return type is in the prompt; if the assertion fails at runtime, Cmd+W is silently unbound. — Evidence: wails v3 `pkg/application/window.go` (NewWithOptions signature) and the `RegisterKeyBinding` method signature.
+
+**[NV-5] frontend/src/components/TranslateWindow.svelte (frontend re-resolution vs creation AlwaysOnTop) — The claim is that the frontend's post-mount `reapplyPin` agrees with the Go-side `AlwaysOnTop: translateWindowStartsPinned(...)` in all cases (e.g. a stored v2 `false` with the setting on: Go creates pinned, frontend then unpins after mount — a visible flash but not a contradiction). Not verifiable from the prompt whether the mount-time resolution always runs. — Evidence: the full mount IIFE in the working tree (post-diff) plus `GetConfig` mock behavior in the mounted tests.
+
+### WARN findings
+**[W-1] internal/service/window_close_test.go:74-80 / window_wrapper.go — `HideTranslateWindow` unconditionally broadcasts even when called via Cmd+W on an already-hidden window (possible if the hotkey fires while hidden), re-triggering frontend close cleanup on a non-close. Low impact; consider guarding on visibility. — Recommendation: note as manual-verification edge or accept as documented behavior.
+
+**[W-2] main_windowsize_test.go:TestTranslateWindowCmdWBindingCallsTheCloseRule — The 500-collapsed-character window after `RegisterKeyBinding("Cmd+W"` is brittle if a second Cmd+W registration appears earlier in main.go for another window; the test does not scope to the translate window's registration site. — Recommendation: anchor the search after the WindowClosing hook index.
+
+### NIT findings
+**[NIT-1] frontend/src/components/translateWindowPinDefault.test.ts:250 — `h.fire('kai:translate-window-on-top:changed', true)` passes a payload the handler ignores; harmless but slightly misleading given the no-payload contract comments elsewhere.
+
+### Verdict
+BLOCK — 1 blocking finding; must resolve before testing starts.
