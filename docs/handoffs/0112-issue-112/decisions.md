@@ -263,3 +263,31 @@ file was written via shell with strict anchors — config drift to fix (this run
   creation-vs-mount corner disclosed and accepted): **PASS**, no BLOCK findings. W-1/W-2
   accepted and documented (broadcast-on-hidden-hide is idempotent cleanup; the 500-char
   grep window is the only Cmd+W registration in main.go today).
+
+## Phase A-dup — anti-duplication gate (2026-10-21)
+
+Verdict **PASS** (handoff-A-dup.md), 0 block / 1 nit. All six reuse-map rows honored: the
+close policy extends the `ToggleTranslateWindow`/`LowerForSettings` package-level-rule
+cadence in `window_wrapper.go` (fake-window fixture **reused**, no parallel rule path); the
+level param is a `translateWindowSize` sibling (same file, same nil-guard shape, no
+`main_windowlevel.go`); the frontend additions compose existing utilities (`effectivePin`
+calls `initialPin`; broadcast rides `emitEvent`/`onEvent` in the `EventEnginesChanged`
+shape; `SetAlwaysOnTop` has no parallel level path). `stores/translatePin.ts` (the one new
+object) is the explicit-write-only sibling the reuse map + scope guard sanctioned in writing
+— deliberate, not drift. Amended-plan drift check clean: effectivePin at all three
+application points (`:958` mount, `:947` broadcast, `:898` re-pin), re-pin resolves through
+the decision before applying (the pinned `SetAlwaysOnTop($pinnedStore)` literal reads the
+just-resolved value), v2 key translate-only, `pinKey()`/`persisted.ts` byte-identical,
+Cmd+W + hook both call the rule, close button hidden for translate only (:672 vs :546/:607/:750
+enabled). Blast radius verified: Screenshot/Settings/History windows and the screenshot pin
+store untouched. Nit carried: stale `window_wrapper.go:177` comment ("main.go passes
+app.Event.Emit itself" — false since the `emitForCloseRule` adapter; = T-green advisory 3,
+one-line fix for F/S). U is N/A (uiSurface false); S may proceed.
+
+## Phase A-dup (2026-10-21)
+- Verdict **PASS** (handoff-A-dup.md): every reuse-map row honored (the close rule extends the
+  window_wrapper cadence with the fixture reused; translateWindowStartsPinned is a
+  translateWindowSize sibling; effectivePin CALLS initialPin; the broadcast rides existing
+  emitEvent/onEvent plumbing; stores/translatePin.ts is the sanctioned sibling). persisted.ts
+  byte-identical, aux windows untouched. 0 block, 0 warn, 1 nit (a stale doc comment —
+  carried as advisory, matching T-green's). U is N/A (uiSurface false, declared); S next.
