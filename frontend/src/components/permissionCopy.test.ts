@@ -53,3 +53,29 @@ describe('permission messages stay short', () => {
     expect(en.settings.doubleCopyPermission).toContain('Input Monitoring');
   });
 });
+
+// Issue #114: the Screen Recording row used to teach the manual workaround ("click + to add it" /
+// “点 + 添加”) because Grant access did not reliably list Kai. Grant access now makes a real
+// capture attempt first, so the row settles to: where to switch Kai on, then restart Kai — no
+// workaround teaching. The wording is settled verbatim in the brief (decision 3) and pinned here
+// in both locales; the length limit above still applies to the new strings.
+describe('screen recording row says the restart plainly (issue #114)', () => {
+  it('en is the settled wording: names the pane, says the restart, no "+ add" teaching', () => {
+    expect(en.settings.permScreenRecordingMissing).toBe(
+      'Turn on Kai in Screen & System Audio Recording, then restart Kai.'
+    );
+  });
+
+  it('zh is the settled wording: names the pane, says the restart, no "+ add" teaching', () => {
+    expect(zh.settings.permScreenRecordingMissing).toBe(
+      '请在“屏幕与系统音频录制”中打开 Kai，然后重启 Kai。'
+    );
+  });
+
+  it('neither locale teaches the + add workaround, and both say the restart plainly', () => {
+    expect(en.settings.permScreenRecordingMissing).not.toContain('+ to add');
+    expect(en.settings.permScreenRecordingMissing).toContain('restart Kai');
+    expect(zh.settings.permScreenRecordingMissing).not.toContain('点 + 添加');
+    expect(zh.settings.permScreenRecordingMissing).toContain('重启 Kai');
+  });
+});
