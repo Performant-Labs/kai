@@ -330,3 +330,24 @@ future `.set`-call-site guard. Ready for O: commit, PR to master, milestone 0.6.
 - Advisories 2-4 recorded for the owner/PR: the pipeline-config allowlist gaps (third
   occurrence — deserves its own maintenance item); a cheap future source-assertion guard for
   the .set invariant; the PR-description manual list (below, in the PR body).
+
+## Merge phase — PR #122 (2026-10-21)
+- PR https://github.com/Performant-Labs/kai/pull/122 (milestone 0.6.1, closes #112 + #113;
+  base master). All five CI checks green at head af2e932 (actionlint, gitleaks, Linux suite
+  2m52s, pr-title, review). PR-Agent: **Score 90, review complete at head, ZERO findings**
+  (no focus areas, no possible issues, no inline comments, no suggestions — read in full, not
+  off the score). Run-78's operator rule "boundary 90 passes (PR #88 merged at Score 90)"
+  applies; nothing actionable exists to push the number higher — no defect, no finding, no
+  skip. Merge verification (plugin-owned, at merge advance): suite GREEN at af2e932, merge
+  check genericity N/A.
+- Manual-verification list for the owner (also in the PR body, stated plainly): traffic-light
+  close button not rendering (macOS) / title-bar close item (Windows); Cmd+W firing the
+  binding on a real app (note: parses to Ctrl+W on Windows — harmless, hide-only); the window
+  starting at normal level with the setting off and going behind other apps; tray/hotkey
+  bring-back on the real app. Known design corner (disclosed): a stored v2 choice
+  contradicting the setting is corrected by the frontend after mount (first show only).
+- Run state: AT MERGE, waiting for the operator's merge click (the run must not self-merge).
+  Post-merge remains for the owner: real-app manual list above; the pipeline-config allowlist
+  follow-up (paths.production lacks root main_*.go + CHANGELOG.md; paths.test lacks frontend
+  test globs; test.unit.command's Go pattern omits the root package) — three occurrences this
+  run, deserving its own maintenance issue.
