@@ -3,17 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { en } from '../../i18n/en-US.ts';
 import { zh } from '../../i18n/zh-CN.ts';
 
-// Issue #69: the REAL GeneralTab.svelte, mounted, with only the generated bindings and the
-// Wails runtime faked. The "keep the translate window on top of other apps" switch is off by
+// Issue #69 + #113: the REAL GeneralTab.svelte, mounted, with only the generated bindings and
+// the Wails runtime faked. The "keep the translate window on top of other apps" switch is off by
 // default, mirrors the config field, and saves through SaveConfig without dropping other fields.
+// Since #113, toggling it also broadcasts kai:translate-window-on-top:changed so an OPEN
+// translate window picks the change up (AC7, the EventEnginesChanged settings->translate shape).
 
 const h = vi.hoisted(() => ({
   config: { language: 'en-US', theme: 'auto' } as Record<string, unknown>,
   saveConfig: vi.fn(),
+  emit: vi.fn(),
 }));
 
 vi.mock('@wailsio/runtime', () => ({
-  Events: { On: () => () => {}, Emit: vi.fn() },
+  Events: { On: () => () => {}, Emit: (name: string, ...rest: unknown[]) => h.emit(name, ...rest) },
   Window: {},
   Clipboard: { SetText: vi.fn(async () => {}) },
   System: { IsDarkMode: async () => false },
@@ -60,6 +63,7 @@ beforeEach(() => {
   h.config = { language: 'en-US', theme: 'auto' };
   h.saveConfig.mockReset();
   h.saveConfig.mockResolvedValue(undefined);
+  h.emit.mockReset();
 });
 afterEach(() => {
   if (app) unmount(app);
@@ -102,6 +106,19 @@ describe('GeneralTab translate-window on-top switch, mounted', () => {
     toggle().click();
     await settle();
     expect(h.saveConfig.mock.calls[0][0]).toMatchObject({ translate_window_on_top: false });
+  });
+
+  it('#113 AC7: toggling the switch broadcasts kai:translate-window-on-top:changed', async () => {
+    await mountTab();
+    toggle().click();
+    await settle();
+    // The literal name, not the constant, on purpose: importing the not-yet-existing export
+    // would module-resolution-fail this whole file at RED and mask these assertions;
+    // utils/events.test.ts pins the constant to exactly this string. The payload is
+    // deliberately not asserted — it is not part of the contract (the translate window
+    // re-fetches the config; see events.test.ts).
+    const names = h.emit.mock.calls.map((c) => c[0]);
+    expect(names).toContain('kai:translate-window-on-top:changed');
   });
 });
 
