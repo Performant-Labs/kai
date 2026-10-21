@@ -15,3 +15,24 @@ export function initialPin(storedRaw: string | null, setting: boolean): boolean 
     return setting;
   }
 }
+
+// Issue #113 (handoff-A round 2, R2-1 — binding): every place the translate window applies its
+// pin level — the mount init, the on-top-changed broadcast, the Settings/History-close re-pin —
+// resolves through ONE decision on top of initialPin:
+//   an explicit 🧷 choice this mount (pinTouched) → that choice (thisMountChoice);
+//   otherwise → initialPin(storedV2, liveSetting): a genuine stored v2 choice still wins over
+//   the setting (#69's locked rule), nothing stored falls to the setting.
+// The re-pin must resolve through here too, never the raw store value: the store holds the
+// mount-time resolution, and applying it on Settings close would revert a level the
+// on-top-changed broadcast had just applied (handoff-A Finding 1).
+// storedV2 is the RAW value of kai:translate:pinned:v2 (null when absent); liveSetting is the
+// "keep the translate window on top" setting as of THIS call — re-fetched, never cached from
+// mount, because the whole point is that the setting may have changed since.
+export function effectivePin(
+  storedV2: string | null,
+  pinTouched: boolean,
+  thisMountChoice: boolean,
+  liveSetting: boolean,
+): boolean {
+  return pinTouched ? thisMountChoice : initialPin(storedV2, liveSetting);
+}

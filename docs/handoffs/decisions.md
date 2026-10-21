@@ -968,3 +968,17 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
   `TestMacActivationPolicyIsRegularForCmdTabVisibility` /
   `TestMacInfoPlistsDoNotSetLSUIElement`). `plutil -lint` confirms both edited plists are still
   well-formed XML.
+
+## 0112-issue-112 — #112 + #113 (translate window not closable; on-top follows the setting) — 2026-10-21
+- One PR for both issues (operator instruction): PR #122, milestone 0.6.1. Rigor
+  second-opinion, uiSurface false (D/U N/A declared). All gates PASS: brief gate r1; A r2
+  (effective-pin rule amendment — AC7×AC8 contradiction caught pre-test); T-RED (26 failing
+  tests + 2 Go compile absences, zero collateral); T-GREEN (889→890 frontend, 20 Go pkgs,
+  harnesses; plugin GREEN); diff gate r2 (B-1: the missing mounted AC7(b) test, added
+  test-first); A-dup (zero parallel paths); S (all 10 ACs). CI 5/5 green; PR-Agent 90, zero
+  findings. Environment lessons added to this run's decisions.md: role dispatches MUST carry
+  `--model zai/glm-5.3` (OPENCODE_CONFIG_CONTENT does not reach --agent spawns); t-red/t-green
+  advances run the full suite and refuse/fail-closed (GREEN required at t-green, RED required
+  at t-red) — dispatch nohup'd with ≥11 min patience; cross-run temp-dir log collisions are
+  real (T refused a run-B log correctly — always run-unique logs); dual-review artifacts at
+  the run root must be moved into docs/handoffs/<run>/ before committing (run-78 convention).

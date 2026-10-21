@@ -94,6 +94,14 @@ export const EventHistoryUse = 'kai:history:use';
 // Go emits or hears it.
 export const EventHistoryShortcutChanged = 'kai:history:shortcut-changed';
 
+// EventTranslateWindowOnTopChanged: broadcast after Settings > General saves the "keep the
+// translate window on top of other apps" switch (issue #113), the EventEnginesChanged
+// settings→translate shape, so an OPEN translate window applies the new level instead of only
+// new windows starting from it. No payload contract: the translate window re-fetches the
+// config (GetConfig) rather than trusting a payload. Frontend-only, like
+// EventHistoryShortcutChanged: nothing in Go emits or hears it.
+export const EventTranslateWindowOnTopChanged = 'kai:translate-window-on-top:changed';
+
 // Event payload type definitions (aligned with the Go-side structs in internal/events/events.go)
 
 // LocaleChangedPayload: language-change event arguments.
