@@ -6,6 +6,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 `scripts/changelog-check.sh` lists merged PRs this section does not cover.
 
 ## [Unreleased]
+
+## [0.6.1] - 2026-10-21
 - Settings > Shortcuts > Screen Recording: "Grant access" now makes a real capture request, so Kai appears in the Screen & System Audio Recording list without adding it by hand, and the row now says plainly to restart Kai after switching it on (#114).
 
 - A short capture the language detector is less sure of now also switches the language drop-downs: a two-word capture like "Nos vemos" (Spanish at 0.57 confidence, under the 0.8 bar but at the 0.5 lower bar) switches like a confident one such as "Buenos días", instead of being refused as too short (#91).
