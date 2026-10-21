@@ -200,12 +200,13 @@ merge_sha_of() { # <pr> — the merge commit if gh reports one, else the PR head
 ci_green_on() { # <sha> — 0 green; 1 not (prints why). Same predicate as release-gates.sh.
   # Checks that have not appeared yet or are still running are waited for (KAI_CI_WAIT seconds,
   # default 600, polled every KAI_CI_POLL); a COMPLETED failure never waits. A re-run supersedes
-  # the earlier run of the same check name (only the latest run per name counts).
+  # the earlier run of the same check name (only the latest run per name counts). A run that has a
+  # final conclusion and a completed_at is finished even if GitHub still reports status in_progress.
   local sha="$1" waited=0 wait_max="${KAI_CI_WAIT:-600}" poll="${KAI_CI_POLL:-15}" out tsv bad pending
   while :; do
     out="$(gh api "repos/$repo/commits/$sha/check-runs" 2>/dev/null)" || { echo "could not read the CI check-runs for $sha"; return 1; }
     if printf '%s' "$out" | grep -q '^ *{'; then
-      tsv="$(printf '%s' "$out" | jq -r '[.check_runs[]?] | group_by(.name) | map(max_by(.id // 0)) | .[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null || true)"
+      tsv="$(printf '%s' "$out" | jq -r '[.check_runs[]?] | group_by(.name) | map(max_by(.id // 0)) | .[] | [.name, (if .status != "completed" and .conclusion != null and .completed_at != null then "completed" else .status end), (.conclusion // "")] | @tsv' 2>/dev/null || true)"
     else
       tsv="$(printf '%s' "$out" | awk -F'\t' 'NF { last[$1] = $0; if (!($1 in seen)) { seen[$1] = 1; order[++n] = $1 } } END { for (i = 1; i <= n; i++) print last[order[i]] }')"   # the harness's canned TSV shape; last line per name wins
     fi
