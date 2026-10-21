@@ -643,12 +643,16 @@ func main() {
 	// would be smaller than the window's own MinWidth/MinHeight (e.g. an old/corrupt value).
 	translateWidth, translateHeight := translateWindowSize(settingsService, widthForDefaultText(960), 640, widthForDefaultText(780), 520)
 	translateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:             model.WindowTranslate,
-		Title:            windowTitle("window.translate_title"),
-		Width:            translateWidth,
-		Height:           translateHeight,
-		MinWidth:         widthForDefaultText(780),
-		MinHeight:        520,
+		Name:      model.WindowTranslate,
+		Title:     windowTitle("window.translate_title"),
+		Width:     translateWidth,
+		Height:    translateHeight,
+		MinWidth:  widthForDefaultText(780),
+		MinHeight: 520,
+		// Issue #113: create the window at the level the #69 setting says (off → the normal
+		// level), rather than always normal and corrected by the frontend after mount — the
+		// frontend's own resolution (an explicit 🧷 choice still wins) still runs after mount.
+		AlwaysOnTop:      translateWindowStartsPinned(settingsService),
 		URL:              "/translate.html",
 		BackgroundColour: bgColour,
 		Mac: application.MacWindow{
@@ -658,10 +662,14 @@ func main() {
 			HiddenOnTaskbar: false,
 			Theme:           winTheme,
 		},
-		// Title bar minimize/maximize/close buttons
+		// Title bar minimize/maximize buttons. Issue #112: the close button is hidden, not
+		// merely disabled — the translate window is the app's main surface and must offer no
+		// close affordance at all (the issue's ruling: a hide is not a close; the WindowClosing
+		// hook below keeps any residual close path a hide). The Settings/History/Screenshot
+		// windows keep their close buttons.
 		MinimiseButtonState: application.ButtonEnabled,
 		MaximiseButtonState: application.ButtonHidden,
-		CloseButtonState:    application.ButtonEnabled,
+		CloseButtonState:    application.ButtonHidden,
 	})
 	// Don't create with Hidden:true; create then Hide() immediately, avoiding the 80010108 COM
 	// race crash on Windows caused by delayed WebView2 controller creation.
@@ -683,24 +691,39 @@ func main() {
 	// config file dozens of times.
 	stopResizePersist := persistTranslateWindowSize(translateWindow, settingsService)
 	defer stopResizePersist()
-	// Red X = hide the window (don't quit): RegisterHook Cancels the close before WindowClosing's
-	// destroy listener and hides instead. This keeps the red X, keeps the window alive, and it
-	// can be Shown again anytime.
+	// Issue #112: the translate window must not be closable — the close button is hidden at
+	// creation (above), and this hook turns any residual close path (platform chrome, an
+	// accessibility action) into a hide, never a destroy: RegisterHook Cancels the close
+	// before WindowClosing's destroy listener runs, then the close policy rule broadcasts the
+	// window closing and hides. The window stays alive and can be Shown again anytime.
+	//
+	// wails' Event.Emit returns whether the event was emitted; the close policy rule takes the
+	// plain broadcast shape (no return), so adapt once for its two call sites below (the hook
+	// and the Cmd+W binding).
+	emitForCloseRule := func(name string, data ...any) { app.Event.Emit(name, data...) }
 	_ = translateWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
-		// Red X = hide the window (don't quit): first broadcast kai:window:closing, then Hide.
+		// The rule broadcasts kai:window:closing for this window, then Hides it (issue #112).
 		// The window is not destroyed (Svelte components stay mounted). Since issue #81 the
 		// translate window clears nothing on this broadcast: its text and results are retained
 		// (and stored, so they survive a restart too), so the next invocation shows the last
 		// translation; only its Clear button empties them.
-		if app != nil {
-			app.Event.Emit(kevents.EventWindowClosing, model.WindowTranslate)
-		}
 		// Issue #53: this hook deliberately does NOT reset the language-variant preferences. The
 		// window is only hidden here, and the point of the preference is to survive the next
 		// hotkey press (principal's ruling 2026-09-25: keep until the app quits).
-		translateWindow.Hide()
+		service.HideTranslateWindow(translateWindow, emitForCloseRule)
 	})
+	// Issue #112: Cmd+W hides the window through the same close policy rule (broadcast + Hide),
+	// never a bare Hide() — the broadcast is what runs the frontend's close cleanup (issues
+	// #57, #81 and #109) on this path too. RegisterKeyBinding exists only on the concrete
+	// *WebviewWindow that NewWithOptions returned, not on the Window interface translateWindow
+	// holds, hence the narrowing assertion. Registering and firing the binding on a real app
+	// is a manual-verification item (the run brief's W-1); the wiring is what the tests pin.
+	if webviewWin, ok := translateWindow.(*application.WebviewWindow); ok {
+		_ = webviewWin.RegisterKeyBinding("Cmd+W", func(window application.Window) {
+			service.HideTranslateWindow(window, emitForCloseRule)
+		})
+	}
 	translateWindow.Center()
 
 	// Screenshot translate window: image on the left, translation on the right.

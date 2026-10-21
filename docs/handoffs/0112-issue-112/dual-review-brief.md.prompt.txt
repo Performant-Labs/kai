@@ -1,0 +1,218 @@
+You are an independent architecture reviewer. You have no loyalty to the brief's framing — your job is to find problems before they are built.
+
+Your discipline:
+- Treat any claim about runtime behavior — execution ordering, library defaults, middleware sequencing, plugin lifecycle, external state — as a HYPOTHESIS, and weigh it ONLY against what this prompt contains: the brief, the diff, and any Evidence Appendix or SOURCE EXCERPTS section. The author's own prose ASSERTION is not evidence, however confident it reads; a cited file:line whose text IS shown in this prompt is evidence, so compare the claim to that text.
+- Classify each claim by what the prompt lets you show:
+  - The prompt shows the claim is FALSE or contradicted (a shown excerpt says otherwise, two parts of the brief disagree, the code in the diff is wrong): that is a BLOCK finding. Quote the text that shows it.
+  - The prompt shows the claim is TRUE: no finding.
+  - The prompt does NOT contain the source needed to check the claim: that is a needs-verification finding, NEVER a BLOCK. Name the claim and the exact evidence that would settle it (a file:line, a library source excerpt, a documentation page). Not being shown the source is not evidence that the claim is wrong.
+- BLOCK is reserved for defects demonstrable from this prompt itself: a contradiction, a vacuous or untestable acceptance criterion, a missing test, wrong code visible in the diff, or a claim that a shown excerpt contradicts. Do not describe a plan to go verify it elsewhere — you have no tool access in this task, so that plan can never be carried out, and describing it is not a review. Put the unverifiable claim in a needs-verification finding instead.
+- Be adversarial to the framing you are given. Your job is to find problems, not validate decisions.
+
+Output contract — read this before writing anything:
+- Emit ONLY the structured findings in the exact format specified below. Nothing else.
+- NO preamble, NO restating the task, NO description of your approach or next steps, NO
+  narration of what you are about to do or would do with more access. Your first character
+  of output must be the start of the required format below (e.g. the first heading).
+- If you cannot verify something, that is a needs-verification finding (never a BLOCK), not
+  a reason to explain your limitations or ask to see more. Write the finding and move on.
+
+Also check:
+- Acceptance criteria are complete and testable.
+- Scope is appropriately bounded.
+- Missing error paths or edge cases.
+
+Output format (use exactly this structure):
+
+## Brief Review (Round 1)
+
+### BLOCK findings
+Each as: **[B-N]** description — why it blocks — what must be clarified or fixed.
+If none: "None."
+
+### Needs-verification findings
+Each as: **[NV-N]** the claim — the evidence that would settle it (file:line, or a library/documentation excerpt). Never a BLOCK.
+If none: "None."
+
+### WARN findings
+Each as: **[W-N]** description — recommendation.
+If none: "None."
+
+### NIT findings
+Each as: **[NIT-N]** description.
+If none: "None."
+
+### Verdict
+PASS — no BLOCK findings; implementation may proceed.
+OR
+BLOCK — N blocking finding(s); must resolve before implementation starts.
+
+---
+
+## Brief
+
+# Brief — issues #112 + #113 (run 0112-issue-112, one PR)
+
+**Review rigor: second-opinion** (operator-set). **uiSurface: false** — Phase D (design) and
+Phase U (ui-walkthrough) are **N/A, declared**: no new layout; the only UI-adjacent changes are
+removing a title-bar button affordance and reusing existing controls/settings rows.
+Outside gate: glm-5.3 via Z.ai (`./.env`, mirrored into this worktree). Round cap 2
+(AGENTS.md); a BLOCK surviving round 2 stops the run for the operator.
+
+## Objective
+
+The translate window is the app's main surface; it must be un-closable (#112) and its
+always-on-top start must follow the #69 setting (#113) — both with tested definitions at the Go
+seams this repo already uses, and a CHANGELOG `[Unreleased]` line per user-visible change.
+
+## Root causes (survey anchors in survey.md)
+
+- **#112**: the WindowClosing cancel+hide hook (`main.go:689-703`) is the ONLY defense; the
+  close button is enabled (`main.go:664`) and Cmd+W is unhandled. Destruction is permanent (no
+  window recreation; `GetByName` → nil). The defect class: any close path that bypasses the hook
+  bricks the app's window until relaunch, and nothing tests the rule.
+- **#113**: `persisted`'s subscribe auto-writes the initial pin to localStorage
+  (`persisted.ts:14-27`) and `initialPin` treats any stored value as an explicit choice, so the
+  setting only ever governs a pristine profile (owner: stored `true` from the pre-#69 era).
+  Go never applies the setting at creation; the settings toggle broadcasts nothing, so an open
+  window never picks up a change.
+
+## Acceptance criteria
+
+**#112 — not closable, recoverable by construction:**
+1. AC1: The translate window's close button is **hidden** (`CloseButtonState: ButtonHidden`) —
+   no close affordance. (Issue leaves disabled-vs-hide open; hidden is the "cannot close"
+   statement; the hook below keeps any residual path a hide, which the issue sanctions as "not a
+   close". Settings/History/Screenshot windows unchanged.)
+2. AC2: A named, unit-tested rule in `internal/service` (the `ToggleTranslateWindow` shape)
+   implements the close policy: cancel the close event, broadcast
+   `kevents.EventWindowClosing(model.WindowTranslate)`, Hide. `main.go`'s hook delegates to it.
+   RED first: the rule does not exist.
+3. AC3: Cmd+W on the translate window deterministically **hides** it (Wails key binding whose
+   action is the tested hide path), never destroys. RED first: no binding, no tested action.
+4. AC4: The bring-back paths stay green: tray click toggle (`ToggleTranslateWindow` tests), the
+   input hotkey show path, and the hook's own hide (all existing/extended tests pass).
+5. Cmd+Q / quitting: untouched.
+
+**#113 — the setting governs the level:**
+6. AC5 (the test #113 names): a failing-then-green Go test over a pure creation-param function
+   (`translateWindowStartsPinned(settingsService) bool`, the `translateWindowSize` shape in
+   `main_windowsize.go`): preference off → `false` (normal level), on → `true`, nil/unreadable →
+   `false`. `main.go` feeds it into `AlwaysOnTop:` at window creation. RED first: no such
+   function/option wiring.
+7. AC6: the frontend pin store stops treating pollution as choice: the pin is stored under a
+   **versioned key** (one-time bump; old `kai:translate:pinned` ignored) and written **only on an
+   explicit 🧷 toggle** (no subscribe auto-write for the pin). `initialPin` semantics stay (a
+   genuine stored choice still wins over the setting). Vitest RED first: with the old key
+   present and the setting off, the resolved start pin must be `false`; store writes only on
+   explicit set. One-time pin default reset is CHANGELOG'd.
+8. AC7: toggling the setting broadcasts (the `EventAutoClipboardChanged` shape) and an open
+   translate window applies it **only when no explicit 🧷 choice was made this mount**
+   (`pinTouched` guard — #69's locked rule "explicit choice always wins"). Vitest-level tests
+   over the pure decision; the Svelte wiring stays thin.
+9. AC8: the existing re-pin on Settings/History close (`:852-861`) keeps working with the new
+   store (existing behavior, covered by extending the pin tests).
+
+**Both:**
+10. AC9: `CHANGELOG.md` `[Unreleased]`: two lines (not-closable window; on-top follows the
+    setting + one-time pin default reset), `(#112)` / `(#113)` references.
+11. AC10: full `test.unit.command` green at t-green; no `-skip` added; no test edits by F.
+
+## Non-goals / guards
+
+- No migration files (n/a — Go/Svelte, no DB), no changes to Settings/History/Screenshot
+  windows, no new UI strings (no new controls), no `docs/` outside handoffs, CHANGELOG only per
+  AC9.
+- The screenshot window's pin semantics and the updater window are out of scope (survey
+  disclosure).
+- Scope stays inside: `main.go`, `internal/service/window_wrapper.go` (+ its tests),
+  `main_windowsize.go`(+test), `frontend/src/components/TranslateWindow.svelte`,
+  `frontend/src/components/settings/GeneralTab.svelte`, `frontend/src/stores/persisted.ts`
+  (or a pin-specific sibling), `frontend/src/utils/pinDefault.ts`(+test), `frontend/src/utils/events.ts`,
+  `CHANGELOG.md`, `docs/handoffs/0112-issue-112/**`. Other parallel runs own other files — do
+  not touch anything else.
+- What cannot be verified here (say plainly in the PR): real-app behaviour on a Mac (red X with
+  a hidden button, Cmd+W key binding firing, level going behind other apps) needs the signed app
+  on a real desktop — listed as manual verification, not claimed as tested.
+
+## Handoffs
+
+- Run dir: `docs/handoffs/0112-issue-112/` (this brief, survey.md, decisions.md, per-phase
+  handoffs). Branch `issue-0112-issue-112`; PR to `Performant-Labs/kai` `master`, milestone
+  **0.6.1**, closing wording for #112 and #113.
+- Phase order and gates: plugin-owned (second-opinion brief + diff gates via
+  `pipeline_dual_review`, round cap 2).
+
+---
+
+## SOURCE EXCERPTS (not part of the diff)
+
+Verbatim excerpts of the reviewed repository (its working tree), attached because the text above cites them by file:line. They are CONTEXT for checking claims, NOT changes under review: do not report their contents as if they were part of the diff. Each line is prefixed with its line number. Excerpts are bounded, so absence from an excerpt is not absence from the file. A cited line that does not say what the citing text claims is itself a finding.
+
+### main.go
+~~~~text
+652| 		URL:              "/translate.html",
+653| 		BackgroundColour: bgColour,
+654| 		Mac: application.MacWindow{
+655| 			Appearance: macAppearance,
+656| 		},
+657| 		Windows: application.WindowsWindow{
+658| 			HiddenOnTaskbar: false,
+659| 			Theme:           winTheme,
+660| 		},
+661| 		// Title bar minimize/maximize/close buttons
+662| 		MinimiseButtonState: application.ButtonEnabled,
+663| 		MaximiseButtonState: application.ButtonHidden,
+664| 		CloseButtonState:    application.ButtonEnabled,
+665| 	})
+666| 	// Don't create with Hidden:true; create then Hide() immediately, avoiding the 80010108 COM
+667| 	// race crash on Windows caused by delayed WebView2 controller creation.
+668| 	translateWindow.Hide()
+669| 	// Issue #163: opt out of macOS Secure State Restoration once the native window actually
+670| 	// exists (see the settings-window comment above and docs/handoffs/163-brief.md).
+671| 	translateWindow.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) {
+672| 		// Main-thread dispatch required — see the settings-window comment above.
+673| 		application.InvokeAsync(func() {
+674| 			windowSvc.DisableRestoration(translateWindow)
+675| 			applyWindowBackground(windowSvc, translateWindow, currentDark(), false)
+676| 			translateReadyOnce.Do(func() { close(translateReady) })
+677| 		})
+678| 	})
+679| 	translateWindow.OnWindowEvent(events.Common.WindowShow, recolourOnShow(translateWindow))
+680| 	// Issue #173 item 5: persist the translate window's size across relaunches. WindowDidResize
+681| 	// fires on every intermediate frame of a drag, so the actual settings write is debounced
+682| 	// (see persistTranslateWindowSize) — otherwise a single resize gesture could write the
+683| 	// config file dozens of times.
+684| 	stopResizePersist := persistTranslateWindowSize(translateWindow, settingsService)
+685| 	defer stopResizePersist()
+686| 	// Red X = hide the window (don't quit): RegisterHook Cancels the close before WindowClosing's
+687| 	// destroy listener and hides instead. This keeps the red X, keeps the window alive, and it
+688| 	// can be Shown again anytime.
+689| 	_ = translateWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+690| 		event.Cancel()
+691| 		// Red X = hide the window (don't quit): first broadcast kai:window:closing, then Hide.
+692| 		// The window is not destroyed (Svelte components stay mounted). Since issue #81 the
+693| 		// translate window clears nothing on this broadcast: its text and results are retained
+694| 		// (and stored, so they survive a restart too), so the next invocation shows the last
+695| 		// translation; only its Clear button empties them.
+696| 		if app != nil {
+697| 			app.Event.Emit(kevents.EventWindowClosing, model.WindowTranslate)
+698| 		}
+699| 		// Issue #53: this hook deliberately does NOT reset the language-variant preferences. The
+700| 		// window is only hidden here, and the point of the preference is to survive the next
+701| 		// hotkey press (principal's ruling 2026-09-25: keep until the app quits).
+702| 		translateWindow.Hide()
+703| 	})
+704| 	translateWindow.Center()
+705| 
+706| 	// Screenshot translate window: image on the left, translation on the right.
+707| 	// Summoned by the screenshot hotkey/EventScreenshotOCR.
+708| 	screenshotWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{
+709| 		Name:             model.WindowScreenshot,
+710| 		Title:            windowTitle("window.screenshot_title"),
+711| 		Width:            widthForDefaultText(900),
+712| 		Height:           600,
+713| 		MinWidth:         widthForDefaultText(600),
+714| 		MinHeight:        400,
+715| 		URL:              "/screenshot.html",
+~~~~

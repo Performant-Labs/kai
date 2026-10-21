@@ -3,6 +3,7 @@ package service
 import (
 	"log/slog"
 
+	kevents "cnb.cool/dtapp/kai/internal/events"
 	"cnb.cool/dtapp/kai/internal/i18n"
 	"cnb.cool/dtapp/kai/internal/model"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -150,6 +151,41 @@ func LowerForSettings(win levelWindow) {
 		return
 	}
 	win.SetAlwaysOnTop(false)
+}
+
+// hideWindow is the slice of application.Window that HideTranslateWindow drives, so the close
+// policy can be exercised with a fake window and no running Wails app (the windowToggler /
+// levelWindow shape).
+type hideWindow interface {
+	Hide() application.Window
+}
+
+// HideTranslateWindow is the translate window's close policy (issue #112): broadcast
+// kevents.EventWindowClosing with model.WindowTranslate, then Hide. Both close entry points —
+// main.go's WindowClosing hook (event.Cancel() + this rule) and its Cmd+W key binding (this
+// rule directly) — delegate here, so the frontend's close cleanup, which filters
+// EventWindowClosing by window name (pending history commit #57; the retained session's
+// cancel/settle #81/#109), runs on EVERY close path, not only the native red X. A bare Hide()
+// here would silently drop that cleanup on the Cmd+W path (handoff-A Finding 2's ruling).
+//
+// Hide, never Destroy/Close: destruction is permanent for this app (the GetByName lookups
+// above never recreate a window), while a hidden window is summonable again by the tray
+// toggle and the input hotkey. The tray toggle's own bare Hide (ToggleTranslateWindow) stays
+// deliberately broadcast-free — a tray click is not a close, and text typed in the window
+// must survive it.
+//
+// emit has wails' app.Event.Emit signature (Emit(name string, data ...any)), so main.go passes
+// app.Event.Emit itself as the value. A nil win (the lookup found nothing) is a no-op — no
+// window, no close, no broadcast — the LowerForSettings nil-guard shape.
+//
+// A package-level func rather than a WindowWrapper method so Wails generates no frontend
+// binding for it.
+func HideTranslateWindow(win hideWindow, emit func(name string, data ...any)) {
+	if win == nil {
+		return
+	}
+	emit(kevents.EventWindowClosing, model.WindowTranslate)
+	win.Hide()
 }
 
 // ShowSettings opens settings, in front of a pinned translate window.

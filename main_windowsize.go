@@ -9,6 +9,11 @@ import (
 	"cnb.cool/dtapp/kai/internal/settings"
 )
 
+// Creation params for the translate window, derived from settings.json: the size the user last
+// resized it to (issue #173 item 5, translateWindowSize) and the level it starts at (issue
+// #113, translateWindowStartsPinned) — the pure decisions main.go feeds into the window's
+// creation options, each with its own test file here.
+
 // resizePersistDebounce controls how long persistTranslateWindowSize waits after the last
 // WindowDidResize event before writing settings.json. WindowDidResize fires on essentially
 // every frame of a live-drag resize (macOS/Windows both report continuous size-change
@@ -43,6 +48,24 @@ func translateWindowSize(settingsSvc *settings.Service, defaultW, defaultH, minW
 		return defaultW, defaultH
 	}
 	return w, h
+}
+
+// translateWindowStartsPinned resolves the level to create the translate window at (issue
+// #113): always on top when the "keep the translate window on top of other apps" setting is on
+// (#69, off by default), the normal level when it is off — and the normal level, never a pin,
+// when the preference cannot be read (a nil service or config), so an unreadable setting can
+// never float the window. main.go feeds this into the window options' AlwaysOnTop, so the
+// window starts at the level the setting says instead of starting normal and being corrected
+// by the frontend after mount.
+func translateWindowStartsPinned(settingsSvc *settings.Service) bool {
+	if settingsSvc == nil {
+		return false
+	}
+	cfg := settingsSvc.Get()
+	if cfg == nil {
+		return false
+	}
+	return cfg.TranslateWindowOnTop
 }
 
 // persistTranslateWindowSize registers a WindowDidResize listener on win that debounces and
