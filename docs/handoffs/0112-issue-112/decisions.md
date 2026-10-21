@@ -250,3 +250,16 @@ semantically null). Detour disclosed: the tester edit allow-list (generated from
 `pipeline.config.json` `paths.test`) has no frontend `*.test.ts` glob, so the one assigned test
 file was written via shell with strict anchors — config drift to fix (this run's own t-red commit
 `e316d8c` authored these same files); no config, production, or other files touched.
+
+## Diff gate (2026-10-21) — round 1 BLOCK (B-1), round 2 PASS
+- Round 1 BLOCK: B-1 — AC7(b) had no mounted end-to-end test (only the pure effectivePin row);
+  5 NV (evidence requests), 2 WARN, 1 NIT. B-1 remediated test-first by T (commit f5f75e0): the
+  mounted AC7(b) test with a discriminating direction (click to false while the setting is on);
+  suite 82/890 green. NIT-1 honored in the same edit.
+- Round 2 (with the response file, every NV answered with verbatim excerpts — get import
+  :3 pre-existing; app non-nil main.go:186/:401→:645; app-wide customEventProcessor
+  event_manager.go:31 + the EventEnginesChanged precedent; window_manager.go:54 concrete
+  return + webview_window.go:1768 signature; mount resolution always runs + the
+  creation-vs-mount corner disclosed and accepted): **PASS**, no BLOCK findings. W-1/W-2
+  accepted and documented (broadcast-on-hidden-hide is idempotent cleanup; the 500-char
+  grep window is the only Cmd+W registration in main.go today).

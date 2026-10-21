@@ -1,19 +1,19 @@
 {
   "model": "glm-5.3",
   "mode": "diff",
-  "round": "1",
+  "round": "2",
   "transport": "chat",
-  "elapsed_seconds": 45,
+  "elapsed_seconds": 9,
   "finish_reason": "stop",
   "usage": {
-    "prompt_tokens": 19402,
-    "completion_tokens": 2349,
-    "total_tokens": 21751,
+    "prompt_tokens": 1601,
+    "completion_tokens": 480,
+    "total_tokens": 2081,
     "prompt_tokens_details": {
-      "cached_tokens": 704
+      "cached_tokens": 0
     },
     "completion_tokens_details": {
-      "reasoning_tokens": 1153
+      "reasoning_tokens": 20
     }
   }
 }
