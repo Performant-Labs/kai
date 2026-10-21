@@ -7,6 +7,8 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 
 ## [Unreleased]
 
+- A short capture the language detector is less sure of now also switches the language drop-downs: a two-word capture like "Nos vemos" (Spanish at 0.57 confidence, under the 0.8 bar but at the 0.5 lower bar) switches like a confident one such as "Buenos días", instead of being refused as too short (#91).
+
 ## [0.6.0] - 2026-10-20
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
