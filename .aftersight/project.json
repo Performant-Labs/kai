@@ -1,13 +1,17 @@
 {
   "pathSets": {
     "tests": [
-      "internal/**/*_test.go",
-      "pkg/**/*_test.go",
       "main*_test.go",
-      "internal/**/testdata/**",
-      "pkg/**/testdata/**",
+      "internal/*/*_test.go",
+      "internal/*/*/*_test.go",
+      "internal/*/testdata/**",
+      "internal/*/*/testdata/**",
+      "pkg/*/*_test.go",
+      "pkg/*/*/*_test.go",
+      "pkg/*/testdata/**",
       "scripts/*.test.sh",
-      "frontend/src/**/*.test.*"
+      "frontend/src/*/*.test.*",
+      "frontend/src/*/*/*.test.*"
     ],
     "handoffs": [
       "docs/handoffs/**"
