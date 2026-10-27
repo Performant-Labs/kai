@@ -4,7 +4,7 @@ Claude Code entry point for this repo. The project instructions are in [`AGENTS.
 
 ## Test command
 
-The authoritative suite is `testSuites.unit.command` in `.aftersight/project.json`. Run this exact command for RED and GREEN. This is not an npm project at the root, so do not run `npm test`.
+The authoritative suite is `testSuites.unit.command` in `.aftersight/project.json`, which runs `scripts/test-unit.sh` (the command below). Run this exact command for RED and GREEN. This is not an npm project at the root, so do not run `npm test`.
 
 ```
 sh -c "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... ./pkg/... -count=1 && pnpm --dir frontend test"
