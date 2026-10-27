@@ -1,8 +1,11 @@
 {
   "pathSets": {
     "tests": [
-      "**/*_test.go",
-      "**/testdata/**",
+      "internal/**/*_test.go",
+      "pkg/**/*_test.go",
+      "*_test.go",
+      "internal/**/testdata/**",
+      "pkg/**/testdata/**",
       "scripts/*.test.sh",
       "frontend/src/**/*.test.*"
     ],
@@ -12,9 +15,8 @@
     "production": [
       "internal/**",
       "pkg/**",
-      "main.go",
+      "main*.go",
       "frontend/src/**",
-      "**/*.swift",
       "scripts/*.sh",
       "docs/releasing.md",
       "docs/release-checklist.md"
