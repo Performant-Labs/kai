@@ -1,0 +1,38 @@
+{
+  "pathSets": {
+    "tests": [
+      "**/*_test.go",
+      "**/testdata/**",
+      "scripts/*.test.sh",
+      "frontend/src/**/*.test.*"
+    ],
+    "handoffs": [
+      "docs/handoffs/**"
+    ],
+    "production": [
+      "internal/**",
+      "pkg/**",
+      "main.go",
+      "frontend/src/**",
+      "**/*.swift",
+      "scripts/*.sh",
+      "docs/releasing.md",
+      "docs/release-checklist.md"
+    ]
+  },
+  "mergeMode": "auto",
+  "toolchain": "kai",
+  "testSuites": {
+    "unit": {
+      "filter": "none",
+      "command": [
+        "sh",
+        "-c",
+        "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... ./pkg/... -count=1 && pnpm --dir frontend test && bash scripts/release.test.sh && bash scripts/release-ask-ai.test.sh"
+      ],
+      "timeoutMs": 900000
+    }
+  },
+  "handoffDirectory": "docs/handoffs",
+  "defaultIsolationLevel": "worktree"
+}

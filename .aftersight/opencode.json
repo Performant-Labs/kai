@@ -1,0 +1,86 @@
+{
+  "gate": {
+    "basePort": 9000,
+    "gateModel": "deepseek-flash",
+    "timeoutMs": 300000,
+    "worktreeDir": ".worktrees",
+    "gateChatPath": "/chat/completions",
+    "gateProvider": "deepseek",
+    "gateMaxTokens": 32768,
+    "gateTransport": "chat",
+    "gateCredential": "DEEPSEEK_API_KEY"
+  },
+  "agents": {
+    "orchestrator": {
+      "model": "zai/glm-5.3",
+      "effort": "high"
+    },
+    "final-reviewer": {
+      "model": "zai/glm-5.3",
+      "effort": "xhigh"
+    }
+  },
+  "stages": {
+    "a-dup": {
+      "model": "zai/glm-5.3",
+      "effort": "high",
+      "executor": "opencode-agent",
+      "timeoutSec": 1800,
+      "maxBudgetUsd": 5
+    },
+    "t-red": {
+      "model": "zai/glm-5.3",
+      "effort": "high",
+      "executor": "opencode-agent",
+      "timeoutSec": 1800,
+      "maxBudgetUsd": 5
+    },
+    "design": {
+      "model": "zai/glm-5.3",
+      "effort": "high",
+      "executor": "opencode-agent",
+      "timeoutSec": 1800,
+      "maxBudgetUsd": 5
+    },
+    "t-green": {
+      "model": "zai/glm-5.3",
+      "effort": "high",
+      "executor": "opencode-agent",
+      "timeoutSec": 1800,
+      "maxBudgetUsd": 5
+    },
+    "implement": {
+      "model": "zai/glm-5.3",
+      "effort": "high",
+      "executor": "opencode-agent",
+      "timeoutSec": 1800,
+      "maxBudgetUsd": 5
+    },
+    "spec-audit": {
+      "model": "zai/glm-5.3",
+      "effort": "xhigh",
+      "executor": "opencode-agent",
+      "timeoutSec": 1800,
+      "maxBudgetUsd": 5
+    },
+    "ui-walkthrough": {
+      "model": "zai/glm-5.3",
+      "effort": "medium",
+      "executor": "opencode-agent",
+      "timeoutSec": 1800,
+      "maxBudgetUsd": 5
+    },
+    "architecture-review": {
+      "model": "zai/glm-5.3",
+      "effort": "xhigh",
+      "executor": "opencode-agent",
+      "timeoutSec": 1800,
+      "maxBudgetUsd": 5
+    }
+  },
+  "release": "opencode-pipeline-v2.1.0",
+  "providers": [
+    "deepseek",
+    "zai"
+  ]
+}

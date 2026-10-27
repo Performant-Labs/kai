@@ -1,8 +1,7 @@
 # AGENTS.md — kai (OpenCode)
 
 Agent instructions for OpenCode in this repo. (Claude Code reads `CLAUDE.md` instead; this file
-is the OpenCode equivalent and is what the `/pipeline` command and the `pipeline_preflight`
-plugin drive.)
+is the OpenCode equivalent; the Aftersight loader drives the pipeline tools.)
 
 ## Project docs
 
@@ -27,14 +26,16 @@ exactly one place: link to it, do not restate it.
 - Upstream `dtapps/kai` is touched **only** for upstream contributions, and only when an
   issue explicitly asks for one.
 - Upstream contribution recipe (only when an issue asks for it): branch off
-  `upstream/master` containing **only** the intended change, and **never** `.aftersight/`, `.opencode/`,
-  `AGENTS.md`, `opencode.json`, `docs/handoffs/`, or `.github/workflows/ci.yml`; open the PR
+  `upstream/master` containing **only** the intended change, and **never** `.aftersight/`,
+  `AGENTS.md`, `docs/handoffs/`, or `.github/workflows/ci.yml`; open the PR
   with `gh pr create --repo dtapps/kai --head Performant-Labs:<branch>`.
 
 ## OpenCode coding pipeline
 
-Implementation follows the OpenCode coding pipeline, release `opencode-pipeline-v0.2.0` (pinned in `.aftersight/pipeline-pin.json`, resolved into a per-user cache; no runner code is committed here; OpenCode 1.x only, the 2.0.0 line is not ready), test-first, with a per-story review-rigor dial
-(`direct` / `in-session` / `second-opinion` / `panel`).
+Implementation follows the Aftersight OpenCode coding pipeline (OpenCode 2.x, 2.0.4 or later), served
+by the Aftersight server project `kai` and driven by the loader in the user's OpenCode configuration
+(`~/.config/opencode/plugins/aftersight.js`); nothing pipeline-related is installed in this repository.
+Test-first, with a per-story review-rigor dial (`direct` / `in-session` / `second-opinion` / `panel`).
 
 **The plugin owns the process, not the model.** Phase order (pre-flight → survey-brief → design →
 architecture-review → t-red → implement → t-green → a-dup → ui-walkthrough → spec-audit → merge),
@@ -58,11 +59,11 @@ the plugin wins.
 
 ### Pre-flight is a hard gate
 
-`/pipeline` (or the `pipeline_preflight` tool) runs pre-flight. It returns one structured payload
+The `pipeline_preflight` tool runs pre-flight. It returns one structured payload
 with **every** check result — do not run the checks yourself.
 
 - **Every check runs.** One failing row never aborts the rest; the payload lists all of them.
-- **Pre-flight never runs the product suite** (`test.unit.command` in `.aftersight/pipeline.config.json`) and never fires a commit hook.
+- **Pre-flight never runs the product suite** (`testSuites.unit.command` in `.aftersight/project.json`) and never fires a commit hook.
   It checks wiring and reachability only. If the gate model is a self-hosted endpoint and it is
   down, pre-flight **fails closed** — there is no silent fallback to another provider.
 - A `PRE-FLIGHT: FAIL` payload is a **hard stop**: do not begin survey-brief until each failing
@@ -70,10 +71,12 @@ with **every** check result — do not run the checks yourself.
 
 ### Configuration
 
-Everything project-specific lives in `.aftersight/pipeline.config.json` (test commands, toolchains,
-path globs, handoffs dir, worktree naming). Role models are **not** committed here: they come from
-the OpenCode configuration of the environment that runs the agents; pre-flight reports the resolved
-role→model mapping verbatim and never reconciles it against Claude's model tiers. The role prompts in `.aftersight/prompts/` and `.aftersight/agents/` are **generated** by the shim on every run — put project notes in `.aftersight/overlays/<role>.md`, never in the generated files. To re-install or move releases: `node $PIPELINE_TOOLS/scripts/pipeline-install.mjs --pipeline opencode` (see the release runbook `docs/runbooks/pipeline-install.md` in Performant-Labs/aftersight at the pinned tag).
+Project settings are the seeds in `.aftersight/` (`project.json`: test command, path sets, handoffs dir;
+`opencode.json`: role and stage models, gate, providers), committed here and sent to the server with
+`aftersight config push` (`config diff` / `config pull` read them back; the database wins on pull).
+Models are `zai/glm-5.3` for every role and stage; the gate is `deepseek/deepseek-flash`. Setup on a
+machine: `aftersight init --server <origin> --project kai --token-file <file> --client opencode`
+(the runbooks `pipeline-install.md` and `pipeline-for-agents.md` in Performant-Labs/aftersight).
 
 ### Worktree-per-run
 
@@ -92,5 +95,5 @@ never silently omitted.
 
 ## Verification
 
-The authoritative suite is `test.unit.command` in `.aftersight/pipeline.config.json`. It runs in the
+The authoritative suite is `testSuites.unit.command` in `.aftersight/project.json`. It runs in the
 **t-red** and **t-green** phases (the plugin reads its exit code), never in pre-flight.
