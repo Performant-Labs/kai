@@ -17,9 +17,8 @@
 //     previous engine's manual edit; the new engine starts from its stored result (design §3
 //     "manual edits reset": no per-engine edit memory).
 //
-// No mocks: real jsdom localStorage (NODE_OPTIONS=--localstorage-file, see the vitest.config.ts
-// header note), real setTimeout (Node real timers; the 15 s case waits for real, no mocked timers,
-// no stubbed wails runtime).
+// No mocks: real jsdom localStorage (see vitest.setup.ts), real setTimeout (Node real timers;
+// the 15 s case waits for real, no mocked timers, no stubbed wails runtime).
 //
 // RED note: the ./resultPane.ts module does not exist yet (the result-pane logic is inlined in
 // TranslateWindow.svelte today) — this file fails on import, with vitest reporting
@@ -60,15 +59,11 @@ const GOOGLE_DISABLED: PaneEngine[] = ENGINES.map((e) =>
 );
 
 beforeEach(() => {
-  // Real localStorage (Node 26 needs --localstorage-file, see vitest.config.ts).
+  // Real jsdom localStorage (see vitest.setup.ts).
   window.localStorage.removeItem(LAST_USED_KEY);
 });
 
-// Cleanup: --localstorage-file is a file-backed store, so a removeItem deletion can linger as an
-// empty string (which resolvePrimaryEngine's "no-op on empty" guard skips) and leak across files
-// in later test files' (resolvePrimaryEngine.test.ts etc.) vitest workers.
-// clear() as the safety net: after each test the store retains no state, so files never pollute
-// each other.
+// Cleanup: clear() after each test so the store retains no state between tests.
 afterEach(() => {
   window.localStorage.clear();
 });

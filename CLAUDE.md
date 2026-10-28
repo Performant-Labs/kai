@@ -10,7 +10,7 @@ The authoritative suite is `test.unit.command` in `.aftersight/pipeline.config.j
 sh -c "(cd pkg/swiftbridge/scripts && bash ./build.sh) && go test -vet=off ./internal/... ./pkg/... -count=1 && pnpm --dir frontend test"
 ```
 
-Environment note (verified 2026-09-25 on Node 26.7): the frontend tests fail on master with `localStorage.removeItem is not a function` unless the environment sets `NODE_OPTIONS=--no-experimental-webstorage`. That is a local Node issue, not a code defect; it does not change the command above.
+Environment note: the frontend tests need no `NODE_OPTIONS` on any Node version. Node 25 and later define their own `localStorage`, and `frontend/vitest.setup.ts` replaces it with jsdom's for the tests.
 
 ## Worktrees and PRs
 
