@@ -17,7 +17,7 @@ export default defineConfig({
   plugins: [svelte()],
   // issue #52: lang.ts / i18n import the generated model enum via @bindings (a plain,
   // runtime-light TS file), so unit tests need the same alias vite.config.ts declares.
-  resolve: { alias: { '@bindings': resolve(__dirname, 'bindings') }, conditions: ['browser'] },
+  resolve: { alias: { '@bindings': resolve(import.meta.dirname, 'bindings') }, conditions: ['browser'] },
   test: {
     environment: 'jsdom',
     // Give jsdom an origin: otherwise some web globals need a window origin during initialization.
