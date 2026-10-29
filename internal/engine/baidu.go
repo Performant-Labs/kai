@@ -122,7 +122,7 @@ func (b *baiduTranslator) Translate(ctx context.Context, req model.TranslateRequ
 		from = echoLanguage(req.From)
 	}
 	// Baidu documents one trans_result entry per newline-separated segment of q
-	// (通用翻译API接入文档 https://fanyi-api.baidu.com/doc/21, FAQ #1), so re-joining the dst
+	// (general translation API documentation, https://fanyi-api.baidu.com/doc/21, FAQ 1), so re-joining the dst
 	// values in order with "\n" restores the source's line structure; an empty segment yields an
 	// empty entry, so blank lines survive. A single-entry response joins to its sole dst unchanged.
 	dsts := make([]string, len(br.TransResult))

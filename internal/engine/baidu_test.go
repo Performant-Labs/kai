@@ -10,9 +10,9 @@ import (
 )
 
 // baiduMultilineBody is Baidu's documented response shape for a q containing newlines: one
-// trans_result entry (src/dst pair) per newline-separated segment — 通用翻译API接入文档,
-// https://fanyi-api.baidu.com/doc/21, FAQ #1: "您可以在发送的字段 q 中用换行符……这样您就能得到
-// 多段文本独立的翻译结果了". The empty middle entry for the blank source line is an inference from
+// trans_result entry (src/dst pair) per newline-separated segment (general translation API documentation,
+// https://fanyi-api.baidu.com/doc/21, FAQ 1): a q containing newlines returns an independent
+// translation result for each segment of text. The empty middle entry for the blank source line is an inference from
 // that one-entry-per-segment rule (each segment, including an empty one, contributes one entry),
 // consistent with real-world clients that index one dst per source line. NOT captured live: no
 // Baidu credentials exist in this run, so the fixture is built from the documented shape.
@@ -73,7 +73,7 @@ func TestBaiduSingleEntryResultUnchanged(t *testing.T) {
 		t.Fatalf("Translate: %v", err)
 	}
 	if res.Result != "你好" {
-		t.Errorf("Result = %q, want 你好 (single entry unchanged)", res.Result)
+		t.Errorf("Result = %q, want the single dst unchanged", res.Result)
 	}
 	if res.Engine != "baidu" {
 		t.Errorf("Engine = %q, want baidu", res.Engine)
