@@ -4,26 +4,31 @@
   import { t, langName, engineName } from '../i18n';
   import { rootStyle } from '../stores/theme';
   import { currentLang } from '../stores/ui';
-  import { persisted, pinKey } from '../stores/persisted';
+  import { persisted } from '../stores/persisted';
+  import { createTranslatePinStore, TRANSLATE_PIN_KEY } from '../stores/translatePin';
   import { rootStyleToStyle } from '../utils/style';
-  import { initialPin } from '../utils/pinDefault';
+  import { effectivePin } from '../utils/pinDefault';
   import { onEvent, emitEvent } from '../runtime';
   import { Window, Clipboard } from '@wailsio/runtime';
 
   // Pin state persists to localStorage and survives reopening the window. #69: the starting
   // state is the "keep the translate window on top of other apps" setting (off by default) —
-  // the default the window starts from, read once per mount, not a live toggle. The 🧷 button
-  // keeps its meaning: the per-window, per-session toggle, and a stored choice always wins over
-  // the default (including one made while the setting is still loading — see the mount init).
-  // The old #39 forced-re-pin migration is gone: a stored false stays false.
+  // the default the window starts from, not a live toggle. The 🧷 button keeps its meaning:
+  // the per-window, per-session toggle, and a stored choice always wins over the default
+  // (including one made while the setting is still loading — see reapplyPin). The old #39
+  // forced-re-pin migration is gone: a stored false stays false.
+  // #113: the stored choice counts only under the versioned key kai:translate:pinned:v2, in an
+  // explicit-write-only store (stores/translatePin). The old key's value was mostly the
+  // initial state the previous store auto-wrote on mount, not a real choice, so it is pollution:
+  // never read, never written, left exactly as it is.
   const storedPinRaw =
-    typeof localStorage !== 'undefined' ? localStorage.getItem(pinKey('translate')) : null;
-  const pinnedStore = persisted<boolean>(pinKey('translate'), false);
+    typeof localStorage !== 'undefined' ? localStorage.getItem(TRANSLATE_PIN_KEY) : null;
+  const pinnedStore = createTranslatePinStore();
   let pinned = $derived($pinnedStore);
-  // Set by the first explicit 🧷 toggle. The mount init applies the setting default only
-  // while this is false: a click made while the config loads is an explicit choice, and an
-  // explicit choice always wins over the default (localStorage cannot tell that click from
-  // the initial value persisted's subscribe auto-writes, so the flag is the discriminator).
+  // Set by the first explicit 🧷 toggle — the only path that ever writes the store. Every
+  // level application (mount init, on-top-changed broadcast, Settings/History-close re-pin)
+  // resolves through effectivePin: a click made while the config loads is an explicit choice
+  // and always wins; without one, a stored v2 choice still wins, else the live setting decides.
   let pinTouched = false;
   async function togglePin() {
     pinTouched = true;
@@ -34,6 +39,37 @@
     } catch (e) {
       console.error('toggle pin failed', e);
     }
+  }
+
+  // #113: the live-setting resolution behind every non-explicit application point — the mount
+  // init, the on-top-changed broadcast, the Settings/History-close re-pin. Re-fetches the
+  // setting (never trusts a mount-time value or an event payload), resolves through ONE
+  // decision (effectivePin: an explicit 🧷 choice this mount wins, else initialPin over the
+  // stored v2 choice and the live setting) and updates the store with apply() — which never
+  // writes: only the explicit 🧷 toggle persists. Callers apply the resolved level to the
+  // window themselves.
+  async function resolvePinLevel() {
+    try {
+      const cfg = await GetConfig();
+      pinnedStore.apply(
+        effectivePin(
+          storedPinRaw,
+          pinTouched,
+          get(pinnedStore),
+          cfg?.translate_window_on_top === true,
+        ),
+      );
+    } catch {
+      /* Config unreadable: keep the current level, never override a click */
+    }
+  }
+
+  // resolvePinLevel + apply the resolved level to the window (the mount init and the
+  // on-top-changed broadcast; the Settings/History-close re-pin inlines the same two steps —
+  // its handler applies the store after resolving).
+  async function reapplyPin() {
+    await resolvePinLevel();
+    Window.SetAlwaysOnTop($pinnedStore).catch((e) => console.error(t('log.restorePinFailed'), e));
   }
 
   // Auto-read clipboard and translate: when enabled, SaveConfig turns the copy hotkey
@@ -85,6 +121,7 @@
     EventAccessibilityMissing,
     EventHistoryUse,
     EventHistoryShortcutChanged,
+    EventTranslateWindowOnTopChanged,
   } from '../utils/events';
   import type { TranslateProgressPayload, HistoryUsePayload } from '../utils/events';
   import { WindowSettings, WindowHistory, WindowTranslate } from '../constants/window';
@@ -851,13 +888,18 @@
     });
     const offClosing = onEvent(EventWindowClosing, (name: string) => {
       // Issue #69: opening Settings drops this window out of always-on-top so Settings is not
-      // hidden behind a pinned window; when Settings closes, put the persisted pin back. The
-      // history window (issue #60) lowers this window the same way (WindowWrapper.ShowHistory),
-      // so its close gets the same pin restore.
+      // hidden behind a pinned window; when Settings closes, put the pin back. The history
+      // window (issue #60) lowers this window the same way (WindowWrapper.ShowHistory), so its
+      // close gets the same pin restore. #113: the restore first re-resolves through the
+      // effectivePin decision (resolvePinLevel) — never the raw store value, which is the
+      // mount-time resolution and would revert a level the on-top-changed broadcast had just
+      // applied — then applies the resolved level.
       if (name === WindowSettings || name === WindowHistory) {
-        Window.SetAlwaysOnTop($pinnedStore).catch((e) =>
-          console.error(t('log.restorePinFailed'), e),
-        );
+        void resolvePinLevel().then(() => {
+          Window.SetAlwaysOnTop($pinnedStore).catch((e) =>
+            console.error(t('log.restorePinFailed'), e),
+          );
+        });
         return;
       }
       // Global broadcast: only this window's (translate) closing is looked at, so closing another
@@ -897,28 +939,23 @@
     const offHistoryUse = onEvent(EventHistoryUse, (p: HistoryUsePayload) => {
       applyHistoryUse(p);
     });
+    // #113: the settings page saved the on-top switch (EventTranslateWindowOnTopChanged, the
+    // EventEnginesChanged settings→translate shape). The payload is not trusted — the config
+    // is re-fetched — and the new level resolves through the same effectivePin decision as
+    // everywhere else: an explicit 🧷 choice this mount keeps winning (#69's locked rule),
+    // otherwise the new setting applies to this open window too.
+    const offOnTopChanged = onEvent(EventTranslateWindowOnTopChanged, () => {
+      reapplyPin();
+    });
     // Initialization and first render: resolve the starting pin from the setting, apply it,
     // then wait for engines/languages/defaults to load.
     (async () => {
-      // #69: the pin default is the setting, read once per mount BEFORE the state is applied:
-      // a stored 🧷 choice wins, otherwise the setting decides (off when unreadable). A click
-      // made while the config was loading is an explicit choice and is never overwritten —
-      // hence pinTouched; storedPinRaw was captured before the store existed, so it holds the
-      // user's prior choice, not the initial value the subscribe auto-writes.
-      try {
-        const cfg = await GetConfig();
-        if (!pinTouched) {
-          pinnedStore.set(initialPin(storedPinRaw, cfg?.translate_window_on_top === true));
-        }
-      } catch {
-        /* Config unreadable: keep the current state, never override a click */
-      }
-      // Apply the resolved pin state.
-      try {
-        await Window.SetAlwaysOnTop($pinnedStore);
-      } catch (e) {
-        console.error(t('log.restorePinFailed'), e);
-      }
+      // #69/#113: the starting level resolves through the ONE decision (reapplyPin →
+      // effectivePin): a stored 🧷 choice wins, otherwise the setting decides (off when
+      // unreadable), and a click made while the config was loading is an explicit choice that
+      // is never overwritten. storedPinRaw was captured before the store existed, so it holds
+      // the user's prior choice — the store itself writes nothing on its own.
+      await reapplyPin();
       // Must wait for engines/languages/defaults to load first (the result pane's dropdown and dots depend on them).
       await Promise.all([
         loadDefaults(),
@@ -953,6 +990,7 @@
       offClearShortcut();
       offHistoryUse();
       offHistoryShortcut();
+      offOnTopChanged();
       // Nothing waiting may fire on a window that is gone (issue #57).
       autoRun.cancel();
       commitAuto.cancel();

@@ -15,6 +15,8 @@
   import { Lang, type LangCode } from '../../constants/lang';
   import { THEME, type ThemeMode } from '../../constants/theme';
   import { track } from '../../utils/analytics';
+  import { emitEvent } from '../../runtime';
+  import { EventTranslateWindowOnTopChanged } from '../../utils/events';
   import { fontSize, saveFontSize } from '../../stores/fontSize';
   import { DEFAULT_FONT_SIZE, FONT_SIZE_STEPS, stepFontSize } from '../../constants/fontSize';
 
@@ -131,6 +133,10 @@
     try {
       const cfg = (await GetConfig()) ?? ({} as any);
       await SaveConfig({ ...cfg, translate_window_on_top: enabled });
+      // #113: tell an OPEN translate window the setting changed (the EventEnginesChanged
+      // settings→translate shape) so it applies the new level live — its own 🧷 choice this
+      // mount still wins. No payload: the window re-fetches the config itself.
+      emitEvent(EventTranslateWindowOnTopChanged);
       track('feature_toggled', { feature: 'translate_window_on_top', enabled });
     } catch (err) {
       console.error(t('log.generalSaveTranslateWindowOnTopFailed'), err);

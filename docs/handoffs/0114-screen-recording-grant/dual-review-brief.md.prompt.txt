@@ -1,0 +1,141 @@
+You are an independent architecture reviewer. You have no loyalty to the brief's framing — your job is to find problems before they are built.
+
+Your discipline:
+- Treat any claim about runtime behavior — execution ordering, library defaults, middleware sequencing, plugin lifecycle, external state — as a HYPOTHESIS, and weigh it ONLY against what this prompt contains: the brief, the diff, and any Evidence Appendix or SOURCE EXCERPTS section. The author's own prose ASSERTION is not evidence, however confident it reads; a cited file:line whose text IS shown in this prompt is evidence, so compare the claim to that text.
+- Classify each claim by what the prompt lets you show:
+  - The prompt shows the claim is FALSE or contradicted (a shown excerpt says otherwise, two parts of the brief disagree, the code in the diff is wrong): that is a BLOCK finding. Quote the text that shows it.
+  - The prompt shows the claim is TRUE: no finding.
+  - The prompt does NOT contain the source needed to check the claim: that is a needs-verification finding, NEVER a BLOCK. Name the claim and the exact evidence that would settle it (a file:line, a library source excerpt, a documentation page). Not being shown the source is not evidence that the claim is wrong.
+- BLOCK is reserved for defects demonstrable from this prompt itself: a contradiction, a vacuous or untestable acceptance criterion, a missing test, wrong code visible in the diff, or a claim that a shown excerpt contradicts. Do not describe a plan to go verify it elsewhere — you have no tool access in this task, so that plan can never be carried out, and describing it is not a review. Put the unverifiable claim in a needs-verification finding instead.
+- Be adversarial to the framing you are given. Your job is to find problems, not validate decisions.
+
+Output contract — read this before writing anything:
+- Emit ONLY the structured findings in the exact format specified below. Nothing else.
+- NO preamble, NO restating the task, NO description of your approach or next steps, NO
+  narration of what you are about to do or would do with more access. Your first character
+  of output must be the start of the required format below (e.g. the first heading).
+- If you cannot verify something, that is a needs-verification finding (never a BLOCK), not
+  a reason to explain your limitations or ask to see more. Write the finding and move on.
+
+Also check:
+- Acceptance criteria are complete and testable.
+- Scope is appropriately bounded.
+- Missing error paths or edge cases.
+
+Output format (use exactly this structure):
+
+## Brief Review (Round 1)
+
+### BLOCK findings
+Each as: **[B-N]** description — why it blocks — what must be clarified or fixed.
+If none: "None."
+
+### Needs-verification findings
+Each as: **[NV-N]** the claim — the evidence that would settle it (file:line, or a library/documentation excerpt). Never a BLOCK.
+If none: "None."
+
+### WARN findings
+Each as: **[W-N]** description — recommendation.
+If none: "None."
+
+### NIT findings
+Each as: **[NIT-N]** description.
+If none: "None."
+
+### Verdict
+PASS — no BLOCK findings; implementation may proceed.
+OR
+BLOCK — N blocking finding(s); must resolve before implementation starts.
+
+---
+
+## Brief
+
+# Brief — issue #114: Screen Recording "Grant access" does not get Kai listed
+
+Run `0114-screen-recording-grant` · branch `issue-0114-screen-recording-grant` · worktree
+`.worktrees/0114-screen-recording-grant` · survey: `survey.md` (same directory) · journal:
+`decisions.md` (same directory).
+
+## Objective
+
+Make the Settings > Shortcuts **Screen Recording → Grant access** button reliably register Kai with
+macOS so the Kai switch appears (and can be turned on) in System Settings > Privacy & Security >
+Screen & System Audio Recording — without the remove/re-add dance — and make the row say plainly
+that Kai must be restarted after switching it on.
+
+**Review rigor: `second-opinion`** (operator instruction). Brief and diff gates run through the
+plugin's `pipeline_dual_review` (playbook `dual-review.sh`, glm-5.3 via Z.ai, `.env` mirrored into
+the worktree). A = architecture-reviewer, T = tester (RED then GREEN), F = feature-implementor,
+A-dup + S per the plugin. **uiSurface: false — Phase D and Phase U are N/A, declared** (a text
+change to an existing Settings row; no new layout).
+
+## Scope (exact)
+
+| File | Change |
+|---|---|
+| `pkg/swiftbridge/internal/swift/apple_accessibility.swift` | `kai_screenrecording_request`: replace the metadata-only escalation with a real one-off capture attempt |
+| `pkg/swiftbridge/screenrecording_source_test.go` | T: re-pin/extend the source-text contract |
+| `frontend/src/i18n/en-US.ts`, `frontend/src/i18n/zh-CN.ts` | `settings.permScreenRecordingMissing` copy (both locales) |
+| `frontend/src/components/permissionCopy.test.ts` | T: pin the new copy |
+| `CHANGELOG.md` | one `[Unreleased]` user-visible line (#114) |
+| `docs/handoffs/0114-screen-recording-grant/**` | run artifacts (this run's) |
+
+Explicitly **out of scope**: Accessibility and Input Monitoring behavior; `ShortcutsTab.svelte`
+layout/logic; the Go service (`internal/service/*` — it already routes the button to the request
+correctly; if A disagrees it must rule so with a source anchor); any TCC/system-state change; CI
+workflows; anything owned by parallel runs.
+
+## Acceptance criteria
+
+- [ ] **AC1 — real capture attempt before the pane.** `kai_screenrecording_request` keeps the
+  order: `CGRequestScreenCaptureAccess()` → `if !CGPreflightScreenCaptureAccess()` → **one real
+  ScreenCaptureKit capture attempt (a started `SCStream`, stopped immediately; no frames retained)**
+  → pane opens last (on the attempt's answer or the existing 3 s deadline). Pinned by the repo's
+  source-text test pattern (CI has no Swift compiler).
+- [ ] **AC2 — envelope kept.** The request still runs on the main thread with Kai active
+  (`Thread.isMainThread` / `DispatchQueue.main`, `NSApp.activate`), and the pane URL stays
+  `Privacy_ScreenCapture` via `NSWorkspace.shared.open`. (Existing pins keep holding.)
+- [ ] **AC3 — row copy says the restart plainly.** `settings.permScreenRecordingMissing` in BOTH
+  locales: en-US 'Turn on Kai in Screen & System Audio Recording, then restart Kai.' · zh-CN
+  '请在“屏幕与系统音频录制”中打开 Kai，然后重启 Kai。' — no "+ add / 点 + 添加" workaround
+  teaching; each stays ≤110 chars (permissionCopy limit) and names where to switch on.
+- [ ] **AC4 — service path and test safety.** The button's route
+  `ShortcutsTab → OpenScreenRecordingSettings → swiftbridge.KaiScreenRecordingRequest()` is
+  unchanged in behavior, and **no test in the suite wires a real request pointer** (unwireBridgeRequests
+  pattern, #101/#102): the full suite must run without opening System Settings or popping any
+  macOS permission prompt.
+- [ ] **AC5 — changelog.** `CHANGELOG.md` `[Unreleased]` gains a user-visible line for #114
+  (Grant access now registers Kai in the Screen & System Audio Recording list; the row says to
+  restart Kai after switching it on).
+- [ ] **AC6 — honesty about verification.** Real TCC enrollment on a clean permission state is
+  **not verifiable in this run** (needs the signed app on a Mac with clean state; the issue itself
+  says unit tests over a stub cannot show it). It is recorded as the owner's post-merge check, in
+  the PR body and the journal — never claimed as tested. This run never runs `tccutil` or alters
+  system settings.
+
+## Settled decisions (binding for F unless A amends with a ruling)
+
+1. The escalation is a **started `SCStream`** (ScreenCaptureKit), configured minimally, started and
+   stopped as soon as it answers — a failed `.notPermitted` start still enrolls the app, which is
+   the point. Keep using `SCShareableContent` only to build the filter/display reference if needed.
+2. The pane opens LAST, exactly once (the existing `openPane()` once-guard and 3 s deadline stay).
+3. Copy wording as in AC3, verbatim.
+4. Go service: no change.
+5. New code/comments in English; i18n values in both locales.
+
+## Test plan sketch (T owns the final contract — RED before any production change)
+
+- Swift source-text tests: amend/extend `screenrecording_source_test.go` — escalation pin changes
+  from "contains `SCShareableContent`" to "starts a real stream" (`SCStream` + start/stop present;
+  a metadata-only enumeration no longer satisfies the pin), order ask → preflight → attempt →
+  `openPane()` last, guard unchanged; envelope pins unchanged (they must stay green).
+- Frontend: `permissionCopy.test.ts` gains pins — the restart is said plainly in both locales, the
+  "+ add" teaching is gone, length ≤110, "where" named.
+- Go: existing service tests stay green untouched (they already run unwired); no new real-bridge
+  test.
+
+## Verification limits (restated)
+
+Everything provable here is source-text/stub-level. The signed-app clean-state check is the
+owner's, post-merge (recorded on the issue). The PR body must say this plainly.

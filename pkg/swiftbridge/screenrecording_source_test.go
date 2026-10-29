@@ -126,8 +126,11 @@ func TestInputMonitoringPollNeverRequests(t *testing.T) {
 }
 
 // Screen Recording: the request alone is not reliable, so it runs on the main thread with Kai
-// frontmost, and only when the preflight still says "not granted" does it make one real (metadata
-// only, no pixels, so no flash) ScreenCaptureKit call so macOS lists Kai. The pane opens last.
+// frontmost, and only when the preflight still says "not granted" does it start one real
+// ScreenCaptureKit capture attempt — a started SCStream, stopped as soon as it answers; the
+// expected .notPermitted failure is what makes macOS list Kai (issue #114: the metadata-only
+// enumeration shipped in 0.6.0 never enrolled Kai). The pane opens last, on the attempt's
+// answer (the 3 s deadline is only the backstop).
 func TestScreenRecordingRequestRunsOnMainThreadWithKaiActive(t *testing.T) {
 	body := requestBody(t, readSwift(t, "apple_accessibility.swift"))
 	if !strings.Contains(body, "Thread.isMainThread") || !strings.Contains(body, "DispatchQueue.main") {
@@ -140,22 +143,57 @@ func TestScreenRecordingRequestRunsOnMainThreadWithKaiActive(t *testing.T) {
 
 func TestScreenRecordingRequestEscalatesToCaptureOnlyWhenNotGranted(t *testing.T) {
 	body := requestBody(t, readSwift(t, "apple_accessibility.swift"))
-	ask := strings.Index(body, "CGRequestScreenCaptureAccess()")
-	pre := strings.Index(body, "CGPreflightScreenCaptureAccess()")
-	capture := strings.Index(body, "SCShareableContent")
-	// The pane is opened by the openPane closure; it must be CALLED after the capture attempt.
-	open := strings.LastIndex(body, "openPane()")
+	// Issue #114 (handoff-A A1/R1): the escalation must be a REAL capture attempt — an SCStream
+	// that is started and, once it answers, stopped. Metadata-only SCShareableContent enumeration
+	// (the 0.6.0 shape) does not make macOS list Kai. SCShareableContent itself is deliberately
+	// NOT banned here: it legitimately stays to build the stream's SCContentFilter (handoff-A R2),
+	// so the pin requires the stream start instead of asserting the metadata call's absence.
+	if !strings.Contains(body, "SCStream") {
+		t.Error("the escalation must construct an SCStream: a metadata-only SCShareableContent enumeration does not enroll Kai with macOS")
+	}
+	if !strings.Contains(body, "startCapture") {
+		t.Error("the escalation must start the stream (startCapture): constructing an SCStream without starting it captures nothing")
+	}
+	if !strings.Contains(body, "stopCapture") {
+		t.Error("the stream must be stopped once it answers (stopCapture): no frames are kept")
+	}
 	if !strings.Contains(body, "NSWorkspace.shared.open") {
 		t.Fatal("the pane must still be opened")
 	}
-	if ask < 0 || pre < 0 || capture < 0 || open < 0 {
-		t.Fatalf("request, preflight, capture attempt and pane open must all be present (ask=%d pre=%d capture=%d open=%d)", ask, pre, capture, open)
+	ask := strings.Index(body, "CGRequestScreenCaptureAccess()")
+	pre := strings.Index(body, "CGPreflightScreenCaptureAccess()")
+	attempt := strings.Index(body, "startCapture")
+	// The pane is opened by the openPane closure; it must be CALLED after the capture attempt.
+	open := strings.LastIndex(body, "openPane()")
+	if ask < 0 || pre < 0 || attempt < 0 || open < 0 {
+		t.Fatalf("request, preflight, stream attempt and pane open must all be present (ask=%d pre=%d attempt=%d open=%d)", ask, pre, attempt, open)
 	}
-	if ask >= pre || pre >= capture || capture >= open {
+	if ask >= pre || pre >= attempt || attempt >= open {
 		t.Error("order must be: request, preflight, capture attempt (only if not granted), open the pane")
 	}
 	// The capture attempt sits inside an `if !CGPreflightScreenCaptureAccess()` guard.
 	if !strings.Contains(body, "if !CGPreflightScreenCaptureAccess()") {
 		t.Error("the capture attempt must be guarded by `if !CGPreflightScreenCaptureAccess()`")
+	}
+}
+
+// Issue #114 (handoff-A R3): the pane must open on the attempt's answer — the expected
+// .notPermitted error from startCapture IS the answer (that failure is what enrolls Kai), so on
+// the not-granted path the pane must not ride the 3 s deadline backstop alone. Source-text
+// approximation (CI has no Swift compiler): an openPane() call must sit in the source between
+// startCapture and the deadline backstop, i.e. inside the attempt's completion region.
+func TestScreenRecordingRequestOpensPaneOnTheStreamAnswer(t *testing.T) {
+	body := requestBody(t, readSwift(t, "apple_accessibility.swift"))
+	attempt := strings.Index(body, "startCapture")
+	if attempt < 0 {
+		t.Fatal("no startCapture in kai_screenrecording_request: the real capture attempt is missing")
+	}
+	deadline := strings.Index(body, "asyncAfter")
+	if deadline < 0 {
+		t.Fatal("the 3 s deadline backstop (DispatchQueue.main.asyncAfter) must stay: a slow answer must never leave the user with no pane")
+	}
+	pane := strings.Index(body[attempt:], "openPane()")
+	if pane < 0 || attempt+pane >= deadline {
+		t.Error("an openPane() call must be reachable from the startCapture completion (between startCapture and the 3 s deadline backstop): the pane opens on the attempt's answer, not only on the deadline")
 	}
 }

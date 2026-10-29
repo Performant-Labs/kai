@@ -1,13 +1,52 @@
 # Changelog
 
-Changes in this fork (`Performant-Labs/kai-private`) since it diverged from upstream `dtapps/kai`.
+Changes in this repository (`Performant-Labs/kai`) since it diverged from upstream `dtapps/kai`.
 Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line under
 `[Unreleased]` when a change merges; a release moves that section under a version heading.
 `scripts/changelog-check.sh` lists merged PRs this section does not cover.
 
 ## [Unreleased]
+
+### Bug Fixes
+- Baidu translations of text with line breaks now keep every line. Kai used only the first entry of Baidu's response, so a multi-line text came back as its first line; the entries are now joined in order with newlines, and blank lines survive.
+
+## [0.6.2] - 2026-10-21
+- The translate window cannot be closed anymore: its close button is gone, and Cmd+W (and any other close path) now hides it instead — the window keeps its text and results and comes back from the tray menu or the translate hotkey, so the app's main window can no longer be lost until Kai quits (#112).
+- The "Keep the translate window on top of other apps" setting now governs the window at every moment: the window is created at the level the setting says, and toggling the switch applies to a window that is already open (the window's own 🧷 pin choice still wins). The stored pin choice moved to a new key and starts fresh — a one-time reset, since the previously stored value was usually the auto-written initial state, not a real choice (#113).
+
+### Known Issues
+- Alt-A sometimes captures the right Mexican Spanish text but does not switch the language drop-downs. The cause is still not found. This build logs every switch decision (the language the detector heard and how sure it was, the pair the window shows, the pair chosen, and why) in `[source switch]` lines that also name the build, so when it happens, send `~/.kai/logs/kai.log` (and that day's `kai-YYYY-MM-DD.log.gz` if it was an earlier day) ([#16](https://github.com/Performant-Labs/kai/issues/16)). A capture of a word or two now switches when the detector names the language at 0.5 or better, so "Nos vemos" switches; one it scores lower, or does not recognize, still does not.
+- Log files written by 0.4.1 and earlier still contain the text you selected or copied on the hotkey paths; this build does not write it. Kai keeps logs for 30 days in `~/.kai/logs`: delete the old files if that text was private, and do not paste an old log into an issue without checking it ([#11](https://github.com/Performant-Labs/kai/issues/11)).
+- Faster System translation (Settings > Translation Engines) is off by default. It needs macOS 26.4 or later and the traditional translation language packs for the pair (System Settings > General > Language & Region > Translation Languages); without them Kai says so and uses the standard mode for that translation. Apple's fast mode reads noticeably worse than the standard one, and its quality has not been checked on real text in several language pairs yet ([#10](https://github.com/Performant-Labs/kai/issues/10)).
+- Screen Recording: "Grant access" now makes a real capture request so Kai should appear in Privacy & Security > Screen & System Audio Recording, but that has not been checked on a real Mac yet ([#114](https://github.com/Performant-Labs/kai/issues/114)). If Kai is not listed, click + in that list, add Kai, switch it on, then restart Kai: macOS only applies the permission after a restart.
+- The in-app updater has not yet been seen to find a release on a real install, so do not count on it: install 0.6.2 by hand (the disk image, the zip, or `scripts/install-release.sh`).
+- Permissions are granted to the app's signing identity. 0.5.0 and later are signed with the "Kai Release" certificate, so updating should keep the grants, but that is not yet verified on other Macs ([#36](https://github.com/Performant-Labs/kai/issues/36)); if Alt+A stops copying after an update, remove Kai from Accessibility and add it again.
+- The certificate is self-signed, so macOS still blocks a copy downloaded with a browser as coming from an unidentified developer: install with `gh release download` and `scripts/install-release.sh`, or run `xattr -dr com.apple.quarantine /Applications/Kai.app`.
+
+## [0.6.1] - 2026-10-21
+- Settings > Shortcuts > Screen Recording: "Grant access" now makes a real capture request, so Kai appears in the Screen & System Audio Recording list without adding it by hand, and the row now says plainly to restart Kai after switching it on (#114).
+
+- A short capture the language detector is less sure of now also switches the language drop-downs: a two-word capture like "Nos vemos" (Spanish at 0.57 confidence, under the 0.8 bar but at the 0.5 lower bar) switches like a confident one such as "Buenos días", instead of being refused as too short (#91).
+<!-- changelog-skip: release tooling, no user-facing change: #111 -->
+<!-- changelog-skip: build tooling (Go 1.27.3 for the vulnerability check), no user-facing change: #117 -->
+
+### Known Issues
+- Alt-A sometimes captures the right Mexican Spanish text but does not switch the language drop-downs. The cause is still not found. This build logs every switch decision (the language the detector heard and how sure it was, the pair the window shows, the pair chosen, and why) in `[source switch]` lines that also name the build, so when it happens, send `~/.kai/logs/kai.log` (and that day's `kai-YYYY-MM-DD.log.gz` if it was an earlier day) ([#16](https://github.com/Performant-Labs/kai/issues/16)). A capture of a word or two now switches when the detector names the language at 0.5 or better, so "Nos vemos" switches; one it scores lower, or does not recognize, still does not.
+- The translate window can still be closed with the red button or Cmd+W, and it may stay on top of other apps even when Settings > General > "Keep the translate window on top of other apps" is off. Both are fixed in the next release ([#112](https://github.com/Performant-Labs/kai/issues/112), [#113](https://github.com/Performant-Labs/kai/issues/113)). To bring a closed window back, click the tray or Dock icon.
+- Log files written by 0.4.1 and earlier still contain the text you selected or copied on the hotkey paths; this build does not write it. Kai keeps logs for 30 days in `~/.kai/logs`: delete the old files if that text was private, and do not paste an old log into an issue without checking it ([#11](https://github.com/Performant-Labs/kai/issues/11)).
+- Faster System translation (Settings > Translation Engines) is off by default. It needs macOS 26.4 or later and the traditional translation language packs for the pair (System Settings > General > Language & Region > Translation Languages); without them Kai says so and uses the standard mode for that translation. Apple's fast mode reads noticeably worse than the standard one, and its quality has not been checked on real text in several language pairs yet ([#10](https://github.com/Performant-Labs/kai/issues/10)).
+- Screen Recording: "Grant access" now makes a real capture request so Kai should appear in Privacy & Security > Screen & System Audio Recording, but that has not been checked on a real Mac yet ([#114](https://github.com/Performant-Labs/kai/issues/114)). If Kai is not listed, click + in that list, add Kai, switch it on, then restart Kai: macOS only applies the permission after a restart.
+- The in-app updater has not yet been seen to find a release on a real install, so do not count on it: install 0.6.1 by hand (the disk image, the zip, or `scripts/install-release.sh`).
+- Permissions are granted to the app's signing identity. 0.5.0 and later are signed with the "Kai Release" certificate, so updating should keep the grants, but that is not yet verified on other Macs ([#36](https://github.com/Performant-Labs/kai/issues/36)); if Alt+A stops copying after an update, remove Kai from Accessibility and add it again.
+- The certificate is self-signed, so macOS still blocks a copy downloaded with a browser as coming from an unidentified developer: install with `gh release download` and `scripts/install-release.sh`, or run `xattr -dr com.apple.quarantine /Applications/Kai.app`.
+
+## [0.6.0] - 2026-10-20
 <!-- changelog-skip: release tooling, no user-facing change: #74 -->
 <!-- changelog-skip: release tooling, no user-facing change: #75 -->
+<!-- changelog-skip: release tooling, no user-facing change: #78 -->
+<!-- changelog-skip: development pipeline tooling, no user-facing change: #87 #88 #94 #95 -->
+<!-- changelog-skip: tests and CI only, no user-facing change: #92 #93 #96 #97 #98 #99 #101 #102 -->
+<!-- changelog-skip: release tooling, no user-facing change: #103 #104 -->
 - The translate window no longer stays on top of every app by default: a new Settings > General switch, "Keep the translate window on top of other apps" (off by default), is the default a new translate window starts from, while the 🧷 pin button in the window stays the per-window toggle and an explicit pin choice is always respected (#69).
 - The History shortcut (Cmd+Y by default) can now be changed in Settings > Shortcuts, like the clear-context key; leave it empty for no shortcut (#79).
 - Capturing a word or two with the translate hotkey now also switches the language drop-downs: a short capture the language detector is sure of ("Buenos días") switches the source like a long one, instead of being refused as too short (#8).
@@ -16,6 +55,15 @@ Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line u
 - Cmd+, now opens Settings from the translate, screenshot and settings windows — the standard macOS shortcut — and the tray menu's Settings item shows it (#8).
 - Windows no longer show a white flash before the dark theme paints, including the window shown at launch and one opened in the app's first moments: every show now re-applies the window's dark background while the page is still loading (#8).
 - The back-translation under the result now has its own copy button, same as the result's: click it to copy the back-translation (never the source text) with the same "Copied" confirmation (#8).
+
+### Known Issues
+- Alt-A sometimes captures the right Mexican Spanish text but does not switch the language drop-downs. The cause is still not found. This build logs every switch decision (the language the detector heard and how sure it was, the pair the window shows, the pair chosen, and why) in `[source switch]` lines that also name the build, so when it happens, send `~/.kai/logs/kai.log` (and that day's `kai-YYYY-MM-DD.log.gz` if it was an earlier day) ([#16](https://github.com/Performant-Labs/kai/issues/16)). A capture of a word or two switches only when the detector is sure of it: "Buenos días" does, "Nos vemos" did not on the test Mac (it scored 0.57 against the 0.8 bar) ([#92](https://github.com/Performant-Labs/kai/issues/92)).
+- Log files written by 0.4.1 and earlier still contain the text you selected or copied on the hotkey paths; this build does not write it. Kai keeps logs for 30 days in `~/.kai/logs`: delete the old files if that text was private, and do not paste an old log into an issue without checking it ([#11](https://github.com/Performant-Labs/kai/issues/11)).
+- Faster System translation (Settings > Translation Engines) is off by default. It needs macOS 26.4 or later and the traditional translation language packs for the pair (System Settings > General > Language & Region > Translation Languages); without them Kai says so and uses the standard mode for that translation. Apple's fast mode reads noticeably worse than the standard one, and its quality has not been checked on real text in several language pairs yet ([#10](https://github.com/Performant-Labs/kai/issues/10)).
+- Screen Recording: macOS may not list Kai in Privacy & Security > Screen & System Audio Recording when you click Grant access (it did not for the development build; for this release it is unverified). If Kai is not listed, click + in that list, add Kai, switch it on, then restart Kai.
+- The in-app updater has not yet been seen to find a release on a real install, so do not count on it: install 0.6.0 by hand (the disk image, the zip, or `scripts/install-release.sh`).
+- Permissions are granted to the app's signing identity. 0.5.0 and this release are both signed with the "Kai Release" certificate, so updating from 0.5.0 should keep the grants, but that is not yet verified on other Macs ([#36](https://github.com/Performant-Labs/kai/issues/36)); if Alt+A stops copying after an update, remove Kai from the list in Privacy & Security and add it again.
+- The certificate is self-signed, so macOS still blocks a copy downloaded with a browser as coming from an unidentified developer: install with `gh release download` and `scripts/install-release.sh`, or run `xattr -dr com.apple.quarantine /Applications/Kai.app`.
 
 ## [0.5.0] - 2026-10-19
 <!-- changelog-skip: release PR plumbing, no user-facing change: #45 -->

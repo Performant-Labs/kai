@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Issue #23: a row's Grant button shows only while that permission is missing (on the owner's Mac
 // Input Monitoring is already covered by Device Control and Data Access, and a Grant button next to
-// "Granted" asked for something already there). Screen Recording tells the user how to add Kai by
-// hand and to restart Kai, because macOS does not list the app on its own for every build.
+// "Granted" asked for something already there). The Screen Recording note names the pane and says
+// to restart Kai plainly — no add-by-hand teaching, since Grant access now makes the real capture
+// attempt that lists Kai (issue #114; the wording itself is pinned in permissionCopy.test.ts).
 
 const h = vi.hoisted(() => ({ acc: true, sr: true, im: true }));
 
@@ -73,13 +74,13 @@ describe('ShortcutsTab Grant buttons only while the permission is missing', () =
     expect(q('screen-recording-missing')).toBeNull();
   });
 
-  it('shows only the Screen Recording button, with the add-by-hand-and-restart note, when only it is missing', async () => {
+  it('shows only the Screen Recording button, with the pane-and-restart note, when only it is missing', async () => {
     h.sr = false;
     await render();
     expect(q('grant-screen-recording')).not.toBeNull();
     expect(q('grant-accessibility')).toBeNull();
     expect(q('grant-input-monitoring')).toBeNull();
-    expect(q('screen-recording-missing')?.textContent).toMatch(/click \+ to add it.*restart Kai/);
+    expect(q('screen-recording-missing')?.textContent).toMatch(/Screen & System Audio Recording, then restart Kai/);
   });
 
   it('names the first row Device Control and Data Access', async () => {

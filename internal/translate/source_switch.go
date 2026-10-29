@@ -37,11 +37,12 @@ import (
 // write the persisted default pair.
 
 // switchMinRunes is the shortest text, in code points after trimming, that can switch anything
-// WITHOUT a confident local detection (#8, the Alt-A item): an engine hint carries no confidence
-// at all, and a local detection under switchMinConfidence (the #54 lower bar included) is not one
-// either, so a length guard is all they have. A confident local detection has no floor — the
-// confidence is the guard — because a captured word or two the detector is sure of ("Buenos
-// días") must not be "translated" from the wrong pinned language and handed back unchanged.
+// WITHOUT a local detection a confidence bar accepts (#8, the Alt-A item; #91): an engine hint
+// carries no confidence at all, and a local detection under switchMinConfidenceTarget or naming
+// a language the app does not know is not one either, so a length guard is all they have. A
+// local detection a bar accepts has no floor — the confidence is the guard — because a captured
+// word or two the detector names, sure of it ("Buenos días") or at the lower bar ("Nos vemos"),
+// must not be "translated" from the wrong pinned language and handed back unchanged.
 const switchMinRunes = 12
 
 // switchMinConfidence is the lowest local-detection confidence that can switch anything. Measured
@@ -114,22 +115,27 @@ func (s *Service) planSourceSwitch(req model.SourceSwitchRequest) (model.SourceS
 	}
 	detected, det, reason := s.detectForSwitch(trimmed, req.Detected)
 	d.lang, d.confidence, d.by = det.lang, det.confidence, det.by
-	// The code-point floor guards only the answers that carry no confidence of their own (#8, the
-	// Alt-A item): an engine hint, and a local detection under the confidence bar (the #54
-	// promotion below included). A confident local detection switches at any length — a captured
-	// word or two ("Buenos días") is exactly what Alt-A brings, and the detector's own certainty
-	// is a better guard than a length guess. The floor used to refuse such a capture before the
-	// detector was even asked, which is why Alt-A "sometimes" did not switch.
-	confidentLocal := reason == "" && d.by == "local"
-	if !confidentLocal && d.runes < switchMinRunes {
-		return no(model.SwitchReasonTooShort)
-	}
-	// Issue #54: a text in the TARGET language that is below the general bar still switches: leaving
-	// the pair would only give back an identity result.
+	// Issue #54: a text in the TARGET language that is below the general bar still switches:
+	// leaving the pair would only give back an identity result. Issue #91: a SHORT capture the
+	// detector names at this lower bar switches too — the identity-result argument is stronger
+	// for two words, not weaker — so the promotion runs BEFORE the code-point floor below it:
+	// the floor would refuse such a capture ("Nos vemos", es at 0.565) as too_short before the
+	// promotion could fire.
 	if reason == model.SwitchReasonBelowConfidence && det.confidence >= switchMinConfidenceTarget {
-		if rec, known := recognized(det.lang); known && rec.Covers(req.To) {
+		if rec, known := recognized(det.lang); known && (rec.Covers(req.To) || d.runes < switchMinRunes) {
 			detected, reason = rec, ""
 		}
+	}
+	// The code-point floor guards only the answers that carry no confidence of their own (#8, the
+	// Alt-A item): an engine hint, and a local detection the lower bar above does not accept —
+	// under 0.5, or naming a language the app does not know (#91). A local detection a bar
+	// accepted — confident, or promoted above — switches at any length: a captured word or two
+	// ("Buenos días") is exactly what Alt-A brings, and the detector's own certainty is a better
+	// guard than a length guess. The floor used to refuse such a capture before the detector was
+	// even asked, which is why Alt-A "sometimes" did not switch.
+	acceptedLocal := reason == "" && d.by == "local"
+	if !acceptedLocal && d.runes < switchMinRunes {
+		return no(model.SwitchReasonTooShort)
 	}
 	if reason != "" {
 		return no(reason)

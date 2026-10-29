@@ -39,11 +39,52 @@ func TestPermissionFromQuery(t *testing.T) {
 	}
 }
 
+// unwireBridgeRequests makes a test that loaded the REAL Swift bridge leave the permission
+// "request" entry points empty when it ends (issue #101). swiftbridge.Init fills package-level
+// function pointers that live for the whole test binary; Open*Settings and the double-copy request
+// call them, and each opens System Settings on the developer's screen (and asks macOS for the
+// permission). A later test that reaches one of them, even one written for "no bridge", then pops
+// the Privacy pane on every `go test ./internal/...`. The queries (Kai*Enabled) are read-only and
+// stay wired.
+func unwireBridgeRequests(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		swiftbridge.KaiAccessibilityRequest = nil
+		swiftbridge.KaiScreenRecordingRequest = nil
+		swiftbridge.KaiInputMonitoringRequest = nil
+		swiftbridge.KaiDoubleCopyRequest = nil
+	})
+}
+
+// Issue #101: a test that wires the real request entry points and uses unwireBridgeRequests leaves
+// none of them wired once it ends. This is what keeps a later test from opening System Settings.
+func TestUnwireBridgeRequestsLeavesNoRequestWired(t *testing.T) {
+	t.Run("wires every real request", func(t *testing.T) {
+		unwireBridgeRequests(t)
+		stub := func() int32 { return 0 }
+		swiftbridge.KaiAccessibilityRequest = stub
+		swiftbridge.KaiScreenRecordingRequest = stub
+		swiftbridge.KaiInputMonitoringRequest = stub
+		swiftbridge.KaiDoubleCopyRequest = stub
+	})
+	for name, wired := range map[string]bool{
+		"accessibility":    swiftbridge.KaiAccessibilityRequest != nil,
+		"screen recording": swiftbridge.KaiScreenRecordingRequest != nil,
+		"input monitoring": swiftbridge.KaiInputMonitoringRequest != nil,
+		"double copy":      swiftbridge.KaiDoubleCopyRequest != nil,
+	} {
+		if wired {
+			t.Errorf("%s request is still wired after the test that loaded the bridge ended", name)
+		}
+	}
+}
+
 // Both service methods go through the helper against the real dylib and must agree with it.
 func TestServicePermissionRows_RealBridge(t *testing.T) {
 	if err := swiftbridge.Init(""); err != nil || !swiftbridge.Available() {
 		t.Skipf("Swift bridge not loadable here: %v", err)
 	}
+	unwireBridgeRequests(t)
 	s := &AppService{log: slog.Default()}
 	for name, c := range map[string]struct {
 		got func() bool
@@ -94,6 +135,7 @@ func TestCheckInputMonitoringBinding(t *testing.T) {
 		}
 		return
 	}
+	unwireBridgeRequests(t)
 	if got, want := s.CheckInputMonitoring(), s.isInputMonitoringEnabled(); got != want {
 		t.Errorf("binding says %v, the service check says %v", got, want)
 	}

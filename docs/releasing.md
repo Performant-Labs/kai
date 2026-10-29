@@ -7,6 +7,48 @@ How to cut a release of Kai from `Performant-Labs/kai` (public). Adapted from Ho
 This repo is the public home of Kai and began as a fork of `dtapps/kai` (GitHub still lists it as a fork). A release is one macOS Apple Silicon app,
 `Kai.app`, installed by hand on the maintainers' Macs. Nothing here publishes to upstream.
 
+## The operator: `scripts/release.sh`
+
+**`scripts/release.sh vX.Y.Z` runs a release end to end** — the phases of the step-by-step
+list below, in order, with no questions. It wraps the scripts this document describes
+(`release-preflight.sh`, `changelog-check.sh`, `release-bump.sh`, `release-local.sh`,
+`install-release.sh`) and `gh`, opens the `Release checklist: vX.Y.Z` issue from
+[`docs/release-checklist.md`](release-checklist.md) itself, reports into it as it goes, and
+closes it when done. Its progress state is a cache at `bin/release/vX.Y.Z/state.json`:
+re-running resumes at the first phase whose postcondition does not hold, and a run after
+full success is a no-op. When a phase is blocked by an unknown failure it consults an AI
+once (`scripts/release-ask-ai.sh`, capped at two consultations per phase) and runs only
+allowlisted actions itself; the known blockers (a running Kai, bindings drift) have static
+handlers that never consult, each capped at two dispatches per handler per phase; hard
+stops (a missing signing identity, an existing tag or release, red CI on the release
+commit, a PR-Agent score under 90 or an unresolved finding) never consult either, and
+nothing ever deletes or moves a release or a published tag.
+
+Postures: **`--dry-run` is dry.** It runs the read-only phases (needs, preflight, the
+changelog gate) for real, against the real `gh` and `git`, then prints one `[plan]` line for
+every phase it would run next and stops. It creates, commits, pushes, tags, merges, builds and
+publishes nothing, opens and comments on no issue, quits no app, and records no phase as
+done, so a later real run starts those phases fresh. It exits 0 when the read-only phases
+pass. The default posture does the real work through the draft and stops; `--publish` also
+publishes, verifies the published artifact and closes out. Every flag combination either acts
+or is refused before anything runs: `--dry-run` refuses to combine with `--publish`, with
+`--smoke`/`--smoke-done` (the smoke matrix is run and recorded in the default posture, on the
+packaged build after the draft release exists, which a dry run never reaches) and with
+`--quit-kai` (quitting an app is a mutation); `--smoke --smoke-done` together takes
+`--smoke-done`, the stronger owner assertion; and `--quit-kai` alone acts under the default
+and `--publish` postures. To rehearse the whole path end to end, point a real run at a
+scratch repository with `KAI_RELEASE_REPO=<owner>/<scratch-repo>`; the version-numbered
+branch, PR and tag then land there, never in the real repository.
+
+What stays manual, on purpose — said once, here: the **manual smoke matrix** (run it on the
+`Kai.app` the workflow leaves in `bin/release/vX.Y.Z/`, and record it with `--smoke` /
+`--smoke-done`) and the **publish go-ahead** (`--publish` is the authority; the workflow
+never publishes on its own). The macOS "codesign wants to sign using key" prompt during the
+build is an **OS-level keychain prompt, not a workflow prompt**; allow it once. Before the
+first release on a Mac, create the signing certificate (`scripts/release-cert.sh`), back the
+key up as a `.p12`, and mark the backup with `touch bin/release/kai-release-key.backed-up` —
+the workflow checks for that marker before anything else.
+
 ## Where the version number lives
 
 **The git tag `vX.Y.Z` is the source of truth.** The tree at that tag must build an app that
@@ -345,6 +387,10 @@ Manual, on demand. No cadence and no automated trigger.
 
 All version and changelog work lands on ONE branch, `release/vX.Y.Z`, in one PR. Kai's PRs go
 to `Performant-Labs/kai`, never upstream.
+
+`scripts/release.sh` (see "The operator" above) runs these steps in order and reports into
+the `Release checklist: vX.Y.Z` issue it opens from the checklist template; the numbered
+list stays the reference for what each step is and why.
 
 1. Run `scripts/release-preflight.sh vX.Y.Z` on the release Mac, in a clean checkout of `master`. It
    checks the machine (Apple Silicon macOS, tools, Go version; a running Kai is only a warning, to be quit before the build) and the commit

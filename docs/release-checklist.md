@@ -5,6 +5,17 @@ new GitHub issue titled `Release checklist: vX.Y.Z` each time a release is cut, 
 copy. Never check boxes here. The reasoning behind each step is in
 [`docs/releasing.md`](releasing.md).
 
+`scripts/release.sh vX.Y.Z` is the operator: it opens the `Release checklist: vX.Y.Z` issue from
+this template itself, drives these steps in order with no questions (state in
+`bin/release/vX.Y.Z/state.json`, postcondition-first resume), and reports into that issue as it
+goes — WARN rows, the smoke record, evidence at closeout — closing it when the release is done.
+The steps that stay yours: the **manual smoke matrix** below (recorded by the workflow when you
+re-run with `--smoke` / `--smoke-done`) and the **publish go-ahead** (`--publish`). See
+"Release notes preface" and "The operator" in [`docs/releasing.md`](releasing.md); the macOS
+codesign key-access prompt during the build is OS-level, not a workflow prompt.
+`scripts/release.sh vX.Y.Z --dry-run` is safe to run at any time: it runs the read-only checks (needs,
+preflight, changelog), prints what the real run would do, and changes nothing.
+
 ## Pre-flight
 
 - [ ] 1. **Run `scripts/release-preflight.sh vX.Y.Z`** on the release Mac, in a clean checkout of `master`

@@ -348,8 +348,7 @@ export const zh: Dict = {
     permAccessibilityHint: '复制键读取剪贴板需要此项授权。',
     permAccessibilityMissing: '请在“隐私与安全性 > 设备控制与数据访问”中开启 Kai。',
     permScreenRecording: '屏幕录制',
-    permScreenRecordingMissing:
-      '请在“屏幕与系统音频录制”中打开 Kai（没有时点 + 添加），然后重启 Kai。',
+    permScreenRecordingMissing: '请在“屏幕与系统音频录制”中打开 Kai，然后重启 Kai。',
     permScreenRecordingHint: '截图翻译需要此项授权，才能在框选后读取屏幕区域做 OCR（不录制视频）。',
     permInputMonitoring: '输入监控',
     permInputMonitoringHint:

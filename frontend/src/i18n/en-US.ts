@@ -365,8 +365,7 @@ export const en: Dict = {
     permAccessibilityHint: 'Copy key clipboard reading requires this permission.',
     permAccessibilityMissing: 'Turn on Kai in Privacy & Security > Device Control and Data Access.',
     permScreenRecording: 'Screen Recording',
-    permScreenRecordingMissing:
-      'Turn on Kai in Screen & System Audio Recording (click + to add it), then restart Kai.',
+    permScreenRecordingMissing: 'Turn on Kai in Screen & System Audio Recording, then restart Kai.',
     permScreenRecordingHint:
       'Screenshot translation needs this to read the selected screen region for OCR (no video is recorded).',
     permInputMonitoring: 'Input Monitoring',
