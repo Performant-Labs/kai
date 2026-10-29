@@ -6,7 +6,9 @@
     "tests": [
       "internal/*_test.go",
       "pkg/*_test.go",
+      "main_*_test.go",
       "frontend/src/*.test.*",
+      "frontend/vitest.*",
       "scripts/*.test.sh"
     ],
     "handoffs": [
@@ -17,8 +19,10 @@
       "internal/**",
       "pkg/**",
       "main.go",
+      "main_*.go",
       "frontend/src/**",
       "pkg/swiftbridge/**",
+      "frontend/vite.config.ts",
       "scripts/*.sh",
       "docs/releasing.md",
       "docs/release-checklist.md"
