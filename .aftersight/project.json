@@ -40,5 +40,8 @@
     }
   },
   "handoffDirectory": "docs/handoffs",
-  "defaultIsolationLevel": "worktree"
+  "defaultIsolationLevel": "worktree",
+  "gitHooks": {
+    "required": false
+  }
 }
