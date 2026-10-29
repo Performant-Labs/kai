@@ -91,7 +91,7 @@ if [[ -f frontend/.nvmrc ]] && command -v node >/dev/null 2>&1; then
     ok "node $have_node (frontend/.nvmrc: $want_node)"
   else
     warn "node $have_node differs from frontend/.nvmrc ($want_node)"
-    hint "builds have worked on a newer major; note it in the checklist, and set NODE_OPTIONS=--no-experimental-webstorage for the frontend tests"
+    hint "builds have worked on a newer major; note it in the checklist"
   fi
 fi
 

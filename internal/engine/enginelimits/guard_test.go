@@ -39,8 +39,9 @@ func readText(t *testing.T, path string) string {
 // package, where the tests skip themselves without the tag.
 var probeWiring = regexp.MustCompile(`-tags[= ]+["']?[^\s"']*\benginelimits\b|KAI_ENGINE_PROBE`)
 
-// probeWiredIn returns every place under root that wires the probe in: the pipeline's
-// test.unit.command, the Makefile, any Taskfile and any GitHub workflow.
+// probeWiredIn returns every place under root that wires the probe in: the pipeline
+// seed's unit suite and test commands, the script they run, the Makefile, any Taskfile and any
+// GitHub workflow.
 func probeWiredIn(t *testing.T, root string) []string {
 	t.Helper()
 	var hits []string
@@ -49,23 +50,27 @@ func probeWiredIn(t *testing.T, root string) []string {
 			hits = append(hits, where+": "+loc)
 		}
 	}
-	if b, err := os.ReadFile(filepath.Join(root, ".opencode", "pipeline.config.json")); err == nil {
+	// The seed is absent from an upstream-contribution branch, which carries no .aftersight/.
+	if b, err := os.ReadFile(filepath.Join(root, ".aftersight", "project.json")); err == nil {
 		var cfg struct {
-			Test struct {
-				Unit struct {
-					Command []string `json:"command"`
-				} `json:"unit"`
-			} `json:"test"`
+			TestCommands []string `json:"testCommands"`
+			TestSuites   map[string]struct {
+				Script []string `json:"script"`
+			} `json:"testSuites"`
 		}
 		if err := json.Unmarshal(b, &cfg); err != nil {
-			t.Fatalf("pipeline.config.json: %v", err)
+			t.Fatalf("project.json: %v", err)
 		}
-		if len(cfg.Test.Unit.Command) == 0 {
-			t.Fatalf("pipeline.config.json has no test.unit.command to check")
+		unit := cfg.TestSuites["unit"].Script
+		if len(unit) == 0 {
+			t.Fatalf("project.json has no testSuites.unit.script to check")
 		}
-		check("test.unit.command", strings.Join(cfg.Test.Unit.Command, " "))
+		check("testSuites.unit.script", strings.Join(unit, " "))
+		check("testCommands", strings.Join(cfg.TestCommands, " "))
 	}
 	var files []string
+	// The suite's line is `bash scripts/test-unit.sh`, so the commands it runs are in the script.
+	files = append(files, filepath.Join(root, "scripts", "test-unit.sh"))
 	files = append(files, filepath.Join(root, "Makefile"))
 	tf, _ := filepath.Glob(filepath.Join(root, "Taskfile*"))
 	files = append(files, tf...)
@@ -98,20 +103,23 @@ func TestProbeWiringGuardDetectsWiring(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(os.MkdirAll(filepath.Join(root, ".opencode"), 0o755))
+	must(os.MkdirAll(filepath.Join(root, ".aftersight"), 0o755))
+	must(os.MkdirAll(filepath.Join(root, "scripts"), 0o755))
 	must(os.MkdirAll(filepath.Join(root, ".github", "workflows"), 0o755))
-	must(os.WriteFile(filepath.Join(root, ".opencode", "pipeline.config.json"),
-		[]byte(`{"test":{"unit":{"command":["sh","-c","go test ./internal/... -count=1"]}}}`), 0o644))
+	must(os.WriteFile(filepath.Join(root, ".aftersight", "project.json"),
+		[]byte(`{"testCommands":["bash scripts/test-unit.sh"],"testSuites":{"unit":{"script":["bash scripts/test-unit.sh"]}}}`), 0o644))
+	must(os.WriteFile(filepath.Join(root, "scripts", "test-unit.sh"), []byte("go test ./internal/... -count=1\n"), 0o644))
 	if hits := probeWiredIn(t, root); len(hits) != 0 {
 		t.Fatalf("a plain ./internal/... command was reported as wiring: %v", hits)
 	}
-	must(os.WriteFile(filepath.Join(root, ".opencode", "pipeline.config.json"),
-		[]byte(`{"test":{"unit":{"command":["sh","-c","go test -tags enginelimits ./internal/..."]}}}`), 0o644))
+	must(os.WriteFile(filepath.Join(root, ".aftersight", "project.json"),
+		[]byte(`{"testCommands":["go test -tags enginelimits ./internal/..."],"testSuites":{"unit":{"script":["go test -tags enginelimits ./internal/..."]}}}`), 0o644))
+	must(os.WriteFile(filepath.Join(root, "scripts", "test-unit.sh"), []byte("go test -tags enginelimits ./internal/...\n"), 0o644))
 	must(os.WriteFile(filepath.Join(root, "Makefile"), []byte("probe:\n\tKAI_ENGINE_PROBE=1 go test ./...\n"), 0o644))
 	must(os.WriteFile(filepath.Join(root, "Taskfile.yml"), []byte("cmds: [go test -tags=\"darwin,enginelimits\" ./...]\n"), 0o644))
 	must(os.WriteFile(filepath.Join(root, ".github", "workflows", "ci.yml"), []byte("env:\n  KAI_ENGINE_PROBE: \"1\"\n"), 0o644))
-	if hits := probeWiredIn(t, root); len(hits) != 4 {
-		t.Errorf("guard found %d of 4 wirings: %v", len(hits), hits)
+	if hits := probeWiredIn(t, root); len(hits) != 6 {
+		t.Errorf("guard found %d of 6 wirings: %v", len(hits), hits)
 	}
 }
 

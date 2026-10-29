@@ -4,17 +4,9 @@
 // process that only needs jsdom (real window.localStorage / navigator), and the persisted store
 // under test is pure svelte/store + localStorage logic with no svelte runes compilation.
 //
-// Node 26 localStorage note (issue #7): the fleet image pl-runner:1.70.1 ships Node
-// v26, which registers localStorage / sessionStorage as own properties of globalThis (the
-// experimental webstorage's lazy getters; without --localstorage-file they always return
-// undefined). vitest's jsdom environment skips any key "already present on globalThis" inside
-// populateGlobal, so Node's lazy getter stays on globalThis and window.localStorage is
-// undefined in tests. The fix isn't here: ci-go.sh exports
-// NODE_OPTIONS=--localstorage-file=$HOME/.kai-localstorage.json for the frontend tests, making
-// Node's native getters return a real Storage (vitest keeps it as-is, and since
-// window===globalThis the tests hit it directly).
-// Local development must export the same before running `make test-frontend`, otherwise it
-// always fails on Node 26.
+// Node localStorage note: Node >= 25 defines its own localStorage / sessionStorage on globalThis,
+// which vitest's jsdom environment does not replace; vitest.setup.ts points both at jsdom's
+// Storage, so the tests need no NODE_OPTIONS on any Node version.
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
@@ -31,5 +23,6 @@ export default defineConfig({
     // Give jsdom an origin: otherwise some web globals need a window origin during initialization.
     environmentOptions: { jsdom: { url: 'http://localhost/' } },
     include: ['src/**/*.test.ts'],
+    setupFiles: ['./vitest.setup.ts'],
   },
 });

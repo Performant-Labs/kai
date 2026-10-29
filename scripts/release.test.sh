@@ -4,7 +4,7 @@
 # scripts/release-preflight.test.sh (mkrepo/run/has + fake gh + a fake git wrapping the real
 # one, origin = a local bare repo). The contract under test is docs/handoffs/0078-issue-78/
 # handoff-A.md (rulings R1-R12) as it amends docs/handoffs/0078-issue-78/brief.md (AC1-AC7).
-# Part of test.unit.command (issue #78, brief item 9).
+# Part of the unit suite, scripts/test-unit.sh (issue #78, brief item 9).
 # PR #100 round 5: the fake gh is STATE-REALISTIC — pr list defaults to OPEN and honors
 # --state exactly like the CLI; pr view reports a MERGED PR's mergeCommit, and that commit
 # is landed in ORIGIN only (fake gh pr merge / seed_merged_pr below), so the local clone
