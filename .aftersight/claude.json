@@ -51,8 +51,8 @@
       "maxBudgetUsd": 5
     },
     "U": {
-      "executor": "opencode-agent",
-      "model": "zai/glm-5.3",
+      "executor": "claude-cli",
+      "model": "claude-sonnet-5-5",
       "effort": "high",
       "timeoutSec": 1800,
       "maxBudgetUsd": 5
