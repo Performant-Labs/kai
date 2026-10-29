@@ -1,11 +1,14 @@
 # Changelog
 
-Changes in this fork (`Performant-Labs/kai-private`) since it diverged from upstream `dtapps/kai`.
+Changes in this repository (`Performant-Labs/kai`) since it diverged from upstream `dtapps/kai`.
 Format and release steps: [`docs/releasing.md`](docs/releasing.md). Add a line under
 `[Unreleased]` when a change merges; a release moves that section under a version heading.
 `scripts/changelog-check.sh` lists merged PRs this section does not cover.
 
 ## [Unreleased]
+
+### Bug Fixes
+- Baidu translations of text with line breaks now keep every line. Kai used only the first entry of Baidu's response, so a multi-line text came back as its first line; the entries are now joined in order with newlines, and blank lines survive.
 
 ## [0.6.2] - 2026-10-21
 - The translate window cannot be closed anymore: its close button is gone, and Cmd+W (and any other close path) now hides it instead — the window keeps its text and results and comes back from the tray menu or the translate hotkey, so the app's main window can no longer be lost until Kai quits (#112).
