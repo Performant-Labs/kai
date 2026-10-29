@@ -1,0 +1,30 @@
+{
+  "release": "opencode-pipeline-v2.2.0",
+  "stages": {
+    "design": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "architecture-review": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "max", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "t-red": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "implement": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "t-green": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "a-dup": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "ui-walkthrough": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "spec-audit": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "max", "timeoutSec": 1800, "maxBudgetUsd": 5 }
+  },
+  "agents": {
+    "orchestrator": { "model": "zai/glm-5.3", "effort": "high" },
+    "final-reviewer": { "model": "zai/glm-5.3", "effort": "max" }
+  },
+  "gate": {
+    "timeoutMs": 300000,
+    "basePort": 9000,
+    "baseBranches": "master",
+    "gateProvider": "deepseek",
+    "gateModel": "deepseek-flash",
+    "gateCredential": "DEEPSEEK_API_KEY",
+    "gateTransport": "chat",
+    "gateChatPath": "/chat/completions",
+    "gateMaxTokens": 32768,
+    "worktreeDir": ".worktrees"
+  },
+  "providers": ["deepseek", "zai"]
+}

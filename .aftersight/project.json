@@ -1,0 +1,40 @@
+{
+  "testCommands": [
+    "bash scripts/test-unit.sh"
+  ],
+  "pathSets": {
+    "tests": [
+      "internal/*_test.go",
+      "pkg/*_test.go",
+      "frontend/src/*.test.*",
+      "scripts/*.test.sh"
+    ],
+    "handoffs": [
+      "docs/handoffs/**",
+      ".worktrees/*/docs/handoffs/**"
+    ],
+    "production": [
+      "internal/**",
+      "pkg/**",
+      "main.go",
+      "frontend/src/**",
+      "pkg/swiftbridge/**",
+      "scripts/*.sh",
+      "docs/releasing.md",
+      "docs/release-checklist.md"
+    ]
+  },
+  "mergeMode": "auto",
+  "toolchain": "kai",
+  "testSuites": {
+    "unit": {
+      "filter": "none",
+      "script": [
+        "bash scripts/test-unit.sh"
+      ],
+      "timeoutMs": 900000
+    }
+  },
+  "handoffDirectory": "docs/handoffs",
+  "defaultIsolationLevel": "worktree"
+}

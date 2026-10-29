@@ -259,8 +259,9 @@ echo "==> go test (internal/... + pkg/...)"
 make test-go
 
 # 9b. Frontend test — `pnpm --dir ./frontend test --no-file-parallelism`
-#     (vitest --run, issue #7): the same command pipeline's test.unit.command
-#     runs, so the fleet runs the suite t-green gates on, with vitest's file
+#     (vitest --run, issue #7): the same command the pipeline's unit suite
+#     (testSuites.unit.script in .aftersight/project.json) runs, so the
+#     fleet runs the suite t-green gates on, with vitest's file
 #     parallelism turned OFF (issue #9). node_modules is already installed
 #     (job install hook + make deps), so vitest resolves from the warm node
 #     install. The invocation is made directly here instead of via `make

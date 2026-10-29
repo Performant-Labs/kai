@@ -4,7 +4,7 @@
 # needs a live model). Contract: timeout 300 opencode run --format json "<fixed prompt>",
 # message a single argv; the answer is the LAST text part of the JSON envelope; any non-zero
 # exit, timeout, or unparseable output, and any absent binary, is no-answer => fail-closed.
-# Part of test.unit.command (issue #78, brief item 9).
+# Part of the unit suite, scripts/test-unit.sh (issue #78, brief item 9).
 #   bash scripts/release-ask-ai.test.sh
 set -uo pipefail
 
