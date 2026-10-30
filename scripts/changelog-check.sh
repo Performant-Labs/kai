@@ -16,9 +16,10 @@
 #   <!-- changelog-skip: #4 #21 -->
 #
 # Ignored without needing a skip line: PRs by bots (dependency bumps) and titles that start with
-# ci / chore / docs / test.
+# ci / chore / docs / test / release (the release PR itself merges just after the tag's commit).
 #
-# Range: PRs merged after the last v* release tag; with no tag yet, every merged PR.
+# Range: PRs merged after the newest v* tag on origin (not local tags: they can include upstream's);
+# with no tag yet, every merged PR.
 set -euo pipefail
 
 repo="Performant-Labs/kai"
@@ -45,13 +46,31 @@ done
 [[ -f "$file" ]] || { echo "no $file" >&2; exit 2; }
 grep -q '^## \[Unreleased\]' "$file" || { echo "$file has no [Unreleased] section" >&2; exit 2; }
 
+# The last release is the newest v* tag on ORIGIN (this fork's releases). Local tags are not used:
+# a clone that also fetched dtapps/kai's tags has upstream's v0.0.2.. and even a v0.2.0 that is
+# not this fork's, and `git describe` would pick one of those (#226).
+last_release_tag() {
+  local refs tag sha
+  refs="$(git ls-remote --tags origin 'refs/tags/v[0-9]*')" || return 2
+  tag="$(printf '%s\n' "$refs" | awk '{print $2}' | sed -e 's#^refs/tags/##' -e 's#\^{}$##' | sort -uV | tail -1)"
+  [[ -n "$tag" ]] || return 1
+  # An annotated tag lists its commit as <tag>^{}; a lightweight tag lists the commit directly.
+  sha="$(printf '%s\n' "$refs" | awk -v r="refs/tags/$tag^{}" '$2 == r {print $1}')"
+  [[ -n "$sha" ]] || sha="$(printf '%s\n' "$refs" | awk -v r="refs/tags/$tag" '$2 == r {print $1}')"
+  printf '%s %s\n' "$tag" "$sha"
+}
+
 if [[ -z "$since" ]]; then
-  tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
-  if [[ -n "$tag" ]]; then
-    since="$(TZ=UTC git log -1 --date=format-local:'%Y-%m-%dT%H:%M:%SZ' --format=%cd "$tag")"
+  rc=0; found="$(last_release_tag)" || rc=$?
+  if [[ $rc -eq 2 ]]; then
+    echo "cannot list origin's tags; pass --since ISO8601 or --since-tag TAG" >&2; exit 2
+  elif [[ $rc -eq 0 ]]; then
+    tag="${found% *}"; sha="${found#* }"
+    since="$(TZ=UTC git log -1 --date=format-local:'%Y-%m-%dT%H:%M:%SZ' --format=%cd "$sha" 2>/dev/null)" \
+      || { echo "origin's $tag is $sha, which this clone does not have: git fetch origin" >&2; exit 2; }
     echo "range: merged after $tag ($since)"
   else
-    echo "range: every merged PR (no v* release tag yet)"
+    echo "range: every merged PR (no v* release tag on origin yet)"
   fi
 else
   echo "range: merged after $since"
@@ -79,7 +98,7 @@ uncovered="$(printf '%s' "$prs" | jq -r --argjson cited "$cited" --arg since "$s
   .[]
   | select($since == "" or .mergedAt > $since)
   | select($bots or (.author.login | test("dependabot|\\[bot\\]|^app/") | not))
-  | select(.title | test("^(ci|chore|docs|test)(\\(|:)"; "i") | not)
+  | select(.title | test("^(ci|chore|docs|test|release)(\\(|:)"; "i") | not)
   | . as $p
   | ([$p.number]
      + [$p.title | scan("#([0-9]+)") | .[0] | tonumber]

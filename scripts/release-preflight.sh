@@ -204,7 +204,8 @@ else
   # 12. The version is free.
   if [[ -n "$version" ]]; then
     taken=()
-    git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1 && taken+=("local tag")
+    # Only origin's tags make a version taken. This clone may also hold dtapps/kai's tags, whose
+    # numbers (v0.2.1..) have nothing to do with this fork's.
     git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1 && taken+=("tag on origin")
     # The release PR's own branch (steps 10 to 13) outlives the PR on GitHub. One that is already part
     # of origin/master is that PR's leftover, not a version in use; one that is not is a release in
@@ -219,7 +220,10 @@ else
       fi
     fi
     gh api "repos/$repo/releases/tags/$version" >/dev/null 2>&1 && taken+=("GitHub release")
-    if [[ ${#taken[@]} -eq 0 ]]; then
+    if [[ ${#taken[@]} -eq 0 ]] && git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1; then
+      fail "a local tag $version exists that origin does not have (upstream's, most likely)"
+      hint "git tag -d $version   (checklist step 14 creates the tag itself, and would collide)"
+    elif [[ ${#taken[@]} -eq 0 ]]; then
       ok "$version is not used yet"
     else
       fail "$version already exists: ${taken[*]}"

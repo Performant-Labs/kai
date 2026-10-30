@@ -152,6 +152,26 @@ gh_run env FAKE_PRS='app/dependabot\naangelinsf\n' "$pf" --any-branch
 has  "a human PR warns"                               'WARN.*1 open non-bot PR'
 exit_is "  ... and still exits 0"                    0
 
+# The version is free when origin has no such tag, whatever else is in the clone (#226): the clone
+# may hold dtapps/kai's tags, and v0.2.1 is one of theirs. origin is redirected to a local bare repo.
+git init -q --bare -b master "$tmp/origin.git"
+mkrepo "$tmp/ver"
+git -C "$tmp/ver" config "url.$tmp/origin.git.insteadOf" "$good_origin"
+ver_run() { out="$(cd "$tmp/ver" && PATH="$tmp/fakebin:$PATH" "$pf" --any-branch "$@" 2>&1)"; code=$?; }
+ver_run v0.2.1
+has  "a free version passes"                          'ok.*v0.2.1 is not used yet'
+git -C "$tmp/ver" tag v0.2.1
+ver_run v0.2.1
+has  "a local-only tag (upstream's) fails with the fix" 'FAIL.*local tag v0.2.1 exists that origin does not have'
+has  "  ... and names git tag -d"                     'git tag -d v0.2.1'
+exit_is "  ... and exits 1"                          1
+git -C "$tmp/ver" push -q origin v0.2.1
+ver_run v0.2.1
+has  "a tag on origin makes the version taken"        'FAIL.*v0.2.1 already exists: tag on origin'
+git -C "$tmp/ver" tag -d v0.2.1 >/dev/null
+ver_run v0.2.1
+has  "taken on origin even with no local tag"         'FAIL.*v0.2.1 already exists: tag on origin'
+
 # The version check (12): a release/vX.Y.Z branch on origin that is already in master is the
 # leftover of a merged release PR (a warning); one that is not in master is a release in progress
 # (a failure). A fake `git` answers only `ls-remote` (no network); everything else is the real git.

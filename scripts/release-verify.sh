@@ -13,8 +13,8 @@
 #      passed every test and crashed about one second after every real launch.
 #
 # The launch runs against a throwaway HOME, so it never touches your real ~/.kai. It refuses to
-# run while Kai is already running, because Kai allows one instance and a second launch would
-# just hand off to the first and exit, proving nothing.
+# run while any process named Kai is running, Kai-dev included (the same binary name): a released
+# Kai allows one instance, so a second launch would hand off to the first and exit, proving nothing.
 set -euo pipefail
 
 app="${1:-}"
@@ -50,7 +50,7 @@ echo "    ok: none"
 
 echo "4/4 launch and stay running for ${secs}s"
 if pgrep -x Kai >/dev/null; then
-  echo "FAIL: Kai is already running. Quit it first (a second launch would hand off and exit)." >&2
+  echo "FAIL: a process named Kai is already running (Kai-dev counts). Quit it first." >&2
   exit 1
 fi
 home="$(mktemp -d)"

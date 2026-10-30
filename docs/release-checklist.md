@@ -21,7 +21,7 @@ preflight, changelog), prints what the real run would do, and changes nothing.
 - [ ] 1. **Run `scripts/release-preflight.sh vX.Y.Z`** on the release Mac, in a clean checkout of `master`
   - Machine: Apple Silicon macOS, the required tools, Go at least `go.mod`'s version
   - A running Kai is only a WARN here: quit it before step 15, because `release-local.sh` and `release-verify.sh` refuse while it runs
-  - Commit: `origin` is the fork (never upstream), clean tree, `master` equal to `origin/master`, CI green on that exact commit, the version not already taken, `gh` able to push
+  - Commit: `origin` is the fork (never upstream), clean tree, `master` equal to `origin/master`, CI green on that exact commit, the version not already taken on `origin` (this clone may also hold `dtapps/kai`'s tags, whose numbers are irrelevant; a stray local tag of that name is reported, fix it with `git tag -d`), `gh` able to push
   - Every FAIL must be fixed before going on. Each WARN is recorded below (Node version, updater, open PRs)
   - Output: `___`
 
@@ -51,6 +51,7 @@ Gathered here, before the CHANGELOG is written, so nothing is missed.
 - [ ] 8. **Changelog coverage: `scripts/changelog-check.sh`**
   - Every PR it lists gets an entry under `[Unreleased]` citing its number or issue, or a reasoned entry in the `<!-- changelog-skip: ... -->` comment
   - Read the issue and the diff for "Implements #NN" PRs; do not write an entry from a title alone
+  - Its range starts at the newest `v*` tag **on `origin`** (the first line, `range: merged after vX.Y.Z (...)`, must name this fork's last release). If the commit is missing, `git fetch origin`
   - Done when `scripts/changelog-check.sh --strict` prints `ok`. Output before: `___`
 
 ## Version and changelog
@@ -58,6 +59,7 @@ Gathered here, before the CHANGELOG is written, so nothing is missed.
 Steps 9-13 happen on ONE branch, `release/vX.Y.Z`, in one PR.
 
 - [ ] 9. **Decide the bump** (PATCH / MINOR / MAJOR) from `CHANGELOG.md`'s `## [Unreleased]`
+  - Count from this fork's last release (`gh release list`, or the tags on `origin`), never from `git tag` in a clone that also fetched `dtapps/kai`: upstream has its own `v0.2.x` tags, and a local `v0.2.0` can be upstream's commit, not ours
   - The first release has no earlier release tag: it is `0.1.0`, and its content is everything in `[Unreleased]`. Ignore the `backup/...` tag on the remote
 - [ ] 10. **Branch `release/vX.Y.Z`** off the release commit
 - [ ] 11. **`scripts/release-bump.sh X.Y.Z`**, then confirm `git diff` shows only 4 changed lines
@@ -81,7 +83,7 @@ Platform: macOS Apple Silicon only. Build on a real Apple Silicon Mac, never cro
   - `make install` (first time on that clone), then `make darwin-package VERSION=X.Y.Z`
   - `VERSION=` is mandatory: without it the build reports a commit SHA or `vX.Y.Z`, not `X.Y.Z`
   - `scripts/release-tree-check.sh vX.Y.Z` must print `ok`. Building always rewrites `build/darwin/icons.icns` and creates `build/darwin/Assets.car`; anything else changed means this is not the tag
-- [ ] 16. **Quit any running Kai, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`**
+- [ ] 16. **Quit any running Kai or Kai-dev, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`**
   - Must print `PASS`: version, signature, no embedded personal path, launches and stays running
   - It launches the app: the Dock icon bounces and Kai briefly takes focus
   - Output: `___`

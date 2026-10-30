@@ -42,6 +42,7 @@ cat >"$tmp/prs.json" <<'EOF'
   {"number":44,"title":"chore(deps): a dependency bump","author":{"login":"dev"},"mergedAt":"2026-09-01T00:00:00Z","body":""},
   {"number":45,"title":"docs(#5): a docs change","author":{"login":"dev"},"mergedAt":"2026-09-01T00:00:00Z","body":""},
   {"number":46,"title":"Bot PR","author":{"login":"app/dependabot"},"mergedAt":"2026-09-01T00:00:00Z","body":""},
+  {"number":48,"title":"release: v9.9.9 (set the version)","author":{"login":"dev"},"mergedAt":"2026-09-01T00:00:00Z","body":""},
   {"number":47,"title":"UNCOVERED but old","author":{"login":"dev"},"mergedAt":"2026-01-01T00:00:00Z","body":""}
 ]
 EOF
@@ -64,14 +65,40 @@ expect "Known Issues does not cover"       '#42\b'   "$out"
 expect "older release does not cover"      '#43\b'   "$out"
 reject "chore title ignored"               '#44\b'   "$out"
 reject "docs title ignored"                '#45\b'   "$out"
+reject "release title ignored"             '#48\b'   "$out"
 reject "bot PR ignored"                    '#46\b'   "$out"
 reject "PR before --since ignored"         '#47\b'   "$out"
 
 out="$("$check" --file "$tmp/CHANGELOG.md" --pr-json "$tmp/prs.json" --since 2026-06-01T00:00:00Z --include-bots)"
 expect "--include-bots lists the bot PR"   '#46\b'   "$out"
 
+# The baseline is the newest v* tag on origin, even when the clone also holds upstream's tags
+# (a different v0.2.0, a higher v0.2.3, an old v0.0.2 that is the one `git describe` would find).
+g() { git -c user.name=t -c user.email=t@t "$@"; }
+commit_at() { GIT_COMMITTER_DATE="$2" GIT_AUTHOR_DATE="$2" g commit -q --allow-empty -m "$1"; }
+git init -q --bare -b master "$tmp/origin.git"; git init -q --bare -b master "$tmp/upstream.git"
+git init -q -b master "$tmp/clone"; cd "$tmp/clone"
+commit_at base 2026-08-01T00:00:00Z; g tag v0.0.2
+commit_at fork-release 2026-09-29T00:00:00Z; g tag -a v0.2.0 -m v0.2.0   # the fork's release
+commit_at later 2026-10-01T00:00:00Z
+git remote add origin "$tmp/origin.git"; git remote add upstream "$tmp/upstream.git"
+git push -q origin master v0.2.0
+git push -q upstream v0.0.2
+# upstream's tags: its own v0.2.0 (another commit), and a higher v0.2.3, fetched into this clone
+git checkout -q --detach v0.0.2; commit_at upstream-release 2026-09-21T00:00:00Z
+up="$(git rev-parse HEAD)"; git checkout -q master
+git push -q upstream "$up:refs/tags/v0.2.0" "$up:refs/tags/v0.2.3"
+git tag -d v0.2.0 >/dev/null; git fetch -q upstream --tags   # local v0.2.0 is now upstream's
 out="$("$check" --file "$tmp/CHANGELOG.md" --pr-json "$tmp/prs.json")"
-expect "no --since and no tag: old PR too" '#47\b'   "$out"
+expect "range starts at origin's v0.2.0"        'range: merged after v0.2.0 (2026-09-29T00:00:00Z)' "$out"
+reject "upstream's v0.2.3 is not the baseline"  'v0.2.3' "$out"
+reject "upstream's v0.0.2 is not the baseline"  'v0.0.2' "$out"
+# origin has no release tag yet: every merged PR, as before
+git push -q origin ":refs/tags/v0.2.0"
+out="$("$check" --file "$tmp/CHANGELOG.md" --pr-json "$tmp/prs.json")"
+expect "no tag on origin: every merged PR"      'no v\* release tag on origin' "$out"
+expect "  ... so the old PR is listed too"      '#47\b'   "$out"
+cd "$here"
 
 if "$check" --file "$tmp/CHANGELOG.md" --pr-json "$tmp/prs.json" --since 2026-06-01T00:00:00Z --strict >/dev/null; then
   echo "FAIL --strict should exit 1 when something is uncovered"; fail=1
