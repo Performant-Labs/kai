@@ -70,6 +70,7 @@ shows it, in the About card.)
 
 Format: SemVer, plain `X.Y.Z` in files, `vX.Y.Z` as the tag. This fork starts its own line at
 `0.1.0`. It does not track upstream's numbers (see "The in-app updater"; installed apps do not see this fork's releases yet).
+A clone that also fetched `dtapps/kai` holds upstream's tags (`v0.2.0`..`v0.2.3` and more), some with the same names as ours but other commits. Only tags on `origin` count: the scripts read them there, and `git describe` or `git tag` in such a clone is not evidence of what this fork released (#226).
 
 **The first release has no earlier release tag.** Treat everything in `[Unreleased]` as its
 content and cut `0.1.0`. The one tag on the remote, `backup/master-before-subject-rewrite-2026-09-26`,
@@ -411,7 +412,7 @@ list stays the reference for what each step is and why.
    its tags; no signing key is configured for this repo, so these are annotated only.)
 11. Build on Apple Silicon **from that tag**, in a clean checkout:
     `make darwin-package VERSION=X.Y.Z`, then `scripts/release-tree-check.sh vX.Y.Z`.
-12. Quit any running Kai, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`. It must print PASS.
+12. Quit any running Kai or Kai-dev, then `scripts/release-verify.sh bin/Kai.app X.Y.Z`. It must print PASS.
     (It launches the app, so the Dock icon bounces and Kai briefly takes focus.)
 13. Run the manual smoke matrix (checklist) against the same `bin/Kai.app`.
 14. `scripts/release-package.sh bin/Kai.app X.Y.Z`: the zip, the updater zip, the disk image and
