@@ -93,15 +93,17 @@ The pipeline's project-specific configuration lives in the committed seeds (`.af
 `.aftersight/opencode.json`, `.aftersight/claude.json`) and on the server (tenant `dev`); change the
 committed files, commit them, then `aftersight config push`. Roles, models and the gate come from the
 seeds and the release — there are no in-repo role agents and no `.opencode/` pipeline plugin anymore.
-Both seeds pin a release (`opencode-pipeline-v2.2.0`, `claude-pipeline-v0.4.0`) rather than `latest`,
-so a release changes only on purpose: move the tag in the seed and push. Stage models run on `zai/glm-5.3` (OpenCode) and Claude models (Claude); the outside dual-review gate runs on DeepSeek
+Both seeds pin a release (`opencode-pipeline-v2.2.1`, `claude-pipeline-v0.4.0`) rather than `latest`,
+so a release changes only on purpose: move the tag in the seed and push. OpenCode's active stages run on
+`zai-coding-plan/glm-5.3` (passive rows and the role defaults on `zai/glm-5.3`, which the operator's own
+config points at the coding plan); Claude's stages run on Claude models. The outside dual-review gate runs on DeepSeek
 (`deepseek` binding, key variable `DEEPSEEK_API_KEY`); a stage model's family must differ from the gate's.
 
 Seed rules the releases enforce (`pipeline-upgrading-and-pinning.md` in the Aftersight runbooks):
 
 - A suite states its commands as `script`, a list of shell lines; the key `command` is no longer read.
 - `pathSets.tests` and `pathSets.production` must not share a glob; `tests` names test files only.
-- A stage's `effort` must be one its model offers. `zai/glm-5.3` offers `low`, `high` and `max` only
+- A stage's `effort` must be one its model offers. GLM-5.3 (`zai/glm-5.3`, `zai-coding-plan/glm-5.3`) offers `low`, `high` and `max` only
   (no `medium`, no `xhigh`); check the `agents.<role>` efforts by hand too.
 - `gate.baseBranches` is `master` (the repository's default branch). opencode-pipeline 2.2.0 did not detect the
   default branch; 2.2.1 and later do, so the value now only states it. The 2.2.0 workaround that also named
