@@ -143,7 +143,7 @@
           bind:value={draft}
           {onkeydown}></textarea>
         <button
-          class="u-btn u-no-drag px-3 py-1 text-xs"
+          class="u-btn u-btn--primary u-no-drag px-3 py-1 text-xs"
           data-testid="context-send"
           title={t('translate.contextSend')}
           disabled={busy || draft.trim() === ''}
