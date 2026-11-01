@@ -1,14 +1,14 @@
 {
   "release": "opencode-pipeline-v2.2.1",
   "stages": {
-    "design": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
-    "architecture-review": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "max", "timeoutSec": 1800, "maxBudgetUsd": 5 },
-    "t-red": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
-    "implement": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
-    "t-green": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
-    "a-dup": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "design": { "executor": "opencode-agent", "mode": "active", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "architecture-review": { "executor": "opencode-agent", "mode": "active", "model": "zai/glm-5.3", "effort": "max", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "t-red": { "executor": "opencode-agent", "mode": "active", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "implement": { "executor": "opencode-agent", "mode": "active", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "t-green": { "executor": "opencode-agent", "mode": "active", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "a-dup": { "executor": "opencode-agent", "mode": "active", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
     "ui-walkthrough": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
-    "spec-audit": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "max", "timeoutSec": 1800, "maxBudgetUsd": 5 }
+    "spec-audit": { "executor": "opencode-agent", "mode": "active", "model": "zai/glm-5.3", "effort": "max", "timeoutSec": 1800, "maxBudgetUsd": 5 }
   },
   "agents": {
     "orchestrator": { "model": "zai/glm-5.3", "effort": "high" },
