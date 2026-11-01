@@ -82,10 +82,9 @@ Seed rules the releases enforce (`pipeline-upgrading-and-pinning.md` in the Afte
 - `pathSets.tests` and `pathSets.production` must not share a glob; `tests` names test files only.
 - A stage's `effort` must be one its model offers. `zai/glm-5.3` offers `low`, `high` and `max` only
   (no `medium`, no `xhigh`); check the `agents.<role>` efforts by hand too.
-- On opencode-pipeline 2.2.0 two workarounds are in the seeds, both harmless on 2.2.1 and later:
-  `gate.baseBranches` is `master` (the repository's default branch, which 2.2.0 does not detect), and
-  `pathSets.handoffs` also names `.worktrees/*/docs/handoffs/**` so the orchestrator may write a run's
-  handoffs in its worktree. Drop the second once the seed moves to 2.2.1.
+- `gate.baseBranches` is `master` (the repository's default branch). opencode-pipeline 2.2.0 did not detect the
+  default branch; 2.2.1 and later do, so the value now only states it. The 2.2.0 workaround that also named
+  `.worktrees/*/docs/handoffs/**` in `pathSets.handoffs` is gone: 2.2.1 adds the worktree form of each rule itself.
 
 ### Dual-review gate policy (flotilla#457 lessons, kai-private#30)
 
