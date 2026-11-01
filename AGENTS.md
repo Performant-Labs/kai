@@ -53,6 +53,16 @@ RED/GREEN ordering, rigor gates, and the named stops are code in the fetched rel
 model) may not skip, reorder, or waive a phase. On any disagreement between your judgment and the
 release's report, the release wins.
 
+### Several runs at once: pass `dir`
+
+More than one run can be in flight in the primary checkout. A `pipeline_*` call without `dir` then resolves
+to one run for the whole checkout, which may not be yours (2026-11-01: the issue-127 session's
+`pipeline_advance` hit issue 126 and stopped with `story issue-126 is held by session ...`). So when another
+run is in flight, every `pipeline_*` call (`pipeline_status`, `pipeline_advance`, `pipeline_worktree`,
+`pipeline_stage`, `pipeline_dual_review`, `pipeline_commit`, `pipeline_pr`) passes `dir=<the run's worktree>`,
+for example `/Users/andreangelantoni/Projects/kai/.worktrees/0127-issue-127`. A session never touches another
+run's issue or worktree.
+
 ### Pre-flight is a hard gate
 
 `pipeline_preflight` (a loader tool; call it first, with the issue number and the rigor) returns one
