@@ -1,5 +1,5 @@
 {
-  "release": "opencode-pipeline-v2.2.0",
+  "release": "opencode-pipeline-v2.2.1",
   "stages": {
     "design": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
     "architecture-review": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "max", "timeoutSec": 1800, "maxBudgetUsd": 5 },
