@@ -982,3 +982,39 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
   at t-red) — dispatch nohup'd with ≥11 min patience; cross-run temp-dir log collisions are
   real (T refused a run-B log correctly — always run-unique logs); dual-review artifacts at
   the run root must be moved into docs/handoffs/<run>/ before committing (run-78 convention).
+
+## 0127-issue-127 — #127 context-send looks like plain text — 2026-11-01 (T-RED)
+- **Decided:** the #127 regression pin lives in `contextChatWiring.test.ts` (new describe), not a
+  new file, per A's Phase-3 note that this component's cadence is source-pinning there (no render
+  harness, #78); the pin is `u-btn--primary` specifically (brief + A warn #2), coupled with a check
+  that `.u-btn--primary` keeps a painted background in app.css so the class pin cannot be defeated
+  from the CSS side.
+- **Assumed:** "keep the Cmd+Enter behaviour" (brief) means keeping Enter-to-send with Cmd+Enter
+  reserved for the window Translate shortcut, per A's clarifying note; already pinned by the
+  existing wiring test, so no new keyboard pin.
+- **Hedged:** A warn #1 (mounted tests find the main Translate button by first
+  `u-btn--primary` match) is only half test-pinned — the `{#if open}` gate for `context-send` is
+  asserted, but DOM order in `TranslateWindow.svelte` is not (wrong file, brittle to pin from
+  source); it is handed to F as a keep-constraint instead.
+- **Evidence:** `pnpm --dir ./frontend test` → 893 passed | 2 failed (895), the only failures being
+  the two new tests, both on `expected […] to include 'u-btn--primary'`; throwaway-edit simulations
+  (reverted): static `u-btn--primary` → 16/16 green; `u-btn--ghost` → RED; conditional
+  `class:u-btn--primary={…}` → RED. This repo's frontend suite is `pnpm --dir ./frontend test`
+  (Makefile `test-frontend`); the Postgres/testcontainers harness notes don't apply (no `server/`).
+
+## 0127-issue-127 — #127 context-send looks like plain text — 2026-11-01 (T-GREEN)
+- **Decided:** GREEN accepted — F's one-line static `u-btn--primary` addition is the whole fix and
+  the RED suite flipped to green over it (16/16 file, 895/895 full); the Phase-6 pin check
+  (temporarily strip the class → 2 failed | 14 passed, restored byte-exact) proves the tests pin
+  the visible-button behavior, not the shape of F's edit.
+- **Assumed:** Go suite and golangci-lint can be left to CI — the run's diff contains zero Go
+  files, so Go code is byte-identical to HEAD (go build used as compile sanity only).
+- **Hedged:** on-screen rendering (painted accent, dimmed-but-a-button disabled state, tooltip per
+  locale) is unverifiable headlessly — no render harness (#78), no e2e workspace in this repo; the
+  source pins are necessary, not sufficient, so U must walk the live panel in both enabled and
+  disabled states.
+- **Evidence:** `pnpm --dir ./frontend test` → 895 passed | 0 failed (82 files), matching F's
+  self-check; `pnpm --dir ./frontend run tsc` and `build:dev` (CI's frontend job) both clean;
+  prettier fixed a line-wrap in T's own Phase-4 test file (re-staged, 16/16 re-verified); app.css
+  verified directly — `.u-btn--primary` paints `var(--app-accent)`, `.u-btn:disabled` only sets
+  `opacity: 0.5`/`cursor`.

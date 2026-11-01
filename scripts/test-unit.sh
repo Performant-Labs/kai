@@ -7,3 +7,4 @@ go test -vet=off ./internal/... ./pkg/... -count=1
 pnpm --dir frontend test
 bash scripts/release.test.sh
 bash scripts/release-ask-ai.test.sh
+bash scripts/install-release.test.sh

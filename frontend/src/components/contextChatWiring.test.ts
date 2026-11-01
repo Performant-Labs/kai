@@ -95,6 +95,69 @@ describe('the chat panel (issue #48)', () => {
   });
 });
 
+// Issue #127: the "Translate again in this context" control (context-send) read as plain text. A
+// bare `.u-btn` has no background or border in app.css (only the variants paint one), and the
+// button is disabled most of the time (`.u-btn:disabled` → opacity 0.5), so it looked like faded
+// text. Pinned from source like the rest of this file (no render harness, #78), together with the
+// CSS rule the look relies on. The variant is pinned to u-btn--primary per the brief and
+// handoff-A warn #2: it is how the codebase marks a pane's main action, and with a filled
+// background the existing disabled rule already yields "clearly a button, just dimmed".
+describe('the send button looks like a button, not text (issue #127)', () => {
+  const css = readFileSync(resolve(__dirname, '../app.css'), 'utf8');
+
+  /** The `<button …>` opening tag that carries data-testid="context-send". */
+  function sendTag(): string {
+    const at = panel.indexOf('data-testid="context-send"');
+    return panel.slice(panel.lastIndexOf('<button', at), panel.indexOf('>', at) + 1);
+  }
+
+  function classes(): string[] {
+    return (
+      sendTag()
+        .match(/\bclass="([^"]*)"/)?.[1]
+        .trim()
+        .split(/\s+/) ?? []
+    );
+  }
+
+  it('uses the primary variant, painted by app.css with a background, so it is not bare text', () => {
+    expect(classes(), `got "${classes().join(' ')}"`).toContain('u-btn--primary');
+    const primary = css.match(/\.u-btn--primary\s*\{([^{}]*)\}/)?.[1] ?? '';
+    const bg = primary.match(/(?:^|;)\s*background(?:-color)?:\s*([^;]+);/)?.[1].trim() ?? '';
+    expect(bg, '.u-btn--primary must keep a visible background').not.toMatch(
+      /^(transparent|none)$/i,
+    );
+  });
+
+  it('keeps the look in both states and keeps its identity: unconditional variant, :disabled only dims, testid, tooltip, click, and it stays behind the chat-open gate', () => {
+    const tag = sendTag();
+    // In the static class attribute (classes() reads it), not a Svelte `class:` directive: one
+    // conditioned on enabled-ness would strip the paint exactly when the button is disabled,
+    // which is the reported bug.
+    expect(classes()).toContain('u-btn--primary');
+    expect(tag).not.toMatch(/class:u-btn--/);
+    // The base class carries .u-btn:disabled, which does the dimming.
+    expect(classes()).toContain('u-btn');
+    expect(tag).toMatch(/disabled=\{\s*busy\s*\|\|\s*draft\.trim\(\)\s*===\s*''\s*\}/);
+    const disabledRule = css.match(/\.u-btn:disabled\s*\{([^{}]*)\}/)?.[1] ?? '';
+    expect(disabledRule, '.u-btn:disabled rule must exist').not.toBe('');
+    expect(disabledRule).toMatch(/opacity:/);
+    expect(disabledRule).not.toMatch(
+      /(?:background|border)(?:-color)?\s*:\s*(?:transparent|none|0)\b/,
+    );
+    // Identity and hooks the brief says to keep (keyboard behaviour is pinned above).
+    expect(tag).toContain('data-testid="context-send"');
+    expect(tag).toMatch(/title=\{t\('translate\.contextSend'\)\}/);
+    expect(tag).toMatch(/onclick=\{send\}/);
+    // The send button lives inside {#if open}: the chat is closed by default, so it is absent on
+    // mount — that is what keeps the mounted tests that find the main Translate button by first
+    // u-btn--primary match safe (handoff-A warn #1). Keep it behind the gate.
+    expect(panel.indexOf('data-testid="context-send"')).toBeGreaterThan(
+      panel.indexOf('{#if open}'),
+    );
+  });
+});
+
 describe('the clear-context shortcut is configurable in Settings > Shortcuts (issue #48)', () => {
   const tab = readFileSync(resolve(__dirname, 'settings/ShortcutsTab.svelte'), 'utf8');
   const tabScript = tab.slice(0, tab.indexOf('</script>'));
