@@ -55,24 +55,23 @@ release's report, the release wins.
 
 ### Starting and resuming a run
 
-A story is run by the Deterministic driver, a program that walks the stage sequence and calls each
-stage's executor; no model session drives it. Do **not** start a run by calling `pipeline_preflight`
-in a model session and then dispatching the role agents by hand: that run is Deterministic, a
-hand-driven session is refused at the first dispatch (`no run is open for this session`), and the run's
-mode cannot change afterwards.
+Pre-flight starts a run in **Deterministic** mode unless told otherwise, and a run's mode never
+changes. A Deterministic run is driven by a program (`/pipeline-run <issue> in-session`, or the
+`runner/pipeline-cli.ts run` command of the release); a model session that calls `pipeline_preflight`
+and then dispatches the role agents by hand is refused at the first dispatch (`no run is open for this
+session`). To drive a run with a model, start it with `pipeline_preflight --mode orchestrator`.
 
-- Start or resume: `/pipeline-run <issue> in-session [--through pr|merge]` in an OpenCode session, or
-  from a shell with the operator's environment sourced:
-  `node <release>/runner/pipeline-cli.ts run --issue <N> --rigor in-session --through pr --mode deterministic --dir <primary checkout>`.
-  Running it again resumes at the phase the run's state names. Output goes to
-  `~/.local/share/aftersight/runs/kai-issue-N.log`. Several issues can run at once, one process each.
-- The stage table (frozen into a run at pre-flight) must have every stage the run reaches `active` (or
-  `claude-cli`); a passive row is the named stop `passive-stage`. `ui-walkthrough` can only be passive on
-  `opencode-agent`, and Phase U is skipped when `uiSurface` is false (every run so far); a story with a UI
-  surface needs that row on `claude-cli` first (pre-flight also wants `claude` on PATH and logged in). A run started before a table change keeps the old
-  table: abandon it (`pipeline_advance --target merge --outcome abandoned`) and start again.
-- Active stages run in an isolated OpenCode, so only OpenCode's built-in providers work there, with the
-  key named by the stage's `credential` (a server-side setting, not part of a seed).
+- **Blocked today (aftersight#2589):** the Deterministic driver needs `active` stage rows, and an
+  active OpenCode stage runs in an isolated config with catalog providers only. OpenCode's built-in
+  `zai` provider calls the pay-as-you-go endpoint, which answers HTTP 429 with our coding-plan key,
+  so `zai/glm-5.3` cannot run Deterministic. Do not swap the model to get round it: the goal is to
+  test the pipelines on `zai/glm-5.3`.
+- **Works today:** Orchestrator mode with passive stages, on `zai/glm-5.3` through the operator's own
+  OpenCode config.
+- The stage table is frozen into a run at pre-flight; after a table change, abandon the run
+  (`pipeline_advance --target merge --outcome abandoned`) and start again.
+- A worktree has no `frontend/node_modules`; run `pnpm --dir frontend install --frozen-lockfile` in it
+  before the tester stage, or the tester's own install trips the write-boundary check.
 
 ### Pre-flight is a hard gate
 
@@ -93,12 +92,8 @@ The pipeline's project-specific configuration lives in the committed seeds (`.af
 committed files, commit them, then `aftersight config push`. Roles, models and the gate come from the
 seeds and the release — there are no in-repo role agents and no `.opencode/` pipeline plugin anymore.
 Both seeds pin a release (`opencode-pipeline-v2.2.0`, `claude-pipeline-v0.4.0`) rather than `latest`,
-so a release changes only on purpose: move the tag in the seed and push. Active OpenCode stages run
-on `deepseek/deepseek-v4-pro` (key variable `DEEPSEEK_API_KEY`): `zai/glm-5.3` is not usable there,
-because OpenCode's built-in `zai` provider calls the pay-as-you-go endpoint (HTTP 429, no balance) and
-the coding-plan endpoint is only reachable through the operator's global config. Claude models run the
-Claude pipeline. The outside dual-review gate runs on z.ai (`zai` binding, `ZAI_API_KEY`): its model
-family must differ from every stage's.
+so a release changes only on purpose: move the tag in the seed and push. Stage models run on `zai/glm-5.3` (OpenCode) and Claude models (Claude); the outside dual-review gate runs on DeepSeek
+(`deepseek` binding, key variable `DEEPSEEK_API_KEY`); a stage model's family must differ from the gate's.
 
 Seed rules the releases enforce (`pipeline-upgrading-and-pinning.md` in the Aftersight runbooks):
 
