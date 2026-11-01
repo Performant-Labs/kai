@@ -61,13 +61,15 @@ changes. A Deterministic run is driven by a program (`/pipeline-run <issue> in-s
 and then dispatches the role agents by hand is refused at the first dispatch (`no run is open for this
 session`). To drive a run with a model, start it with `pipeline_preflight --mode orchestrator`.
 
-- **Blocked today (aftersight#2589):** the Deterministic driver needs `active` stage rows, and an
-  active OpenCode stage runs in an isolated config with catalog providers only. OpenCode's built-in
-  `zai` provider calls the pay-as-you-go endpoint, which answers HTTP 429 with our coding-plan key,
-  so `zai/glm-5.3` cannot run Deterministic. Do not swap the model to get round it: the goal is to
-  test the pipelines on `zai/glm-5.3`.
-- **Works today:** Orchestrator mode with passive stages, on `zai/glm-5.3` through the operator's own
-  OpenCode config.
+- **GLM-5.3 in a Deterministic run:** the driver needs `active` stage rows, and an active OpenCode
+  stage runs in an isolated config with catalog providers only. OpenCode's built-in `zai` provider
+  calls the pay-as-you-go endpoint (HTTP 429 with our coding-plan key), so the stages use the catalog's
+  `zai-coding-plan/glm-5.3` (same model, the coding-plan endpoint). It needs `ZHIPU_API_KEY` in
+  `~/.aftersight-selfhost/env-kai` (same value as `ZAI_API_KEY`), a `zai-coding-plan` provider binding
+  on the server, and the stage `credential` set to `ZHIPU_API_KEY` on the server (a seed cannot carry
+  it: POST the revised document to `/api/projects/kai/configuration/revise`). Do not swap the model to
+  get round a failure: the goal is to test the pipelines on GLM-5.3. File the problem instead.
+- Orchestrator mode with passive stages also works, through the operator's own OpenCode config.
 - The stage table is frozen into a run at pre-flight; after a table change, abandon the run
   (`pipeline_advance --target merge --outcome abandoned`) and start again.
 - A worktree has no `frontend/node_modules`; run `pnpm --dir frontend install --frozen-lockfile` in it
