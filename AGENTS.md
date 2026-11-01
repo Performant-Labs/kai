@@ -66,8 +66,10 @@ mode cannot change afterwards.
   `node <release>/runner/pipeline-cli.ts run --issue <N> --rigor in-session --through pr --mode deterministic --dir <primary checkout>`.
   Running it again resumes at the phase the run's state names. Output goes to
   `~/.local/share/aftersight/runs/kai-issue-N.log`. Several issues can run at once, one process each.
-- The stage table (frozen into a run at pre-flight) must have every stage `active` (or `claude-cli`);
-  a passive row is the named stop `passive-stage`. A run started before a table change keeps the old
+- The stage table (frozen into a run at pre-flight) must have every stage the run reaches `active` (or
+  `claude-cli`); a passive row is the named stop `passive-stage`. `ui-walkthrough` can only be passive on
+  `opencode-agent`, and Phase U is skipped when `uiSurface` is false (every run so far); a story with a UI
+  surface needs that row on `claude-cli` first (pre-flight also wants `claude` on PATH and logged in). A run started before a table change keeps the old
   table: abandon it (`pipeline_advance --target merge --outcome abandoned`) and start again.
 - Active stages run in an isolated OpenCode, so only OpenCode's built-in providers work there, with the
   key named by the stage's `credential` (a server-side setting, not part of a seed).
