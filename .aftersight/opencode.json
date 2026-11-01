@@ -7,7 +7,7 @@
     "implement": { "executor": "opencode-agent", "mode": "active", "model": "deepseek/deepseek-v4-pro", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
     "t-green": { "executor": "opencode-agent", "mode": "active", "model": "deepseek/deepseek-v4-pro", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
     "a-dup": { "executor": "opencode-agent", "mode": "active", "model": "deepseek/deepseek-v4-pro", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
-    "ui-walkthrough": { "executor": "opencode-agent", "model": "zai/glm-5.3", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
+    "ui-walkthrough": { "executor": "opencode-agent", "model": "deepseek/deepseek-v4-pro", "effort": "high", "timeoutSec": 1800, "maxBudgetUsd": 5 },
     "spec-audit": { "executor": "opencode-agent", "mode": "active", "model": "deepseek/deepseek-v4-pro", "effort": "max", "timeoutSec": 1800, "maxBudgetUsd": 5 }
   },
   "agents": {
