@@ -6,9 +6,12 @@ project:
   name: "Kai"
   timezone: "America/Boise"
 
-# CI review via PR-Agent (DeepSeek V4 Pro). Uses the org-wide DEEPSEEK_API_KEY secret, which must
-# be shared with this repo (issue #67). The reviewer instructions live in .pr_agent.toml.
+# CI review via PR-Agent through the Claude Code CLI (#190), on the org secret CLAUDE_CODE_OAUTH_TOKEN
+# shared with this repo; DeepSeek V4 Pro (DEEPSEEK_API_KEY, issue #67) when the token is absent. Kai's
+# .github/workflows/pr-review.yml sets the models itself (it cannot call the playbook's private
+# reusable workflow), so the model keys below only record them. The reviewer instructions live in .pr_agent.toml.
 pr_agent:
+  claude_model: "claude-opus-5-5"
   model: "deepseek/deepseek-v4-pro"
   high_stakes_label: "high-stakes"   # app launch / migrations / hotkeys / updater / engine keys
   skip_docs_only: true               # docs-only diffs (e.g. comment sweeps) skip the review
