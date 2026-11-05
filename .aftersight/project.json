@@ -25,6 +25,9 @@
       "scripts/*.sh",
       "docs/releasing.md",
       "docs/release-checklist.md"
+    ],
+    "buildOutput": [
+      "pkg/swiftbridge/*.a"
     ]
   },
   "mergeMode": "auto",
