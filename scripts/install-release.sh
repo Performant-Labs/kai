@@ -16,8 +16,8 @@
 #
 # What it does: gets the zip (verifying its checksum when one is available), extracts Kai.app,
 # checks the signature and bundle id, replaces the installed app, clears the quarantine flag from
-# the installed copy, and, only if the app's code actually changed, resets the now-invalid
-# Accessibility grant so you can add Kai again. It refuses to replace a running Kai.
+# the installed copy, and, only if the signing identity (designated requirement) changed, resets
+# the now-invalid Accessibility grant so you can add Kai again. It refuses to replace a running Kai.
 set -euo pipefail
 
 repo="${KAI_RELEASE_REPO:-Performant-Labs/kai}"
@@ -47,6 +47,11 @@ done
 target="$dest/Kai.app"
 
 die() { echo "FAIL: $*" >&2; exit 1; }
+
+# The designated requirement of an app — the signing identity a macOS privacy grant (such as
+# Accessibility) actually belongs to. Parsed as in sign-check.sh; empty when the signature cannot
+# be read (unsigned, corrupt), which callers treat as "changed".
+reqof() { codesign -dr - "$1" 2>&1 | sed -n 's/^#* *designated => //p' | head -1 || true; }
 
 # Never replace a running Kai (a Kai running from somewhere else does not matter).
 for pid in $(pgrep -x Kai 2>/dev/null || true); do
@@ -120,12 +125,15 @@ got_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev
 codesign --verify --deep --strict "$new" 2>/dev/null || die "the code signature is not valid: do not install this"
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
 
-# 4. Did the code change compared with what is installed? (decides about the permission grant)
+# 4. Did the signing identity change compared with what is installed? (decides about the
+# permission grant: the grant follows the designated requirement, which stays the same across
+# builds signed with the same certificate, not the binary hash. No old app, or a requirement
+# that cannot be read, counts as changed — like a first install.)
 changed=1
-if [[ -x "$target/Contents/MacOS/Kai" ]]; then
-  old_sum="$(shasum -a 256 <"$target/Contents/MacOS/Kai")"
-  new_sum="$(shasum -a 256 <"$new/Contents/MacOS/Kai")"
-  [[ "$old_sum" == "$new_sum" ]] && changed=0
+if [[ -d "$target" ]]; then
+  old_req="$(reqof "$target")"
+  new_req="$(reqof "$new")"
+  [[ -n "$old_req" && -n "$new_req" && "$old_req" == "$new_req" ]] && changed=0
 fi
 
 # 5. Replace, and clear the quarantine flag from the installed copy.
@@ -142,7 +150,7 @@ echo "installed Kai $version at $target (quarantine flag cleared, signature vali
 if [[ $keep_perms -eq 1 ]]; then
   echo "left the Accessibility grant alone (--keep-permissions)"
 elif [[ $changed -eq 0 ]]; then
-  echo "same build as the one that was installed: the Accessibility grant is still valid"
+  echo "same signing identity: the Accessibility grant is still valid"
 else
   tccutil reset Accessibility "$bundle_id" >/dev/null 2>&1 || true
   echo "This build has a new signature, so the old Accessibility grant no longer applies and was cleared."
