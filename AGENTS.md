@@ -67,7 +67,8 @@ session`). To drive a run with a model, start it with `pipeline_preflight --mode
   `zai-coding-plan/glm-5.3` (same model, the coding-plan endpoint). It needs `ZHIPU_API_KEY` in
   `~/.aftersight-selfhost/env-kai` (same value as `ZAI_API_KEY`), a `zai-coding-plan` provider binding
   on the server, and the stage `credential` set to `ZHIPU_API_KEY` on the server (a seed cannot carry
-  it: POST the revised document to `/api/projects/kai/configuration/revise`). Do not swap the model to
+  it, aftersight#2591: POST the revised document to `/api/projects/kai/configuration/revise`, again after every
+  `config push`, which stores the seed without it). Do not swap the model to
   get round a failure: the goal is to test the pipelines on GLM-5.3. File the problem instead.
 - Orchestrator mode with passive stages also works, through the operator's own OpenCode config.
 - The stage table is frozen into a run at pre-flight; after a table change, abandon the run
@@ -111,8 +112,6 @@ Seed rules the releases enforce (`pipeline-upgrading-and-pinning.md` in the Afte
 - `pathSets.buildOutput` (2.3.0 and later) lists ignored files the suite rebuilds in the tree, which a workspace stage may
   rewrite: `scripts/test-unit.sh` rebuilds `pkg/swiftbridge/*.a` on every run, and without the set the write-boundary
   check refuses every workspace stage that runs the suite (aftersight#2598).
-- A seed cannot carry a stage's `credential` (aftersight#2591). The active stages' `{ "env": "ZHIPU_API_KEY" }` is set
-  on the server's stored configuration after each `config push`, through the configuration's revise route.
 
 ### Dual-review gate policy (flotilla#457 lessons, kai-private#30)
 
