@@ -155,8 +155,9 @@ certificate or notarization.
   image you already downloaded and clears the flag from it. Either way it verifies the checksum
   when one is available, checks the bundle id and signature, refuses to replace a running Kai,
   clears the flag on the installed copy, and clears the stale Accessibility grant **only if the
-  app's code changed**. Removing the flag from a build made by this project's own release
-  process, on your own Mac, is ordinary; it does not make the app trusted for anyone else.
+  signing identity (designated requirement) changed**. Removing the flag from a build made by
+  this project's own release process, on your own Mac, is ordinary; it does not make the app
+  trusted for anyone else.
 - **The real fix is not available yet:** a Developer ID signature plus notarization. It needs an
   Apple Developer Program membership; the release Mac has no Developer ID certificate and
   1Password has none either. It would remove the Gatekeeper block. Until then, say in the notes

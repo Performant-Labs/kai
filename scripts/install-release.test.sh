@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Tests for scripts/install-release.sh, using small signed fake apps, zips and disk images,
-# files tagged with the quarantine flag the way a browser does, and a fake `gh` (no network).
-# It installs into throwaway directories and uses a test bundle id, so it never touches
-# /Applications or your real Accessibility grant. Meant for a Mac (needs hdiutil, ditto, codesign).
+# files tagged with the quarantine flag the way a browser does, a fake `gh` (no network), and
+# throwaway self-signed certificates in a throwaway keychain (deleted again on cleanup) for the
+# signing-identity cases. It installs into throwaway directories and uses a test bundle id, so it
+# never touches /Applications, your keychain, or your real Accessibility grant. Meant for a Mac
+# (needs hdiutil, ditto, codesign, security, openssl).
 #   bash scripts/install-release.test.sh
 set -uo pipefail
 
@@ -10,7 +12,11 @@ here="$(cd "$(dirname "$0")" && pwd)"
 inst="$here/install-release.sh"
 tmp="$(mktemp -d)"
 fake_pid=""
-cleanup() { [[ -n "$fake_pid" ]] && kill "$fake_pid" 2>/dev/null; rm -rf "$tmp"; }
+cleanup() {
+  [[ -n "$fake_pid" ]] && kill "$fake_pid" 2>/dev/null
+  [[ -n "${kc:-}" ]] && security delete-keychain "$kc" >/dev/null 2>&1 || true
+  rm -rf "$tmp"
+}
 trap cleanup EXIT
 
 export KAI_INSTALL_BUNDLE_ID="test.kai.installer"
@@ -22,9 +28,10 @@ exit_is() { if [[ "$code" == "$2" ]]; then echo "ok   $1"; else echo "FAIL $1 (e
 truth() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }
 run() { out="$("$inst" "$@" 2>&1)"; code=$?; }
 
-# A tiny signed app. Different $2 gives a different binary, like a different build.
-mkapp() { # dir version [bundle-id]
-  local d="$1" v="$2" id="${3:-test.kai.installer}"
+# A tiny signed app. Different $2 gives a different binary, like a different build. With $4 it is
+# signed with that throwaway certificate (made below) instead of ad-hoc, like a release build.
+mkapp() { # dir version [bundle-id] [cert-name]
+  local d="$1" v="$2" id="${3:-test.kai.installer}" cert="${4:-}"
   mkdir -p "$d/Kai.app/Contents/MacOS"
   printf 'static const char v[] = "%s"; int main(void){ return v[0] == 0; }\n' "$v" | cc -x c - -o "$d/Kai.app/Contents/MacOS/Kai" 2>/dev/null
   cat >"$d/Kai.app/Contents/Info.plist" <<EOF
@@ -37,7 +44,11 @@ mkapp() { # dir version [bundle-id]
 <key>CFBundleVersion</key><string>$v</string>
 </dict></plist>
 EOF
-  codesign --force --deep --sign - "$d/Kai.app" >/dev/null 2>&1
+  if [[ -n "$cert" ]]; then
+    codesign --force --keychain "$kc" --sign "$cert" "$d/Kai.app" >/dev/null 2>&1
+  else
+    codesign --force --deep --sign - "$d/Kai.app" >/dev/null 2>&1
+  fi
 }
 quarantine() { xattr -w com.apple.quarantine "0083;5f000000;Safari;" "$1"; }
 has_q() { xattr -lr "$1" 2>/dev/null | grep -q com.apple.quarantine; }
@@ -51,6 +62,53 @@ ditto -c -k --keepParent "$tmp/v2/Kai.app" "$tmp/Kai-2.0.0-darwin-arm64.zip"
 mkdir "$tmp/dmgsrc" && cp -R "$tmp/v1/Kai.app" "$tmp/dmgsrc/" \
   && hdiutil create -volname Kai -srcfolder "$tmp/dmgsrc" -ov -format UDZO "$tmp/Kai-1.0.0-darwin-arm64.dmg" >/dev/null 2>&1
 [[ -f "$tmp/Kai-1.0.0-darwin-arm64.dmg" ]] || { echo "could not build the test disk image"; exit 1; }
+
+# Two throwaway self-signed code-signing certificates ("Kai Test A" and "Kai Test B") in a
+# throwaway keychain: a miniature scripts/release-cert.sh. With these, two different builds can
+# share a signing identity (same designated requirement, different binary hash) — the situation
+# where the Accessibility grant must survive an update. The keychain is deleted on cleanup;
+# nothing touches the login keychain. An untrusted fresh certificate is listed as
+# CSSMERR_TP_NOT_TRUSTED and codesign signs with it fine (docs/dev-signing.md).
+kc="$tmp/kai-tests.keychain-db"; kcpass="kai-tests"
+mkcert() { # name
+  cat >"$tmp/cert.cnf" <<CNF
+[req]
+distinguished_name = dn
+x509_extensions = ext
+prompt = no
+[dn]
+CN = $1
+O = Kai Tests
+[ext]
+basicConstraints = critical,CA:false
+keyUsage = critical,digitalSignature
+extendedKeyUsage = critical,codeSigning
+subjectKeyIdentifier = hash
+CNF
+  /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 1 -config "$tmp/cert.cnf" \
+    -keyout "$tmp/cert.key" -out "$tmp/cert.crt" 2>/dev/null
+  /usr/bin/openssl pkcs12 -export -inkey "$tmp/cert.key" -in "$tmp/cert.crt" -name "$1" \
+    -out "$tmp/cert.p12" -passout "pass:$kcpass" 2>/dev/null
+  security import "$tmp/cert.p12" -k "$kc" -P "$kcpass" -T /usr/bin/codesign >/dev/null 2>&1
+}
+security create-keychain -p "$kcpass" "$kc"
+security set-keychain-settings -t 3600 "$kc"     # it must not lock while the tests run
+security unlock-keychain -p "$kcpass" "$kc"
+mkcert "Kai Test A"; mkcert "Kai Test B"
+security set-key-partition-list -S apple-tool:,apple: -k "$kcpass" "$kc" >/dev/null 2>&1
+ids="$(security find-identity -p codesigning "$kc" 2>/dev/null)"
+printf '%s' "$ids" | grep -q '"Kai Test A"' && printf '%s' "$ids" | grep -q '"Kai Test B"' \
+  || { echo "could not make the throwaway code-signing certificates"; exit 1; }
+
+# Builds signed with those certificates: 1.0.0 and 2.0.0 by certificate A (same identity, code
+# changed), 2.0.0 by certificate B (a different identity).
+mkdir "$tmp/a1" "$tmp/a2" "$tmp/b2"
+mkapp "$tmp/a1" 1.0.0 test.kai.installer "Kai Test A"
+mkapp "$tmp/a2" 2.0.0 test.kai.installer "Kai Test A"
+mkapp "$tmp/b2" 2.0.0 test.kai.installer "Kai Test B"
+ditto -c -k --keepParent "$tmp/a1/Kai.app" "$tmp/Kai-certA-1.0.0.zip"
+ditto -c -k --keepParent "$tmp/a2/Kai.app" "$tmp/Kai-certA-2.0.0.zip"
+ditto -c -k --keepParent "$tmp/b2/Kai.app" "$tmp/Kai-certB-2.0.0.zip"
 
 # A browser download: zip carrying the quarantine flag, installed with --from.
 quarantine "$tmp/Kai-1.0.0-darwin-arm64.zip"
@@ -76,7 +134,7 @@ chmod 644 "$tmp/ro.zip"
 
 # The same build again: nothing about permissions should be touched.
 run --from "$tmp/Kai-1.0.0-darwin-arm64.zip" --dest "$tmp/apps"
-has  "the same build again keeps the grant"       'same build as the one that was installed'
+has  "the same build again keeps the grant"       'same signing identity: the Accessibility grant is still valid'
 hasnt "  ... and does not clear it"               'was cleared'
 
 # A different build.
@@ -85,6 +143,32 @@ has  "a new build replaces the old one"           'installed Kai 2.0.0'
 has  "  ... and clears the stale grant"           'was cleared'
 run --from "$tmp/Kai-1.0.0-darwin-arm64.zip" --dest "$tmp/apps" --keep-permissions
 has  "--keep-permissions leaves the grant alone"  'left the Accessibility grant alone'
+
+# The Accessibility grant follows the signing identity (the designated requirement, what
+# `codesign -dr -` prints), not the binary hash: the bug was that every new build cleared it
+# even though the certificate had not changed (#126).
+mkdir -p "$tmp/idA"
+run --from "$tmp/Kai-certA-1.0.0.zip" --dest "$tmp/idA"
+has  "a certificate-signed build installs"        'installed Kai 1.0.0'
+run --from "$tmp/Kai-certA-2.0.0.zip" --dest "$tmp/idA"
+has  "the same certificate on a new build installs" 'installed Kai 2.0.0'
+has  "  ... and keeps the grant"                    'same signing identity: the Accessibility grant is still valid'
+hasnt "  ... and does not clear it"                 'was cleared'
+mkdir -p "$tmp/idB"
+run --from "$tmp/Kai-certA-1.0.0.zip" --dest "$tmp/idB"
+run --from "$tmp/Kai-certB-2.0.0.zip" --dest "$tmp/idB"
+has  "a different certificate clears the grant"   'was cleared'
+mkdir -p "$tmp/adhoc"
+run --from "$tmp/Kai-1.0.0-darwin-arm64.zip" --dest "$tmp/adhoc"
+run --from "$tmp/Kai-certA-1.0.0.zip" --dest "$tmp/adhoc"
+has  "an ad-hoc-signed old build still clears the grant" 'was cleared'
+# Fail-safe: an old install whose signature cannot be read (here: stripped) is a changed
+# identity as far as anyone can tell, so the grant is cleared, as on a first install.
+mkdir -p "$tmp/nosig"
+run --from "$tmp/Kai-certA-1.0.0.zip" --dest "$tmp/nosig"
+codesign --remove-signature "$tmp/nosig/Kai.app"
+run --from "$tmp/Kai-certA-2.0.0.zip" --dest "$tmp/nosig"
+has  "an old requirement that cannot be read clears the grant" 'was cleared'
 
 # A disk image.
 quarantine "$tmp/Kai-1.0.0-darwin-arm64.dmg"

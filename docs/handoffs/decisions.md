@@ -1018,3 +1018,53 @@ Applied F patch to 3 test files; suite GREEN (authoritative cmd exit 0, race x3 
   prettier fixed a line-wrap in T's own Phase-4 test file (re-staged, 16/16 re-verified); app.css
   verified directly — `.u-btn--primary` paints `var(--app-accent)`, `.u-btn:disabled` only sets
   `opacity: 0.5`/`cursor`.
+
+## 0126-issue-126 — #126 installer clears the grant on unchanged signing identity — 2026-11-05 (T-RED)
+- **Decided:** the #126 matrix lives in the existing `scripts/install-release.test.sh` (its paired
+  harness, wired via `test-unit.sh`) rather than a fake-`codesign` unit tier — the feature *is*
+  "invoke codesign correctly and compare its output", so a fake codesign could not catch a wrong
+  invocation and real fixtures are the cheapest sufficient tier; cert-signing ability comes from a
+  per-run throwaway keychain with two self-signed certs (miniature `release-cert.sh`, prototype
+  verified headless before authoring), deleted by the cleanup trap — login keychain untouched.
+- **Assumed:** identical binaries ⇒ identical designated requirements (A's "subsumed" note,
+  confirmed in prototype), so the old `same build as the one that was installed` message is
+  superseded by the brief's `same signing identity: …` wording and the existing same-build
+  assertion was re-pointed (test ownership) rather than kept alongside; the brief's second
+  Done-when bullet (real TCC grant across a real update) is unautomatable headlessly
+  (dev-signing.md) and stays a manual check.
+- **Hedged:** "changed identity" and "ad-hoc→certificate" and "unreadable old requirement" are
+  green guards today (today's hash rule also clears them) — they exist to close the matrix around
+  the one RED case so a naive "never reset" or "reset only when binaries differ" implementation
+  cannot pass; they fail only if F inverts a default (e.g. unreadable old requirement ⇒ keep).
+- **Evidence:** `bash scripts/install-release.test.sh` (twice, deterministic) → 48 ok | 3 FAIL,
+  exit 1 — the FAILs are exactly the identity-based keep decision + the brief's keep message;
+  prototype on this Mac: same cert + different binaries → identical `certificate root = H"…"`
+  requirement, different certs → different, ad-hoc → `cdhash`, untrusted cert passes
+  `codesign --verify --deep --strict`, and `codesign --remove-signature` is what makes `-dr -`
+  fail (a never-signed binary linker-signs and still yields a cdhash requirement — noted so
+  nobody "simplifies" the fail-safe fixture); throwaway keychain confirmed absent from
+  `security list-keychains` after the run.
+
+## 0126-issue-126 — #126 installer clears the grant on unchanged signing identity — 2026-11-05 (T-GREEN)
+- **Decided:** GREEN stands on the Focused suite plus two mutation kills run against *copies* of
+  the script/test pair in a throwaway temp dir (the harness resolves
+  `inst="$here/install-release.sh"`, so relocating the pair runs the real suite against a mutated
+  script without touching the worktree) — restoring the binary-hash rule fails exactly the two
+  same-cert assertions while the same-build assertion still passes (proving those two tests pin
+  different paths), and inverting the fail-safe fails exactly the unreadable-requirement guard.
+- **Assumed:** F's one-off flake (1 FAILED in 10 standalone runs, lost to `tail -3`) is
+  environmental — F's own hypothesis is the mount-count assertion racing a previous run's
+  trap-cleanup detach under back-to-back invocation; not reproduced in 2 spaced green runs here,
+  so accepted as harness noise, not a defect in the pure string-comparison logic.
+- **Hedged:** the brief's second Done-when bullet (a real TCC grant surviving a real release-to-
+  release update) cannot be verified in any automated tier (dev-signing.md) — hand it to O as a
+  manual check at the next real release rather than declaring it done; ad-hoc `shellcheck`'s
+  SC2010 on line 93 is pre-existing and ungated, recorded so nobody mistakes it for this change.
+- **Evidence:** `bash scripts/install-release.test.sh` → 53 ok | 0 FAIL, PASS, exit 0 (all three
+  ex-RED assertions green, all guards green); `bash scripts/test-unit.sh` → ran to its final line
+  under `set -euo pipefail` (swiftbridge build, go test, pnpm frontend, release + release-ask-ai +
+  install-release suites); `bash -n` ok; live `--help` shows the reworded identity line with an
+  unchanged 22-line shape; mutations m1/m2 → exactly `… and keeps the grant` + `… and does not
+  clear it`, and exactly `an old requirement that cannot be read clears the grant`, respectively,
+  each with suite FAILED; `git diff HEAD --numstat` (ex-handoffs) shows only
+  install-release.sh +16/−8, install-release.test.sh +93/−9, releasing.md +3/−2.
