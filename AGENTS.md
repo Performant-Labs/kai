@@ -93,7 +93,7 @@ The pipeline's project-specific configuration lives in the committed seeds (`.af
 `.aftersight/opencode.json`, `.aftersight/claude.json`) and on the server (tenant `dev`); change the
 committed files, commit them, then `aftersight config push`. Roles, models and the gate come from the
 seeds and the release — there are no in-repo role agents and no `.opencode/` pipeline plugin anymore.
-Both seeds pin a release (`opencode-pipeline-v2.2.1`, `claude-pipeline-v0.4.0`) rather than `latest`,
+Both seeds pin a release (`opencode-pipeline-v2.3.0`, `claude-pipeline-v0.4.0`) rather than `latest`,
 so a release changes only on purpose: move the tag in the seed and push. OpenCode's active stages run on
 `zai-coding-plan/glm-5.3` (passive rows and the role defaults on `zai/glm-5.3`, which the operator's own
 config points at the coding plan); Claude's stages run on Claude models. The outside dual-review gate runs on DeepSeek
@@ -108,6 +108,11 @@ Seed rules the releases enforce (`pipeline-upgrading-and-pinning.md` in the Afte
 - `gate.baseBranches` is `master` (the repository's default branch). opencode-pipeline 2.2.0 did not detect the
   default branch; 2.2.1 and later do, so the value now only states it. The 2.2.0 workaround that also named
   `.worktrees/*/docs/handoffs/**` in `pathSets.handoffs` is gone: 2.2.1 adds the worktree form of each rule itself.
+- `pathSets.buildOutput` (2.3.0 and later) lists ignored files the suite rebuilds in the tree, which a workspace stage may
+  rewrite: `scripts/test-unit.sh` rebuilds `pkg/swiftbridge/*.a` on every run, and without the set the write-boundary
+  check refuses every workspace stage that runs the suite (aftersight#2598).
+- A seed cannot carry a stage's `credential` (aftersight#2591). The active stages' `{ "env": "ZHIPU_API_KEY" }` is set
+  on the server's stored configuration after each `config push`, through the configuration's revise route.
 
 ### Dual-review gate policy (flotilla#457 lessons, kai-private#30)
 
