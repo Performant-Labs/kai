@@ -3,7 +3,8 @@
 # files tagged with the quarantine flag the way a browser does, a fake `gh` (no network), and
 # throwaway self-signed certificates in a throwaway keychain (deleted again on cleanup) for the
 # signing-identity cases. It installs into throwaway directories and uses a test bundle id, so it
-# never touches /Applications, your keychain, or your real Accessibility grant. Meant for a Mac
+# never touches /Applications, your login keychain, or your real Accessibility grant; the keychain
+# search list it extends while running is put back on cleanup. Meant for a Mac
 # (needs hdiutil, ditto, codesign, security, openssl).
 #   bash scripts/install-release.test.sh
 set -uo pipefail
@@ -12,9 +13,12 @@ here="$(cd "$(dirname "$0")" && pwd)"
 inst="$here/install-release.sh"
 tmp="$(mktemp -d)"
 fake_pid=""
+search_list=()
 cleanup() {
   [[ -n "$fake_pid" ]] && kill "$fake_pid" 2>/dev/null
   [[ -n "${kc:-}" ]] && security delete-keychain "$kc" >/dev/null 2>&1 || true
+  # create-keychain adds the throwaway keychain to the user's search list; put the list back.
+  [[ ${#search_list[@]} -gt 0 ]] && security list-keychains -d user -s "${search_list[@]}" >/dev/null 2>&1 || true
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -91,6 +95,11 @@ CNF
     -out "$tmp/cert.p12" -passout "pass:$kcpass" 2>/dev/null
   security import "$tmp/cert.p12" -k "$kc" -P "$kcpass" -T /usr/bin/codesign >/dev/null 2>&1
 }
+# Remember the user's keychain search list first: create-keychain appends to it, and cleanup restores it.
+while IFS= read -r line; do
+  line="${line#"${line%%[![:space:]]*}"}"; line="${line#\"}"; line="${line%\"}"
+  [[ -n "$line" ]] && search_list+=("$line")
+done < <(security list-keychains -d user)
 security create-keychain -p "$kcpass" "$kc"
 security set-keychain-settings -t 3600 "$kc"     # it must not lock while the tests run
 security unlock-keychain -p "$kcpass" "$kc"
