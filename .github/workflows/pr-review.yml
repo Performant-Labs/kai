@@ -42,10 +42,12 @@ jobs:
     steps:
       # The review guard at the end counts only comments written after this point, so a
       # review left by an earlier run (a previous push, a `/review` comment) cannot pass it.
-      # 30 s of slack covers clock skew between the runner and GitHub.
+      # No slack on purpose: this run's own review is written minutes after this point, so a
+      # few seconds of clock skew cannot exclude it, while slack would admit a review that a
+      # run cancelled just before this one started had written.
       - name: Record when this run started
         id: start
-        run: echo "since=$(date -u -d '30 seconds ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+        run: echo "since=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Choose the reviewer backend
         id: cfg
