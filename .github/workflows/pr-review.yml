@@ -16,10 +16,6 @@ on:
   issue_comment:
     types: [created]
 
-concurrency:
-  group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: ${{ github.event_name != 'issue_comment' }}
-
 permissions:
   contents: read
   pull-requests: write
@@ -36,7 +32,23 @@ jobs:
        github.event.issue.pull_request &&
        startsWith(github.event.comment.body, '/review') &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    # On the job, not the workflow: a group at workflow level is taken before the job's `if`, so
+    # any comment's run would join it and replace a queued `/review`, then be skipped. Here only a
+    # run that passes the `if` takes a slot. A push cancels a superseded review; a `/review` comment
+    # never cancels a running one.
+    concurrency:
+      group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: ${{ github.event_name != 'issue_comment' }}
     steps:
+      # The review guard at the end counts only comments written after this point, so a
+      # review left by an earlier run (a previous push, a `/review` comment) cannot pass it.
+      # No slack on purpose: this run's own review is written minutes after this point, so a
+      # few seconds of clock skew cannot exclude it, while slack would admit a review that a
+      # run cancelled just before this one started had written.
+      - name: Record when this run started
+        id: start
+        run: echo "since=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Choose the reviewer backend
         id: cfg
         env:
@@ -148,17 +160,20 @@ jobs:
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: "false"
 
       # PR-Agent can exit 0 even when every model call fails (a bad key, no credit), which
-      # would show a green check with no review. Fail unless a review comment with a
-      # score was written or updated during this run.
+      # would show a green check with no review. Fail unless PR-Agent's review comment, with
+      # a score, was written or updated during this run.
       - name: Fail when no review was produced
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
+          SINCE: ${{ steps.start.outputs.since }}
         run: |
-          since=$(date -u -d '15 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          # One output line per matching comment, counted after the fact: with --paginate the
+          # --jq filter runs once per page, so a `length` would print one number per page.
           n=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
-            --jq "[.[] | select(.updated_at >= \"${since}\" and (.body | contains(\"Score\")))] | length")
+            --jq '.[] | select(.updated_at >= env.SINCE and (.body | contains("pr-agent:review:full")) and (.body | contains("Score"))) | .id' \
+            | wc -l | tr -d ' ')
           if [ "${n}" -lt 1 ]; then
             echo "::error::PR-Agent wrote no scored review during this run (model call failed?)"
             exit 1
