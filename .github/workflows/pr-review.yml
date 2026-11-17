@@ -7,7 +7,7 @@
 # and cannot call that private workflow, so the steps are copied here with the same pins
 # and guards. The token is the org secret CLAUDE_CODE_OAUTH_TOKEN (a `claude setup-token`
 # subscription token), shared with this repository. With the token absent, the review
-# falls back to the DeepSeek API path.
+# falls back to the API path: glm-5.3 on the z.ai GLM Coding Plan (repo secret ZAI_API_KEY).
 name: PR-Agent Review
 
 on:
@@ -46,7 +46,7 @@ jobs:
           if [ "$CLAUDE_TOKEN_SET" = "true" ]; then
             echo "backend=claude-cli" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::CLAUDE_CODE_OAUTH_TOKEN is not available to this repository; reviewing with DeepSeek"
+            echo "::warning::CLAUDE_CODE_OAUTH_TOKEN is not available to this repository; reviewing with glm-5.3 on z.ai"
             echo "backend=api" >> "$GITHUB_OUTPUT"
           fi
 
@@ -132,16 +132,17 @@ jobs:
           CONFIG__PROPAGATE_TOOL_ERRORS: "true"
         run: pr-agent-cli-handlers action
 
-      # Pinned to the v0.46.0 release commit: a mutable ref would let a compromised
+      # Pinned to the v0.50.0 release commit: a mutable ref would let a compromised
       # update read the model key. Bump it deliberately.
-      - name: PR-Agent review (DeepSeek, when the Claude token is absent)
+      - name: PR-Agent review (glm-5.3 on z.ai, when the Claude token is absent)
         if: steps.cfg.outputs.backend == 'api'
-        uses: qodo-ai/pr-agent@1d01f24f455bb879c1d9c557ad7de3d72dcc7975 # v0.46.0
+        uses: qodo-ai/pr-agent@e673a02076ce09a4726c3d0c3cc85780e59ca52b # v0.50.0
         env:
-          CONFIG.MODEL: deepseek/deepseek-v4-pro
-          CONFIG.FALLBACK_MODELS: '["deepseek/deepseek-v4-pro"]'
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DEEPSEEK.KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          CONFIG.MODEL: openai/glm-5.3
+          CONFIG.FALLBACK_MODELS: '["openai/glm-5.3-flash"]'
+          CONFIG.AI_TIMEOUT: "600"
+          OPENAI.API_BASE: https://api.z.ai/api/coding/paas/v4
+          OPENAI.KEY: ${{ secrets.ZAI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: "true"
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: "false"
